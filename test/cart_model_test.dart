@@ -64,12 +64,12 @@ void main() {
 
     test('التوصيل المجاني لأول طلب بيشيل الرسوم من الإجمالي', () {
       cart.add(falafel, storeId: 'a', storeName: 'مطعم');
-      cart.setFreeDelivery(true);
+      cart.setArea('منطقة بدون رسوم', 0);
 
       expect(cart.effectiveFee, 0);
       expect(cart.total, 10);
 
-      cart.setFreeDelivery(false);
+      cart.setArea('', CartModel.deliveryFee);
       expect(cart.total, 10 + CartModel.deliveryFee);
     });
   });

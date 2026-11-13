@@ -82,8 +82,9 @@ class _AccountPageState extends State<AccountPage> {
   Widget _joinSection(UserProfile profile) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final role = RoleService.cachedFor(uid)?.role;
-    if (role != null && role != AppRole.customer)
+    if (role != null && role != AppRole.customer) {
       return const SizedBox.shrink();
+    }
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
       stream: RoleRequestService.watchMine(),
       builder: (context, snap) {

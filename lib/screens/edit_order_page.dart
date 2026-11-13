@@ -36,7 +36,7 @@ class _EditOrderPageState extends State<EditOrderPage> {
   late final TextEditingController _courierNotes = TextEditingController(
     text: widget.order.courierNotes,
   );
-  late List<OrderLine> _lines = List.of(widget.order.items);
+  late final List<OrderLine> _lines = List.of(widget.order.items);
   bool _saving = false;
 
   @override

@@ -38,7 +38,9 @@ class UpdateService {
     _checked = true;
     if (!await _fetch()) return;
     if (!context.mounted) return;
-    if (_force || !await _isSnoozed()) {
+    final showDialogNow = _force || !await _isSnoozed();
+    if (!context.mounted) return;
+    if (showDialogNow) {
       _showUpdateDialog(context, _url, _force);
     } else {
       _showBanner();

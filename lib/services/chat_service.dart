@@ -63,8 +63,9 @@ class ChatService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل دخول الأول.');
     final t = text.trim();
-    if (t.isEmpty || t.length > maxLength)
+    if (t.isEmpty || t.length > maxLength) {
       throw ArgumentError('رسالة غير صالحة.');
+    }
     var name = user.displayName ?? '';
     if (name.length > 80) name = name.substring(0, 80);
     final chat = _chat(user.uid);
@@ -94,8 +95,9 @@ class ChatService {
     final admin = FirebaseAuth.instance.currentUser;
     if (admin == null) throw StateError('سجّل دخول الأول.');
     final t = text.trim();
-    if (t.isEmpty || t.length > maxLength)
+    if (t.isEmpty || t.length > maxLength) {
       throw ArgumentError('رسالة غير صالحة.');
+    }
     final chat = _chat(chatUid);
     final batch = _db.batch();
     batch.update(chat, {
