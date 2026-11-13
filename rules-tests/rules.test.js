@@ -55,11 +55,12 @@ test('orders: إنشاء عادي ينجح (الأسعار غير مفعّلة)'
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/new1'), baseOrder('cust1')));
 });
 
-test('enforcePrices: سعر مغلوط يُرفض، والصحيح ينجح', async () => {
-  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'app_info/security'), { enforcePrices: true }));
-  const bad = baseOrder('cust1', { items: [{ name: 'p', price: 0.01, qty: 2, productId: 'p1' }], subtotal: 0.02, total: 10.02 });
-  await assertFails(setDoc(doc(as('cust1'), 'orders/bad'), bad));
-  await assertFails(setDoc(doc(as('cust1'), 'orders/noid'), baseOrder('cust1', { items: [{ name: 'p', price: 10, qty: 2 }] })));
+// المراجعة على أسعار الكتالوج بتتم عند الأدمن (verifiedTotal)، والقواعد بتتأكد من اتساق الأرقام بس:
+// total = subtotal + deliveryFee - discount.
+test('إجمالي الطلب: غير المتطابق حسابيًا يُرفض، والمتطابق ينجح', async () => {
+  await assertFails(setDoc(doc(as('cust1'), 'orders/bad1'), baseOrder('cust1', { total: 41 })));
+  await assertFails(setDoc(doc(as('cust1'), 'orders/bad2'), baseOrder('cust1', { total: 10 })));
+  await assertFails(setDoc(doc(as('cust1'), 'orders/bad3'), baseOrder('cust1', { subtotal: 0.02, total: 10.02, deliveryFee: 20 })));
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/ok'), baseOrder('cust1')));
 });
 
@@ -258,7 +259,16 @@ test('applicants: المندوب يقدّم على طلب جاهز فقط ولا
   // طلب new: ممنوع التقديم
   await assertFails(setDoc(doc(as('cour1'), 'orders/o1/applicants/cour1'), app('cour1')));
   await setOrder({ status: 'preparing' });
-  await assertSucceeds(getDocs(query(collection(as('cour1'), 'orders'), where('status', '==', 'preparing'))));
+  // المندوب يقرأ الطلبات المتاحة من courier_available_orders (من غير بيانات العميل)...
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'courier_available_orders/o1'), {
+    storeId: store, storeName: 'S', items: [], subtotal: 20, deliveryFee: 20, total: 40, status: 'preparing', createdAt: new Date(),
+  }));
+  await assertSucceeds(getDoc(doc(as('cour1'), 'courier_available_orders/o1')));
+  await assertSucceeds(getDocs(collection(as('cour1'), 'courier_available_orders')));
+  await assertFails(getDoc(doc(as('cust1'), 'courier_available_orders/o1')));
+  // ...ومايقدرش يقرأ orders اللي مش معيّن عليها (لا مباشرة ولا بالاستعلام)
+  await assertFails(getDoc(doc(as('cour1'), 'orders/o1')));
+  await assertFails(getDocs(query(collection(as('cour1'), 'orders'), where('status', '==', 'preparing'))));
   await assertFails(getDocs(collection(as('cour1'), 'orders')));
   await assertFails(getDocs(query(collection(as('cust2'), 'orders'), where('status', '==', 'preparing'))));
   await assertSucceeds(setDoc(doc(as('cour1'), 'orders/o1/applicants/cour1'), app('cour1')));
@@ -280,27 +290,38 @@ test('applicants: المندوب يقدّم على طلب جاهز فقط ولا
   await assertFails(setDoc(doc(as('cour1'), 'orders/o1/applicants/cour1'), app('cour1')));
 });
 
+// تغيير الحالة (on_the_way ← delivered) لازم يجي مع سجل في statusHistory في نفس الـ batch (إلزامي دائمًا
+// في القواعد). فالتسليم بيتم بـ batch، والرفض بيتجرّب بنفس الـ batch عشان يفشل بسبب الختم مش بسبب السجل.
+const deliver = (db, role, patch) => {
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), patch);
+  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: actorUidOf(role), actorRole: role, at: serverTimestamp(),
+  });
+  return b.commit();
+};
+
 test('delivery stamp: المندوب يختم تسليمه بأرقام الطلب الصحيحة فقط', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ courierEarning: 99 })));
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ collectedAmount: 5 })));
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ deliveredBy: 'cour2' })));
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ deliveredAt: new Date() })));
-  await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), stamp()));
+  await assertFails(deliver(as('cour1'), 'courier', stamp({ courierEarning: 99 })));
+  await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 5 })));
+  await assertFails(deliver(as('cour1'), 'courier', stamp({ deliveredBy: 'cour2' })));
+  await assertFails(deliver(as('cour1'), 'courier', stamp({ deliveredAt: new Date() })));
+  await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
 });
 
 test('delivery stamp: stampDeliveries يفرض الختم، والمندوب ما يختمش طلب مش بتاعه', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
   await flag('stampDeliveries');
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { status: 'delivered' }));
-  await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), stamp()));
+  await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' })); // تسليم من غير ختم
+  await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
   await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { courierEarning: 500 }));
 });
 
 test('delivery stamp: الأدمن يختم باسم المندوب المعيّن، والمبلغ المعتمد هو المحصّل', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1', verifiedTotal: 28 });
-  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), stamp({ collectedAmount: 40 })));
-  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), stamp({ collectedAmount: 28 })));
+  await assertFails(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 40 })));
+  await assertSucceeds(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 28 })));
 });
 
 test('role_requests: المستخدم يبعت طلبه هو فقط، والمدير يقبل، والمرفوض يعيد التقديم', async () => {
@@ -352,15 +373,14 @@ test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، 
   await assertFails(deleteDoc(doc(as('admin1'), 'complaints/c1')));
 });
 
-test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمولة بتتبعها، والرسوم الافتراضية 20', async () => {
-  await assertFails(setDoc(doc(as('cust1'), 'orders/o9'), baseOrder('cust1', { deliveryFee: 10, total: 30 })));
+test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمولة بتتبعها (رسوم التوصيل الأصلية متغيرة حسب المنطقة)', async () => {
   await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { finalDeliveryFee: 0 }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 9999 }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 'x' }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 35, verifiedTotal: 55, verifiedAt: serverTimestamp() }));
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
-  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ collectedAmount: 55, courierEarning: 20 })));
-  await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), stamp({ collectedAmount: 55, courierEarning: 35 })));
+  await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 20 })));
+  await assertSucceeds(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 35 })));
 });
 
 // ───────────── خصوصية العميل: بيانات التواصل في orders/{id}/private/contact ─────────────
@@ -417,12 +437,23 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
 });
 
-test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، ومفيش تعديل ولا حذف', async () => {
+test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل/يحذف وهو new بس', async () => {
   await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
   await assertSucceeds(getDoc(doc(as('admin1'), contactPath)));
   await assertFails(getDoc(doc(as('cust2'), contactPath)));
-  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
+  // الأدمن وعميل تاني ما يعدّلوش ولا يحذفوا
   await assertFails(deleteDoc(doc(as('admin1'), contactPath)));
+  await assertFails(updateDoc(doc(as('cust2'), contactPath), { phone: '01112345678' }));
+  // العميل يعدّل بياناته طالما الطلب new (وبيانات صحيحة بس)
+  await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
+  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '123' }));
+  // بعد ما الحالة تتغيّر (preparing): لا تعديل ولا حذف
+  await setOrderState({ status: 'preparing' });
+  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
+  await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
+  // وهو new: الحذف ينجح
+  await seed();
+  await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
 });
 
 test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها عميله أو مندوبه', async () => {

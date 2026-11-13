@@ -83,32 +83,35 @@ service cloud.firestore {
       return ['deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning'];
     }
 
-    function deliveryStampOk(courierUid) {
-      return !changedKeys().hasAny(stampKeys()) || (
-        changedKeys().hasAll(stampKeys()) &&
-        request.resource.data.status == 'delivered' &&
-        courierUid != '' &&
-        request.resource.data.deliveredBy == courierUid &&
-        request.resource.data.deliveredAt == request.time &&
-        request.resource.data.courierEarning ==
-          request.resource.data.get('finalDeliveryFee', request.resource.data.deliveryFee) &&
-        request.resource.data.collectedAmount ==
-          request.resource.data.get('verifiedTotal', request.resource.data.total));
+    // k = diff().affectedKeys() محسوب مرة واحدة في evalOrderUpdate ومتبعوت هنا (من غير ما نعيد حساب الـ diff).
+    function deliveryStampOk(courierUid, k) {
+      return !k.hasAny(stampKeys()) || (
+        k.hasAll(stampKeys()) &&
+        request.resource.data.get('status', '') == 'delivered' &&
+        courierUid is string && courierUid.size() > 0 &&
+        request.resource.data.get('deliveredBy', '') == courierUid &&
+        request.resource.data.get('deliveredAt', null) == request.time &&
+        request.resource.data.get('courierEarning', -1) is number &&
+        request.resource.data.get('courierEarning', -1) ==
+          request.resource.data.get('finalDeliveryFee', request.resource.data.get('deliveryFee', -2)) &&
+        request.resource.data.get('collectedAmount', -1) is number &&
+        request.resource.data.get('collectedAmount', -1) ==
+          request.resource.data.get('verifiedTotal', request.resource.data.get('total', -2)));
     }
 
     // رسوم التوصيل النهائية: الأدمن بس بيحددها (لما يوافق على الطلب)، ولو ما حددهاش بتفضل الافتراضية.
-    function validFinalFee() {
-      return !('finalDeliveryFee' in changedKeys()) || (
-        request.resource.data.finalDeliveryFee is number &&
+    function validFinalFee(k) {
+      return !('finalDeliveryFee' in k) || (
+        request.resource.data.get('finalDeliveryFee', -1) is number &&
         request.resource.data.finalDeliveryFee >= 0 &&
         request.resource.data.finalDeliveryFee <= 500);
     }
 
     // لو stampDeliveries شغّال: أي تسليم من المندوب لازم يجي مع الختم.
-    function stampRequired() {
+    function stampRequired(k) {
       return !securityFlag('stampDeliveries') ||
-        request.resource.data.status != 'delivered' ||
-        changedKeys().hasAll(stampKeys());
+        request.resource.data.get('status', '') != 'delivered' ||
+        k.hasAll(stampKeys());
     }
 
     function statusRank(st) {
@@ -116,18 +119,18 @@ service cloud.firestore {
     }
 
     // المدير: ما يغيّرش حالة نهائية، ويتحرك للأمام أو يلغي بس.
-    function adminMoveOk() {
-      return !('status' in changedKeys()) || !securityFlag('strictOrders') || (
-        !(resource.data.status in ['delivered', 'cancelled']) &&
-        (request.resource.data.status == 'cancelled' ||
-         statusRank(request.resource.data.status) > statusRank(resource.data.status)));
+    function adminMoveOk(k) {
+      return !('status' in k) || !securityFlag('strictOrders') || (
+        !(resource.data.get('status', '') in ['delivered', 'cancelled']) &&
+        (request.resource.data.get('status', '') == 'cancelled' ||
+         statusRank(request.resource.data.get('status', '')) > statusRank(resource.data.get('status', ''))));
     }
 
     // لو strictOrders شغّال: تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch).
-    function historyGate(orderId) {
+    function historyGate(orderId, k) {
       // سجل الحالة إلزامي دائمًا عند تغيير status، وليس مرتبطًا بمفتاح تشغيل اختياري.
-      return !('status' in changedKeys()) ||
-        existsAfter(/databases/$(database)/documents/orders/$(orderId)/statusHistory/$(request.resource.data.status));
+      return !('status' in k) ||
+        existsAfter(/databases/$(database)/documents/orders/$(orderId)/statusHistory/$(request.resource.data.get('status', '')));
     }
 
     function validCourierForAssignment(courierId) {
@@ -213,16 +216,16 @@ service cloud.firestore {
         n.notes is string && n.notes.size() <= 500 &&
         n.customerName is string && n.customerName.size() >= 1 && n.customerName.size() <= 30 &&
         promoOk(n) &&
-        n.editedAt == request.time;
+        n.get('editedAt', null) == request.time;
     }
 
     // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
-    function validVerification() {
-      return !('verifiedTotal' in changedKeys()) || (
-        request.resource.data.verifiedTotal is number &&
+    function validVerification(k) {
+      return !('verifiedTotal' in k) || (
+        request.resource.data.get('verifiedTotal', -1) is number &&
         request.resource.data.verifiedTotal >= 0 &&
         request.resource.data.verifiedTotal <= 100000 &&
-        request.resource.data.verifiedAt == request.time);
+        request.resource.data.get('verifiedAt', null) == request.time);
     }
 
     function userKeys() {
@@ -355,117 +358,132 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
+      // كل التعديلات في دالة واحدة (evalOrderUpdate) بتحسب diff().affectedKeys() مرة واحدة (k)
+      // وبتبدأ كل فرع بالتحقق السريع من الهوية (حقول المستند) قبل أي استدعاء لقاعدة البيانات.
+      // let مسموح جوه الدوال بس، مش جوه تعبير allow.
+
+      // العميل: يعدّل طلبه أو يلغيه طالما لسه جديد (المحل ما قبلهوش).
+      function canCustomerUpdate(k) {
+        return resource.data.get('status', '') == 'new' && (
+          ('editedAt' in k &&
+            k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
+                       'promoCode', 'customerName', 'editedAt']) &&
+            validCustomerEdit(request.resource.data, resource.data)) ||
+          (k.hasOnly(['status']) &&
+            request.resource.data.get('status', '') == 'cancelled' &&
+            historyGate(orderId, k))
+        );
+      }
+
+      // المندوب: يستلم طلب جاهز (preparing) ومحدّش خده (ذرّي بشرط resource.data)،
+      // أو يغيّر حالة طلبه هو ويختم التسليم.
+      function canCourierUpdate(k) {
+        return (
+          resource.data.get('status', '') == 'preparing' &&
+          resource.data.get('courierId', '') == '' &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          request.resource.data.get('courierId', '') == request.auth.uid &&
+          request.resource.data.get('courierName', '') is string &&
+          request.resource.data.get('courierName', '').size() >= 1 &&
+          request.resource.data.get('courierName', '').size() <= 80 &&
+          request.resource.data.get('courierPhone', '') is string &&
+          request.resource.data.get('courierPhone', '').size() <= 20 &&
+          request.resource.data.get('courierAt', null) == request.time
+        ) || (
+          resource.data.get('courierId', '') == request.auth.uid &&
+          k.hasOnly(['status', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
+          deliveryStampOk(request.auth.uid, k) &&
+          stampRequired(k) &&
+          ((resource.data.get('status', '') == 'preparing' &&
+              request.resource.data.get('status', '') == 'on_the_way' &&
+              (!securityFlag('courierAfterReady') || resource.data.get('ready', false) == true)) ||
+           (resource.data.get('status', '') == 'new' && !securityFlag('courierAfterPrep') &&
+              request.resource.data.get('status', '') == 'on_the_way') ||
+           (resource.data.get('status', '') == 'on_the_way' &&
+              request.resource.data.get('status', '') == 'delivered')) &&
+          historyGate(orderId, k)
+        );
+      }
+
+      // صاحب المحل (محل الطلب فقط): قبول/رفض، «جاهز للاستلام»، وتعيين مندوب.
+      function canOwnerUpdate(k) {
+        return (
+          resource.data.get('status', '') == 'new' &&
+          k.hasOnly(['status']) &&
+          request.resource.data.get('status', '') in ['preparing', 'cancelled'] &&
+          historyGate(orderId, k)
+        ) || (
+          resource.data.get('status', '') == 'preparing' &&
+          k.hasOnly(['ready', 'readyAt']) &&
+          request.resource.data.get('ready', false) == true &&
+          request.resource.data.get('readyAt', null) == request.time
+        ) || (
+          resource.data.get('status', '') == 'preparing' &&
+          resource.data.get('courierId', '') == '' &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          request.resource.data.get('courierName', '') is string &&
+          request.resource.data.get('courierName', '').size() >= 1 &&
+          request.resource.data.get('courierName', '').size() <= 80 &&
+          request.resource.data.get('courierPhone', '') is string &&
+          request.resource.data.get('courierPhone', '').size() <= 20 &&
+          request.resource.data.get('courierAt', null) == request.time &&
+          validCourierForAssignment(request.resource.data.get('courierId', ''))
+        );
+      }
+
+      // الأدمن: «جاهز للاستلام»، إلغاء تعيين المندوب، واعتماد الحالة/الإجمالي/رسوم التوصيل (+ التعيين).
+      // محتوى الطلب نفسه (الأصناف والأسعار والإجمالي الأصلي) ما يتعدّلش أبدًا.
+      function canAdminUpdate(k) {
+        return (
+          // «جاهز للاستلام» (كان مسموح للمدير في القواعد الأصلية، فاتحافظ عليه)
+          resource.data.get('status', '') == 'preparing' &&
+          k.hasOnly(['ready', 'readyAt']) &&
+          request.resource.data.get('ready', false) == true &&
+          request.resource.data.get('readyAt', null) == request.time
+        ) || (
+          resource.data.get('status', '') == 'preparing' &&
+          resource.data.get('courierId', '') != '' &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          !('courierId' in request.resource.data)
+        ) || (
+          k.hasOnly(['status', 'courierId', 'courierName',
+                     'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
+                     'deliveredBy', 'deliveredAt', 'collectedAmount',
+                     'courierEarning', 'finalDeliveryFee']) &&
+          validFinalFee(k) &&
+          validStatus(request.resource.data.get('status', '')) &&
+          validVerification(k) &&
+          deliveryStampOk(resource.data.get('courierId', ''), k) &&
+          (!('courierId' in k) ||
+            validCourierForAssignment(request.resource.data.get('courierId', ''))) &&
+          adminMoveOk(k) &&
+          historyGate(orderId, k)
+        );
+      }
+
+      function evalOrderUpdate() {
+        let k = request.resource.data.diff(resource.data).affectedKeys();
+        return (resource.data.get('userId', '') == request.auth.uid && canCustomerUpdate(k)) ||
+          ((resource.data.get('courierId', '') == request.auth.uid ||
+            resource.data.get('courierId', '') == '') &&
+            isCourier() && canCourierUpdate(k)) ||
+          (resource.data.get('storeId', '') != '' &&
+            isStoreOwner(resource.data.get('storeId', '')) && canOwnerUpdate(k)) ||
+          (isAdmin() && canAdminUpdate(k));
+      }
+
       // العميل يشوف طلباته، والمندوب الطلبات المكلّف بيها، والمدير كل الطلبات.
       allow read: if signedIn() && (
-        resource.data.userId == request.auth.uid ||
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('courierId', '') == request.auth.uid ||
         isAdmin() ||
-        (isCourier() && resource.data.get('courierId', '') == request.auth.uid) ||
         isStoreOwner(resource.data.get('storeId', ''))
       );
 
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
       allow create: if signedIn() && validNewOrder(request.resource.data);
 
-      allow update: if
-        // المدير: يغيّر الحالة ويعيّن المندوب ويعتمد الإجمالي (verifiedTotal) فقط.
-        // محتوى الطلب نفسه (الأصناف والأسعار والإجمالي الأصلي) ما يتعدّلش أبدًا.
-        (isAdmin() &&
-          changedKeys().hasOnly(['status', 'courierId', 'courierName',
-                                 'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
-                                 'deliveredBy', 'deliveredAt', 'collectedAmount',
-                                 'courierEarning', 'finalDeliveryFee']) &&
-          validFinalFee() &&
-          validStatus(request.resource.data.status) &&
-          validVerification() &&
-          deliveryStampOk(resource.data.get('courierId', '')) &&
-          (!('courierId' in changedKeys()) ||
-            validCourierForAssignment(request.resource.data.courierId)) &&
-          adminMoveOk() && historyGate(orderId)) ||
-
-        // تعيين المندوب: المدير أو صاحب المحل الخاص بالطلب فقط (من غير شرط تقديم).
-        ((isAdmin() || isStoreOwner(resource.data.get('storeId', ''))) &&
-          resource.data.status == 'preparing' &&
-          resource.data.get('courierId', '') == '' &&
-          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
-          validCourierForAssignment(request.resource.data.courierId) &&
-          request.resource.data.courierName is string &&
-          request.resource.data.courierName.size() >= 1 &&
-          request.resource.data.courierName.size() <= 80 &&
-          request.resource.data.get('courierPhone', '') is string &&
-          request.resource.data.get('courierPhone', '').size() <= 20 &&
-          request.resource.data.courierAt == request.time) ||
-
-        // المحل (أو المدير) يأكّد إن الطلب جاهز للاستلام: حقلين بس (ready, readyAt)
-        // والحالة تفضل preparing. مفيش تغيير حالة، فمفيش statusHistory.
-        ((isAdmin() || isStoreOwner(resource.data.get('storeId', ''))) &&
-          resource.data.status == 'preparing' &&
-          changedKeys().hasOnly(['ready', 'readyAt']) &&
-          request.resource.data.ready == true &&
-          request.resource.data.readyAt == request.time) ||
-
-        // المندوب بيستلم طلب جاهز (preparing) ومحدّش خده. الشرط على resource.data
-        // بيخلّي الاستلام ذرّي: لو مندوبين داسوا مع بعض، الأول بس بينجح.
-        (isCourier() &&
-          resource.data.status == 'preparing' &&
-          resource.data.get('courierId', '') == '' &&
-          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
-          request.resource.data.courierId == request.auth.uid &&
-          request.resource.data.courierName is string &&
-          request.resource.data.courierName.size() >= 1 &&
-          request.resource.data.courierName.size() <= 80 &&
-          request.resource.data.get('courierPhone', '') is string &&
-          request.resource.data.get('courierPhone', '').size() <= 20 &&
-          request.resource.data.courierAt == request.time) ||
-
-        // إلغاء تعيين المندوب (المدير): بيشيل حقول المندوب والطلب يرجع للقايمة.
-        (isAdmin() &&
-          resource.data.status == 'preparing' &&
-          resource.data.get('courierId', '') != '' &&
-          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
-          !('courierId' in request.resource.data)) ||
-
-        // المندوب: طلبه هو فقط، والحالة فقط، وبالترتيب (استلام ثم تسليم).
-        // لو courierAfterPrep شغّال: ما يبدأش التوصيل إلا بعد تجهيز المحل (preparing).
-        (isCourier() &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          changedKeys().hasOnly(['status', 'deliveredBy', 'deliveredAt',
-                                 'collectedAmount', 'courierEarning']) &&
-          deliveryStampOk(request.auth.uid) && stampRequired() &&
-          ((resource.data.status == 'preparing' &&
-              request.resource.data.status == 'on_the_way' &&
-              (!securityFlag('courierAfterReady') ||
-                resource.data.get('ready', false) == true)) ||
-           (resource.data.status == 'new' && !securityFlag('courierAfterPrep') &&
-              request.resource.data.status == 'on_the_way') ||
-           (resource.data.status == 'on_the_way' &&
-              request.resource.data.status == 'delivered')) &&
-          historyGate(orderId)) ||
-
-        // صاحب المحل: طلبات محله هو فقط، والحالة فقط:
-        // يقبل ويبدأ التجهيز (new ← preparing) أو يرفض طلبًا جديدًا (new ← cancelled).
-        // صاحب المحل يغيّر حالة طلب محله الجديد فقط، ولا يغيّر بيانات الطلب الأخرى.
-        (isStoreOwner(resource.data.get('storeId', '')) &&
-          changedKeys().hasOnly(['status']) &&
-          resource.data.status == 'new' &&
-          request.resource.data.status in ['preparing', 'cancelled'] &&
-          historyGate(orderId)) ||
-
-        // العميل: يعدّل طلبه طالما لسه جديد (المحل ما قبلهوش).
-        (signedIn() &&
-          resource.data.userId == request.auth.uid &&
-          resource.data.status == 'new' &&
-          'editedAt' in changedKeys() &&
-          changedKeys().hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
-                                 'promoCode', 'customerName', 'editedAt']) &&
-          validCustomerEdit(request.resource.data, resource.data)) ||
-
-        // العميل: يلغي طلبه طالما لسه جديد.
-        (signedIn() &&
-          resource.data.userId == request.auth.uid &&
-          resource.data.status == 'new' &&
-          request.resource.data.status == 'cancelled' &&
-          changedKeys().hasOnly(['status']) &&
-          historyGate(orderId));
+      allow update: if signedIn() && evalOrderUpdate();
 
       // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
       allow delete: if signedIn() &&
