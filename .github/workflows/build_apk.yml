@@ -2,8 +2,7 @@ name: Build Flutter Release APK
 
 on:
   
-    branches:
-      - main
+  
   workflow_dispatch:
 
 concurrency:
