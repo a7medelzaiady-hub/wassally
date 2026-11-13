@@ -1,0 +1,183 @@
+import 'package:flutter/material.dart';
+
+import '../services/role_request_service.dart';
+import '../theme/app_theme.dart';
+import '../utils/format.dart';
+
+/// نموذج الانضمام كصاحب محل أو مندوب. بيتحفظ في role_requests ويظهر للمدير.
+class JoinRequestPage extends StatefulWidget {
+  final JoinType type;
+  final String initialName;
+  final String initialPhone;
+  const JoinRequestPage({
+    super.key,
+    required this.type,
+    this.initialName = '',
+    this.initialPhone = '',
+  });
+
+  @override
+  State<JoinRequestPage> createState() => _JoinRequestPageState();
+}
+
+class _JoinRequestPageState extends State<JoinRequestPage> {
+  final _form = GlobalKey<FormState>();
+  late final _name = TextEditingController(text: widget.initialName);
+  late final _phone = TextEditingController(text: widget.initialPhone);
+  final _store = TextEditingController();
+  final _address = TextEditingController();
+  final _vehicle = TextEditingController();
+  final _notes = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    for (final c in [_name, _phone, _store, _address, _vehicle, _notes]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String _digits(String v) {
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    var out = v.replaceAll(RegExp(r'[\s\-]'), '');
+    for (var i = 0; i < 10; i++) {
+      out = out.replaceAll(ar[i], '$i');
+    }
+    return out;
+  }
+
+  Future<void> _send() async {
+    if (!(_form.currentState?.validate() ?? false)) return;
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await RoleRequestService.submit(
+        type: widget.type,
+        name: _name.text,
+        phone: _digits(_phone.text),
+        storeName: _store.text,
+        address: _address.text,
+        vehicle: _vehicle.text,
+        notes: _notes.text,
+      );
+      nav.pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('اتبعت طلبك. هنراجعه ونرد عليك.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('تعذر إرسال الطلب. ممكن يكون عندك طلب قيد المراجعة.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isStore = widget.type == JoinType.storeOwner;
+    return Scaffold(
+      appBar: AppBar(title: Text('انضم كـ ${widget.type.label}')),
+      body: Form(
+        key: _form,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(
+              isStore
+                  ? 'سجّل بيانات محلك وهنراجعها. لما نوافق هتدير طلباتك وأصنافك من التطبيق.'
+                  : 'سجّل بياناتك وهنراجعها. لما نوافق هتقدر تتقدّم على طلبات التوصيل.',
+              style: TextStyle(color: kMuted),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _name,
+              decoration: const InputDecoration(
+                labelText: 'الاسم',
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+              validator: (v) =>
+                  (v ?? '').trim().length < 2 ? 'اكتب اسمك' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                labelText: 'رقم الموبايل',
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+              validator: (v) => isValidEgyptianMobile(_digits(v ?? ''))
+                  ? null
+                  : 'اكتب رقم موبايل مصري صحيح (11 رقم)',
+            ),
+            const SizedBox(height: 12),
+            if (isStore) ...[
+              TextFormField(
+                controller: _store,
+                decoration: const InputDecoration(
+                  labelText: 'اسم المحل',
+                  prefixIcon: Icon(Icons.storefront_outlined),
+                ),
+                validator: (v) =>
+                    (v ?? '').trim().length < 2 ? 'اكتب اسم المحل' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _address,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'عنوان المحل',
+                  prefixIcon: Icon(Icons.location_on_outlined),
+                ),
+                validator: (v) => (v ?? '').trim().length < 5
+                    ? 'اكتب العنوان بالتفصيل'
+                    : null,
+              ),
+            ] else
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (v) =>
+                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
+              ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

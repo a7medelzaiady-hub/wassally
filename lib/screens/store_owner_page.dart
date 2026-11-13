@@ -1,0 +1,1271 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../models/order.dart';
+import '../services/catalog_service.dart';
+import '../services/driver_service.dart';
+import '../services/image_service.dart';
+import '../services/staff_order_service.dart';
+import '../theme/app_theme.dart';
+import '../utils/format.dart';
+import '../widgets/dialogs.dart';
+import '../widgets/empty_state.dart';
+import '../widgets/feedback_fab.dart';
+import '../widgets/staff_header.dart';
+import '../widgets/order_timer.dart';
+import '../widgets/status_pill.dart';
+
+typedef _Json = Map<String, dynamic>;
+
+/// سبب الخطأ الحقيقي (عشان لو القواعد مش منشورة نعرف).
+String _why(Object e) {
+  if (e is FirebaseException) {
+    return e.code == 'permission-denied'
+        ? 'مفيش صلاحية — لازم الإدارة تنشر القواعد (permission-denied)'
+        : e.code;
+  }
+  return e.toString();
+}
+
+/// شاشة صاحب المحل: طلبات محله، أصنافه، وفتح/إغلاق المحل.
+/// الصلاحيات الحقيقية في firestore.rules (isStoreOwner)، والشاشة دي بتعرض بس.
+/// صاحب المحل ما يشوفش عنوان العميل ولا رقمه في الشاشة (المحل مش محتاجهم).
+class StoreOwnerPage extends StatelessWidget {
+  final String storeId;
+  final String name;
+  const StoreOwnerPage({super.key, required this.storeId, this.name = ''});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        floatingActionButton: const FeedbackFab(),
+        body: Column(
+          children: [
+            StaffHeader(
+              title: 'لوحة المحل',
+              subtitle: name.isEmpty ? 'حساب صاحب المحل' : 'أهلاً $name',
+            ),
+            _ShopStatusBar(storeId: storeId),
+            Material(
+              color: Colors.white,
+              child: TabBar(
+                labelColor: kPrimary,
+                indicatorColor: kPrimary,
+                tabs: [
+                  Tab(text: 'الطلبات'),
+                  Tab(text: 'الأصناف والعروض'),
+                ],
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _OwnerOrdersTab(storeId: storeId),
+                  _OwnerProductsTab(storeId: storeId),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── فتح / إغلاق المحل ─────────────────────────
+
+class _ShopStatusBar extends StatefulWidget {
+  final String storeId;
+  const _ShopStatusBar({required this.storeId});
+
+  @override
+  State<_ShopStatusBar> createState() => _ShopStatusBarState();
+}
+
+class _ShopStatusBarState extends State<_ShopStatusBar> {
+  late final Stream<DocumentSnapshot<_Json>> _stream = FirebaseFirestore
+      .instance
+      .collection('stores')
+      .doc(widget.storeId)
+      .snapshots();
+  bool _busy = false;
+  late final Future<RatingSummary?> _rating = RatingService.store(
+    widget.storeId,
+  );
+
+  Future<void> _changeImage() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      final url = await ImageService.pickAndUpload(
+        'stores',
+        storeId: widget.storeId,
+      );
+      if (url != null) {
+        await FirebaseFirestore.instance
+            .collection('stores')
+            .doc(widget.storeId)
+            .update({
+              'imageUrl': url,
+              'image': url,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+        await CatalogService.bump();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('تم تغيير صورة المحل.')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تغيير الصورة: ${_why(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteStore() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await confirmDialog(
+      context,
+      title: 'حذف المحل',
+      message:
+          'حذف المحل وكل أصنافه نهائيًا؟ مش هتقدر ترجّعه (لو هترجع قريب اقفله بدل ما تحذفه).',
+      confirmLabel: 'حذف المحل',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final store = FirebaseFirestore.instance
+          .collection('stores')
+          .doc(widget.storeId);
+      while (true) {
+        final snap = await store.collection('products').limit(400).get();
+        if (snap.docs.isEmpty) break;
+        final batch = FirebaseFirestore.instance.batch();
+        for (final d in snap.docs) {
+          batch.delete(d.reference);
+        }
+        await batch.commit();
+      }
+      await store.delete();
+      await CatalogService.bump();
+      messenger.showSnackBar(const SnackBar(content: Text('تم حذف المحل.')));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر حذف المحل: ${_why(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setActive(bool value) async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('stores')
+          .doc(widget.storeId)
+          .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
+      await CatalogService.bump();
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<_Json>>(
+      stream: _stream,
+      builder: (context, snap) {
+        final data = snap.data?.data();
+        if (snap.hasError || (snap.hasData && data == null)) {
+          return Container(
+            width: double.infinity,
+            color: kDanger.withValues(alpha: 0.1),
+            padding: const EdgeInsets.all(12),
+            child: const Text(
+              'تعذر تحميل بيانات المحل. اتأكد مع الإدارة إن حسابك مربوط بمحل صحيح.',
+            ),
+          );
+        }
+        if (data == null) return const SizedBox(height: 56);
+        final active = (data['active'] as bool?) ?? true;
+        final shopName = (data['name'] ?? 'المحل').toString();
+        final shopImage = (data['imageUrl'] ?? data['image'] ?? '').toString();
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _changeImage,
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: shopImage.isEmpty
+                                ? Container(
+                                    color: kPrimarySoft,
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      shopName.isEmpty
+                                          ? ''
+                                          : shopName.substring(0, 1),
+                                      style: TextStyle(
+                                        color: kPrimary,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  )
+                                : Image.network(
+                                    shopImage,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        Container(color: kPrimarySoft),
+                                  ),
+                          ),
+                        ),
+                        PositionedDirectional(
+                          bottom: 0,
+                          end: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: kPrimary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt,
+                              size: 11,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          shopName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          active
+                              ? 'المحل مفتوح ويستقبل طلبات'
+                              : 'المحل مقفول ومش ظاهر للعملاء',
+                          style: TextStyle(
+                            color: active ? kSuccess : kDanger,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        FutureBuilder<RatingSummary?>(
+                          future: _rating,
+                          builder: (context, rs) => Text(
+                            rs.data == null
+                                ? 'تقييم المحل: ...'
+                                : 'تقييم المحل: ${rs.data!.text}',
+                            style: TextStyle(color: kMuted, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(value: active, onChanged: _busy ? null : _setActive),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _changeImage,
+                      icon: _busy
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.photo_camera_outlined, size: 18),
+                      label: const Text('تغيير صورة المحل'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          DefaultTabController.of(context).animateTo(1),
+                      icon: const Icon(Icons.local_offer_outlined, size: 18),
+                      label: const Text('عمل عرض'),
+                    ),
+                  ),
+                ],
+              ),
+              TextButton.icon(
+                onPressed: _busy ? null : _deleteStore,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('حذف المحل'),
+                style: TextButton.styleFrom(foregroundColor: kDanger),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ───────────────────────── الطلبات ─────────────────────────
+
+class _OwnerOrdersTab extends StatefulWidget {
+  final String storeId;
+  const _OwnerOrdersTab({required this.storeId});
+
+  @override
+  State<_OwnerOrdersTab> createState() => _OwnerOrdersTabState();
+}
+
+class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
+  late final Stream<List<AppOrder>> _orders = StaffOrderService.watchForStore(
+    widget.storeId,
+  );
+  bool _showCurrent = true;
+
+  bool _isCurrent(AppOrder o) =>
+      o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<AppOrder>>(
+      stream: _orders,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const EmptyState(
+            icon: Icons.lock_outline,
+            title: 'تعذر تحميل الطلبات',
+            message: 'اتأكد إن حسابك مربوط بالمحل وإن القواعد والفهرس منشورين.',
+          );
+        }
+        if (!snapshot.hasData) {
+          return Center(child: CircularProgressIndicator(color: kPrimary));
+        }
+        final all = snapshot.data!;
+        final current = all.where(_isCurrent).toList();
+        final past = all.where((o) => !_isCurrent(o)).toList();
+        final shown = _showCurrent ? current : past;
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment(
+                    value: true,
+                    label: Text('الحالية (${current.length})'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    label: Text('السابقة (${past.length})'),
+                  ),
+                ],
+                selected: {_showCurrent},
+                onSelectionChanged: (v) =>
+                    setState(() => _showCurrent = v.first),
+              ),
+            ),
+            Expanded(
+              child: shown.isEmpty
+                  ? EmptyState(
+                      icon: Icons.receipt_long_outlined,
+                      title: _showCurrent
+                          ? 'مفيش طلبات حالية'
+                          : 'مفيش طلبات سابقة',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: shown.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, i) =>
+                          _OwnerOrderCard(order: shown[i]),
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _OwnerOrderCard extends StatefulWidget {
+  final AppOrder order;
+  const _OwnerOrderCard({required this.order});
+
+  @override
+  State<_OwnerOrderCard> createState() => _OwnerOrderCardState();
+}
+
+class _OwnerOrderCardState extends State<_OwnerOrderCard> {
+  bool _busy = false;
+
+  Future<void> _markReady() async {
+    if (_busy) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'الطلب جاهز؟',
+      message: 'هتأكّد إن الطلب جاهز للاستلام. المندوب هيقدر ياخده والعميل هيتبلّغ.',
+      confirmLabel: 'جاهز للاستلام',
+    );
+    if (!ok || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.markReady(widget.order.id);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تأكيد جاهزية الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _move(OrderStatus to) async {
+    if (_busy) return;
+    final accept = to == OrderStatus.preparing;
+    final ok = await confirmDialog(
+      context,
+      title: accept ? 'بدء التجهيز' : 'رفض الطلب',
+      message: accept
+          ? 'هتبدأ تجهّز الطلب ده؟ العميل هيتبلّغ.'
+          : 'رفض الطلب ده؟ هيتلغي والعميل هيتبلّغ.',
+      confirmLabel: accept ? 'ابدأ التجهيز' : 'ارفض الطلب',
+      destructive: !accept,
+    );
+    if (!ok || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.setStatus(
+        widget.order.id,
+        to,
+        from: widget.order.status,
+        actorRole: 'storeOwner',
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تحديث الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final o = widget.order;
+    final isNew = o.status == OrderStatus.newOrder;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                (o.displayCustomer.isEmpty ? 'عميل' : o.displayCustomer),
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const Spacer(),
+              if (orderTotalTimer(
+                    createdAt: o.createdAt,
+                    deliveredAt: o.deliveredAt,
+                    delivered: o.status == OrderStatus.delivered,
+                    cancelled: o.status == OrderStatus.cancelled,
+                  ) !=
+                  null) ...[
+                orderTotalTimer(
+                  createdAt: o.createdAt,
+                  deliveredAt: o.deliveredAt,
+                  delivered: o.status == OrderStatus.delivered,
+                  cancelled: o.status == OrderStatus.cancelled,
+                )!,
+                const SizedBox(width: 8),
+              ],
+              OrderStatusPill(status: o.status),
+            ],
+          ),
+          if (o.createdAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              formatDateTime(o.createdAt!),
+              style: text.bodySmall?.copyWith(color: kMuted),
+            ),
+          ],
+          const Divider(height: 22),
+          for (final line in o.items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(child: Text('${line.name} × ${line.qty}')),
+                  Text(formatPrice(line.total)),
+                ],
+              ),
+            ),
+          if (o.notes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('ملاحظات العميل: ${o.notes}'),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'إجمالي الأصناف:',
+                style: text.bodyMedium?.copyWith(color: kMuted),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                formatPrice(o.subtotal),
+                style: text.titleMedium?.copyWith(
+                  color: kPrimary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          if (isNew) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _move(OrderStatus.preparing),
+                    icon: const Icon(Icons.soup_kitchen),
+                    label: const Text('ابدأ التجهيز'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton(
+                  onPressed: _busy ? null : () => _move(OrderStatus.cancelled),
+                  style: OutlinedButton.styleFrom(foregroundColor: kDanger),
+                  child: const Text('رفض'),
+                ),
+              ],
+            ),
+          ] else if (o.status == OrderStatus.preparing) ...[
+            const SizedBox(height: 10),
+            Text(
+              o.courierName.isEmpty
+                  ? 'جاري التجهيز. في انتظار مندوب يستلم الطلب.'
+                  : 'جاري التجهيز. المندوب: ${o.courierName}',
+              style: text.bodySmall?.copyWith(color: kMuted),
+            ),
+            const SizedBox(height: 10),
+            if (o.ready)
+              Row(
+                children: [
+                  Icon(Icons.check_circle, size: 18, color: kSuccess),
+                  const SizedBox(width: 6),
+                  Text(
+                    'الطلب جاهز للاستلام',
+                    style: text.bodyMedium?.copyWith(
+                      color: kSuccess,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _markReady,
+                  icon: const Icon(Icons.inventory_2_outlined),
+                  label: const Text('الطلب جاهز للاستلام'),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── الأصناف ─────────────────────────
+
+class _OwnerProductsTab extends StatefulWidget {
+  final String storeId;
+  const _OwnerProductsTab({required this.storeId});
+
+  @override
+  State<_OwnerProductsTab> createState() => _OwnerProductsTabState();
+}
+
+class _OwnerProductsTabState extends State<_OwnerProductsTab> {
+  static const _limit = 200;
+  final _search = TextEditingController();
+  List<QueryDocumentSnapshot<_Json>> _docs = [];
+  bool _loading = true;
+  bool _error = false;
+  String _term = '';
+
+  DocumentReference<_Json> get _storeRef =>
+      FirebaseFirestore.instance.collection('stores').doc(widget.storeId);
+
+  CollectionReference<_Json> get _col => _storeRef.collection('products');
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final snap = await _col
+          .orderBy('name')
+          .limit(_limit)
+          .get(const GetOptions(source: Source.server));
+      if (!mounted) return;
+      setState(() {
+        _docs = snap.docs;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = true;
+        _loading = false;
+      });
+    }
+  }
+
+  /// بيضبط عدد الأصناف المخزّن في المحل (للعرض عند المدير).
+  Future<void> _syncCount() async {
+    final snap = await _col.count().get();
+    await _storeRef.update({
+      'productCount': snap.count ?? 0,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// ملخص العروض والأكثر مبيعًا على مستند المحل (الرئيسية بتقراه من هنا).
+  Future<void> _syncHighlights() async {
+    try {
+      Map<String, dynamic> item(_Json m) => {
+        'name': (m['name'] ?? '').toString(),
+        'price': (m['price'] as num?) ?? 0,
+        if (m['oldPrice'] is num) 'oldPrice': m['oldPrice'],
+        'image': (m['image'] ?? '').toString(),
+      };
+      bool on(_Json m) => m['available'] != false && m['isAvailable'] != false;
+      final offers = <Map<String, dynamic>>[];
+      final best = <Map<String, dynamic>>[];
+      for (final d in _docs) {
+        final m = d.data();
+        if (!on(m)) continue;
+        final p = (m['price'] as num?) ?? 0;
+        final o = m['oldPrice'];
+        if (o is num && o > p && offers.length < 12) offers.add(item(m));
+        if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
+      }
+      await _storeRef.update({
+        'offerItems': offers,
+        'bestItems': best,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await CatalogService.bump();
+    } catch (_) {}
+  }
+
+  Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
+    final result = await showDialog<_ProductForm>(
+      context: context,
+      builder: (_) =>
+          _ProductDialog(existing: doc?.data(), storeId: widget.storeId),
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      if (doc == null) {
+        await _col.doc().set({
+          'name': result.name,
+          'price': result.price,
+          'image': result.image,
+          if (result.oldPrice != null) 'oldPrice': result.oldPrice,
+          if (result.bestSeller) 'bestSeller': true,
+          'isAvailable': true,
+          'available': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        await _syncCount();
+      } else {
+        await doc.reference.update({
+          'name': result.name,
+          'price': result.price,
+          'image': result.image,
+          'oldPrice': result.oldPrice ?? FieldValue.delete(),
+          'bestSeller': result.bestSeller,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await CatalogService.bump();
+      await _load();
+      await _syncHighlights();
+      _say('تم حفظ الصنف.');
+    } catch (e) {
+      _say('تعذر حفظ الصنف: ${_why(e)}');
+    }
+  }
+
+  /// اختيار صنف من القايمة ثم عمل عرض عليه.
+  Future<void> _pickForOffer() async {
+    if (_docs.isEmpty) {
+      _say('ضيف أصناف الأول عشان تعمل عليها عرض.');
+      return;
+    }
+    final picked = await showModalBottomSheet<QueryDocumentSnapshot<_Json>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'اختار الصنف اللي عايز تعمله عرض',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final d in _docs)
+                        ListTile(
+                          title: Text((d.data()['name'] ?? '').toString()),
+                          subtitle: Text(
+                            formatPrice((d.data()['price'] as num?) ?? 0),
+                          ),
+                          trailing: d.data()['oldPrice'] is num
+                              ? Icon(Icons.local_offer, color: kDanger)
+                              : null,
+                          onTap: () => Navigator.pop(ctx, d),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (picked != null && mounted) await _offer(picked);
+  }
+
+  /// عرض سريع: اختار نسبة خصم والسعر الجديد بيتحسب لوحده (والسعر الأصلي بيتحفظ مشطوب).
+  Future<void> _offer(QueryDocumentSnapshot<_Json> doc) async {
+    final m = doc.data();
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble();
+    final hasOffer = old != null && old > price;
+    final base = hasOffer ? old : price;
+    final pct = await showDialog<int>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(
+            'عرض على "${m['name'] ?? ''}"',
+            style: const TextStyle(fontSize: 16),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'السعر الأصلي: ${formatPrice(base)}',
+                style: TextStyle(color: kMuted),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final p in const [10, 15, 20, 25, 30, 40, 50])
+                    ActionChip(
+                      label: Text('$p%'),
+                      onPressed: () => Navigator.pop(ctx, p),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            if (hasOffer)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 0),
+                child: Text('إلغاء العرض', style: TextStyle(color: kDanger)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('رجوع'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (pct == null) return;
+    try {
+      if (pct == 0) {
+        await doc.reference.update({
+          'price': base,
+          'oldPrice': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        final np = ((base * (100 - pct) / 100) * 2).round() / 2;
+        if (np <= 0 || np >= base) {
+          _say('الخصم ده مش مناسب للسعر.');
+          return;
+        }
+        await doc.reference.update({
+          'price': np,
+          'oldPrice': base,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await CatalogService.bump();
+      await _load();
+      await _syncHighlights();
+      _say(pct == 0 ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
+    } catch (e) {
+      _say('تعذر تفعيل العرض: ${_why(e)}');
+    }
+  }
+
+  Future<void> _toggle(QueryDocumentSnapshot<_Json> doc, bool value) async {
+    try {
+      await doc.reference.update({
+        'available': value,
+        'isAvailable': value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await CatalogService.bump();
+      await _load();
+      await _syncHighlights();
+    } catch (_) {
+      _say('تعذر تغيير حالة الصنف.');
+    }
+  }
+
+  Future<void> _delete(QueryDocumentSnapshot<_Json> doc) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'حذف صنف',
+      message:
+          'حذف "${doc.data()['name'] ?? ''}" نهائيًا؟ (الإيقاف أنسب لو هيرجع تاني)',
+      confirmLabel: 'حذف',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await doc.reference.delete();
+      await _syncCount();
+      await CatalogService.bump();
+      await _load();
+      await _syncHighlights();
+      _say('تم حذف الصنف.');
+    } catch (_) {
+      _say('تعذر حذف الصنف.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final term = _term.trim().toLowerCase();
+    final shown = term.isEmpty
+        ? _docs
+        : _docs
+              .where(
+                (d) => (d.data()['name'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .contains(term),
+              )
+              .toList();
+
+    Widget body;
+    if (_loading) {
+      body = Center(child: CircularProgressIndicator(color: kPrimary));
+    } else if (_error) {
+      body = EmptyState(
+        icon: Icons.cloud_off,
+        title: 'تعذر تحميل الأصناف',
+        message: 'تأكد من الاتصال وحاول تاني.',
+        actionLabel: 'إعادة المحاولة',
+        onAction: _load,
+      );
+    } else if (shown.isEmpty) {
+      body = EmptyState(
+        icon: Icons.inventory_2_outlined,
+        title: term.isEmpty ? 'لسه مفيش أصناف' : 'مفيش نتائج',
+        message: term.isEmpty ? 'اضغط "إضافة صنف" عشان تبدأ.' : null,
+      );
+    } else {
+      body = ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
+        itemCount: shown.length,
+        itemBuilder: (context, i) {
+          final d = shown[i];
+          final m = d.data();
+          final available =
+              m['available'] != false && m['isAvailable'] != false;
+          final image = (m['image'] ?? '').toString();
+          final price = (m['price'] as num?) ?? 0;
+          return Card(
+            child: ListTile(
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: image.isEmpty
+                      ? Icon(Icons.image_outlined, color: kMuted)
+                      : Image.network(
+                          image,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.broken_image_outlined),
+                        ),
+                ),
+              ),
+              title: Text(
+                (m['name'] ?? '').toString(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                available
+                    ? '${formatPrice(price)}${m['oldPrice'] is num ? '  (بدل ${formatPrice(m['oldPrice'] as num)})' : ''}${m['bestSeller'] == true ? '  • الأكثر مبيعًا' : ''}'
+                    : '${formatPrice(price)} • موقوف',
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'عمل عرض',
+                    icon: Icon(Icons.local_offer_outlined, color: kPrimary),
+                    onPressed: () => _offer(d),
+                  ),
+                  Switch(value: available, onChanged: (v) => _toggle(d, v)),
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'edit') _edit(d);
+                      if (v == 'offer') _offer(d);
+                      if (v == 'delete') _delete(d);
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'offer',
+                        child: Text('عمل عرض / خصم'),
+                      ),
+                      PopupMenuItem(value: 'edit', child: Text('تعديل')),
+                      PopupMenuItem(value: 'delete', child: Text('حذف')),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: TextField(
+                controller: _search,
+                onChanged: (v) => setState(() => _term = v),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  hintText: 'ابحث في الأصناف',
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _pickForOffer,
+                  icon: const Icon(Icons.local_offer_outlined),
+                  label: const Text('عمل عرض / خصم على صنف'),
+                ),
+              ),
+            ),
+            Expanded(child: body),
+          ],
+        ),
+        PositionedDirectional(
+          end: 16,
+          bottom: 16,
+          child: FloatingActionButton.extended(
+            onPressed: () => _edit(null),
+            icon: const Icon(Icons.add),
+            label: const Text('إضافة صنف'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProductForm {
+  final String name;
+  final double price;
+  final String image;
+  final double? oldPrice;
+  final bool bestSeller;
+  const _ProductForm(
+    this.name,
+    this.price,
+    this.image, {
+    this.oldPrice,
+    this.bestSeller = false,
+  });
+}
+
+class _ProductDialog extends StatefulWidget {
+  final _Json? existing;
+  final String storeId;
+  const _ProductDialog({this.existing, required this.storeId});
+
+  @override
+  State<_ProductDialog> createState() => _ProductDialogState();
+}
+
+class _ProductDialogState extends State<_ProductDialog> {
+  late final TextEditingController _name = TextEditingController(
+    text: (widget.existing?['name'] ?? '').toString(),
+  );
+  late final TextEditingController _price = TextEditingController(
+    text: widget.existing?['price'] == null
+        ? ''
+        : (widget.existing!['price'] as num).toString(),
+  );
+  late final TextEditingController _old = TextEditingController(
+    text: widget.existing?['oldPrice'] is num
+        ? (widget.existing!['oldPrice'] as num).toString()
+        : '',
+  );
+  late bool _best = widget.existing?['bestSeller'] == true;
+  late String _image = (widget.existing?['image'] ?? '').toString();
+  bool _uploading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _price.dispose();
+    _old.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    try {
+      final url = await ImageService.pickAndUpload(
+        'products',
+        storeId: widget.storeId,
+      );
+      if (url != null && mounted) setState(() => _image = url);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'تعذر رفع الصورة. جرّب تاني.');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _save() {
+    final name = _name.text.trim();
+    final price = double.tryParse(_price.text.trim().replaceAll(',', '.'));
+    if (name.isEmpty || name.length > 120) {
+      setState(() => _error = 'اكتب اسم الصنف (حتى 120 حرف).');
+      return;
+    }
+    if (price == null || price <= 0 || price > 20000) {
+      setState(() => _error = 'اكتب سعر صحيح (من 1 لحد 20000).');
+      return;
+    }
+    double? oldPrice;
+    final oldTxt = _old.text.trim().replaceAll(',', '.');
+    if (oldTxt.isNotEmpty) {
+      oldPrice = double.tryParse(oldTxt);
+      if (oldPrice == null || oldPrice <= price || oldPrice > 20000) {
+        setState(
+          () => _error = 'السعر قبل الخصم لازم يكون أكبر من السعر الحالي.',
+        );
+        return;
+      }
+    }
+    Navigator.of(context).pop(
+      _ProductForm(name, price, _image, oldPrice: oldPrice, bestSeller: _best),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.existing == null ? 'إضافة صنف' : 'تعديل صنف'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'اسم الصنف'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _price,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'السعر الحالي (ج.م)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _old,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'السعر قبل الخصم (اختياري - لعمل عرض)',
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _best,
+              onChanged: (v) => setState(() => _best = v),
+              title: const Text('الأكثر مبيعًا'),
+            ),
+            const SizedBox(height: 4),
+            if (_image.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  _image,
+                  height: 110,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.broken_image_outlined),
+                ),
+              ),
+            TextButton.icon(
+              onPressed: _uploading ? null : _pickImage,
+              icon: _uploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.image_outlined),
+              label: Text(_image.isEmpty ? 'اختيار صورة' : 'تغيير الصورة'),
+            ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(_error!, style: const TextStyle(color: kDanger)),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('إلغاء'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('حفظ')),
+      ],
+    );
+  }
+}

@@ -1,0 +1,901 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // المدير = ليه مستند في admins/{uid} (بتضيفه يدويًا من Firebase Console).
+    // أو claim اسمه admin بيتحط من السيرفر فقط (Cloud Function: setUserRole).
+    function isAdmin() {
+      return signedIn() && (
+        request.auth.token.get('admin', false) == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // المندوب = ليه مستند في couriers/{uid} وحقل active مش false.
+    function isCourier() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/couriers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/couriers/$(request.auth.uid))
+          .data.get('active', true) == true;
+    }
+
+    // المشرف = ليه مستند في supervisors/{uid} وحقل active مش false. بيدير مناديب مربوطين بيه.
+    function isSupervisor() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/supervisors/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/supervisors/$(request.auth.uid))
+          .data.get('active', true) == true;
+    }
+
+    // صاحب المحل = ليه مستند في storeOwners/{uid} فيه storeId وحقل active مش false.
+    // المدير هو اللي بيضيفه (من التطبيق)، وصاحب المحل ما يقدرش يكتب في المستند ده.
+    function isStoreOwner(storeId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/storeOwners/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/storeOwners/$(request.auth.uid))
+          .data.get('active', true) == true &&
+        get(/databases/$(database)/documents/storeOwners/$(request.auth.uid))
+          .data.get('storeId', '') == storeId;
+    }
+
+    // أي صاحب محل نشط (للكتالوج المشترك app_info/catalog).
+    function isAnyStoreOwner() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/storeOwners/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/storeOwners/$(request.auth.uid))
+          .data.get('active', true) == true;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function validStatus(s) {
+      return s in ['new', 'preparing', 'on_the_way', 'delivered', 'cancelled'];
+    }
+
+    // ───────────── مفاتيح التشغيل التدريجي (app_info/security) ─────────────
+    // مستند اختياري بتكتبه من Console بس. لو مش موجود أو الحقل false، القاعدة المقابلة مش مفعّلة:
+    //   strictOrders: true  ← كل تغيير حالة لازم يتسجّل في statusHistory، والمدير بيتحرك للأمام بس
+    //   enforcePrices: true ← كل صنف في الطلب لازم يحمل productId وسعره يطابق الكتالوج (حتى 8 أصناف)
+    //   courierAfterPrep: true ← المندوب ما يقدرش يبدأ التوصيل إلا بعد ما المحل يجهّز الطلب (preparing)
+    //   courierAfterReady: true ← المندوب ما يقدرش يبدأ التوصيل إلا بعد ما المحل/الأدمن يضغط «جاهز للاستلام» (ready)
+    //   stampDeliveries: true ← التسليم لازم يتسجّل معاه deliveredBy/deliveredAt/collectedAmount/courierEarning
+    //                          (إحصائيات المندوب والمدير). فعّله بعد ما كل المناديب يحدّثوا التطبيق.
+    // فعّلهم بعد ما كل العملاء يحدّثوا التطبيق (راجع SECURITY_CHECKLIST.md).
+    function securityFlag(name) {
+      return exists(/databases/$(database)/documents/app_info/security) &&
+        get(/databases/$(database)/documents/app_info/security).data.get(name, false) == true;
+    }
+
+
+    // ───────────── ختم التسليم (إحصائيات المناديب والمدير) ─────────────
+    // عند التسليم بيتسجّل: مين سلّم (deliveredBy)، إمتى (deliveredAt = وقت السيرفر)،
+    // المبلغ المحصّل (collectedAmount = الإجمالي المعتمد أو الأصلي)، وعمولة المندوب
+    // (courierEarning = رسوم التوصيل في الطلب). القواعد بتتحقق إن الأرقام دي مطابقة للطلب،
+    // فالمندوب ما يقدرش يكتب أرقام من عنده.
+    function stampKeys() {
+      return ['deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning'];
+    }
+
+    function deliveryStampOk(courierUid) {
+      return !changedKeys().hasAny(stampKeys()) || (
+        changedKeys().hasAll(stampKeys()) &&
+        request.resource.data.status == 'delivered' &&
+        courierUid != '' &&
+        request.resource.data.deliveredBy == courierUid &&
+        request.resource.data.deliveredAt == request.time &&
+        request.resource.data.courierEarning ==
+          request.resource.data.get('finalDeliveryFee', request.resource.data.deliveryFee) &&
+        request.resource.data.collectedAmount ==
+          request.resource.data.get('verifiedTotal', request.resource.data.total));
+    }
+
+    // رسوم التوصيل النهائية: الأدمن بس بيحددها (لما يوافق على الطلب)، ولو ما حددهاش بتفضل الافتراضية.
+    function validFinalFee() {
+      return !('finalDeliveryFee' in changedKeys()) || (
+        request.resource.data.finalDeliveryFee is number &&
+        request.resource.data.finalDeliveryFee >= 0 &&
+        request.resource.data.finalDeliveryFee <= 500);
+    }
+
+    // لو stampDeliveries شغّال: أي تسليم من المندوب لازم يجي مع الختم.
+    function stampRequired() {
+      return !securityFlag('stampDeliveries') ||
+        request.resource.data.status != 'delivered' ||
+        changedKeys().hasAll(stampKeys());
+    }
+
+    function statusRank(st) {
+      return {'new': 0, 'preparing': 1, 'on_the_way': 2, 'delivered': 3, 'cancelled': 9}[st];
+    }
+
+    // المدير: ما يغيّرش حالة نهائية، ويتحرك للأمام أو يلغي بس.
+    function adminMoveOk() {
+      return !('status' in changedKeys()) || !securityFlag('strictOrders') || (
+        !(resource.data.status in ['delivered', 'cancelled']) &&
+        (request.resource.data.status == 'cancelled' ||
+         statusRank(request.resource.data.status) > statusRank(resource.data.status)));
+    }
+
+    // لو strictOrders شغّال: تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch).
+    function historyGate(orderId) {
+      // سجل الحالة إلزامي دائمًا عند تغيير status، وليس مرتبطًا بمفتاح تشغيل اختياري.
+      return !('status' in changedKeys()) ||
+        existsAfter(/databases/$(database)/documents/orders/$(orderId)/statusHistory/$(request.resource.data.status));
+    }
+
+    function validCourierForAssignment(courierId) {
+      return courierId is string && courierId.size() > 0 &&
+        exists(/databases/$(database)/documents/couriers/$(courierId)) &&
+        get(/databases/$(database)/documents/couriers/$(courierId)).data.get('active', true) == true;
+    }
+
+    // ───────────── التحقق من بيانات الطلب الجديد ─────────────
+    // الحد الأقصى لأصناف الطلب (100) لازم يطابق kMaxOrderLines في lib/services/order_service.dart.
+    // مهم: القواعد بتتأكد إن الأرقام متسقة مع بعض (الإجمالي = مجموع الأسطر + التوصيل)
+    // لكنها مابتقارنش بأسعار الكتالوج. المقارنة دي بيعملها المدير عند الاعتماد
+    // (verifiedTotal)، والمندوب بيحصّل المبلغ المعتمد.
+
+    function orderKeys() {
+      // الخصوصية: مستند الطلب العام (اللي بيقراه صاحب المحل والمناديب) مفيهوش موبايل ولا عنوان
+      // ولا إيميل ولا الاسم الكامل. دول في orders/{id}/private/contact (انظر تحت).
+      return ['userId', 'customerName', 'notes',
+              'storeId', 'storeName', 'items', 'subtotal', 'deliveryFee',
+              'total', 'paymentMethod', 'status', 'createdAt'];
+    }
+
+    // الخصم: صفر، أو كود نشط في promos/{code} والخصم ما يتعداش نسبته من المجموع.
+    function promoOk(d) {
+      return d.get('discount', 0) == 0 || (
+        d.get('promoCode', '') is string && d.discount is number && d.discount > 0 &&
+        d.subtotal is number && d.discount < d.subtotal &&
+        get(/databases/$(database)/documents/promos/$(d.promoCode)).data.active == true &&
+        d.discount <= d.subtotal * get(/databases/$(database)/documents/promos/$(d.promoCode)).data.percent / 100 + 0.01);
+    }
+
+    // المحل لازم يكون موجود ونشط (أي نوع محل: مطعم، بقالة، ورد، صيدلية...).
+    function eligibleStoreForOrder(d) {
+      return d.storeId is string && d.storeId.size() > 0 &&
+        exists(/databases/$(database)/documents/stores/$(d.storeId)) &&
+        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true;
+    }
+
+    // ───────────── إنشاء الطلب (نسخة مبسّطة) ─────────────
+    // زي تطبيقات التوصيل الصغيرة: العميل بيحسب الأسعار، والقواعد بتتأكد من الشكل والحدود بس.
+    // مراجعة السعر الحقيقي بتتم عند الأدمن (verifiedTotal) والمندوب بيحصّل المبلغ المعتمد.
+    // مفيش حد صغير للأصناف: الحد الأقصى 100 صنف، ومفيش قراءات لكل صنف.
+    function validNewOrder(d) {
+      return d.keys().hasOnly(orderKeys().concat(['area', 'promoCode', 'discount', 'freeDelivery'])) &&
+        d.keys().hasAll(orderKeys()) &&
+        (!('freeDelivery' in d) || (d.freeDelivery == true && d.deliveryFee == 0)) &&
+        d.get('area', '') is string && d.get('area', '').size() <= 60 &&
+        promoOk(d) &&
+        d.userId == request.auth.uid &&
+        d.status == 'new' &&
+        d.paymentMethod == 'cash' &&
+        d.createdAt == request.time &&
+        d.customerName is string && d.customerName.size() >= 1 && d.customerName.size() <= 30 &&
+        d.notes is string && d.notes.size() <= 500 &&
+        d.storeId is string && d.storeId.size() <= 100 &&
+        d.storeName is string && d.storeName.size() >= 1 && d.storeName.size() <= 100 &&
+        eligibleStoreForOrder(d) &&
+        d.items is list && d.items.size() >= 1 && d.items.size() <= 100 &&
+        d.subtotal is number && d.subtotal >= 0 && d.subtotal <= 100000 &&
+        d.deliveryFee is number && d.deliveryFee >= 0 && d.deliveryFee <= 500 &&
+        d.total is number && d.total > 0 && d.total <= 100000 &&
+        math.abs(d.total - (d.subtotal + d.deliveryFee - d.get('discount', 0))) < 0.01;
+    }
+
+    // بيانات التواصل في orders/{id}/private/contact.
+    function validContact(d) {
+      return d.keys().hasOnly(['userName', 'phone', 'address', 'courierNotes']) &&
+        d.keys().hasAll(['userName', 'phone', 'address']) &&
+        (!('courierNotes' in d) ||
+          (d.courierNotes is string && d.courierNotes.size() <= 300)) &&
+        d.userName is string && d.userName.size() >= 1 && d.userName.size() <= 80 &&
+        d.phone is string && d.phone.matches('^01[0125][0-9]{8}$') &&
+        d.address is string && d.address.size() >= 5 && d.address.size() <= 300;
+    }
+
+    // العميل يعدّل طلبه (الأصناف/الملاحظات/الاسم) طالما المحل ما قبلهوش (status = new).
+    // رسوم التوصيل والمحل والحالة ما بتتغيرش، والإجمالي لازم يفضل متسق.
+    function validCustomerEdit(n, o) {
+      return n.items is list && n.items.size() >= 1 && n.items.size() <= 100 &&
+        n.subtotal is number && n.subtotal >= 0 && n.subtotal <= 100000 &&
+        n.total is number && n.total > 0 && n.total <= 100000 &&
+        math.abs(n.total - (n.subtotal + o.deliveryFee - n.get('discount', 0))) < 0.01 &&
+        n.notes is string && n.notes.size() <= 500 &&
+        n.customerName is string && n.customerName.size() >= 1 && n.customerName.size() <= 30 &&
+        promoOk(n) &&
+        n.editedAt == request.time;
+    }
+
+    // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
+    function validVerification() {
+      return !('verifiedTotal' in changedKeys()) || (
+        request.resource.data.verifiedTotal is number &&
+        request.resource.data.verifiedTotal >= 0 &&
+        request.resource.data.verifiedTotal <= 100000 &&
+        request.resource.data.verifiedAt == request.time);
+    }
+
+    function userKeys() {
+      return ['name', 'phone', 'address', 'lat', 'lng', 'fcmTokens', 'fcmToken'];
+    }
+
+    function validUserFields(d) {
+      return (!('name' in d) || (d.name is string && d.name.size() <= 80)) &&
+        (!('phone' in d) || (d.phone is string && d.phone.size() <= 20)) &&
+        (!('address' in d) || (d.address is string && d.address.size() <= 300)) &&
+        (!('lat' in d) || d.lat is number) &&
+        (!('lng' in d) || d.lng is number) &&
+        (!('fcmToken' in d) || (d.fcmToken is string && d.fcmToken.size() <= 4096)) &&
+        (!('fcmTokens' in d) || (d.fcmTokens is list && d.fcmTokens.size() <= 20));
+    }
+
+    // صنف يكتبه صاحب المحل: حقول معروفة بس وبأنواع صحيحة.
+    function validOwnerProduct(d) {
+      return d.keys().hasOnly(['name', 'price', 'image', 'available', 'isAvailable',
+                               'oldPrice', 'bestSeller', 'createdAt', 'updatedAt']) &&
+        (!('oldPrice' in d) || (d.oldPrice is number && d.oldPrice > d.price && d.oldPrice <= 20000)) &&
+        (!('bestSeller' in d) || d.bestSeller is bool) &&
+        d.keys().hasAll(['name', 'price']) &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 120 &&
+        d.price is number && d.price > 0 && d.price <= 20000 &&
+        (!('image' in d) || (d.image is string && d.image.size() <= 500)) &&
+        (!('available' in d) || d.available is bool) &&
+        (!('isAvailable' in d) || d.isAvailable is bool);
+    }
+
+    // المحلات: القراءة لأي مستخدم مسجّل، والكتابة للمدير.
+    // صاحب المحل يعدّل محله هو فقط، وحقول التشغيل بس (فتح/إغلاق، مواعيد، صورة).
+    // الاسم والقسم والترتيب والتقييم للمدير فقط.
+    match /stores/{storeId} {
+      allow read: if signedIn();
+      allow create: if isAdmin();
+      // المدير أو صاحب المحل نفسه يحذف المحل (التطبيق بيحذف الأصناف الأول).
+      allow delete: if isAdmin() || isStoreOwner(storeId);
+      allow update: if isAdmin() ||
+        (isStoreOwner(storeId) &&
+          changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
+                                 'productCount', 'offerItems', 'bestItems',
+                                 'updatedAt']) &&
+          request.resource.data.get('active', true) is bool &&
+          request.resource.data.get('time', '') is string &&
+          request.resource.data.get('time', '').size() <= 60 &&
+          request.resource.data.get('image', '') is string &&
+          request.resource.data.get('image', '').size() <= 1000 &&
+          request.resource.data.get('imageUrl', '') is string &&
+          request.resource.data.get('imageUrl', '').size() <= 1000 &&
+          (!('productCount' in changedKeys()) ||
+            (request.resource.data.productCount is int &&
+             request.resource.data.productCount >= 0 &&
+             request.resource.data.productCount <= 10000)) &&
+          (!('offerItems' in changedKeys()) ||
+            (request.resource.data.offerItems is list &&
+             request.resource.data.offerItems.size() <= 12)) &&
+          (!('bestItems' in changedKeys()) ||
+            (request.resource.data.bestItems is list &&
+             request.resource.data.bestItems.size() <= 12)));
+
+      // العميل يحدّث إحصائية تقييم المحل فقط، مع تقييم جديد في نفس الـ batch (زي المناديب).
+      allow update: if signedIn() &&
+        changedKeys().hasOnly(['ratingSum', 'ratingCount', 'lastReviewId']) &&
+        request.resource.data.lastReviewId is string &&
+        !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)) &&
+        existsAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)) &&
+        getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.storeId == storeId &&
+        request.resource.data.ratingCount == resource.data.get('ratingCount', 0) + 1 &&
+        request.resource.data.ratingSum ==
+          resource.data.get('ratingSum', 0) +
+          getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
+
+      // أصناف المحل (stores/{id}/products/{pid}): المدير وصاحب المحل.
+      match /products/{productId} {
+        allow read: if signedIn();
+        allow delete: if isAdmin() || isStoreOwner(storeId);
+        allow create, update: if isAdmin() ||
+          (isStoreOwner(storeId) && validOwnerProduct(request.resource.data));
+      }
+    }
+
+    // سبب حذف الحساب: العميل يسجّل سببه، والمدير يقرأ.
+    match /account_deletions/{id} {
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 200;
+      allow read: if isAdmin();
+    }
+
+    // البوسترات: القراءة لأي مستخدم مسجّل، والكتابة للمدير فقط.
+    match /banners/{bannerId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // (قديم) علامة التوصيل المجاني لأول طلب: الميزة اتلغت من التطبيق، والقاعدة دي سايبينها
+    // عشان النسخ القديمة من التطبيق (لو لسه متثبتة عند حد) ما تفشلش. تقدر تشيلها بعد ما الكل يحدّث.
+    match /first_orders/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['orderId', 'createdAt']) &&
+        request.resource.data.orderId is string &&
+        request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // قائمة الطلبات المتاحة للمندوبين (من غير بيانات العميل). بتتكتب من التطبيق (بدون Cloud Functions):
+    // المدير أو صاحب المحل بتاع الطلب، لما الطلب يبقى preparing وبدون مندوب.
+    match /courier_available_orders/{orderId} {
+      allow get, list: if isCourier();
+
+      allow create: if signedIn() &&
+        (isAdmin() ||
+         isStoreOwner(getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', ''))) &&
+        getAfter(/databases/$(database)/documents/orders/$(orderId)).data.status == 'preparing' &&
+        getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
+        request.resource.data.storeId ==
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.storeId &&
+        request.resource.data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']);
+
+      allow update: if false;
+
+      allow delete: if signedIn() && (isAdmin() ||
+        isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')) ||
+        // getAfter: المندوب بيحذف عنصر القايمة في نفس الـ batch اللي بيستلم فيه الطلب.
+        (isCourier() &&
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid));
+    }
+
+    match /orders/{orderId} {
+      // العميل يشوف طلباته، والمندوب الطلبات المكلّف بيها، والمدير كل الطلبات.
+      allow read: if signedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin() ||
+        (isCourier() && resource.data.get('courierId', '') == request.auth.uid) ||
+        isStoreOwner(resource.data.get('storeId', ''))
+      );
+
+      // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
+      allow create: if signedIn() && validNewOrder(request.resource.data);
+
+      allow update: if
+        // المدير: يغيّر الحالة ويعيّن المندوب ويعتمد الإجمالي (verifiedTotal) فقط.
+        // محتوى الطلب نفسه (الأصناف والأسعار والإجمالي الأصلي) ما يتعدّلش أبدًا.
+        (isAdmin() &&
+          changedKeys().hasOnly(['status', 'courierId', 'courierName',
+                                 'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
+                                 'deliveredBy', 'deliveredAt', 'collectedAmount',
+                                 'courierEarning', 'finalDeliveryFee']) &&
+          validFinalFee() &&
+          validStatus(request.resource.data.status) &&
+          validVerification() &&
+          deliveryStampOk(resource.data.get('courierId', '')) &&
+          (!('courierId' in changedKeys()) ||
+            validCourierForAssignment(request.resource.data.courierId)) &&
+          adminMoveOk() && historyGate(orderId)) ||
+
+        // تعيين المندوب: المدير أو صاحب المحل الخاص بالطلب فقط (من غير شرط تقديم).
+        ((isAdmin() || isStoreOwner(resource.data.get('storeId', ''))) &&
+          resource.data.status == 'preparing' &&
+          resource.data.get('courierId', '') == '' &&
+          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          validCourierForAssignment(request.resource.data.courierId) &&
+          request.resource.data.courierName is string &&
+          request.resource.data.courierName.size() >= 1 &&
+          request.resource.data.courierName.size() <= 80 &&
+          request.resource.data.get('courierPhone', '') is string &&
+          request.resource.data.get('courierPhone', '').size() <= 20 &&
+          request.resource.data.courierAt == request.time) ||
+
+        // المحل (أو المدير) يأكّد إن الطلب جاهز للاستلام: حقلين بس (ready, readyAt)
+        // والحالة تفضل preparing. مفيش تغيير حالة، فمفيش statusHistory.
+        ((isAdmin() || isStoreOwner(resource.data.get('storeId', ''))) &&
+          resource.data.status == 'preparing' &&
+          changedKeys().hasOnly(['ready', 'readyAt']) &&
+          request.resource.data.ready == true &&
+          request.resource.data.readyAt == request.time) ||
+
+        // المندوب بيستلم طلب جاهز (preparing) ومحدّش خده. الشرط على resource.data
+        // بيخلّي الاستلام ذرّي: لو مندوبين داسوا مع بعض، الأول بس بينجح.
+        (isCourier() &&
+          resource.data.status == 'preparing' &&
+          resource.data.get('courierId', '') == '' &&
+          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          request.resource.data.courierId == request.auth.uid &&
+          request.resource.data.courierName is string &&
+          request.resource.data.courierName.size() >= 1 &&
+          request.resource.data.courierName.size() <= 80 &&
+          request.resource.data.get('courierPhone', '') is string &&
+          request.resource.data.get('courierPhone', '').size() <= 20 &&
+          request.resource.data.courierAt == request.time) ||
+
+        // إلغاء تعيين المندوب (المدير): بيشيل حقول المندوب والطلب يرجع للقايمة.
+        (isAdmin() &&
+          resource.data.status == 'preparing' &&
+          resource.data.get('courierId', '') != '' &&
+          changedKeys().hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          !('courierId' in request.resource.data)) ||
+
+        // المندوب: طلبه هو فقط، والحالة فقط، وبالترتيب (استلام ثم تسليم).
+        // لو courierAfterPrep شغّال: ما يبدأش التوصيل إلا بعد تجهيز المحل (preparing).
+        (isCourier() &&
+          resource.data.get('courierId', '') == request.auth.uid &&
+          changedKeys().hasOnly(['status', 'deliveredBy', 'deliveredAt',
+                                 'collectedAmount', 'courierEarning']) &&
+          deliveryStampOk(request.auth.uid) && stampRequired() &&
+          ((resource.data.status == 'preparing' &&
+              request.resource.data.status == 'on_the_way' &&
+              (!securityFlag('courierAfterReady') ||
+                resource.data.get('ready', false) == true)) ||
+           (resource.data.status == 'new' && !securityFlag('courierAfterPrep') &&
+              request.resource.data.status == 'on_the_way') ||
+           (resource.data.status == 'on_the_way' &&
+              request.resource.data.status == 'delivered')) &&
+          historyGate(orderId)) ||
+
+        // صاحب المحل: طلبات محله هو فقط، والحالة فقط:
+        // يقبل ويبدأ التجهيز (new ← preparing) أو يرفض طلبًا جديدًا (new ← cancelled).
+        // صاحب المحل يغيّر حالة طلب محله الجديد فقط، ولا يغيّر بيانات الطلب الأخرى.
+        (isStoreOwner(resource.data.get('storeId', '')) &&
+          changedKeys().hasOnly(['status']) &&
+          resource.data.status == 'new' &&
+          request.resource.data.status in ['preparing', 'cancelled'] &&
+          historyGate(orderId)) ||
+
+        // العميل: يعدّل طلبه طالما لسه جديد (المحل ما قبلهوش).
+        (signedIn() &&
+          resource.data.userId == request.auth.uid &&
+          resource.data.status == 'new' &&
+          'editedAt' in changedKeys() &&
+          changedKeys().hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
+                                 'promoCode', 'customerName', 'editedAt']) &&
+          validCustomerEdit(request.resource.data, resource.data)) ||
+
+        // العميل: يلغي طلبه طالما لسه جديد.
+        (signedIn() &&
+          resource.data.userId == request.auth.uid &&
+          resource.data.status == 'new' &&
+          request.resource.data.status == 'cancelled' &&
+          changedKeys().hasOnly(['status']) &&
+          historyGate(orderId));
+
+      // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
+      allow delete: if signedIn() &&
+        resource.data.userId == request.auth.uid &&
+        resource.data.status == 'new';
+
+      // ───────────── بيانات العميل الشخصية (خاصة) ─────────────
+      // orders/{id}/private/contact = { userName, phone, address, courierNotes? }.
+      //  • القراءة: العميل صاحب الطلب، والمدير، والمندوب المكلّف بالطلب وهو لسه جاري فقط
+      //    (preparing / on_the_way). صاحب المحل والمناديب التانيين مفيش لهم وصول.
+      //  • الإنشاء: العميل مع طلبه في نفس الـ batch فقط. مفيش تعديل ولا حذف من التطبيق.
+      match /private/{doc} {
+        allow read: if signedIn() && doc == 'contact' && (
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
+          isAdmin() ||
+          (isCourier() &&
+            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
+            get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['preparing', 'on_the_way']));
+        allow create: if signedIn() && doc == 'contact' &&
+          !exists(/databases/$(database)/documents/orders/$(orderId)) &&
+          existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
+          validContact(request.resource.data);
+        // العميل يعدّل بياناته أو يحذفها (مع حذف الطلب) طالما الطلب لسه new.
+        allow update, delete: if signedIn() && doc == 'contact' &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
+          (request.method == 'delete' || validContact(request.resource.data));
+      }
+
+      // سجل الحالات: create فقط. معرّف المستند = الحالة الجديدة، فمفيش حدث بيتكرر.
+      // لازم يتكتب في نفس الـ batch اللي بيغيّر حالة الطلب.
+      // المناديب المتقدّمين على الطلب: المندوب بيسجّل نفسه (طلب اهتمام) والمدير هو اللي يختار
+      // ويعيّن بـ assignCourier. التقديم مش بيغيّر الطلب نفسه.
+      match /applicants/{cid} {
+        allow get: if signedIn() && (cid == request.auth.uid || isAdmin() ||
+          isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')));
+        allow list: if signedIn() && (isAdmin() ||
+          isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')));
+        allow create: if isCourier() && cid == request.auth.uid &&
+          request.resource.data.keys().hasOnly(['courierId', 'courierName', 'courierPhone', 'createdAt']) &&
+          request.resource.data.keys().hasAll(['courierId', 'courierName', 'createdAt']) &&
+          request.resource.data.courierId == request.auth.uid &&
+          request.resource.data.courierName is string &&
+          request.resource.data.courierName.size() <= 80 &&
+          request.resource.data.get('courierPhone', '') is string &&
+          request.resource.data.get('courierPhone', '').size() <= 20 &&
+          request.resource.data.createdAt == request.time &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'preparing' &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '';
+        allow update: if false;
+        allow delete: if isAdmin() || (isCourier() && cid == request.auth.uid);
+      }
+
+      match /statusHistory/{evt} {
+        allow read: if signedIn() && (
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
+          isAdmin() ||
+          (isCourier() &&
+            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid) ||
+          isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')));
+        allow create: if signedIn() &&
+          request.resource.data.keys().hasOnly(['from', 'to', 'actorUid', 'actorRole', 'at']) &&
+          request.resource.data.keys().hasAll(['from', 'to', 'actorUid', 'actorRole', 'at']) &&
+          evt == request.resource.data.to &&
+          validStatus(request.resource.data.to) &&
+          request.resource.data.actorUid == request.auth.uid &&
+          request.resource.data.at == request.time &&
+          request.resource.data.from ==
+            get(/databases/$(database)/documents/orders/$(orderId)).data.status &&
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.status ==
+            request.resource.data.to &&
+          ((request.resource.data.actorRole == 'admin' && isAdmin()) ||
+           (request.resource.data.actorRole == 'courier' && isCourier()) ||
+           (request.resource.data.actorRole in ['owner', 'storeOwner'] &&
+              isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', ''))) ||
+           (request.resource.data.actorRole == 'customer' &&
+              get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid));
+        allow update, delete: if false;
+      }
+    }
+
+    // بيانات المستخدم: صاحبها بس.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      // ممنوع المستخدم يكتب حقل role (أو أي حقل صلاحيات) في مستنده.
+      // الحقول المسموحة بس (whitelist). أي حقل جديد (محفظة، صلاحيات...) لازم يتضاف هنا صراحةً.
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(userKeys()) &&
+        validUserFields(request.resource.data);
+      allow update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(userKeys()) &&
+        validUserFields(request.resource.data);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // معلومات التطبيق (app_info/*): contact, version, security, delivery_areas, catalog...
+    // القراءة لأي مستخدم مسجّل. الكتابة للمدير، ما عدا app_info/catalog (رقم إصدار الكتالوج)
+    // فمسموح كمان لأي صاحب محل بحقلين بس (version, updatedAt).
+    // (كانت قاعدتين match مكررتين لنفس المسار، اتدمجوا في واحدة بنفس الصلاحيات بالظبط.)
+    match /app_info/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin() ||
+        (doc == 'catalog' && isAnyStoreOwner() &&
+          request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
+          request.resource.data.version is number);
+    }
+
+    // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ───────────── الإشعارات داخل التطبيق ─────────────
+    // العميل (أو المندوب) يقرأ إشعاراته هو بس، ويعلّمها مقروءة أو يمسحها.
+    // الكتابة (إنشاء) من المدير أو المندوب بس، بحقول محددة (StaffOrderService._notify).
+    match /notifications/{nid} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      // الإشعار لازم يتعلّق بطلب حقيقي: المستلم هو عميل الطلب أو مندوبه، والكاتب هو المدير أو
+      // مندوب الطلب أو صاحب المحل بتاعه (يمنع إرسال رسائل لأي مستخدم عشوائي).
+      allow create: if signedIn() &&
+        request.resource.data.get('orderId', '') is string &&
+        request.resource.data.orderId.size() > 0 &&
+        exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
+        (get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId ==
+           request.resource.data.userId ||
+         get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('courierId', '') ==
+           request.resource.data.userId) &&
+        (isAdmin() ||
+         (isCourier() &&
+           get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('courierId', '') ==
+             request.auth.uid) ||
+         isStoreOwner(get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('storeId', ''))) &&
+        request.resource.data.keys().hasOnly(
+          ['userId', 'title', 'body', 'orderId', 'read', 'createdAt']) &&
+        request.resource.data.userId is string &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() <= 120 &&
+        request.resource.data.body is string &&
+        request.resource.data.body.size() <= 300 &&
+        request.resource.data.orderId is string &&
+        request.resource.data.read == false &&
+        request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && resource.data.userId == request.auth.uid &&
+        changedKeys().hasOnly(['read']) &&
+        request.resource.data.read is bool;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ───────────── تقييم المندوب ─────────────
+    // معرّف التقييم = orderId + '_courier'، فالطلب الواحد يتقيّم مرة واحدة.
+    // التقييم والتحديث التراكمي لمستند المندوب (ratingSum/ratingCount) لازم يتكتبوا
+    // في نفس الـ batch، والقواعد بتربط الاتنين ببعض (getAfter / existsAfter).
+    function validCourierReview(rid, d) {
+      return d.keys().hasOnly(['orderId', 'courierId', 'userId', 'rating',
+                               'comment', 'createdAt']) &&
+        d.keys().hasAll(['orderId', 'courierId', 'userId', 'rating',
+                         'comment', 'createdAt']) &&
+        d.orderId is string && d.courierId is string && d.courierId.size() > 0 &&
+        rid == d.orderId + '_courier' &&
+        d.userId == request.auth.uid &&
+        d.rating is int && d.rating >= 1 && d.rating <= 5 &&
+        d.comment is string && d.comment.size() <= 300 &&
+        d.createdAt == request.time &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.status == 'delivered' &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierId', '') == d.courierId &&
+        getAfter(/databases/$(database)/documents/couriers/$(d.courierId)).data.get('lastReviewId', '') == rid;
+    }
+
+    // تقييم المحل: reviews/{orderId}_store بعد تسليم الطلب، مرة واحدة لكل طلب.
+    function validStoreReview(rid, d) {
+      return d.keys().hasOnly(['orderId', 'storeId', 'userId', 'rating',
+                               'comment', 'createdAt']) &&
+        d.keys().hasAll(['orderId', 'storeId', 'userId', 'rating',
+                         'comment', 'createdAt']) &&
+        d.orderId is string && d.storeId is string && d.storeId.size() > 0 &&
+        rid == d.orderId + '_store' &&
+        d.userId == request.auth.uid &&
+        d.rating is int && d.rating >= 1 && d.rating <= 5 &&
+        d.comment is string && d.comment.size() <= 300 &&
+        d.createdAt == request.time &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.status == 'delivered' &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId &&
+        getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('lastReviewId', '') == rid;
+    }
+
+    match /reviews/{rid} {
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin() ||
+        (resource.data.get('storeId', '') != '' && isStoreOwner(resource.data.get('storeId', ''))));
+      allow create: if signedIn() && (validCourierReview(rid, request.resource.data) ||
+        validStoreReview(rid, request.resource.data));
+      allow update, delete: if false;
+    }
+
+    // ───────────── طلبات الانضمام (مندوب / صاحب محل) ─────────────
+    // معرّف المستند = uid + '_' + type، فالمستخدم عنده طلب واحد لكل نوع.
+    // المستخدم ينشئ طلبه (pending) ويقدر يعيد التقديم لو اترفض. المدير بس هو اللي يقبل/يرفض.
+    // الموافقة نفسها (كتابة couriers أو storeOwners) بيعملها المدير من التطبيق.
+    function optStr(d, k, max) {
+      return !(k in d) || (d[k] is string && d[k].size() <= max);
+    }
+
+    function validRoleRequest(rid, d) {
+      return d.keys().hasOnly(['userId', 'userEmail', 'type', 'name', 'phone', 'status',
+                               'createdAt', 'storeName', 'address', 'vehicle', 'notes']) &&
+        d.keys().hasAll(['userId', 'type', 'name', 'phone', 'status', 'createdAt']) &&
+        d.userId == request.auth.uid &&
+        d.type in ['store_owner', 'courier'] &&
+        rid == d.userId + '_' + d.type &&
+        d.status == 'pending' &&
+        d.createdAt == request.time &&
+        d.get('userEmail', '') == request.auth.token.get('email', '') &&
+        d.name is string && d.name.size() >= 2 && d.name.size() <= 80 &&
+        d.phone is string && d.phone.matches('^01[0125][0-9]{8}$') &&
+        optStr(d, 'storeName', 100) && optStr(d, 'address', 300) &&
+        optStr(d, 'vehicle', 60) && optStr(d, 'notes', 500) &&
+        (d.type != 'store_owner' ||
+          ('storeName' in d && d.storeName.size() >= 2 && 'address' in d && d.address.size() >= 5)) &&
+        (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
+    }
+
+    match /role_requests/{rid} {
+      allow get: if signedIn() && (isAdmin() || rid.matches(request.auth.uid + '_.*'));
+      allow list: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow create: if signedIn() && validRoleRequest(rid, request.resource.data);
+      allow update: if
+        (isAdmin() &&
+          changedKeys().hasOnly(['status', 'reviewedAt', 'reviewedBy', 'adminNote']) &&
+          request.resource.data.status in ['approved', 'rejected'] &&
+          request.resource.data.reviewedAt == request.time &&
+          request.resource.data.reviewedBy == request.auth.uid &&
+          request.resource.data.get('adminNote', '') is string &&
+          request.resource.data.get('adminNote', '').size() <= 300) ||
+        // إعادة التقديم بعد الرفض فقط (بيستبدل المستند كله بطلب pending جديد).
+        (signedIn() && resource.data.userId == request.auth.uid &&
+          resource.data.status == 'rejected' &&
+          validRoleRequest(rid, request.resource.data));
+      allow delete: if false;
+    }
+
+    // ───────────── الشكاوى والاقتراحات ─────────────
+    // أي مستخدم مسجّل (عميل أو مندوب أو صاحب محل) يبعت، ويقرأ بتاعته بس. المدير يقرأ الكل ويرد/يقفل.
+    // نوع order_issue لازم يشاور على طلب بتاع نفس المستخدم.
+    function validComplaint(d) {
+      return d.keys().hasOnly(['userId', 'userEmail', 'userName', 'kind', 'message',
+                               'orderId', 'appRole', 'status', 'createdAt']) &&
+        d.keys().hasAll(['userId', 'kind', 'message', 'status', 'createdAt']) &&
+        d.userId == request.auth.uid &&
+        d.kind in ['complaint', 'suggestion', 'order_issue'] &&
+        d.status == 'open' &&
+        d.createdAt == request.time &&
+        d.message is string && d.message.size() >= 5 && d.message.size() <= 1000 &&
+        d.get('userEmail', '') == request.auth.token.get('email', '') &&
+        optStr(d, 'userName', 80) && optStr(d, 'appRole', 20) &&
+        optStr(d, 'orderId', 60) &&
+        (d.kind != 'order_issue' || (
+          'orderId' in d && d.orderId.size() > 0 &&
+          get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid));
+    }
+
+    match /complaints/{cid} {
+      allow create: if signedIn() && validComplaint(request.resource.data);
+      allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow update: if isAdmin() &&
+        changedKeys().hasOnly(['status', 'adminNote', 'resolvedAt']) &&
+        request.resource.data.status in ['open', 'in_progress', 'resolved'] &&
+        request.resource.data.get('adminNote', '') is string &&
+        request.resource.data.get('adminNote', '').size() <= 500;
+      allow delete: if false;
+    }
+
+    // أصحاب المحلات: كل صاحب محل يقرأ مستنده هو، والمدير يقرأ الكل ويضيف ويعدّل ويوقف.
+    // الشكل: { name, storeId, active }. صاحب المحل مايقدرش يكتب هنا أبدًا.
+    match /storeOwners/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['name', 'storeId', 'active', 'phone']) &&
+        request.resource.data.keys().hasAll(['name', 'storeId']) &&
+        request.resource.data.name is string && request.resource.data.name.size() <= 80 &&
+        request.resource.data.storeId is string && request.resource.data.storeId.size() > 0 &&
+        request.resource.data.get('active', true) is bool;
+      allow delete: if isAdmin();
+    }
+
+    // المناديب: المدير يقرأ الكل (عشان التعيين)، والمندوب يقرأ مستنده هو.
+    // الإضافة والتعديل من الـ Console فقط.
+    match /couriers/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      // المدير بيضيف المناديب ويعدّلهم ويوقفهم من التطبيق.
+      allow create, update, delete: if isAdmin();
+      // المشرف يشوف المناديب المربوطين بيه ويوقفهم/يفعّلهم بس.
+      allow list: if isSupervisor() && resource.data.get('supervisorId', '') == request.auth.uid;
+      allow update: if isSupervisor() &&
+        resource.data.get('supervisorId', '') == request.auth.uid &&
+        changedKeys().hasOnly(['active']) && request.resource.data.active is bool;
+      // العميل يقدر يحدّث إحصائية التقييم فقط، ومع تقييم جديد في نفس الـ batch
+      // (!exists = التقييم لسه ما اتكتبش قبل كده، عشان ما يتكررش احتسابه).
+      allow update: if signedIn() &&
+        changedKeys().hasOnly(['ratingSum', 'ratingCount', 'lastReviewId']) &&
+        request.resource.data.lastReviewId is string &&
+        !exists(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)) &&
+        existsAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)) &&
+        getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.courierId == uid &&
+        request.resource.data.ratingCount == resource.data.get('ratingCount', 0) + 1 &&
+        request.resource.data.ratingSum ==
+          resource.data.get('ratingSum', 0) +
+          getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
+    }
+
+    // المشرفين: المدير يضيفهم ويعدّلهم، والمشرف يقرأ مستنده هو.
+    match /supervisors/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['name', 'phone', 'active']);
+      allow delete: if isAdmin();
+    }
+
+    // تسوية عمولات المناديب: المدير يسجّل المبالغ المستلمة من المندوب، والمندوب يقرأ بتاعته.
+    match /courier_settlements/{sid} {
+      allow create: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['courierId', 'courierName', 'amount', 'note', 'createdAt']) &&
+        request.resource.data.courierId is string &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 && request.resource.data.amount <= 1000000 &&
+        request.resource.data.get('note', '') is string &&
+        request.resource.data.get('note', '').size() <= 200 &&
+        request.resource.data.createdAt == request.time;
+      allow read: if signedIn() && (isAdmin() ||
+        (isCourier() && resource.data.courierId == request.auth.uid));
+      allow update, delete: if false;
+    }
+
+    // كوبونات الخصم: العميل يقرأ كود واحد بالاسم، والمدير يدير الكل.
+    match /promos/{code} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['percent', 'active', 'note', 'updatedAt']) &&
+        request.resource.data.percent is number &&
+        request.resource.data.percent > 0 && request.resource.data.percent <= 50 &&
+        request.resource.data.active is bool;
+      allow delete: if isAdmin();
+    }
+
+    // المدير يقدر يقرا كل تقديمات المناديب مرة واحدة (collection group) في تبويب "تقديمات المناديب".
+    match /{path=**}/applicants/{cid} {
+      allow list: if isAdmin();
+    }
+
+    // ───────────── شات مباشر مع الإدارة ─────────────
+    // support_chats/{uid}: محادثة واحدة لكل مستخدم (العميل/المندوب/صاحب المحل) مع الإدارة.
+    // الشكل: { userId, userName, userEmail, appRole, lastMessage, lastSender ('user'|'admin'),
+    //          lastAt, unreadForAdmin, unreadForUser }.
+    // الرسائل في support_chats/{uid}/messages: { senderId, senderRole, text, createdAt }.
+    // الرسالة بتتكتب مع تحديث مستند المحادثة في نفس الـ batch.
+    match /support_chats/{uid} {
+      function chatTextOk(t) {
+        return t is string && t.size() <= 200;
+      }
+
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['userId', 'userName', 'userEmail', 'appRole',
+          'lastMessage', 'lastSender', 'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
+        request.resource.data.keys().hasAll(['userId', 'lastMessage', 'lastSender', 'lastAt',
+          'unreadForAdmin', 'unreadForUser']) &&
+        request.resource.data.userId == uid &&
+        request.resource.data.lastSender == 'user' &&
+        request.resource.data.lastAt == request.time &&
+        request.resource.data.unreadForAdmin == true &&
+        request.resource.data.unreadForUser == false &&
+        chatTextOk(request.resource.data.lastMessage) &&
+        request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
+        optStr(request.resource.data, 'userName', 80) &&
+        optStr(request.resource.data, 'appRole', 20);
+
+      allow update: if signedIn() && (
+        // صاحب المحادثة بيبعت رسالة
+        (request.auth.uid == uid &&
+          changedKeys().hasOnly(['userName', 'userEmail', 'appRole', 'lastMessage', 'lastSender',
+            'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
+          request.resource.data.lastSender == 'user' &&
+          request.resource.data.lastAt == request.time &&
+          request.resource.data.unreadForAdmin == true &&
+          request.resource.data.unreadForUser == false &&
+          chatTextOk(request.resource.data.lastMessage) &&
+          request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
+          optStr(request.resource.data, 'userName', 80) &&
+          optStr(request.resource.data, 'appRole', 20)) ||
+        // صاحب المحادثة فتحها (قرأ ردّ الإدارة)
+        (request.auth.uid == uid &&
+          changedKeys().hasOnly(['unreadForUser']) &&
+          request.resource.data.unreadForUser == false) ||
+        // المدير بيرد
+        (isAdmin() &&
+          changedKeys().hasOnly(['lastMessage', 'lastSender', 'lastAt', 'unreadForUser',
+            'unreadForAdmin']) &&
+          request.resource.data.lastSender == 'admin' &&
+          request.resource.data.lastAt == request.time &&
+          request.resource.data.unreadForUser == true &&
+          request.resource.data.unreadForAdmin == false &&
+          chatTextOk(request.resource.data.lastMessage)) ||
+        // المدير فتح المحادثة
+        (isAdmin() &&
+          changedKeys().hasOnly(['unreadForAdmin']) &&
+          request.resource.data.unreadForAdmin == false));
+
+      allow delete: if false;
+
+      match /messages/{mid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create: if signedIn() &&
+          request.resource.data.keys().hasOnly(['senderId', 'senderRole', 'text', 'createdAt']) &&
+          request.resource.data.keys().hasAll(['senderId', 'senderRole', 'text', 'createdAt']) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000 &&
+          request.resource.data.createdAt == request.time &&
+          ((request.resource.data.senderRole == 'user' && request.auth.uid == uid) ||
+           (request.resource.data.senderRole == 'admin' && isAdmin()));
+        allow update, delete: if false;
+      }
+    }
+  }
+}
