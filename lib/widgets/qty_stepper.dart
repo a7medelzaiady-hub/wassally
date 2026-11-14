@@ -16,12 +16,21 @@ class QtyStepper extends StatelessWidget {
   });
 
   Widget _button(IconData icon, String tooltip, VoidCallback onTap) {
-    return IconButton(
-      onPressed: onTap,
-      tooltip: tooltip,
-      icon: Icon(icon, size: 18, color: kPrimary),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(child: Icon(icon, size: 20, color: kPrimary)),
+          ),
+        ),
+      ),
     );
   }
 
