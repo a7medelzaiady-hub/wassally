@@ -25,6 +25,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   late final _name = TextEditingController(text: widget.initialName);
   late final _phone = TextEditingController(text: widget.initialPhone);
   final _store = TextEditingController();
+  String? _storeCategory;
   final _address = TextEditingController();
   final _vehicle = TextEditingController();
   final _notes = TextEditingController();
@@ -58,6 +59,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         name: _name.text,
         phone: _digits(_phone.text),
         storeName: _store.text,
+        storeCategory: _storeCategory ?? '',
         address: _address.text,
         vehicle: _vehicle.text,
         notes: _notes.text,
@@ -126,6 +128,31 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 ),
                 validator: (v) =>
                     (v ?? '').trim().length < 2 ? 'اكتب اسم المحل' : null,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _storeCategory,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'نوع نشاط المحل',
+                  prefixIcon: Icon(Icons.category_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'مطاعم', child: Text('مطاعم')),
+                  DropdownMenuItem(value: 'سوبر ماركت', child: Text('سوبر ماركت')),
+                  DropdownMenuItem(value: 'بقالة', child: Text('بقالة')),
+                  DropdownMenuItem(value: 'خضار وفاكهة', child: Text('خضار وفاكهة')),
+                  DropdownMenuItem(value: 'لحوم ودواجن', child: Text('لحوم ودواجن')),
+                  DropdownMenuItem(value: 'مخبوزات وحلويات', child: Text('مخبوزات وحلويات')),
+                  DropdownMenuItem(value: 'محمصات وعطارة', child: Text('محمصات وعطارة')),
+                  DropdownMenuItem(value: 'كافيه ومشروبات', child: Text('كافيه ومشروبات')),
+                  DropdownMenuItem(value: 'ورد وهدايا', child: Text('ورد وهدايا')),
+                  DropdownMenuItem(value: 'أخرى', child: Text('نشاط آخر')),
+                ],
+                onChanged: (value) => setState(() => _storeCategory = value),
+                validator: (value) => value == null || value.isEmpty
+                    ? 'اختار نوع نشاط المحل'
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
