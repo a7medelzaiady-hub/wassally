@@ -139,7 +139,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 ),
                 items: const [
                   DropdownMenuItem(value: 'مطاعم', child: Text('مطاعم')),
-                  DropdownMenuItem(value: 'سوبر ماركت', child: Text('سوبر ماركت')),
+                  DropdownMenuItem(value: 'سوبرماركت', child: Text('سوبر ماركت')),
                   DropdownMenuItem(value: 'بقالة', child: Text('بقالة')),
                   DropdownMenuItem(value: 'خضار وفاكهة', child: Text('خضار وفاكهة')),
                   DropdownMenuItem(value: 'لحوم ودواجن', child: Text('لحوم ودواجن')),
