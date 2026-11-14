@@ -40,6 +40,7 @@ class RoleRequestService {
     required String name,
     required String phone,
     String storeName = '',
+    String storeCategory = '',
     String address = '',
     String vehicle = '',
     String notes = '',
@@ -53,6 +54,7 @@ class RoleRequestService {
       'name': name.trim(),
       'phone': phone,
       if (type == JoinType.storeOwner) 'storeName': storeName.trim(),
+      if (type == JoinType.storeOwner) 'storeCategory': storeCategory.trim(),
       if (type == JoinType.storeOwner) 'address': address.trim(),
       if (type == JoinType.courier) 'vehicle': vehicle.trim(),
       if (notes.trim().isNotEmpty) 'notes': notes.trim(),
@@ -91,6 +93,7 @@ class RoleRequestService {
         final storeRef = db.collection('stores').doc();
         batch.set(storeRef, {
           'name': newName,
+          'category': (m['storeCategory'] ?? 'أخرى').toString(),
           'active': true,
           'time': '',
           'image': '',
