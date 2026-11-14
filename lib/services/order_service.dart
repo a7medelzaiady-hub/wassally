@@ -380,7 +380,7 @@ class OrderService {
 
     List<AppOrder> toList(QuerySnapshot<Map<String, dynamic>> snap) {
       final list = snap.docs
-          .where((d) => d.data().get('customerHidden') != true)
+          .where((d) => d.data()['customerHidden'] != true)
           .map((d) => AppOrder.fromMap(d.id, d.data()))
           .toList();
       list.sort((a, b) {
