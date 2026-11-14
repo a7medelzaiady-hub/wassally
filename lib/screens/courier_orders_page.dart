@@ -145,6 +145,8 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
   late final Stream<List<AppOrder>> _available =
       StaffOrderService.watchAvailableOrders();
   late final Future<RatingSummary?> _myRating = RatingService.courier(_uid);
+  late final Future<DeliveryStats> _todayStats =
+      StaffOrderService.loadCourierStats(_uid, since: startOfToday());
   _Tab _tab = _Tab.available;
 
   bool _isCurrent(AppOrder o) =>
@@ -297,13 +299,26 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
 
                     return Column(
                       children: [
-                        _statsCard(
-                          availableToday,
-                          StaffOrderService.courierStats(
-                            mine,
-                            _uid,
-                            since: today,
-                          ),
+                        FutureBuilder<DeliveryStats>(
+                          future: _todayStats,
+                          builder: (context, statsSnap) {
+                            if (statsSnap.hasError) {
+                              return Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                                child: Text(
+                                  'تعذر تحميل إحصائيات التسليم. اسحب لتحديث الصفحة أو حاول لاحقًا.',
+                                  style: TextStyle(color: kMuted, fontSize: 12),
+                                ),
+                              );
+                            }
+                            if (!statsSnap.hasData) {
+                              return const Padding(
+                                padding: EdgeInsets.all(18),
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            return _statsCard(availableToday, statsSnap.data!);
+                          },
                         ),
                         Container(
                           margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
