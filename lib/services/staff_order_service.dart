@@ -275,6 +275,7 @@ class StaffOrderService {
   static Stream<List<Courier>> watchCouriers({int limit = 100}) {
     return FirebaseFirestore.instance
         .collection('couriers')
+        .where('active', isEqualTo: true)
         .limit(limit.clamp(1, 200))
         .snapshots()
         .map((
@@ -283,7 +284,6 @@ class StaffOrderService {
       final list = <Courier>[];
       for (final d in snap.docs) {
         final m = d.data();
-        if (m['active'] != true) continue;
         list.add(
           Courier(
             id: d.id,
