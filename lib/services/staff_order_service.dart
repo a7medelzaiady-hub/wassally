@@ -111,7 +111,7 @@ class StaffOrderService {
   }) => _orders
       .where('courierId', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
-      .limit(limit.clamp(1, 100))
+      .limit(limit.clamp(1, 100).toInt())
       .snapshots()
       .map(_toList);
 
@@ -123,7 +123,7 @@ class StaffOrderService {
   }) => FirebaseFirestore.instance
       .collection('courier_available_orders')
       .orderBy('createdAt', descending: true)
-      .limit(limit.clamp(1, 100))
+      .limit(limit.clamp(1, 100).toInt())
       .snapshots()
       .map((s) => s.docs.map((d) => AppOrder.fromMap(d.id, d.data())).toList());
 
@@ -276,7 +276,7 @@ class StaffOrderService {
     return FirebaseFirestore.instance
         .collection('couriers')
         .where('active', isEqualTo: true)
-        .limit(limit.clamp(1, 200))
+        .limit(limit.clamp(1, 200).toInt())
         .snapshots()
         .map((
       snap,
