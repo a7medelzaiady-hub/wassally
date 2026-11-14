@@ -27,6 +27,7 @@ import '../widgets/promo_banners.dart';
 import 'categories_landing_page.dart' show kCategoryPhotos;
 import 'notifications_page.dart';
 import 'store_page.dart';
+import 'store_directory_page.dart';
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {
@@ -965,19 +966,11 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // الأقسام المتاحة أعلى الصفحة (الكل، مطاعم، سوبرماركت، ورد).
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 14, bottom: 2),
-                  child: _categoriesRow(parsed.categoryImages),
-                ),
-              ),
-
-              // البانر في النص (تحت الأقسام)
+              // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
               if (showBanner)
                 const SliverToBoxAdapter(
                   child: Padding(
-                    padding: EdgeInsets.only(top: 14),
+                    padding: EdgeInsets.only(top: 12),
                     child: PromoBanners(),
                   ),
                 ),
@@ -987,125 +980,66 @@ class _HomePageState extends State<HomePage>
 
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
                   child: Row(
                     children: [
                       Expanded(
                         child: Text(
-                          _category ?? 'المحلات',
-                          style: TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            color: Brand.ink,
-                          ),
+                          'أقسامنا المختلفة',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
-                      if (!loading && !hasError)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Brand.gold.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${filtered.length} محل',
-                            style: TextStyle(
-                              color: Brand.goldDeep,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12.5,
-                            ),
-                          ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
                         ),
+                        child: const Text('تسوق الكل'),
+                      ),
                     ],
                   ),
                 ),
               ),
 
-              if (loading)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                      child: CircularProgressIndicator(color: Brand.green),
+              SliverToBoxAdapter(
+                child: _categoriesRow(parsed.categoryImages),
+              ),
+
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
+                      ),
+                      icon: const Icon(Icons.shopping_bag_rounded),
+                      label: const Text('تسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Brand.green,
+                        foregroundColor: Colors.white,
+                        shape: const StadiumBorder(),
+                        elevation: 5,
+                      ),
                     ),
+                  ),
+                ),
+              ),
+
+              if (loading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 18),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
                 )
               else if (hasError)
                 SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Column(
-                      children: [
-                        const EmptyState(
-                          icon: Icons.cloud_off,
-                          title: 'حصل خطأ في تحميل المحلات',
-                          message: 'تأكد من الاتصال بالإنترنت وحاول تاني.',
-                        ),
-                        TextButton.icon(
-                          onPressed: _retry,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('إعادة المحاولة'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              else if (filtered.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: EmptyState(
-                      icon: all.isEmpty ? Icons.storefront : Icons.search_off,
-                      title: all.isEmpty
-                          ? 'لسه مفيش محلات'
-                          : 'مفيش نتائج مطابقة',
-                      message: all.isEmpty
-                          ? 'المحلات هتظهر هنا أول ما تتضاف.'
-                          : 'جرّب كلمة تانية أو اختار قسم مختلف.',
-                    ),
-                  ),
-                )
-              else
-                // كارتين جنب بعض بمسافات صغيرة وصور كبيرة
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 0.76,
-                        ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, i) => TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0, end: 1),
-                        duration: Duration(milliseconds: 420 + (i % 5) * 55),
-                        curve: Curves.easeOutCubic,
-                        builder: (context, value, child) => Opacity(
-                          opacity: value,
-                          child: Transform(
-                            alignment: Alignment.bottomCenter,
-                            transform: Matrix4.identity()
-                              ..setEntry(3, 2, 0.0014)
-                              ..rotateX((1 - value) * 0.055)
-                              ..translate(0.0, (1 - value) * 18),
-                            child: Transform.scale(
-                              scale: 0.97 + value * 0.03,
-                              child: child,
-                            ),
-                          ),
-                        ),
-                        child: _StoreGridCard(
-                          item: filtered[i],
-                          onTap: () => _openStore(filtered[i].store),
-                        ),
-                      ),
-                      childCount: filtered.length,
-                    ),
+                  child: TextButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة تحميل العروض والأقسام'),
                   ),
                 ),
 
