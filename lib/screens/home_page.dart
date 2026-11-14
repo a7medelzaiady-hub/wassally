@@ -650,7 +650,10 @@ class _HomePageState extends State<HomePage>
       ),
       child: TextField(
         controller: _searchCtrl,
-        onChanged: (v) => setState(() => _query = v.trim()),
+        readOnly: true,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
+        ),
         textInputAction: TextInputAction.search,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
