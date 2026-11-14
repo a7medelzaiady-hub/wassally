@@ -143,6 +143,15 @@ class AdminStoresPage extends StatefulWidget {
 
 class _AdminStoresPageState extends State<AdminStoresPage> {
   late final Stream<QuerySnapshot<_Json>> _stream = _stores.snapshots();
+  final TextEditingController _search = TextEditingController();
+  String _statusFilter = 'الكل';
+  String _categoryFilter = 'الكل';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   void _say(String message) {
     if (mounted) {
@@ -170,6 +179,34 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
             AdminStoreEditPage(storeId: id, data: data, nextOrder: nextOrder),
       ),
     );
+  }
+
+  Future<void> _deleteFromList(String id, String name) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'حذف المحل',
+      message: 'سيتم حذف «$name» وكل أصنافه نهائيًا. لا يمكن التراجع عن العملية.',
+      confirmLabel: 'حذف المحل',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      final products = _stores.doc(id).collection('products');
+      while (true) {
+        final page = await products.limit(400).get();
+        if (page.docs.isEmpty) break;
+        final batch = FirebaseFirestore.instance.batch();
+        for (final product in page.docs) {
+          batch.delete(product.reference);
+        }
+        await batch.commit();
+      }
+      await _stores.doc(id).delete();
+      await CatalogService.bump();
+      _say('تم حذف المحل وأصنافه.');
+    } catch (e) {
+      _say(_errorText(e));
+    }
   }
 
   @override
@@ -209,6 +246,25 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                       .reduce((a, b) => a > b ? a : b) +
                   1;
 
+        final query = _search.text.trim().toLowerCase();
+        final categories = <String>{
+          for (final doc in docs)
+            if ((doc.data()['category'] ?? '').toString().trim().isNotEmpty)
+              (doc.data()['category'] ?? '').toString().trim(),
+        }.toList()..sort();
+        final visible = docs.where((doc) {
+          final data = doc.data();
+          final name = (data['name'] ?? '').toString().toLowerCase();
+          final category = (data['category'] ?? '').toString();
+          final active = (data['active'] as bool?) ?? true;
+          final matchesStatus = _statusFilter == 'الكل' ||
+              (_statusFilter == 'مفتوح' && active) ||
+              (_statusFilter == 'مغلق' && !active);
+          final matchesCategory = _categoryFilter == 'الكل' ||
+              category == _categoryFilter;
+          return name.contains(query) && matchesStatus && matchesCategory;
+        }).toList();
+
         return Scaffold(
           appBar: AppBar(title: const Text('المحلات والأصناف')),
           floatingActionButton: FloatingActionButton.extended(
@@ -216,48 +272,193 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
             icon: const Icon(Icons.add),
             label: const Text('إضافة محل'),
           ),
-          body: docs.isEmpty
-              ? const Center(
-                  child: Text('لا توجد محلات حاليًا. اضغط إضافة محل.'),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data();
-
-                    final legacyCount = data['products'] is List
-                        ? (data['products'] as List).length
-                        : 0;
-
-                    final count =
-                        (data['productCount'] as num?)?.toInt() ?? legacyCount;
-
-                    return Card(
-                      child: ListTile(
-                        onTap: () => _open(doc.id, data, nextOrder),
-                        title: Text((data['name'] ?? '').toString()),
-                        subtitle: Text(
-                          '${data['category'] ?? ''} • $count صنف',
-                        ),
-                        leading: AppImage(
-                          url: _storeImage(data),
-                          fallbackIcon: Icons.store,
-                          color: kPrimary,
-                          width: 48,
-                          height: 48,
-                          iconSize: 24,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        trailing: Switch(
-                          value: (data['active'] as bool?) ?? true,
-                          onChanged: (value) => _toggle(doc.id, value),
+          body: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: TextField(
+                  controller: _search,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'ابحث باسم المحل',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _search.text.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              _search.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 48,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: [
+                    for (final filter in ['الكل', 'مفتوح', 'مغلق'])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(filter),
+                          selected: _statusFilter == filter,
+                          onSelected: (_) => setState(() {
+                            _statusFilter = filter;
+                            _categoryFilter = 'الكل';
+                          }),
                         ),
                       ),
-                    );
-                  },
+                    for (final category in categories)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(category),
+                          selected: _categoryFilter == category,
+                          onSelected: (_) => setState(() {
+                            _categoryFilter = category;
+                            _statusFilter = 'الكل';
+                          }),
+                        ),
+                      ),
+                  ],
                 ),
+              ),
+              Expanded(
+                child: visible.isEmpty
+                    ? Center(
+                        child: Text(
+                          docs.isEmpty
+                              ? 'لا توجد محلات حاليًا. اضغط إضافة محل.'
+                              : 'لا توجد نتائج مطابقة للبحث أو التصفية.',
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+                        itemCount: visible.length,
+                        itemBuilder: (context, index) {
+                          final doc = visible[index];
+                          final data = doc.data();
+                          final name = (data['name'] ?? 'محل بدون اسم').toString();
+                          final category = (data['category'] ?? 'بدون قسم').toString();
+                          final legacyCount = data['products'] is List
+                              ? (data['products'] as List).length
+                              : 0;
+                          final count = (data['productCount'] as num?)?.toInt() ??
+                              legacyCount;
+                          final active = (data['active'] as bool?) ?? true;
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              side: BorderSide(color: kLine),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      AppImage(
+                                        url: _storeImage(data),
+                                        fallbackIcon: Icons.storefront_rounded,
+                                        color: kPrimary,
+                                        width: 62,
+                                        height: 62,
+                                        iconSize: 30,
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              name,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 5),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 4,
+                                              children: [
+                                                Chip(
+                                                  label: Text(category,
+                                                      style: const TextStyle(fontSize: 11)),
+                                                  visualDensity: VisualDensity.compact,
+                                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                ),
+                                                Text('$count صنف',
+                                                    style: TextStyle(color: kMuted, fontSize: 12)),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Column(
+                                        children: [
+                                          Switch(
+                                            value: active,
+                                            onChanged: (value) => _toggle(doc.id, value),
+                                          ),
+                                          Text(
+                                            active ? 'مفتوح' : 'مغلق',
+                                            style: TextStyle(
+                                              color: active ? Colors.green : kMuted,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  const Divider(height: 18),
+                                  Wrap(
+                                    alignment: WrapAlignment.spaceBetween,
+                                    spacing: 4,
+                                    runSpacing: 0,
+                                    children: [
+                                      TextButton.icon(
+                                        onPressed: () => _open(doc.id, data, nextOrder),
+                                        icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                                        label: const Text('إدارة الأصناف'),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () => _open(doc.id, data, nextOrder),
+                                        icon: const Icon(Icons.edit_outlined, size: 18),
+                                        label: const Text('تعديل المحل'),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () => _deleteFromList(doc.id, name),
+                                        style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                        icon: const Icon(Icons.delete_outline, size: 18),
+                                        label: const Text('حذف المحل'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         );
       },
     );
