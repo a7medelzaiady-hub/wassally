@@ -55,8 +55,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   String? _category;
-  String _query = '';
-  final TextEditingController _searchCtrl = TextEditingController();
 
   // العنوان المحفوظ للعميل.
   String _address = '';
@@ -115,7 +113,6 @@ class _HomePageState extends State<HomePage>
   @override
   void dispose() {
     _msgSub?.cancel();
-    _searchCtrl.dispose();
     _bellCtrl.dispose();
     _player.dispose();
     super.dispose();
@@ -649,7 +646,6 @@ class _HomePageState extends State<HomePage>
         border: Border.all(color: Colors.grey.shade300, width: 1),
       ),
       child: TextField(
-        controller: _searchCtrl,
         readOnly: true,
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
@@ -664,15 +660,6 @@ class _HomePageState extends State<HomePage>
             fontSize: 14,
           ),
           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade600),
-          suffixIcon: _query.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close_rounded, color: Colors.grey),
-                  onPressed: () {
-                    _searchCtrl.clear();
-                    setState(() => _query = '');
-                  },
-                ),
           filled: true,
           fillColor: Colors.transparent,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -953,15 +940,7 @@ class _HomePageState extends State<HomePage>
               ? _parse(snapshot.data!)
               : (stores: <_StoreItem>[], categoryImages: <String, String>{});
           final all = parsed.stores;
-          final q = _query.toLowerCase();
-          final filtered = all.where((s) {
-            final okCategory =
-                _category == null || s.store.category == _category;
-            final okQuery = q.isEmpty || s.store.name.toLowerCase().contains(q);
-            return okCategory && okQuery;
-          }).toList();
-
-          final showBanner = _query.isEmpty && _category == null;
+          final showBanner = _category == null;
 
           final scroll = CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -1052,194 +1031,6 @@ class _HomePageState extends State<HomePage>
 
           return Stack(children: [scroll, PositionedDirectional(end: 18, bottom: 18, child: GlossyFab(icon: Icons.local_offer_rounded, tooltip: 'عروض وخصومات', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersPage())))]),);
         },
-      ),
-    );
-  }
-}
-
-/// كارت المحل: بيصغر ويلمع إطاره ذهبي لما تلمسه.
-class _StoreGridCard extends StatefulWidget {
-  final _StoreItem item;
-  final VoidCallback onTap;
-  const _StoreGridCard({required this.item, required this.onTap});
-
-  @override
-  State<_StoreGridCard> createState() => _StoreGridCardState();
-}
-
-class _StoreGridCardState extends State<_StoreGridCard> {
-  bool _down = false;
-
-  void _set(bool v) {
-    if (_down != v) setState(() => _down = v);
-  }
-
-  Widget _fallback() => Container(
-    decoration: BoxDecoration(gradient: Brand.softGradient),
-    child: Center(
-      child: Text(
-        widget.item.store.name.isEmpty
-            ? ''
-            : widget.item.store.name.substring(0, 1),
-        style: TextStyle(
-          color: Brand.gold,
-          fontSize: 38,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    ),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final item = widget.item;
-    return GestureDetector(
-      onTapDown: (_) => _set(true),
-      onTapUp: (_) => _set(false),
-      onTapCancel: () => _set(false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _down ? 0.96 : 1,
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: _down ? Brand.gold : Colors.transparent,
-              width: 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: (_down ? Brand.green : Colors.black).withValues(
-                  alpha: _down ? 0.30 : 0.07,
-                ),
-                blurRadius: _down ? 16 : 8,
-                offset: Offset(0, _down ? 6 : 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // الصورة بتملا الجزء العلوي كله
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    item.image.isEmpty
-                        ? _fallback()
-                        : Image.network(
-                            thumb(item.image),
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, progress) =>
-                                progress == null ? child : _fallback(),
-                            errorBuilder: (_, _, _) => _fallback(),
-                          ),
-                    if (item.rating > 0)
-                      Positioned(
-                        top: 6,
-                        left: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.94),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.star_rounded,
-                                size: 14,
-                                color: Brand.gold,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                item.rating.toStringAsFixed(1),
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Brand.ink,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // اسم المحل: الخط بيصغر تلقائيًا حسب طول الاسم
-                    // لحد ما يظهر كامل في سطر واحد.
-                    SizedBox(
-                      width: double.infinity,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(
-                          item.store.name,
-                          maxLines: 1,
-                          softWrap: false,
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
-                            color: Brand.ink,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            item.store.category,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
-                        if (item.time.isNotEmpty) ...[
-                          Icon(
-                            Icons.schedule_rounded,
-                            size: 13,
-                            color: Brand.goldDeep,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            item.time,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: Brand.green,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
