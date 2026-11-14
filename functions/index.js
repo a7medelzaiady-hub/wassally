@@ -264,7 +264,9 @@ async function deleteSubcollection(ref, name) {
  * explicitly because deleting a parent document does not cascade.
  */
 exports.onUserDeleted = functionsV1
-  .runWith({ timeoutSeconds: 540, memory: '512MB' })
+  // حذف الحساب عملية خلفية طويلة؛ فعّل إعادة المحاولة عند الفشل.
+  // كل خطوات التنظيف أدناه idempotent حتى يمكن تكرار الحدث بأمان.
+  .runWith({ timeoutSeconds: 540, memory: '512MB', failurePolicy: true })
   .auth.user().onDelete(async (user) => {
   const uid = user.uid;
   const ownerProfile = await db.collection('storeOwners').doc(uid).get();
@@ -346,11 +348,11 @@ exports.onUserDeleted = functionsV1
   // Support chat has a messages subcollection; delete children before parent.
   const chatRef = db.collection('support_chats').doc(uid);
   await deleteSubcollection(chatRef, 'messages');
-  await chatRef.delete().catch(() => {});
+  await chatRef.delete();
 
   // Remove role/profile documents for every supported role.
   const roleCollections = ['admins', 'couriers', 'storeOwners', 'supervisors'];
-  await Promise.all(roleCollections.map((name) => db.collection(name).doc(uid).delete().catch(() => {})));
+  await Promise.all(roleCollections.map((name) => db.collection(name).doc(uid).delete()));
 
   // If this was the last active owner of a store, deactivate its listing. Keep
   // the store/catalog for possible reassignment by an administrator.
@@ -359,9 +361,15 @@ exports.onUserDeleted = functionsV1
       .where('storeId', '==', ownedStoreId).get();
     const hasActiveOwner = remainingOwners.docs.some((d) => d.get('active') !== false);
     if (!hasActiveOwner) {
-      await db.collection('stores').doc(ownedStoreId).update({
-        active: false, ownerDeleted: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }).catch((e) => console.error('store deactivation after owner deletion failed', e));
+      const storeRef = db.collection('stores').doc(ownedStoreId);
+      const storeSnap = await storeRef.get();
+      if (storeSnap.exists) {
+        await storeRef.update({
+          active: false,
+          ownerDeleted: true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
     }
   }
 
@@ -372,10 +380,10 @@ exports.onUserDeleted = functionsV1
     () => ({ supervisorId: admin.firestore.FieldValue.delete() }),
   );
 
-  await db.collection('first_orders').doc(uid).delete().catch(() => {});
+  await db.collection('first_orders').doc(uid).delete();
   await deleteQueryInBatches(db.collection('account_deletions').where('userId', '==', uid), null);
-  await db.collection('account_deletions').doc(uid).delete().catch(() => {});
-  await db.collection('users').doc(uid).delete().catch(() => {});
+  await db.collection('account_deletions').doc(uid).delete();
+  await db.collection('users').doc(uid).delete();
 });
 
 /**
