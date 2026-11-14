@@ -140,6 +140,13 @@ class _CartBody extends StatelessWidget {
                           ],
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'حذف الصنف من السلة',
+                        onPressed: () => cart.removeItem(e.key),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        color: kDanger,
+                        visualDensity: VisualDensity.compact,
+                      ),
                       QtyStepper(
                         qty: e.value,
                         onAdd: () => cart.add(
