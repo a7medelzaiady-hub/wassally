@@ -10,7 +10,6 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
-import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
@@ -40,7 +39,6 @@ class StoreOwnerPage extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        floatingActionButton: const FeedbackFab(),
         body: Column(
           children: [
             StaffHeader(
