@@ -1,0 +1,206 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import '../models/store.dart';
+import '../models/product.dart';
+import '../services/cart_model.dart';
+import '../services/catalog_service.dart';
+import '../theme/brand.dart';
+import '../utils/format.dart';
+import '../utils/img.dart';
+import '../widgets/app_header.dart';
+import '../widgets/empty_state.dart';
+import 'cart_page.dart';
+import 'store_page.dart';
+
+class _Offer {
+  final Store store;
+  final String name, image;
+  final double price, oldPrice;
+  const _Offer(this.store, this.name, this.image, this.price, this.oldPrice);
+}
+
+class OffersPage extends StatefulWidget {
+  const OffersPage({super.key});
+  @override
+  State<OffersPage> createState() => _OffersPageState();
+}
+
+class _OffersPageState extends State<OffersPage> {
+  late final Future<QuerySnapshot<Map<String, dynamic>>> _future =
+      CatalogService.get(FirebaseFirestore.instance.collection('stores'), 'stores');
+
+  List<_Offer> _offers(QuerySnapshot<Map<String, dynamic>> snap) {
+    final result = <_Offer>[];
+    for (final doc in snap.docs) {
+      final data = doc.data();
+      if (data['active'] == false) continue;
+      Store store;
+      try { store = Store.fromMap(doc.id, data); } catch (_) { continue; }
+      final raw = data['offerItems'];
+      if (raw is List) {
+        for (final entry in raw) {
+          if (entry is! Map) continue;
+          final m = Map<String, dynamic>.from(entry);
+          final name = (m['name'] ?? '').toString().trim();
+          final price = (m['price'] as num?)?.toDouble() ?? 0;
+          final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+          if (name.isNotEmpty && price > 0 && old > price) {
+            result.add(_Offer(store, name, (m['image'] ?? '').toString(), price, old));
+          }
+        }
+      }
+      for (final p in store.products) {
+        if (p.price > 0 && p.oldPrice > p.price) {
+          result.add(_Offer(store, p.name, p.imageUrl, p.price, p.oldPrice));
+        }
+      }
+    }
+    return result;
+  }
+
+  void _add(_Offer item) {
+    final product = Product(item.name, item.price, item.image, '', true, item.oldPrice);
+    if (!cart.add(product, storeId: item.store.id, storeName: item.store.name)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('السلة فيها منتجات من ' + (cart.storeName ?? 'محل تاني')),
+          action: SnackBarAction(label: 'فتح السلة', onPressed: () {
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CartPage()));
+          })),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تمت إضافة ' + item.name + ' للسلة')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF6F8FA),
+        body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return Column(children: [
+                const BrandHeader(title: 'عروض وخصومات'),
+                Expanded(child: EmptyState(icon: Icons.cloud_off, title: 'تعذر تحميل العروض',
+                  message: 'تأكد من الاتصال بالإنترنت وحاول تاني.',
+                  actionLabel: 'إعادة المحاولة', onAction: () => setState(() {}))),
+              ]);
+            }
+            if (!snap.hasData) {
+              return const Column(children: [
+                BrandHeader(title: 'عروض وخصومات'),
+                Expanded(child: Center(child: CircularProgressIndicator())),
+              ]);
+            }
+            final items = _offers(snap.data!);
+            if (items.isEmpty) {
+              return const Column(children: [
+                BrandHeader(title: 'عروض وخصومات'),
+                Expanded(child: EmptyState(icon: Icons.local_offer_outlined,
+                  title: 'مفيش عروض متاحة حاليًا',
+                  message: 'العروض الجديدة هتظهر هنا أول ما تتضاف.')),
+              ]);
+            }
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                const SliverToBoxAdapter(child: BrandHeader(
+                  title: 'عروض وخصومات', subtitle: 'وفّر أكتر مع أفضل عروض المحلات')),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 16, 12, 32),
+                  sliver: SliverGrid(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12,
+                      childAspectRatio: 0.67),
+                    delegate: SliverChildBuilderDelegate((context, i) {
+                      final item = items[i];
+                      final discount = ((1 - item.price / item.oldPrice) * 100).round();
+                      return _OfferCard(item: item, discount: discount,
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => StorePage(store: item.store))),
+                        onAdd: () => _add(item));
+                    }, childCount: items.length),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _OfferCard extends StatelessWidget {
+  final _Offer item;
+  final int discount;
+  final VoidCallback onTap, onAdd;
+  const _OfferCard({required this.item, required this.discount, required this.onTap, required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform(
+          alignment: Alignment.bottomCenter,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.0015)
+            ..rotateX((1 - value) * 0.07)
+            ..translate(0.0, (1 - value) * 22),
+          child: Transform.scale(scale: 0.96 + value * 0.04, child: child),
+        ),
+      ),
+      child: Material(
+        color: Colors.white, elevation: 3, shadowColor: Colors.black12,
+        borderRadius: BorderRadius.circular(24), clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(flex: 5, child: Stack(fit: StackFit.expand, children: [
+              item.image.isEmpty
+                ? Container(decoration: BoxDecoration(gradient: Brand.softGradient),
+                    child: Icon(Icons.local_offer_rounded, size: 48, color: Brand.green.withValues(alpha: 0.6)))
+                : Image.network(thumb(item.image, w: 500), fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(decoration: BoxDecoration(gradient: Brand.softGradient))),
+              PositionedDirectional(top: 10, start: 10, child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFFE83F50), borderRadius: BorderRadius.circular(18)),
+                child: Text('خصم ' + discount.toString() + '%', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)))),
+            ])),
+            Expanded(flex: 4, child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Expanded(child: Center(child: Text(item.name, maxLines: 2, textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis, style: TextStyle(color: Brand.ink, fontSize: 14, fontWeight: FontWeight.w900)))),
+                Text(item.store.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                const SizedBox(height: 5),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text(formatPrice(item.oldPrice), style: const TextStyle(color: Color(0xFFE34B55),
+                    fontSize: 12, decoration: TextDecoration.lineThrough, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 8),
+                  Text(formatPrice(item.price), style: TextStyle(color: Brand.ink, fontSize: 16, fontWeight: FontWeight.w900)),
+                ]),
+                const SizedBox(height: 8),
+                SizedBox(height: 40, child: FilledButton.icon(
+                  onPressed: onAdd, icon: const Icon(Icons.shopping_cart_outlined, size: 17),
+                  label: const Text('أضف للسلة'),
+                  style: FilledButton.styleFrom(backgroundColor: Brand.green, foregroundColor: Colors.white,
+                    shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 8),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)))),
+              ]),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+}
