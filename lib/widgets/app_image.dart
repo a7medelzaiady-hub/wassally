@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// صورة من الإنترنت مع بديل (أيقونة على خلفية ملوّنة) لو مفيش رابط أو فشل
 /// التحميل.
