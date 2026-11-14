@@ -12,7 +12,6 @@ const {
   setDoc,
   writeBatch,
   serverTimestamp,
-  getFirestore,
 } = require('firebase/firestore');
 
 const PROJECT_ID = 'demo-wasally';
@@ -39,7 +38,7 @@ before(async () => {
   });
 
   await testEnv.withSecurityRulesDisabled(async (context) => {
-    await setDoc(doc(getFirestore(context), 'stores', STORE_ID), {
+    await setDoc(doc(context.firestore(), 'stores', STORE_ID), {
       name: 'متجر اختبار الضغط',
       active: true,
     });
