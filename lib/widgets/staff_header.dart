@@ -48,7 +48,7 @@ class StaffHeader extends StatelessWidget {
       child: IconButton(
         tooltip: tooltip,
         icon: Icon(icon, size: 22),
-        color: color ?? Brand.gold,
+        color: color ?? Colors.white,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 40, height: 40),
         style: IconButton.styleFrom(
