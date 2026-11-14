@@ -124,9 +124,14 @@ class RoleRequestService {
 
   static Future<void> reject(
     QueryDocumentSnapshot<Map<String, dynamic>> req, {
-    String note = '',
+    required String note,
   }) {
-    final admin = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final cleanNote = note.trim();
+    if (cleanNote.length < 5 || cleanNote.length > 300) {
+      throw ArgumentError('سبب الرفض يجب أن يكون من 5 إلى 300 حرف.');
+    }
+    final admin = FirebaseAuth.instance.currentUser?.uid;
+    if (admin == null) throw StateError('سجّل دخول الأول.');
     return req.reference.update({
       'status': 'rejected',
       'reviewedAt': FieldValue.serverTimestamp(),
