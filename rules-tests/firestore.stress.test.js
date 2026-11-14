@@ -129,16 +129,27 @@ test('staged concurrent order creation: 2 → 500 independent customers', {
   console.log('WASALLY_STRESS_SUMMARY ' + JSON.stringify(summary));
 });
 
-test('rules currently allow two distinct simultaneous order IDs for the same customer', async () => {
+test('same idempotency order ID cannot be created twice; a new checkout may use a new ID', async () => {
   const uid = 'duplicate-submit-customer';
   const context = testEnv.authenticatedContext(uid);
-  const results = await Promise.allSettled([
-    orderBatch(context, uid, 'duplicate-attempt-a'),
-    orderBatch(context, uid, 'duplicate-attempt-b'),
-  ]);
 
-  // This deliberately records the current behavior; it is not a desired idempotency guarantee.
-  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 2);
+  // Two overlapping retries for the same checkout share one stable order ID.
+  const duplicateResults = await Promise.allSettled([
+    orderBatch(context, uid, 'duplicate-checkout-stable-id'),
+    orderBatch(context, uid, 'duplicate-checkout-stable-id'),
+  ]);
+  assert.equal(
+    duplicateResults.filter((r) => r.status === 'fulfilled').length,
+    1,
+    'only one batch may create the order and its private contact document',
+  );
+  assert.equal(
+    duplicateResults.filter((r) => r.status === 'rejected').length,
+    1,
+  );
+
+  // A deliberately new checkout has a different persisted idempotency token.
+  await assertSucceeds(orderBatch(context, uid, 'intentional-second-checkout'));
 });
 
 test('anonymous users cannot create orders', async () => {
