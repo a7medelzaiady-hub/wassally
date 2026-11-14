@@ -64,7 +64,6 @@ class _RequestsTab extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('role_requests')
           .where('status', isEqualTo: 'pending')
-          .limit(100)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -387,9 +386,9 @@ class _ApplicantsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // المراجعة مستمرة أولًا بأول؛ لا نخفي أي تقديم بسبب حد ثابت.
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
-          .limit(100)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
