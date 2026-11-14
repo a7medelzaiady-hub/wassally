@@ -468,10 +468,11 @@ class _AdminOrderCard extends StatelessWidget {
                           ? const SizedBox.shrink()
                           : Text(
                               formatDateTime(order.createdAt!),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.visible,
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
                                 color: kMuted,
                               ),
