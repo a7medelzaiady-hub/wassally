@@ -21,6 +21,8 @@ import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/glossy_fab.dart';
+import 'offers_page.dart';
 import '../widgets/promo_banners.dart';
 import 'categories_landing_page.dart' show kCategoryPhotos;
 import 'notifications_page.dart';
@@ -1092,7 +1094,7 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
-          return scroll;
+          return Stack(children: [scroll, PositionedDirectional(end: 18, bottom: 18, child: GlossyFab(icon: Icons.local_offer_rounded, tooltip: 'عروض وخصومات', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersPage())))]),);
         },
       ),
     );
