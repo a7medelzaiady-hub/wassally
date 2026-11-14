@@ -21,7 +21,7 @@ class QtyStepper extends StatelessWidget {
       tooltip: tooltip,
       icon: Icon(icon, size: 18, color: kPrimary),
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
     );
   }
 
