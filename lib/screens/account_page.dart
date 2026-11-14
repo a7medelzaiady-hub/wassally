@@ -16,6 +16,7 @@ import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/theme_picker.dart';
 import 'join_request_page.dart';
+import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
 import 'support_chat_page.dart';
 import 'my_complaints_page.dart';
@@ -468,8 +469,20 @@ class _AccountPageState extends State<AccountPage> {
                   return Container(
                     margin: const EdgeInsets.only(top: 12),
                     decoration: _card,
-                    child: ListTile(
-                      onTap: _seed,
+                    child: Column(
+                      children: [
+                        ListTile(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminJoinRequestsPage()),
+                          ),
+                          leading: Icon(Icons.assignment_turned_in_outlined, color: kPrimary),
+                          title: const Text('طلبات الانضمام'),
+                          subtitle: const Text('مراجعة طلبات المحلات والمناديب وقبولها أو رفضها'),
+                          trailing: const Icon(Icons.chevron_left),
+                        ),
+                        Divider(height: 1, color: kLine),
+                        ListTile(
+                          onTap: _seed,
                       leading: Icon(
                         Icons.cloud_upload_outlined,
                         color: kPrimary,
@@ -478,7 +491,9 @@ class _AccountPageState extends State<AccountPage> {
                         'رفع المحلات التجريبية',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      subtitle: const Text('للأدمن فقط'),
+                          subtitle: const Text('للأدمن فقط'),
+                        ),
+                      ],
                     ),
                   );
                 },
