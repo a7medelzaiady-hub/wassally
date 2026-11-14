@@ -22,30 +22,16 @@ class CategoryInfo {
 }
 
 const List<CategoryInfo> kCategories = [
-  CategoryInfo(
-    category: 'مطاعم',
-    title: 'اطلب الطعام',
-    description: 'توصيل سريع وعروض حصرية من مطاعمنا.',
-    icon: Icons.lunch_dining,
-    tint: Color(0xFFFFD9C2),
-    accent: Color(0xFFC2410C),
-  ),
-  CategoryInfo(
-    category: 'سوبرماركت',
-    title: 'اطلب البقالة',
-    description: 'كل اللي محتاجه من أفضل متاجر البقالة لحد باب بيتك.',
-    icon: Icons.shopping_basket,
-    tint: Color(0xFFDCEBC9),
-    accent: Color(0xFF3F7D20),
-  ),
-  CategoryInfo(
-    category: 'ورد',
-    title: 'اطلب الورد',
-    description: 'ورد طازج لأحبابك لحد باب بيتهم.',
-    icon: Icons.local_florist,
-    tint: Color(0xFFFBD3DD),
-    accent: Color(0xFFB4234F),
-  ),
+  CategoryInfo(category: 'مطاعم', title: 'مطاعم', description: 'مطاعم ووجبات جاهزة.', icon: Icons.lunch_dining, tint: Color(0xFFFFD9C2), accent: Color(0xFFC2410C)),
+  CategoryInfo(category: 'سوبرماركت', title: 'سوبر ماركت', description: 'احتياجات البيت اليومية.', icon: Icons.shopping_basket, tint: Color(0xFFDCEBC9), accent: Color(0xFF3F7D20)),
+  CategoryInfo(category: 'بقالة', title: 'بقالة', description: 'منتجات البقالة والاحتياجات السريعة.', icon: Icons.storefront, tint: Color(0xFFE4E9FF), accent: Color(0xFF4056A1)),
+  CategoryInfo(category: 'خضار وفاكهة', title: 'خضار وفاكهة', description: 'خضار وفاكهة طازجة.', icon: Icons.eco, tint: Color(0xFFDDF3D9), accent: Color(0xFF287A38)),
+  CategoryInfo(category: 'لحوم ودواجن', title: 'لحوم ودواجن', description: 'لحوم ودواجن طازجة.', icon: Icons.set_meal, tint: Color(0xFFFFE1D8), accent: Color(0xFFB64D32)),
+  CategoryInfo(category: 'مخبوزات وحلويات', title: 'مخبوزات وحلويات', description: 'مخبوزات وحلويات متنوعة.', icon: Icons.bakery_dining, tint: Color(0xFFFFEBCB), accent: Color(0xFF9A5A16)),
+  CategoryInfo(category: 'محمصات وعطارة', title: 'محمصات وعطارة', description: 'مكسرات وتوابل وأعشاب.', icon: Icons.grain, tint: Color(0xFFEFE2D2), accent: Color(0xFF80552E)),
+  CategoryInfo(category: 'كافيه ومشروبات', title: 'كافيه ومشروبات', description: 'مشروبات ساخنة وباردة.', icon: Icons.local_cafe, tint: Color(0xFFEADCF5), accent: Color(0xFF74459B)),
+  CategoryInfo(category: 'ورد وهدايا', title: 'ورد وهدايا', description: 'ورد وهدايا للمناسبات.', icon: Icons.local_florist, tint: Color(0xFFFBD3DD), accent: Color(0xFFB4234F)),
+  CategoryInfo(category: 'أخرى', title: 'متاجر متنوعة', description: 'أنشطة ومحلات متنوعة.', icon: Icons.store, tint: Color(0xFFE5E7EB), accent: Color(0xFF4B5563)),
 ];
 
 /// زر "الكل" (بيشيل الفلتر).
