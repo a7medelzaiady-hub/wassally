@@ -63,6 +63,10 @@ class RoleRequestService {
     });
   }
 
+  /// طلبات الانضمام المعلقة للأدمن.
+  static Stream<QuerySnapshot<Map<String, dynamic>>> watchPending() =>
+      _col.where('status', isEqualTo: 'pending').snapshots();
+
   /// للمدير: قبول طلب. بيكتب الدور (couriers أو storeOwners) وبيقفل الطلب في نفس الـ batch.
   /// لصاحب المحل: إما [storeId] لمحل موجود، أو [newStoreName] لمحل جديد (بيتعمل له مستند في stores).
   static Future<void> approve(
@@ -127,7 +131,7 @@ class RoleRequestService {
       'status': 'rejected',
       'reviewedAt': FieldValue.serverTimestamp(),
       'reviewedBy': admin,
-      if (note.trim().isNotEmpty) 'adminNote': note.trim(),
+      'adminNote': cleanNote,
     });
   }
 }
