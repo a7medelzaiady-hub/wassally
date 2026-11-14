@@ -79,47 +79,44 @@ String _timeText(DateTime d) {
   return '$h12:${_two(d.minute)} $suffix';
 }
 
-class _OrderCard extends StatelessWidget {
+class _OrderCard extends StatefulWidget {
   final AppOrder order;
   const _OrderCard({required this.order});
 
-  Future<void> _delete(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
+  @override
+  State<_OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends State<_OrderCard> {
+  bool _busy = false;
+
+  Future<void> _hide() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('حذف الطلب'),
-        content: const Text('الطلب هيتحذف نهائيًا ومش هيظهر في طلباتك. متأكد؟'),
+        title: const Text('إخفاء الطلب من السجل'),
+        content: const Text('سيختفي الطلب من قائمة طلباتك فقط، وسيظل محفوظًا لدى وصّلي لمتابعة المعاملة وحل أي مشكلة.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('رجوع'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: kDanger),
-            child: const Text('حذف'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إخفاء')),
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
     try {
-      await OrderService.deleteOrder(order.id);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('تم حذف الطلب.')),
-      );
-    } on StateError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر حذف الطلب. جرّب تاني.')),
-      );
+      await OrderService.hideFromCustomer(widget.order.id);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إخفاء الطلب من سجلّك.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final status = order.status;
     final created = order.createdAt;
     final name = order.storeName.isEmpty ? 'طلب' : order.storeName;
@@ -231,14 +228,17 @@ class _OrderCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (status == OrderStatus.newOrder)
-                      IconButton(
-                        onPressed: () => _delete(context),
-                        tooltip: 'حذف الطلب',
-                        icon: Icon(Icons.delete_outline, color: kDanger),
-                        visualDensity: VisualDensity.compact,
-                      ),
                     const Spacer(),
+                    if (_busy)
+                      const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      IconButton(
+                        tooltip: 'إخفاء الطلب من السجل',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _hide,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        color: kDanger,
+                      ),
                     Text(
                       'التفاصيل',
                       style: TextStyle(
