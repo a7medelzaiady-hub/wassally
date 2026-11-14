@@ -689,6 +689,14 @@ service cloud.firestore {
       return !(k in d) || (d[k] is string && d[k].size() <= max);
     }
 
+    function validStoreCategory(value) {
+      return value in [
+        'مطاعم', 'سوبر ماركت', 'بقالة', 'خضار وفاكهة',
+        'لحوم ودواجن', 'مخبوزات وحلويات', 'محمصات وعطارة',
+        'كافيه ومشروبات', 'ورد وهدايا', 'أخرى'
+      ];
+    }
+
     function validRoleRequest(rid, d) {
       return d.keys().hasOnly(['userId', 'userEmail', 'type', 'name', 'phone', 'status',
                                'createdAt', 'storeName', 'storeCategory', 'address', 'vehicle', 'notes']) &&
@@ -704,7 +712,7 @@ service cloud.firestore {
         optStr(d, 'storeName', 100) && optStr(d, 'storeCategory', 60) && optStr(d, 'address', 300) &&
         optStr(d, 'vehicle', 60) && optStr(d, 'notes', 500) &&
         (d.type != 'store_owner' ||
-          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && d.storeCategory.size() >= 2 && 'address' in d && d.address.size() >= 5)) &&
+          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && validStoreCategory(d.storeCategory) && 'address' in d && d.address.size() >= 5)) &&
         (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
     }
 
@@ -719,7 +727,8 @@ service cloud.firestore {
           request.resource.data.reviewedAt == request.time &&
           request.resource.data.reviewedBy == request.auth.uid &&
           request.resource.data.get('adminNote', '') is string &&
-          request.resource.data.get('adminNote', '').size() <= 300) ||
+          request.resource.data.get('adminNote', '').size() <= 300 &&
+          (request.resource.data.status != 'rejected' || request.resource.data.get('adminNote', '').size() >= 5)) ||
         // إعادة التقديم بعد الرفض فقط (بيستبدل المستند كله بطلب pending جديد).
         (signedIn() && resource.data.userId == request.auth.uid &&
           resource.data.status == 'rejected' &&
