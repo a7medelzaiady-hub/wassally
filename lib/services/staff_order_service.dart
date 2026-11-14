@@ -240,14 +240,12 @@ class StaffOrderService {
   /// إحصائيات كل المناديب (للمدير فقط): عدد التسليمات والمبالغ المحصّلة وعمولات المناديب،
   /// بتتحسب في السيرفر (aggregation) من غير ما نحمّل الطلبات. [since] = null يعني الإجمالي الكلي.
   static Future<DeliveryStats> adminStats({DateTime? since}) async {
-    Query<Map<String, dynamic>> query =
-        _orders.where('status', isEqualTo: OrderStatus.delivered.key);
-    if (since != null) {
-      query = query.where(
-        'deliveredAt',
-        isGreaterThanOrEqualTo: Timestamp.fromDate(since),
-      );
-    }
+    // نحافظ على نفس نطاق البيانات السابق: الطلبات المسلّمة ذات ختم تسليم
+    // بتاريخ 2020 أو أحدث، مع إمكانية تضييق الفترة من الشاشة.
+    final from = Timestamp.fromDate(since ?? DateTime(2020));
+    final query = _orders
+        .where('status', isEqualTo: OrderStatus.delivered.key)
+        .where('deliveredAt', isGreaterThanOrEqualTo: from);
 
     // لا يوجد fallback محدود إلى أول 1000 مستند: فشل الفهرس/التجميع يجب أن
     // يظهر بوضوح بدل عرض أرقام ناقصة على أنها إجمالي صحيح.
