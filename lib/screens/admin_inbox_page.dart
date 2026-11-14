@@ -64,6 +64,7 @@ class _RequestsTab extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('role_requests')
           .where('status', isEqualTo: 'pending')
+          .limit(100)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -113,7 +114,7 @@ class _RequestCardState extends State<_RequestCard> {
 
   /// نافذة ربط صاحب المحل: اكتب اسم المحل (محل جديد)، أو اضغط على محل موجود يظهر تحت.
   Future<({String? id, String name})?> _pickStore() async {
-    final stores = await FirebaseFirestore.instance.collection('stores').get();
+    final stores = await FirebaseFirestore.instance.collection('stores').limit(100).get();
     if (!mounted) return null;
     final existing = {
       for (final d in stores.docs) d.id: (d.data()['name'] ?? d.id).toString(),
@@ -388,6 +389,7 @@ class _ApplicantsTab extends StatelessWidget {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
+          .limit(100)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
