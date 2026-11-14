@@ -27,6 +27,7 @@ class UpdateService {
   static String _url = '';
   static DateTime? _lastCheck;
   static bool _lifecycleAttached = false;
+  static bool _bannerDismissedForSession = false;
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
@@ -131,6 +132,7 @@ class UpdateService {
 
   /// شريط تذكير ثابت (بيفضل لحد ما المستخدم يقفله أو يحدّث).
   static void _showBanner() {
+    if (_bannerDismissedForSession) return;
     final m = NotificationService.messengerKey.currentState;
     if (m == null) return;
     m
@@ -140,12 +142,15 @@ class UpdateService {
           backgroundColor: kPrimarySoft,
           leading: Icon(Icons.system_update, color: kPrimary),
           content: const Text(
-            'فيه تحديث جديد لوصّلي. افتح Google Play وحدّث التطبيق عشان تستفيد بكل المميزات.',
+            'إصدار جديد من «وصّلي» متاح الآن! حدّث التطبيق من Google Play للاستمتاع بأحدث المميزات وتحسينات السرعة.',
           ),
           actions: [
             TextButton(
-              onPressed: () => m.hideCurrentMaterialBanner(),
-              child: const Text('لاحقاً'),
+              onPressed: () {
+                _bannerDismissedForSession = true;
+                m.hideCurrentMaterialBanner();
+              },
+              child: const Text('إغلاق'),
             ),
             FilledButton(
               onPressed: _openStore,
