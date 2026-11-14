@@ -15,18 +15,16 @@ class _Row {
   int delivered = 0;
   double collected = 0;
   double earning = 0;
-  // على مدار كل الفترات (للتسوية): المطلوب توريده = التحصيل − عمولة المندوب، والمسلَّم فعلًا.
   double owedAll = 0;
   double settled = 0;
+
   _Row(this.id, this.name, this.rating, this.ratingCount);
 }
 
 enum _Period { today, month, all }
-
 enum _Sort { collected, earning, rating, delivered }
 
-/// ترتيب المناديب من الأكبر للأقل: التحصيل، العمولة، التقييم، وعدد الطلبات.
-/// بيتحسب من آخر 1000 طلب مسلَّم (الإحصائية دي للأدمن بس).
+/// ترتيب المناديب. الأرقام تُحسب بتجميعات Firestore ولا تعتمد على أول 1000 طلب.
 class AdminCouriersBoardPage extends StatefulWidget {
   const AdminCouriersBoardPage({super.key});
 
@@ -37,90 +35,88 @@ class AdminCouriersBoardPage extends StatefulWidget {
 class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
   _Period _period = _Period.today;
   _Sort _sort = _Sort.collected;
-  late Future<(List<_Row>, List<Map<String, dynamic>>, Map<String, double>)>
-  _data = _load();
+  late Future<List<_Row>> _data = _load();
 
-  Future<(List<_Row>, List<Map<String, dynamic>>, Map<String, double>)>
-  _load() async {
-    final db = FirebaseFirestore.instance;
-    final couriers = await db.collection('couriers').get();
-    final orders = await db
-        .collection('orders')
-        .where('status', isEqualTo: 'delivered')
-        .limit(1000)
-        .get();
-    final rows = <_Row>[];
-    for (final c in couriers.docs) {
-      final m = c.data();
-      final n = (m['ratingCount'] as num?)?.toInt() ?? 0;
-      final sum = (m['ratingSum'] as num?)?.toDouble() ?? 0;
-      rows.add(
-        _Row(c.id, (m['name'] ?? 'مندوب').toString(), n == 0 ? 0 : sum / n, n),
-      );
-    }
-    final settled = <String, double>{};
-    try {
-      final st = await db.collection('courier_settlements').limit(1000).get();
-      for (final d in st.docs) {
-        final id = (d.data()['courierId'] ?? '').toString();
-        settled[id] =
-            (settled[id] ?? 0) +
-            ((d.data()['amount'] as num?)?.toDouble() ?? 0);
-      }
-    } catch (_) {}
-    return (rows, [for (final o in orders.docs) o.data()], settled);
-  }
-
-  bool _inPeriod(DateTime? t) {
-    if (_period == _Period.all) return true;
-    if (t == null) return false;
+  DateTime? get _periodStart {
+    if (_period == _Period.all) return null;
     final now = DateTime.now();
-    final start = _period == _Period.today
+    return _period == _Period.today
         ? DateTime(now.year, now.month, now.day)
         : DateTime(now.year, now.month, 1);
-    return !t.isBefore(start);
   }
 
-  List<_Row> _compute(
-    List<_Row> base,
-    List<Map<String, dynamic>> orders,
-    Map<String, double> settled,
-  ) {
-    final byId = {
-      for (final r in base) r.id: _Row(r.id, r.name, r.rating, r.ratingCount),
-    };
-    for (final o in orders) {
-      final id = (o['deliveredBy'] ?? '').toString();
-      final r = byId[id];
-      if (r == null) continue;
-      r.owedAll +=
-          ((o['collectedAmount'] as num?)?.toDouble() ?? 0) -
-          ((o['courierEarning'] as num?)?.toDouble() ?? 0);
-      final at = o['deliveredAt'];
-      if (!_inPeriod(at is Timestamp ? at.toDate() : null)) continue;
-      r.delivered += 1;
-      r.collected += (o['collectedAmount'] as num?)?.toDouble() ?? 0;
-      r.earning += (o['courierEarning'] as num?)?.toDouble() ?? 0;
-    }
-    for (final r in byId.values) {
-      r.settled = settled[r.id] ?? 0;
-    }
-    final list = byId.values.toList();
-    num key(_Row r) => switch (_sort) {
-      _Sort.collected => r.collected,
-      _Sort.earning => r.earning,
-      _Sort.rating => r.rating,
-      _Sort.delivered => r.delivered,
-    };
-    list.sort((a, b) => key(b).compareTo(key(a)));
-    return list;
+  double _sum(dynamic value) =>
+      value is num ? value.toDouble() : 0.0;
+
+  Future<List<_Row>> _load() async {
+    final db = FirebaseFirestore.instance;
+    // الحد يمنع تحميل مجموعة المناديب بلا سقف؛ يمكن إضافة pagination عند نموها.
+    final courierSnap = await db.collection('couriers').limit(100).get();
+
+    final rows = await Future.wait(courierSnap.docs.map((courier) async {
+      final data = courier.data();
+      final ratingCount = (data['ratingCount'] as num?)?.toInt() ?? 0;
+      final ratingSum = _sum(data['ratingSum']);
+      final row = _Row(
+        courier.id,
+        (data['name'] ?? 'مندوب').toString(),
+        ratingCount == 0 ? 0 : ratingSum / ratingCount,
+        ratingCount,
+      );
+
+      Query<Map<String, dynamic>> delivered = db
+          .collection('orders')
+          .where('deliveredBy', isEqualTo: courier.id)
+          .where('status', isEqualTo: 'delivered');
+
+      final allFuture = delivered
+          .aggregate(count(), sum('collectedAmount'), sum('courierEarning'))
+          .get();
+
+      Query<Map<String, dynamic>> periodQuery = delivered;
+      final start = _periodStart;
+      if (start != null) {
+        periodQuery = periodQuery.where(
+          'deliveredAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+        );
+      }
+      final periodFuture = periodQuery
+          .aggregate(count(), sum('collectedAmount'), sum('courierEarning'))
+          .get();
+
+      final settlementFuture = db
+          .collection('courier_settlements')
+          .where('courierId', isEqualTo: courier.id)
+          .aggregate(sum('amount'))
+          .get();
+
+      final results = await Future.wait([
+        allFuture,
+        periodFuture,
+        settlementFuture,
+      ]);
+      final all = results[0];
+      final period = results[1];
+      final settlements = results[2];
+
+      row.owedAll =
+          _sum(all.getSum('collectedAmount')) -
+          _sum(all.getSum('courierEarning'));
+      row.settled = _sum(settlements.getSum('amount'));
+      row.delivered = period.count ?? 0;
+      row.collected = _sum(period.getSum('collectedAmount'));
+      row.earning = _sum(period.getSum('courierEarning'));
+      return row;
+    }));
+
+    return rows;
   }
 
   Widget _chip<T>(String label, T value, T current, ValueChanged<T> on) {
-    final sel = value == current;
     return ChoiceChip(
       label: Text(label, style: const TextStyle(fontSize: 12.5)),
-      selected: sel,
+      selected: value == current,
       onSelected: (_) => on(value),
     );
   }
@@ -128,117 +124,103 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          const InnerHeader(title: 'ترتيب المناديب'),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    _chip(
-                      'اليوم',
-                      _Period.today,
-                      _period,
-                      (v) => setState(() => _period = v),
-                    ),
-                    _chip(
-                      'الشهر',
-                      _Period.month,
-                      _period,
-                      (v) => setState(() => _period = v),
-                    ),
-                    _chip(
-                      'الإجمالي',
-                      _Period.all,
-                      _period,
-                      (v) => setState(() => _period = v),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    _chip(
-                      'بالتحصيل',
-                      _Sort.collected,
-                      _sort,
-                      (v) => setState(() => _sort = v),
-                    ),
-                    _chip(
-                      'بالعمولة',
-                      _Sort.earning,
-                      _sort,
-                      (v) => setState(() => _sort = v),
-                    ),
-                    _chip(
-                      'بالتقييم',
-                      _Sort.rating,
-                      _sort,
-                      (v) => setState(() => _sort = v),
-                    ),
-                    _chip(
-                      'بعدد الطلبات',
-                      _Sort.delivered,
-                      _sort,
-                      (v) => setState(() => _sort = v),
-                    ),
-                  ],
-                ),
-              ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            const InnerHeader(title: 'ترتيب المناديب'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _chip('اليوم', _Period.today, _period, (v) {
+                        setState(() {
+                          _period = v;
+                          _data = _load();
+                        });
+                      }),
+                      _chip('الشهر', _Period.month, _period, (v) {
+                        setState(() {
+                          _period = v;
+                          _data = _load();
+                        });
+                      }),
+                      _chip('الإجمالي', _Period.all, _period, (v) {
+                        setState(() {
+                          _period = v;
+                          _data = _load();
+                        });
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _chip('بالتحصيل', _Sort.collected, _sort,
+                          (v) => setState(() => _sort = v)),
+                      _chip('بالعمولة', _Sort.earning, _sort,
+                          (v) => setState(() => _sort = v)),
+                      _chip('بالتقييم', _Sort.rating, _sort,
+                          (v) => setState(() => _sort = v)),
+                      _chip('بعدد الطلبات', _Sort.delivered, _sort,
+                          (v) => setState(() => _sort = v)),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child:
-                FutureBuilder<
-                  (List<_Row>, List<Map<String, dynamic>>, Map<String, double>)
-                >(
-                  future: _data,
-                  builder: (context, snap) {
-                    if (snap.hasError) {
-                      return EmptyState(
-                        icon: Icons.lock_outline,
-                        title: 'تعذر تحميل الترتيب',
-                        message: 'تأكد إن قواعد Firebase الجديدة منشورة.',
-                      );
-                    }
-                    if (!snap.hasData) {
-                      return Center(
-                        child: CircularProgressIndicator(color: kPrimary),
-                      );
-                    }
-                    final rows = _compute(
-                      snap.data!.$1,
-                      snap.data!.$2,
-                      snap.data!.$3,
+            Expanded(
+              child: FutureBuilder<List<_Row>>(
+                future: _data,
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return EmptyState(
+                      icon: Icons.error_outline,
+                      title: 'تعذر تحميل الترتيب',
+                      message: 'فشل تجميع بيانات المناديب: ${snap.error}',
                     );
-                    if (rows.isEmpty) {
-                      return const EmptyState(
-                        icon: Icons.two_wheeler,
-                        title: 'مفيش مناديب',
-                        message: 'ضيف مناديب من صفحة المناديب.',
-                      );
-                    }
-                    return RefreshIndicator(
-                      onRefresh: () async {
-                        setState(() => _data = _load());
-                        await _data;
-                      },
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                        itemCount: rows.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) => _tile(i, rows[i]),
-                      ),
+                  }
+                  if (!snap.hasData) {
+                    return Center(
+                      child: CircularProgressIndicator(color: kPrimary),
                     );
-                  },
-                ),
-          ),
-        ],
+                  }
+                  final rows = [...snap.data!];
+                  num key(_Row r) => switch (_sort) {
+                        _Sort.collected => r.collected,
+                        _Sort.earning => r.earning,
+                        _Sort.rating => r.rating,
+                        _Sort.delivered => r.delivered,
+                      };
+                  rows.sort((a, b) => key(b).compareTo(key(a)));
+                  if (rows.isEmpty) {
+                    return const EmptyState(
+                      icon: Icons.two_wheeler,
+                      title: 'مفيش مناديب',
+                      message: 'ضيف مناديب من صفحة المناديب.',
+                    );
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      setState(() => _data = _load());
+                      await _data;
+                    },
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                      itemCount: rows.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) => _tile(i, rows[i]),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -269,9 +251,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
               TextField(
                 controller: note,
                 maxLength: 200,
-                decoration: const InputDecoration(
-                  labelText: 'ملاحظة (اختياري)',
-                ),
+                decoration: const InputDecoration(labelText: 'ملاحظة (اختياري)'),
               ),
             ],
           ),
@@ -288,10 +268,18 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
         ),
       ),
     );
-    if (ok != true) return;
+    if (ok != true) {
+      amount.dispose();
+      note.dispose();
+      return;
+    }
     final a = double.tryParse(amount.text.trim().replaceAll(',', '.'));
-    if (a == null || a <= 0) {
-      messenger.showSnackBar(const SnackBar(content: Text('اكتب مبلغ صحيح.')));
+    amount.dispose();
+    if (a == null || !a.isFinite || a <= 0 || a > 1000000) {
+      note.dispose();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('اكتب مبلغ صحيح (حتى مليون جنيه).')),
+      );
       return;
     }
     try {
@@ -302,37 +290,40 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
         'note': note.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       });
+      note.dispose();
       if (!mounted) return;
       setState(() => _data = _load());
       messenger.showSnackBar(
         const SnackBar(content: Text('تم تسجيل التسليم.')),
       );
     } catch (e) {
+      note.dispose();
+      if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text('تعذر التسجيل: $e')));
     }
   }
 
   Widget _stat(String label, String value, {bool bold = false}) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(fontSize: 11, color: kMuted)),
-        const SizedBox(height: 2),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerStart,
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-              color: Brand.ink,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(fontSize: 11, color: kMuted)),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+                  color: Brand.ink,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
-    ),
-  );
+      );
 
   Widget _tile(int i, _Row r) {
     final medal = switch (i) {
@@ -389,21 +380,12 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
           const SizedBox(height: 10),
           Row(
             children: [
-              _stat(
-                'التحصيل',
-                formatPrice(r.collected),
-                bold: _sort == _Sort.collected,
-              ),
-              _stat(
-                'العمولة',
-                formatPrice(r.earning),
-                bold: _sort == _Sort.earning,
-              ),
-              _stat(
-                'الطلبات',
-                '${r.delivered}',
-                bold: _sort == _Sort.delivered,
-              ),
+              _stat('التحصيل', formatPrice(r.collected),
+                  bold: _sort == _Sort.collected),
+              _stat('العمولة', formatPrice(r.earning),
+                  bold: _sort == _Sort.earning),
+              _stat('الطلبات', '${r.delivered}',
+                  bold: _sort == _Sort.delivered),
             ],
           ),
           const Divider(height: 20),
@@ -412,11 +394,15 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
               _stat('مطلوب توريده', formatPrice(r.owedAll)),
               _stat('تم تسليمه', formatPrice(r.settled)),
               _stat('المتبقي', formatPrice(r.owedAll - r.settled), bold: true),
-              TextButton(
-                onPressed: () => _settle(r),
-                child: const Text('تسجيل تسليم'),
-              ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: FilledButton.tonal(
+              onPressed: () => _settle(r),
+              child: const Text('تسجيل تسليم'),
+            ),
           ),
         ],
       ),
