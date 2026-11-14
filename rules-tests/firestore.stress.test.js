@@ -50,7 +50,7 @@ after(async () => {
 });
 
 function orderBatch(context, uid, orderId) {
-  const db = getFirestore(context);
+  const db = context.firestore();
   const batch = writeBatch(db);
   const orderRef = doc(db, 'orders', orderId);
   batch.set(orderRef, {
