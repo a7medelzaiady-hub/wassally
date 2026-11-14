@@ -28,7 +28,9 @@ class MainShell extends StatelessWidget {
       valueListenable: shellTab,
       builder: (context, index, _) {
         return Scaffold(
-          floatingActionButton: const FeedbackFab(allowOrderIssue: true),
+          floatingActionButton: index == 3
+              ? null
+              : const FeedbackFab(allowOrderIssue: true),
           body: Stack(
             children: [
               IndexedStack(index: index, children: _pages),
