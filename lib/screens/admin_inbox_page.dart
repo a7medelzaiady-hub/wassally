@@ -232,15 +232,55 @@ class _RequestCardState extends State<_RequestCard> {
   }
 
   Future<void> _reject() async {
-    final ok = await confirmDialog(
-      context,
-      title: 'رفض الطلب',
-      message: 'هيقدر يعيد التقديم بعد كده.',
-      confirmLabel: 'رفض',
-      destructive: true,
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('سبب رفض الطلب'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 300,
+              decoration: const InputDecoration(
+                hintText: 'اكتب سبب الرفض ليصل لصاحب الطلب...',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) => (value ?? '').trim().length < 5
+                  ? 'سبب الرفض يجب ألا يقل عن 5 أحرف'
+                  : null,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: kDanger),
+              onPressed: () {
+                if (formKey.currentState?.validate() ?? false) {
+                  Navigator.pop(ctx, controller.text.trim());
+                }
+              },
+              child: const Text('تأكيد الرفض'),
+            ),
+          ],
+        ),
+      ),
     );
-    if (!ok) return;
-    await _run(() => RoleRequestService.reject(widget.doc), 'تم الرفض.');
+    controller.dispose();
+    if (reason == null) return;
+    await _run(
+      () => RoleRequestService.reject(widget.doc, note: reason),
+      'تم رفض الطلب وتسجيل السبب.',
+    );
   }
 
   Future<void> _run(Future<void> Function() f, String done) async {
@@ -305,6 +345,8 @@ class _RequestCardState extends State<_RequestCard> {
           line(Icons.phone_outlined, '${m['phone'] ?? ''}'),
           line(Icons.email_outlined, '${m['userEmail'] ?? ''}'),
           line(Icons.storefront_outlined, '${m['storeName'] ?? ''}'),
+          if (type == JoinType.storeOwner)
+            line(Icons.category_outlined, 'نوع النشاط: ${m['storeCategory'] ?? 'غير محدد (طلب قديم)'}'),
           line(Icons.location_on_outlined, '${m['address'] ?? ''}'),
           line(Icons.two_wheeler, '${m['vehicle'] ?? ''}'),
           line(Icons.sticky_note_2_outlined, '${m['notes'] ?? ''}'),
