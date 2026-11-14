@@ -105,7 +105,7 @@ class OrderService {
 
     // الـ UID يضمن عدم تصادم المعرّف بين العملاء، والـ token يعيد استخدام نفس
     // مستند Firestore عند إعادة محاولة نفس الطلب بعد انقطاع الاتصال.
-    return '${uid}_${token}';
+    return '${uid}_$token';
   }
 
   static Future<void> _clearPendingOrderId(String uid) async {
