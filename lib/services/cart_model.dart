@@ -80,6 +80,18 @@ class CartModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// حذف الصنف بالكامل من السلة بغض النظر عن كميته.
+  void removeItem(Product p) {
+    _items.remove(p);
+    if (_items.isEmpty) {
+      _storeId = null;
+      _storeName = null;
+      promoCode = '';
+      promoPercent = 0;
+    }
+    notifyListeners();
+  }
+
   void clear() {
     promoCode = '';
     promoPercent = 0;
