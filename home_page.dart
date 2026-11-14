@@ -10,10 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../models/app_role.dart';
 import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
 import '../services/navigation.dart';
+import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -53,8 +55,6 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  String? _category;
-
   // العنوان المحفوظ للعميل.
   String _address = '';
 
@@ -85,11 +85,13 @@ class _HomePageState extends State<HomePage>
   void initState() {
     super.initState();
 
-    // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول.
+    // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
     if (req != null) {
-      _category = req;
       homeCategoryRequest.value = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openDirectory(req);
+      });
     }
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -98,6 +100,7 @@ class _HomePageState extends State<HomePage>
           .collection('notifications')
           .where('userId', isEqualTo: uid)
           .where('read', isEqualTo: false)
+          .limit(10) // العداد بيعرض 9+ أصلًا، فمفيش داعي نقرأ أكتر من كده.
           .snapshots();
     }
 
@@ -121,6 +124,15 @@ class _HomePageState extends State<HomePage>
     setState(() {
       _storesFuture = _loadStores();
     });
+  }
+
+  /// فتح قائمة المحلات (لقسم معيّن أو الكل).
+  void _openDirectory([String? category]) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StoreDirectoryPage(initialCategory: category),
+      ),
+    );
   }
 
   void _openStore(Store s) {
@@ -329,18 +341,100 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── الإشعارات ─────────────────────────
 
-  Future<void> _initNotifications() async {
+  /// شرح واضح قبل طلب إذن الإشعارات، بيظهر مرة واحدة بس لكل حساب.
+  Future<bool> _confirmNotificationsUse() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text(
+            'تفعيل الإشعارات',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: const Text(
+            'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
+            'والخصومات الجديدة. تقدر توقفها في أي وقت من إعدادات الجهاز.',
+            style: TextStyle(height: 1.6),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('مش دلوقتي'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('تفعيل'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// الاشتراك في topic العروض العامة (all): للعملاء بس.
+  /// الأدمن وأصحاب المحلات بنشيلهم منه لو كانوا مشتركين قبل كده.
+  Future<void> _syncBroadcastTopic(String uid) async {
+    final known = RoleService.cachedFor(uid);
+    final isStaff =
+        known != null &&
+        (known.role == AppRole.admin || known.role == AppRole.storeOwner);
     try {
       final fm = FirebaseMessaging.instance;
-      final settings = await fm.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+      if (isStaff) {
+        await fm.unsubscribeFromTopic('all');
+      } else {
+        await fm.subscribeToTopic('all');
+      }
+    } catch (e) {
+      debugPrint('Topic sync error: $e');
+    }
+  }
 
-      // اشتراك عام: تقدر تبعت لكل العملاء من Firebase Console على topic اسمه all.
-      await fm.subscribeToTopic('all');
+  Future<void> _initNotifications() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final fm = FirebaseMessaging.instance;
+
+      final status = (await fm.getNotificationSettings()).authorizationStatus;
+      final granted =
+          status == AuthorizationStatus.authorized ||
+          status == AuthorizationStatus.provisional;
+
+      if (!granted) {
+        // منسألش غير مرة واحدة، ومع شرح قبل نافذة النظام.
+        final userRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid);
+        final prompted = (await userRef.get()).data()?['notifPrompted'] == true;
+        if (prompted) return;
+
+        // نستنى شوية عشان الرسالة ما تتزاحمش مع فتح الصفحة أو نافذة التحديث.
+        await Future<void>.delayed(const Duration(seconds: 3));
+        if (!mounted) return;
+
+        final ok = await _confirmNotificationsUse();
+        unawaited(
+          userRef
+              .set({'notifPrompted': true}, SetOptions(merge: true))
+              .catchError((_) {}),
+        );
+        if (!ok || !mounted) return;
+
+        final res = await fm.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        if (res.authorizationStatus == AuthorizationStatus.denied) return;
+      }
+
+      await _syncBroadcastTopic(user.uid);
 
       // تسجيل توكن الجهاز بيتم في NotificationService (users/{uid}.fcmTokens)،
       // فمش بنكرره هنا.
@@ -646,9 +740,7 @@ class _HomePageState extends State<HomePage>
       ),
       child: TextField(
         readOnly: true,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
-        ),
+        onTap: _openDirectory,
         textInputAction: TextInputAction.search,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
@@ -696,17 +788,9 @@ class _HomePageState extends State<HomePage>
                               categoryImages[info.category] ??
                               ''),
                     isAll: info.category == 'الكل',
-                    selected: info.category == 'الكل'
-                        ? _category == null
-                        : _category == info.category,
-                    onTap: () => setState(() {
-                      if (info.category == 'الكل' ||
-                          _category == info.category) {
-                        _category = null;
-                      } else {
-                        _category = info.category;
-                      }
-                    }),
+                    onTap: () => _openDirectory(
+                      info.category == 'الكل' ? null : info.category,
+                    ),
                   ),
                 ),
             ],
@@ -939,7 +1023,6 @@ class _HomePageState extends State<HomePage>
               ? _parse(snapshot.data!)
               : (stores: <_StoreItem>[], categoryImages: <String, String>{});
           final all = parsed.stores;
-          final showBanner = _category == null;
 
           final scroll = CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -948,15 +1031,14 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(child: _header()),
 
               // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
-              if (showBanner)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: PromoBanners(),
-                  ),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: PromoBanners(),
                 ),
+              ),
 
-              if (showBanner && !loading && !hasError)
+              if (!loading && !hasError)
                 SliverToBoxAdapter(child: _highlights(all)),
 
               SliverToBoxAdapter(
@@ -971,9 +1053,7 @@ class _HomePageState extends State<HomePage>
                         ),
                       ),
                       TextButton(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
-                        ),
+                        onPressed: _openDirectory,
                         child: const Text('تسوق الكل'),
                       ),
                     ],
@@ -992,9 +1072,7 @@ class _HomePageState extends State<HomePage>
                     width: double.infinity,
                     height: 56,
                     child: FilledButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
-                      ),
+                      onPressed: _openDirectory,
                       icon: const Icon(Icons.shopping_bag_rounded),
                       label: const Text('تسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                       style: FilledButton.styleFrom(
@@ -1077,15 +1155,43 @@ class _CategoryTile extends StatelessWidget {
   final String label;
   final String imageUrl;
   final bool isAll;
-  final bool selected;
   final VoidCallback onTap;
   const _CategoryTile({
     required this.label,
     required this.imageUrl,
     required this.isAll,
-    required this.selected,
     required this.onTap,
   });
+
+  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
+  static String _emojiFor(String label) {
+    if (label == 'الكل') return '🛍️';
+    const map = <String, String>{
+      'مطاعم': '🍔',
+      'سوبرماركت': '🛒',
+      'بقالة': '🧺',
+      'خضار وفاكهة': '🥬',
+      'لحوم ودواجن': '🥩',
+      'مخبوزات وحلويات': '🥐',
+      'محمصات وعطارة': '🌰',
+      'كافيه ومشروبات': '☕',
+      'ورد وهدايا': '💐',
+      'أخرى': '📦',
+    };
+    final exact = map[label];
+    if (exact != null) return exact;
+    // احتياطي لو اسم القسم اتغيّر شوية.
+    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
+    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
+    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
+    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
+    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
+    if (label.contains('ورد') || label.contains('هدا')) return '💐';
+    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
+    if (label.contains('صيدل')) return '💊';
+    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
+    return '📦';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1097,7 +1203,7 @@ class _CategoryTile extends StatelessWidget {
           color: kTileBeige,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: selected ? Brand.green : Colors.transparent,
+            color: Colors.transparent,
             width: 2,
           ),
         ),
@@ -1110,22 +1216,11 @@ class _CategoryTile extends StatelessWidget {
                 width: 62,
                 height: 62,
                 child: isAll || imageUrl.isEmpty
-                    ? Container(
-                        decoration: BoxDecoration(gradient: Brand.softGradient),
-                        child: Icon(
-                          Icons.grid_view_rounded,
-                          color: Brand.green,
-                          size: 28,
-                        ),
-                      )
+                    ? _emojiBox()
                     : Image.network(
                         thumb(imageUrl, w: 200),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          decoration: BoxDecoration(
-                            gradient: Brand.softGradient,
-                          ),
-                        ),
+                        errorBuilder: (_, _, _) => _emojiBox(),
                       ),
               ),
             ),
@@ -1137,11 +1232,22 @@ class _CategoryTile extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w800,
-                color: selected ? Brand.green : Brand.ink,
+                color: Brand.ink,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _emojiBox() {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(gradient: Brand.softGradient),
+      child: Text(
+        _emojiFor(label),
+        style: const TextStyle(fontSize: 32, height: 1.1),
       ),
     );
   }
