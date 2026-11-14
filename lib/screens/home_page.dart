@@ -1081,9 +1081,28 @@ class _HomePageState extends State<HomePage>
                           childAspectRatio: 0.76,
                         ),
                     delegate: SliverChildBuilderDelegate(
-                      (context, i) => _StoreGridCard(
-                        item: filtered[i],
-                        onTap: () => _openStore(filtered[i].store),
+                      (context, i) => TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: Duration(milliseconds: 420 + (i % 5) * 55),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) => Opacity(
+                          opacity: value,
+                          child: Transform(
+                            alignment: Alignment.bottomCenter,
+                            transform: Matrix4.identity()
+                              ..setEntry(3, 2, 0.0014)
+                              ..rotateX((1 - value) * 0.055)
+                              ..translate(0.0, (1 - value) * 18),
+                            child: Transform.scale(
+                              scale: 0.97 + value * 0.03,
+                              child: child,
+                            ),
+                          ),
+                        ),
+                        child: _StoreGridCard(
+                          item: filtered[i],
+                          onTap: () => _openStore(filtered[i].store),
+                        ),
                       ),
                       childCount: filtered.length,
                     ),
