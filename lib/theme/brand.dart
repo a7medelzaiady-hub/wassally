@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// سمة ألوان كاملة. المستخدم بيختار واحدة من صفحة "حسابي".
 class AppPalette {
