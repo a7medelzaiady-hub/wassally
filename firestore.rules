@@ -691,7 +691,7 @@ service cloud.firestore {
 
     function validRoleRequest(rid, d) {
       return d.keys().hasOnly(['userId', 'userEmail', 'type', 'name', 'phone', 'status',
-                               'createdAt', 'storeName', 'address', 'vehicle', 'notes']) &&
+                               'createdAt', 'storeName', 'storeCategory', 'address', 'vehicle', 'notes']) &&
         d.keys().hasAll(['userId', 'type', 'name', 'phone', 'status', 'createdAt']) &&
         d.userId == request.auth.uid &&
         d.type in ['store_owner', 'courier'] &&
@@ -701,10 +701,10 @@ service cloud.firestore {
         d.get('userEmail', '') == request.auth.token.get('email', '') &&
         d.name is string && d.name.size() >= 2 && d.name.size() <= 80 &&
         d.phone is string && d.phone.matches('^01[0125][0-9]{8}$') &&
-        optStr(d, 'storeName', 100) && optStr(d, 'address', 300) &&
+        optStr(d, 'storeName', 100) && optStr(d, 'storeCategory', 60) && optStr(d, 'address', 300) &&
         optStr(d, 'vehicle', 60) && optStr(d, 'notes', 500) &&
         (d.type != 'store_owner' ||
-          ('storeName' in d && d.storeName.size() >= 2 && 'address' in d && d.address.size() >= 5)) &&
+          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && d.storeCategory.size() >= 2 && 'address' in d && d.address.size() >= 5)) &&
         (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
     }
 
