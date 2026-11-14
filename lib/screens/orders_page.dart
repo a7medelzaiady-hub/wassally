@@ -83,6 +83,41 @@ class _OrderCard extends StatelessWidget {
   final AppOrder order;
   const _OrderCard({required this.order});
 
+  Future<void> _delete(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف الطلب'),
+        content: const Text('الطلب هيتحذف نهائيًا ومش هيظهر في طلباتك. متأكد؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('رجوع'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: kDanger),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await OrderService.deleteOrder(order.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم حذف الطلب.')),
+      );
+    } on StateError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تعذر حذف الطلب. جرّب تاني.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = order.status;
@@ -196,6 +231,13 @@ class _OrderCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (status == OrderStatus.newOrder)
+                      IconButton(
+                        onPressed: () => _delete(context),
+                        tooltip: 'حذف الطلب',
+                        icon: Icon(Icons.delete_outline, color: kDanger),
+                        visualDensity: VisualDensity.compact,
+                      ),
                     const Spacer(),
                     Text(
                       'التفاصيل',
