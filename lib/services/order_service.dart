@@ -358,6 +358,21 @@ class OrderService {
     }
   }
 
+  /// إخفاء الطلب من سجل العميل دون حذف سجل المعاملة أو بياناته التشغيلية.
+  static Future<void> hideFromCustomer(String id) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('سجّل الدخول أولاً.');
+    try {
+      await _orders.doc(id).update({'customerHidden': true});
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw StateError('تعذر إخفاء الطلب. تحقق من صلاحيات Firestore المنشورة.');
+      }
+      if (e.code == 'unavailable') throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+      throw StateError('تعذر إخفاء الطلب (' + e.code + ').');
+    }
+  }
+
   /// طلبات المستخدم الحالي، الأحدث الأول.
   static Stream<List<AppOrder>> watchMyOrders() async* {
     final user = FirebaseAuth.instance.currentUser;
@@ -365,6 +380,7 @@ class OrderService {
 
     List<AppOrder> toList(QuerySnapshot<Map<String, dynamic>> snap) {
       final list = snap.docs
+          .where((d) => d.data().get('customerHidden') != true)
           .map((d) => AppOrder.fromMap(d.id, d.data()))
           .toList();
       list.sort((a, b) {
