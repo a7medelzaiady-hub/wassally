@@ -103,17 +103,50 @@ class StaffOrderService {
       .snapshots()
       .map(_toList);
 
-  /// للمندوب: الطلبات المكلّف بيها بس.
-  static Stream<List<AppOrder>> watchForCourier(String uid) =>
-      _orders.where('courierId', isEqualTo: uid).snapshots().map(_toList);
-
-  /// الطلبات المتاحة لكل المناديب: الجاهزة من المحل (preparing) ومحدّش خدها.
-  /// الاستعلام بالحالة بس لأن القواعد بتثبت قراءة الجاهز، والتصفية بـ courierId هنا.
-  static Stream<List<AppOrder>> watchAvailableOrders() => FirebaseFirestore.instance
-      .collection('courier_available_orders')
+  /// للمندوب: أحدث الطلبات المسندة إليه. القائمة محدودة لتقليل القراءات.
+  static Stream<List<AppOrder>> watchForCourier(
+    String uid, {
+    int limit = 50,
+  }) => _orders
+      .where('courierId', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
+      .limit(limit.clamp(1, 100).toInt())
       .snapshots()
-      .map((s) => s.docs.map((d) => AppOrder.fromMap(d.id, d.data())).toList());
+      .map(_toList);
+
+  /// الطلبات المتاحة للمندوبين، مع حد أقصى للقراءة في كل تحديث.
+  static Stream<List<AppOrder>> watchAvailableOrders({int limit = 50}) =>
+      FirebaseFirestore.instance
+          .collection('courier_available_orders')
+          .orderBy('createdAt', descending: true)
+          .limit(limit.clamp(1, 100).toInt())
+          .snapshots()
+          .map((s) => s.docs.map((d) => AppOrder.fromMap(d.id, d.data())).toList());
+
+  /// إحصائيات المندوب من Firestore Aggregation، مستقلة عن قائمة الطلبات المعروضة.
+  static Future<DeliveryStats> loadCourierStats(
+    String uid, {
+    DateTime? since,
+  }) async {
+    Query<Map<String, dynamic>> query = _orders
+        .where('courierId', isEqualTo: uid)
+        .where('deliveredBy', isEqualTo: uid)
+        .where('status', isEqualTo: OrderStatus.delivered.key);
+    if (since != null) {
+      query = query.where(
+        'deliveredAt',
+        isGreaterThanOrEqualTo: Timestamp.fromDate(since),
+      );
+    }
+    final aggregate = await query
+        .aggregate(count(), sum('collectedAmount'), sum('courierEarning'))
+        .get();
+    return DeliveryStats(
+      delivered: aggregate.count ?? 0,
+      collected: (aggregate.getSum('collectedAmount') as num?)?.toDouble() ?? 0,
+      earnings: (aggregate.getSum('courierEarning') as num?)?.toDouble() ?? 0,
+    );
+  }
 
   /// إحصائيات المندوب من طلباته هو (deliveredBy == uid) من بداية [since].
   /// بتتحسب من طلباته المحمّلة أصلًا، فمفيش قراءات إضافية.
@@ -200,44 +233,41 @@ class StaffOrderService {
   /// إحصائيات كل المناديب (للمدير فقط): عدد التسليمات والمبالغ المحصّلة وعمولات المناديب،
   /// بتتحسب في السيرفر (aggregation) من غير ما نحمّل الطلبات. [since] = null يعني الإجمالي الكلي.
   static Future<DeliveryStats> adminStats({DateTime? since}) async {
+    // نحافظ على نطاق ختم التسليم السابق، دون fallback محدود قد يعرض إجماليات ناقصة.
     final from = Timestamp.fromDate(since ?? DateTime(2020));
-    final q = _orders.where('deliveredAt', isGreaterThanOrEqualTo: from);
+    final query = _orders
+        .where('status', isEqualTo: OrderStatus.delivered.key)
+        .where('deliveredAt', isGreaterThanOrEqualTo: from);
     try {
-      final agg = await q
+      final aggregate = await query
           .aggregate(count(), sum('collectedAmount'), sum('courierEarning'))
           .get();
       return DeliveryStats(
-        delivered: agg.count ?? 0,
-        collected: agg.getSum('collectedAmount') ?? 0,
-        earnings: agg.getSum('courierEarning') ?? 0,
+        delivered: aggregate.count ?? 0,
+        collected: (aggregate.getSum('collectedAmount') as num?)?.toDouble() ?? 0,
+        earnings: (aggregate.getSum('courierEarning') as num?)?.toDouble() ?? 0,
       );
-    } catch (_) {
-      // تجميع المجاميع مع فلتر بيحتاج فهرس مركّب في Firestore. من غير فهرس بنحسب هنا
-      // من المستندات (حد أقصى 1000 طلب مسلّم). لو مفيش طلبات متختومة الأرقام بتبقى صفر.
-      final snap = await q.limit(1000).get();
-      var collected = 0.0;
-      var earnings = 0.0;
-      for (final d in snap.docs) {
-        collected += (d.data()['collectedAmount'] as num?)?.toDouble() ?? 0;
-        earnings += (d.data()['courierEarning'] as num?)?.toDouble() ?? 0;
-      }
-      return DeliveryStats(
-        delivered: snap.docs.length,
-        collected: collected,
-        earnings: earnings,
+    } on FirebaseException catch (error) {
+      throw StateError(
+        'تعذر تحميل إحصائيات التسليم (${error.code}). '
+        'تحقق من فهارس Firestore وصلاحيات القراءة ثم أعد المحاولة.',
       );
     }
   }
 
   /// للمدير: المناديب النشطين.
-  static Stream<List<Courier>> watchCouriers() {
-    return FirebaseFirestore.instance.collection('couriers').snapshots().map((
+  static Stream<List<Courier>> watchCouriers({int limit = 100}) {
+    return FirebaseFirestore.instance
+        .collection('couriers')
+        .where('active', isEqualTo: true)
+        .limit(limit.clamp(1, 200).toInt())
+        .snapshots()
+        .map((
       snap,
     ) {
       final list = <Courier>[];
       for (final d in snap.docs) {
         final m = d.data();
-        if (m['active'] != true) continue;
         list.add(
           Courier(
             id: d.id,
