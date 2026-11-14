@@ -78,7 +78,9 @@ class NotificationService {
           'fcmTokens': FieldValue.arrayRemove([token]),
         }, SetOptions(merge: true));
       }
-      await FirebaseMessaging.instance.deleteToken();
+      // بنفصل التوكن عن حساب المستخدم فقط. لا نستخدم unregister() هنا لأن
+      // نظام الإرسال الحالي وCloud Functions ما زالا يعتمدان على FCM tokens
+      // القديمة؛ التحويل إلى FID يحتاج ترحيلًا متكاملًا للعميل والخادم.
     } catch (e) {
       debugPrint('تعذر إلغاء تسجيل الإشعارات: $e');
     }
