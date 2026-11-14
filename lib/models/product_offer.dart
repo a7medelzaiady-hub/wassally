@@ -37,6 +37,7 @@ class ProductOffer {
     required double percentage,
   }) {
     _validatePrice(originalPrice, 'السعر الأصلي');
+    final basePrice = _money(originalPrice);
     if (!percentage.isFinite || percentage <= 0 || percentage >= 100) {
       throw ArgumentError.value(
         percentage,
@@ -45,14 +46,14 @@ class ProductOffer {
       );
     }
 
-    final discounted = _money(originalPrice * (1 - percentage / 100));
-    if (discounted <= 0 || discounted >= originalPrice) {
+    final discounted = _money(basePrice * (1 - percentage / 100));
+    if (discounted <= 0 || discounted >= basePrice) {
       throw ArgumentError('نسبة الخصم لا تنتج سعرًا صالحًا.');
     }
 
     return ProductOffer._(
       type: ProductOfferType.percentage,
-      originalPrice: _money(originalPrice),
+      originalPrice: basePrice,
       offerPrice: discounted,
       percentage: percentage,
     );
@@ -65,7 +66,9 @@ class ProductOffer {
   }) {
     _validatePrice(originalPrice, 'السعر الأصلي');
     _validatePrice(offerPrice, 'سعر العرض');
-    if (offerPrice >= originalPrice) {
+    final basePrice = _money(originalPrice);
+    final newPrice = _money(offerPrice);
+    if (newPrice <= 0 || newPrice >= basePrice) {
       throw ArgumentError.value(
         offerPrice,
         'offerPrice',
@@ -75,8 +78,8 @@ class ProductOffer {
 
     return ProductOffer._(
       type: ProductOfferType.fixedPrice,
-      originalPrice: _money(originalPrice),
-      offerPrice: _money(offerPrice),
+      originalPrice: basePrice,
+      offerPrice: newPrice,
     );
   }
 
