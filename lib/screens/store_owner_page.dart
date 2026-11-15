@@ -741,6 +741,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         'name': (m['name'] ?? '').toString(),
         'price': (m['price'] as num?) ?? 0,
         if (m['oldPrice'] is num) 'oldPrice': m['oldPrice'],
+        if ((m['offerText'] ?? '').toString().trim().isNotEmpty)
+          'offerText': (m['offerText'] ?? '').toString().trim(),
         if (m['offerEndsAt'] is Timestamp) 'offerEndsAt': m['offerEndsAt'],
         'image': (m['image'] ?? '').toString(),
       };
@@ -757,7 +759,11 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           e is Timestamp ? e.toDate() : null,
           DateTime.now(),
         );
-        if (o is num && o > p && !expired && offers.length < 12) {
+        final offerText = (m['offerText'] ?? '').toString().trim();
+        final hasPriceDiscount = o is num && o > p;
+        if ((hasPriceDiscount || offerText.isNotEmpty) &&
+            !expired &&
+            offers.length < 40) {
           offers.add(item(m));
         }
         if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
