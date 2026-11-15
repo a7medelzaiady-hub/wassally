@@ -12,6 +12,7 @@ import '../models/user_profile.dart';
 import 'cart_model.dart';
 import 'order_contact_service.dart';
 import 'order_status_writer.dart';
+import 'promo_service.dart';
 import 'user_service.dart';
 
 /// أقصى عدد أصناف مختلفة في الطلب الواحد. لازم يطابق firestore.rules (validNewOrder: items.size() <= 100).
@@ -169,6 +170,19 @@ class OrderService {
       throw StateError('بيانات المحل غير مكتملة. حاول مرة تانية.');
     }
 
+    // نعيد التحقق من الكوبون وقت الإرسال: النسبة ممكن تكون اتغيّرت بعد ما العميل طبّقه،
+    // والقواعد بتقارن الخصم بالنسبة الحالية في promos/{code}.
+    if (cart.promoCode.isNotEmpty) {
+      final p = await PromoService.check(cart.promoCode);
+      if (p == null) {
+        cart.setPromo('', 0);
+        throw StateError('الكوبون لم يعد صالحًا واتشال من الطلب. راجع الإجمالي وحاول تاني.');
+      }
+      if (p.code != cart.promoCode || p.percent != cart.promoPercent) {
+        cart.setPromo(p.code, p.percent);
+      }
+    }
+
     final data = <String, dynamic>{
       'userId': user.uid,
       // الاسم الأول بس في مستند الطلب العام (بيشوفه صاحب المحل). الاسم الكامل والموبايل
@@ -211,6 +225,12 @@ class OrderService {
       orderData: data,
       contactData: contactData,
     );
+    if (kDebugMode) {
+      debugPrint('ORDER DATA promo=[${data['promoCode']}] '
+          'units=${(data['promoCode'] as String?)?.codeUnits} '
+          'disc=${data['discount']} sub=${data['subtotal']} '
+          'fee=${data['deliveryFee']} total=${data['total']}');
+    }
     final ref = _orders.doc(orderId);
     final batch = FirebaseFirestore.instance.batch()..set(ref, data);
     batch.set(OrderContactService.ref(ref.id), contactData);
