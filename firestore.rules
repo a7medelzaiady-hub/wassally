@@ -228,20 +228,24 @@ service cloud.firestore {
     function feedMatchesOrder(orderId, orderData) {
       let feedPath = /databases/$(database)/documents/courier_available_orders/$(orderId);
       return existsAfter(feedPath) &&
-        getAfter(feedPath).data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
+        feedDataMatchesOrder(getAfter(feedPath).data, orderData);
+    }
+
+    function feedDataMatchesOrder(f, orderData) {
+      return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
           'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']) &&
-        getAfter(feedPath).data.get('storeId', '') == orderData.get('storeId', '') &&
-        getAfter(feedPath).data.get('storeName', '') == orderData.get('storeName', '') &&
-        getAfter(feedPath).data.get('area', '') == orderData.get('area', '') &&
-        getAfter(feedPath).data.get('items', []) == orderData.get('items', []) &&
-        getAfter(feedPath).data.get('subtotal', -1) == orderData.get('subtotal', -2) &&
-        getAfter(feedPath).data.get('deliveryFee', -1) == orderData.get('deliveryFee', -2) &&
-        getAfter(feedPath).data.get('finalDeliveryFee', null) == orderData.get('finalDeliveryFee', null) &&
-        getAfter(feedPath).data.get('discount', 0) == orderData.get('discount', 0) &&
-        getAfter(feedPath).data.get('total', -1) == orderData.get('total', -2) &&
-        getAfter(feedPath).data.get('status', '') == 'preparing' &&
+        f.get('storeId', '') == orderData.get('storeId', '') &&
+        f.get('storeName', '') == orderData.get('storeName', '') &&
+        f.get('area', '') == orderData.get('area', '') &&
+        f.get('items', []) == orderData.get('items', []) &&
+        f.get('subtotal', -1) == orderData.get('subtotal', -2) &&
+        f.get('deliveryFee', -1) == orderData.get('deliveryFee', -2) &&
+        f.get('finalDeliveryFee', null) == orderData.get('finalDeliveryFee', null) &&
+        f.get('discount', 0) == orderData.get('discount', 0) &&
+        f.get('total', -1) == orderData.get('total', -2) &&
+        f.get('status', '') == 'preparing' &&
         orderData.get('status', '') == 'preparing' &&
-        getAfter(feedPath).data.get('createdAt', null) == orderData.get('createdAt', null);
+        f.get('createdAt', null) == orderData.get('createdAt', null);
     }
 
     // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
