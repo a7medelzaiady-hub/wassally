@@ -428,6 +428,29 @@ test('courierAfterPrep: المندوب لا يبدأ قبل التجهيز عن�
   await assertSucceeds(changeStatus(as('cour1'), 'o1', 'preparing', 'on_the_way', 'courier'));
 });
 
+test('courierAfterReady: المندوب لا يبدأ قبل تأكيد جاهزية المحل، وينجح بعده', async () => {
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    status: 'preparing', courierId: 'cour1', ready: false,
+  }));
+  await flag('courierAfterReady');
+  await assertFails(changeStatus(as('cour1'), 'o1', 'preparing', 'on_the_way', 'courier'));
+
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    ready: true,
+  }));
+  await assertSucceeds(changeStatus(as('cour1'), 'o1', 'preparing', 'on_the_way', 'courier'));
+});
+
+test('courier delivery stamp: يستخدم الإجمالي المعتمد ورسوم التوصيل النهائية', async () => {
+  await setOrder({
+    status: 'on_the_way', courierId: 'cour1', verifiedTotal: 28,
+    finalDeliveryFee: 7,
+  });
+  await assertSucceeds(deliver(as('cour1'), 'courier', stamp({
+    collectedAmount: 28, courierEarning: 7,
+  })));
+});
+
 // ───────────── إحصائيات المندوب، التقدّم على طلب، طلبات الانضمام، الشكاوى ─────────────
 const { query, collection, where, getDocs } = require('firebase/firestore');
 const setOrder = (patch) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), patch));
