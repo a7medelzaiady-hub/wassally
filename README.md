@@ -20,7 +20,7 @@
 lib/
   main.dart                  نقطة البداية والثيم واللغة
   firebase_options.dart      إعدادات Firebase لكل المنصات
-  theme/app_theme.dart       الألوان والخط (Cairo) وثيم Material
+  theme/app_theme.dart       الألوان والخط (Tajawal) وثيم Material
   models/                    Product, Store, AppOrder, UserProfile
   services/                  السلة، الدخول، الطلبات، بيانات المستخدم
   data/seed_stores.dart      المحلات التجريبية
@@ -96,6 +96,7 @@ flutter test
 
 ## ملاحظات
 
+- خطة التشغيل المعتمدة لهذا الإصدار هي Firebase Spark؛ لا تعتمد على Cloud Functions أو Firebase Storage.
 - رسوم التوصيل ثابتة (10 ج.م) في `CartModel.deliveryFee`.
 - خط Tajawal مضمن داخل التطبيق، ولا يحتاج تنزيله من الإنترنت عند التشغيل.
 
@@ -159,29 +160,16 @@ flutter build appbundle          # ملف للرفع على Google Play
 ```
 
 
-## الإشعارات (Push)
+## الإشعارات (خطة Firebase Spark)
 
-الإشعارات بتتبعت من Cloud Functions (فولدر `functions`) وبتوصل حتى لو التطبيق مقفول:
+- التطبيق يسجّل توكن FCM في `users/{uid}.fcmTokens` عند تفعيل الإذن.
+- التنبيهات اللحظية داخل التطبيق تعتمد على مستمعات Firestore، وتعمل عندما تكون عملية التطبيق مفتوحة أو ما زالت حية في الخلفية.
+- **لا يوجد إرسال Push مضمون عندما يكون التطبيق مغلقًا تمامًا**؛ إرسال FCM من الخادم يحتاج Backend موثوقًا.
+- مصدر `functions/` محفوظ كمرجع تاريخي فقط، ويحتاج خطة Blaze ولا يتم نشره أو الاعتماد عليه في إصدار Spark الحالي.
+- تم استبعاد إعداد Functions من `firebase.json` حتى لا يحاول نشرها بالخطأ. لا تشغّل `firebase deploy --only functions` على هذا الإصدار.
+- أي ميزة تتطلب صلاحيات خادم (مثل إرسال Push عند إغلاق التطبيق، ترحيل بيانات الاتصال، أو حذف بيانات الحساب على الخادم) تظل غير مكتملة على Spark ويجب ألا تُعرض للمستخدم كأنها مضمونة.
 
-| الحدث | بيوصل لمين |
-|---|---|
-| طلب جديد | كل المديرين |
-| تغيير حالة الطلب | العميل صاحب الطلب |
-| تكليف مندوب بطلب | المندوب |
-| طلب اتلغى أو اتسلّم | المديرين (والمندوب لو اتلغى) |
-
-التطبيق بيسجّل توكن الجهاز في `users/{uid}.fcmTokens` بعد تسجيل الدخول، وبيمسحه عند الخروج. شغّال على أندرويد فقط حاليًا (الويب محتاج إعداد إضافي).
-
-### النشر (مرة واحدة)
-1. فعّل خطة **Blaze** من Firebase Console ← Usage and billing (فيه حصة مجانية، وحط تنبيه ميزانية).
-2. من غير ما تثبّت Node على جهازك: افتح **Google Cloud Shell** (`shell.cloud.google.com`)، ارفع مجلد `functions` مع `firebase.json` و`.firebaserc`، وشغّل:
-   ```
-   firebase login --no-localhost
-   firebase deploy --only functions
-   ```
-   أو من جهازك لو عندك Node 22 وFirebase CLI: `firebase deploy --only functions`.
-3. في التطبيق: `flutter pub add firebase_messaging` ثم `flutter run`.
-
+**مهم:** لا تضع مفاتيح Admin أو أسرار Cloudinary داخل تطبيق Flutter. ولا تغيّر خطة Firebase إلى Blaze دون قرار صريح ومراجعة التكلفة.
 
 ## فحص الإصدار والتحديث داخل التطبيق
 
@@ -201,7 +189,7 @@ flutter build appbundle          # ملف للرفع على Google Play
 - **قبل النشر لازم** تستبدل في الأماكن دي `wasally` (اسم الجهة المشغّلة) و`a7medelzaiady@gmail.com` (بريد الدعم):
   `lib/legal/legal_content.dart` وكل ملفات `legal/*.html` (Find & Replace في كل الملفات).
   وراجع النصوص (خصوصاً "القانون الواجب التطبيق") مع محامٍ لو أمكن.
-- حذف الحساب: حسابي ← حذف حسابي. الدالة `onUserDeleted` في `functions/` بتشيل البيانات الشخصية من الطلبات القديمة.
+- حذف الحساب: راجع تدفق الحذف الفعلي قبل النشر؛ تنظيف البيانات التاريخية على الخادم الموجود في `functions/` غير نشط على Spark، فلا تعتبر حذف حساب Firebase وحده إثباتًا لاكتمال حذف كل البيانات المرتبطة.
 - نشر الصفحات على رابط عام (Firebase Hosting، بيشتغل على الخطة المجانية): `firebase deploy --only hosting`
   والروابط بتبقى:
   - `https://wasally-12259.web.app/privacy.html`
@@ -218,7 +206,7 @@ flutter build appbundle          # ملف للرفع على Google Play
 
 ## حماية الأسعار (من غير Cloud Functions)
 
-- القواعد (`firestore.rules`) بتحدّد شكل الطلب الجديد: مفاتيح محددة، حد أقصى 15 صنف و50 كمية للصنف،
+- القواعد (`firestore.rules`) بتحدّد شكل الطلب الجديد: مفاتيح محددة، حد أقصى 100 صنف و50 كمية للصنف،
   والإجمالي لازم يساوي مجموع الأسطر + رسوم التوصيل (10 ج.م). لو غيّرت `CartModel.deliveryFee`
   أو `kMaxOrderLines`/`kMaxLineQty` لازم تغيّر نفس الأرقام في القواعد.
 - القواعد **ماتقدرش** تقارن بأسعار الكتالوج، فالمدير هو اللي يعتمد الإجمالي: شاشة الطلب بتقارن الأسعار
