@@ -34,17 +34,22 @@ class CatalogService {
       final loadedVersion = prefs?.getString(_verKey);
       final loadedAt = prefs?.getInt(_tsKey) ?? 0;
 
-      if (serverVersion != null && loadedVersion == serverVersion) {
-        return Source.cache;
+      // لو إصدار الخادم اتغيّر، لازم نسحب البيانات الجديدة فورًا.
+      // مهلة الـ 15 دقيقة تُستخدم فقط كاحتياط عند غياب رقم إصدار الخادم،
+      // ولا يجوز أن تحجب تحديثًا معروفًا (مثل عرض أضافه صاحب المحل).
+      if (serverVersion != null) {
+        if (loadedVersion == serverVersion) return Source.cache;
+        await prefs?.setString(_verKey, serverVersion);
+        await prefs?.setInt(_tsKey, DateTime.now().millisecondsSinceEpoch);
+        return Source.server;
       }
 
       final age = DateTime.now().millisecondsSinceEpoch - loadedAt;
       if (loadedVersion != null && age < _minRefresh.inMilliseconds) {
-        // اتغيّر الكتالوج بس لسه ما عدّتش الفترة: نكمّل على الكاش.
         return Source.cache;
       }
 
-      await prefs?.setString(_verKey, serverVersion ?? '');
+      await prefs?.setString(_verKey, '');
       await prefs?.setInt(_tsKey, DateTime.now().millisecondsSinceEpoch);
       return Source.server;
     } catch (e) {
