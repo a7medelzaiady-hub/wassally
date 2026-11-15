@@ -538,5 +538,6 @@ test('store owner: حذف المحل وفك ربط حسابه يتمان في Ba
   batch.delete(doc(db, 'stores/shop1'));
   batch.delete(doc(db, 'storeOwners/owner1'));
   await assertSucceeds(batch.commit());
-  await assertFails(getDoc(doc(db, 'storeOwners/owner1')));
+  const ownerLink = await assertSucceeds(getDoc(doc(db, 'storeOwners/owner1')));
+  if (ownerLink.exists()) throw new Error('Owner link should be removed with the store.');
 });
