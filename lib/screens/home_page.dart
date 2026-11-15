@@ -24,7 +24,6 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
-import '../widgets/glossy_fab.dart';
 import 'offers_page.dart';
 import '../widgets/promo_banners.dart';
 import 'categories_landing_page.dart' show kCategoryPhotos;
@@ -1133,11 +1132,65 @@ class _HomePageState extends State<HomePage>
               PositionedDirectional(
                 end: 18,
                 bottom: 18,
-                child: GlossyFab(
-                  icon: Icons.local_offer_rounded,
-                  tooltip: 'عروض وخصومات',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const OffersPage()),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(28),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OffersPage()),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Brand.greenLight,
+                            Brand.green,
+                            Brand.greenDark,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.45),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Brand.green.withValues(alpha: 0.32),
+                            blurRadius: 18,
+                            offset: const Offset(0, 7),
+                          ),
+                          const BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 8,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.local_offer_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                          SizedBox(width: 9),
+                          Text(
+                            'العروض والخصومات',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
