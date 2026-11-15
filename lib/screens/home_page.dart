@@ -20,7 +20,6 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
-import '../widgets/empty_state.dart';
 import '../widgets/glossy_fab.dart';
 import 'offers_page.dart';
 import '../widgets/promo_banners.dart';
