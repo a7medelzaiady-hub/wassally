@@ -1421,7 +1421,49 @@ class _ProductCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                Positioned(bottom: 8, left: 8, child: _addControl()),
+                PositionedDirectional(
+                  bottom: 8,
+                  start: 8,
+                  child: _addControl(),
+                ),
+                PositionedDirectional(
+                  bottom: 8,
+                  end: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          formatPrice(product.price),
+                          style: TextStyle(
+                            color: Brand.ink,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (product.hasOffer) ...[
+                          const SizedBox(width: 5),
+                          Text(
+                            formatPrice(product.oldPrice),
+                            style: TextStyle(
+                              color: kMuted,
+                              fontSize: 10.5,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 if (canEdit)
                   Positioned(
                     top: 6,
@@ -1467,29 +1509,6 @@ class _ProductCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      formatPrice(product.price),
-                      style: TextStyle(
-                        color: Brand.goldDeep,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
-                    ),
-                    if (product.hasOffer) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        formatPrice(product.oldPrice),
-                        style: TextStyle(
-                          color: kMuted,
-                          fontSize: 11.5,
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
               ],
             ),
           ),
