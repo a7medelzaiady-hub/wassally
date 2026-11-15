@@ -112,6 +112,7 @@ test('customer: يقدر يعدّل الطلب وبيانات التواصل أ�
     userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 2',
   });
   await assertSucceeds(b.commit());
+  await assertFails(deleteDoc(doc(db, 'orders/o1/private/contact')));
 });
 
 test('customer: تعديل الطلب وبيانات التواصل يُرفض بعد تعيين المندوب', async () => {
