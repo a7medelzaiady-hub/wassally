@@ -99,6 +99,38 @@ test('strictOrders: اعتماد الإجمالي بدون تغيير الحال
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { status: 'new', verifiedTotal: 30, verifiedAt: serverTimestamp() }));
 });
 
+test('customer: يقدر يعدّل الطلب وبيانات التواصل أثناء التجهيز قبل تعيين المندوب', async () => {
+  await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
+  const db = as('cust1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+    subtotal: 30, total: 50, notes: 'تعديل', customerName: 'Ali',
+    editedAt: serverTimestamp(),
+  });
+  b.update(doc(db, 'orders/o1/private/contact'), {
+    userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 2',
+  });
+  await assertSucceeds(b.commit());
+  await assertFails(deleteDoc(doc(db, 'orders/o1/private/contact')));
+});
+
+test('customer: تعديل الطلب وبيانات التواصل يُرفض بعد تعيين المندوب', async () => {
+  await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), {
+      courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
+    }));
+  const db = as('cust1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+    subtotal: 30, total: 50, editedAt: serverTimestamp(),
+  });
+  b.update(doc(db, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 3' });
+  await assertFails(b.commit());
+});
+
 test('notifications: أدمن ينشئ، عميل يقرأ إشعاراته فقط', async () => {
   const n = { userId: 'cust1', title: 't', body: 'b', orderId: 'o1', read: false, createdAt: serverTimestamp() };
   await assertSucceeds(setDoc(doc(as('admin1'), 'notifications/n1'), n));

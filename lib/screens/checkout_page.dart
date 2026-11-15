@@ -337,6 +337,28 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: kPrimarySoft,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: kPrimary.withValues(alpha: 0.35)),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'معلومة مهمة: تقدر تعدّل المنتجات أو الكميات أو بيانات التوصيل بعد إرسال الطلب، من صفحة «طلباتي»، طالما المندوب لسه ما استلمش الطلب. بمجرد استلامه، مش هتقدر تعدّله.',
+                            style: TextStyle(height: 1.45, fontSize: 13),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   Text(
                     'ملخص الطلب',
                     style: text.titleMedium?.copyWith(

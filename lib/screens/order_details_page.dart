@@ -474,7 +474,16 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (order.status == OrderStatus.newOrder) ...[
+        if ([OrderStatus.newOrder, OrderStatus.preparing].contains(order.status) &&
+            order.courierId.isEmpty) ...[
+          if (order.status == OrderStatus.preparing)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'تقدر تعدّل طلبك لحد ما المندوب يستلمه.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            ),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onEdit,
