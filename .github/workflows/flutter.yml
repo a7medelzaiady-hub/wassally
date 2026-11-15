@@ -1,0 +1,42 @@
+name: Flutter CI
+
+# تحديد متى يتم تشغيل السكريبت (عند عمل Push أو Pull Request على فرع main)
+on:
+  push:
+    branches: [ "main", "codex/pr1-safe-integration-20261115" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. جلب كود المشروع من المستودع
+    - uses: actions/checkout@v4
+
+    # 2. تثبيت جافا (مطلوب لبناء تطبيقات أندرويد)
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    # 3. تثبيت الـ Flutter SDK في بيئة الـ GitHub
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.x' # يمكنك تحديد إصدار معين مثل 3.22.0 أو تركه هكذا لأحدث إصدار مستقر
+        channel: 'stable'
+
+    # 4. تحميل المكتبات والمخازن (pub get)
+    - name: Install dependencies
+      run: flutter pub get
+
+    # 5. عمل فحص وتأكد من سلامة الكود (اختياري)
+    - name: Analyze project source
+      run: flutter analyze --no-fatal-infos
+
+    # 6. تشغيل الاختبارات الآلية (اختياري)
+    - name: Run tests
+      run: flutter test

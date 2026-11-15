@@ -1,0 +1,1500 @@
+diff -ruN a/lib/models/product.dart b/lib/models/product.dart
+--- a/lib/models/product.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/models/product.dart	2026-11-15 09:43:03.280185373 +0000
+@@ -16,6 +16,12 @@
+ 
+   bool get hasOffer => oldPrice > price;
+ 
++  /// نص العرض الحر (مثل «2+1 مجانًا»)، فاضي = مفيش.
++  final String offerText;
++
++  /// تاريخ انتهاء العرض (اختياري). العرض المنتهي بيتجاهله التطبيق عند العرض للعميل.
++  final DateTime? offerEndsAt;
++
+   // حافظنا على توافق المنشئ القديم مع إضافة id اختياري
+   const Product(
+     this.name,
+@@ -24,6 +30,8 @@
+     this.id = '',
+     this.available = true,
+     this.oldPrice = 0,
++    this.offerText = '',
++    this.offerEndsAt,
+   ]);
+ 
+   @override
+diff -ruN a/lib/models/product_offer.dart b/lib/models/product_offer.dart
+--- a/lib/models/product_offer.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/models/product_offer.dart	2026-11-15 09:43:03.279888937 +0000
+@@ -136,3 +136,48 @@
+   static double _money(double value) =>
+       (value * 100).roundToDouble() / 100;
+ }
++
++/// ما يُعرض للعميل فعليًا بعد تجاهل العرض المنتهي.
++class OfferDisplay {
++  final double price;
++  final double oldPrice;
++  final String text;
++  final DateTime? endsAt;
++
++  const OfferDisplay({
++    required this.price,
++    required this.oldPrice,
++    required this.text,
++    required this.endsAt,
++  });
++}
++
++/// هل انتهى العرض؟ (بدون تاريخ انتهاء = مفتوح).
++bool isOfferExpired(DateTime? endsAt, DateTime now) =>
++    endsAt != null && !now.isBefore(endsAt);
++
++/// بيحدّد السعر والعرض اللي يظهروا للعميل. لو العرض انتهى بيتجاهله: السعر يرجع للسعر
++/// الأصلي (oldPrice) وبيتشال خصم النسبة ونص العرض. السعر المخزّن في Firestore بيفضل زي ما هو
++/// لحد ما صاحب المحل يلغي العرض أو يجدده.
++OfferDisplay resolveOfferDisplay({
++  required double price,
++  double oldPrice = 0,
++  String text = '',
++  DateTime? endsAt,
++  DateTime? now,
++}) {
++  if (isOfferExpired(endsAt, now ?? DateTime.now())) {
++    return OfferDisplay(
++      price: oldPrice > price ? oldPrice : price,
++      oldPrice: 0,
++      text: '',
++      endsAt: null,
++    );
++  }
++  return OfferDisplay(
++    price: price,
++    oldPrice: oldPrice > price ? oldPrice : 0,
++    text: text.trim(),
++    endsAt: endsAt,
++  );
++}
+diff -ruN a/lib/screens/admin_couriers_board_page.dart b/lib/screens/admin_couriers_board_page.dart
+--- a/lib/screens/admin_couriers_board_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/admin_couriers_board_page.dart	2026-11-15 09:35:14.149709755 +0000
+@@ -181,7 +181,14 @@
+                     return EmptyState(
+                       icon: Icons.error_outline,
+                       title: 'تعذر تحميل الترتيب',
+-                      message: 'فشل تجميع بيانات المناديب: ${snap.error}',
++                      message:
++                          snap.error is FirebaseException &&
++                              (snap.error as FirebaseException).code ==
++                                  'failed-precondition'
++                          ? 'الصفحة تحتاج فهارس Firestore جديدة. انشر firestore.indexes.json '
++                                'أو افتح الرابط الظاهر في رسالة الخطأ لإنشاء الفهرس، وانتظر دقائق حتى '
++                                'يكتمل بناؤه ثم أعد المحاولة.\n\n${snap.error}'
++                          : 'فشل تجميع بيانات المناديب: ${snap.error}',
+                     );
+                   }
+                   if (!snap.hasData) {
+diff -ruN a/lib/screens/admin_stores_page.dart b/lib/screens/admin_stores_page.dart
+--- a/lib/screens/admin_stores_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/admin_stores_page.dart	2026-11-15 09:34:42.181687711 +0000
+@@ -163,6 +163,57 @@
+     }
+   }
+ 
++  final Set<String> _deleting = {};
++
++  /// حذف محل من القائمة: بعد تأكيد واضح، بيمسح الأصناف على دفعات (400) ثم المحل نفسه.
++  Future<void> _deleteStore(String id, String name) async {
++    if (_deleting.contains(id)) return;
++
++    final ok = await confirmDialog(
++      context,
++      title: 'حذف المحل',
++      message:
++          'سيتم حذف المحل «$name» وكل أصنافه نهائيًا، ولا يمكن التراجع. '
++          'لو عايز تخفيه مؤقتًا اقفله بالمفتاح بدل الحذف. متأكد؟',
++      confirmLabel: 'حذف المحل',
++      destructive: true,
++    );
++
++    if (!ok || !mounted) return;
++
++    setState(() => _deleting.add(id));
++
++    try {
++      final products = _stores.doc(id).collection('products');
++
++      while (true) {
++        final snap = await products.limit(400).get();
++
++        if (snap.docs.isEmpty) break;
++
++        final batch = FirebaseFirestore.instance.batch();
++
++        for (final doc in snap.docs) {
++          batch.delete(doc.reference);
++        }
++
++        await batch.commit();
++      }
++
++      await _stores.doc(id).delete();
++
++      await CatalogService.bump();
++
++      _say('تم حذف المحل.');
++    } catch (e) {
++      _say(_errorText(e));
++    } finally {
++      if (mounted) {
++        setState(() => _deleting.remove(id));
++      }
++    }
++  }
++
+   void _open(String? id, _Json? data, int nextOrder) {
+     Navigator.of(context).push(
+       MaterialPageRoute(
+@@ -250,9 +301,33 @@
+                           iconSize: 24,
+                           borderRadius: BorderRadius.circular(12),
+                         ),
+-                        trailing: Switch(
+-                          value: (data['active'] as bool?) ?? true,
+-                          onChanged: (value) => _toggle(doc.id, value),
++                        trailing: Row(
++                          mainAxisSize: MainAxisSize.min,
++                          children: [
++                            IconButton(
++                              tooltip: 'حذف المحل',
++                              color: kDanger,
++                              icon: _deleting.contains(doc.id)
++                                  ? const SizedBox(
++                                      width: 20,
++                                      height: 20,
++                                      child: CircularProgressIndicator(
++                                        strokeWidth: 2,
++                                      ),
++                                    )
++                                  : const Icon(Icons.delete_outline_rounded),
++                              onPressed: _deleting.contains(doc.id)
++                                  ? null
++                                  : () => _deleteStore(
++                                      doc.id,
++                                      (data['name'] ?? '').toString(),
++                                    ),
++                            ),
++                            Switch(
++                              value: (data['active'] as bool?) ?? true,
++                              onChanged: (value) => _toggle(doc.id, value),
++                            ),
++                          ],
+                         ),
+                       ),
+                     );
+diff -ruN a/lib/screens/cart_page.dart b/lib/screens/cart_page.dart
+--- a/lib/screens/cart_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/cart_page.dart	2026-11-15 09:34:29.784372072 +0000
+@@ -84,8 +84,15 @@
+ class _CartBody extends StatelessWidget {
+   const _CartBody();
+ 
++  // الودجت دي بتتعمل const من CartPage، يعني Flutter بيتخطّى إعادة بنائها لما السلة تتغيّر.
++  // عشان كده بتسمع للسلة بنفسها، وإلا أزرار + و − و حذف الصنف بتغيّر الكميات من غير ما الشاشة تتحدّث.
+   @override
+-  Widget build(BuildContext context) {
++  Widget build(BuildContext context) => ListenableBuilder(
++    listenable: cart,
++    builder: (context, _) => _buildBody(context),
++  );
++
++  Widget _buildBody(BuildContext context) {
+     final text = Theme.of(context).textTheme;
+     final entries = cart.items.entries.toList();
+ 
+diff -ruN a/lib/screens/categories_landing_page.dart b/lib/screens/categories_landing_page.dart
+--- a/lib/screens/categories_landing_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/categories_landing_page.dart	2026-11-15 09:35:06.785836562 +0000
+@@ -44,6 +44,16 @@
+   'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
+   'سوبرماركت': 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=70',
+   'ورد': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
++  // اسم القسم الفعلي في المحلات «ورد وهدايا»؛ المفتاح القديم «ورد» ما كانش بيطابقه فالصورة ما كانتش بتظهر.
++  'ورد وهدايا': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
++  // الصور التالية لم أتحقق من روابطها (لا يوجد اتصال بالإنترنت أثناء الكتابة). لو رابط ما فتحش
++  // بيظهر الإيموجي الملوّن بدل الصورة، وتقدر تبدّله من Firestore (app_info/category_images) من غير نشر تحديث.
++  'بقالة': 'https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=700&q=70',
++  'خضار وفاكهة': 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=700&q=70',
++  'لحوم ودواجن': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=700&q=70',
++  'مخبوزات وحلويات': 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=700&q=70',
++  'محمصات وعطارة': 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=700&q=70',
++  'كافيه ومشروبات': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=700&q=70',
+   'صيدليات': 'https://images.unsplash.com/photo-1576602976047-174e57a47881?auto=format&fit=crop&w=700&q=70',
+ };
+ 
+diff -ruN a/lib/screens/home_page.dart b/lib/screens/home_page.dart
+--- a/lib/screens/home_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/home_page.dart	2026-11-15 09:34:29.739595558 +0000
+@@ -10,10 +10,12 @@
+ import 'package:geocoding/geocoding.dart';
+ import 'package:geolocator/geolocator.dart';
+ 
++import '../models/app_role.dart';
+ import '../models/store.dart';
+ import '../services/cart_model.dart';
+ import '../services/catalog_service.dart';
+ import '../services/navigation.dart';
++import '../services/role_service.dart';
+ import '../services/update_service.dart';
+ import '../theme/app_theme.dart';
+ import '../utils/format.dart';
+@@ -53,8 +55,6 @@
+ 
+ class _HomePageState extends State<HomePage>
+     with SingleTickerProviderStateMixin {
+-  String? _category;
+-
+   // العنوان المحفوظ للعميل.
+   String _address = '';
+ 
+@@ -85,11 +85,13 @@
+   void initState() {
+     super.initState();
+ 
+-    // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول.
++    // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
+     final req = homeCategoryRequest.value;
+     if (req != null) {
+-      _category = req;
+       homeCategoryRequest.value = null;
++      WidgetsBinding.instance.addPostFrameCallback((_) {
++        if (mounted) _openDirectory(req);
++      });
+     }
+ 
+     final uid = FirebaseAuth.instance.currentUser?.uid;
+@@ -98,6 +100,7 @@
+           .collection('notifications')
+           .where('userId', isEqualTo: uid)
+           .where('read', isEqualTo: false)
++          .limit(10) // العداد بيعرض 9+ أصلًا، فمفيش داعي نقرأ أكتر من كده.
+           .snapshots();
+     }
+ 
+@@ -123,6 +126,15 @@
+     });
+   }
+ 
++  /// فتح قائمة المحلات (لقسم معيّن أو الكل).
++  void _openDirectory([String? category]) {
++    Navigator.of(context).push(
++      MaterialPageRoute(
++        builder: (_) => StoreDirectoryPage(initialCategory: category),
++      ),
++    );
++  }
++
+   void _openStore(Store s) {
+     Navigator.of(context)
+         .push(MaterialPageRoute(builder: (_) => StorePage(store: s)));
+@@ -329,18 +341,100 @@
+ 
+   // ───────────────────────── الإشعارات ─────────────────────────
+ 
++  /// شرح واضح قبل طلب إذن الإشعارات، بيظهر مرة واحدة بس لكل حساب.
++  Future<bool> _confirmNotificationsUse() async {
++    final ok = await showDialog<bool>(
++      context: context,
++      builder: (ctx) => Directionality(
++        textDirection: TextDirection.rtl,
++        child: AlertDialog(
++          shape: RoundedRectangleBorder(
++            borderRadius: BorderRadius.circular(22),
++          ),
++          title: const Text(
++            'تفعيل الإشعارات',
++            style: TextStyle(fontWeight: FontWeight.w900),
++          ),
++          content: const Text(
++            'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
++            'والخصومات الجديدة. تقدر توقفها في أي وقت من إعدادات الجهاز.',
++            style: TextStyle(height: 1.6),
++          ),
++          actions: [
++            TextButton(
++              onPressed: () => Navigator.of(ctx).pop(false),
++              child: const Text('مش دلوقتي'),
++            ),
++            FilledButton(
++              onPressed: () => Navigator.of(ctx).pop(true),
++              child: const Text('تفعيل'),
++            ),
++          ],
++        ),
++      ),
++    );
++    return ok ?? false;
++  }
++
++  /// الاشتراك في topic العروض العامة (all): للعملاء بس.
++  /// الأدمن وأصحاب المحلات بنشيلهم منه لو كانوا مشتركين قبل كده.
++  Future<void> _syncBroadcastTopic(String uid) async {
++    final known = RoleService.cachedFor(uid);
++    final isStaff =
++        known != null &&
++        (known.role == AppRole.admin || known.role == AppRole.storeOwner);
++    try {
++      final fm = FirebaseMessaging.instance;
++      if (isStaff) {
++        await fm.unsubscribeFromTopic('all');
++      } else {
++        await fm.subscribeToTopic('all');
++      }
++    } catch (e) {
++      debugPrint('Topic sync error: $e');
++    }
++  }
++
+   Future<void> _initNotifications() async {
++    final user = FirebaseAuth.instance.currentUser;
++    if (user == null) return;
+     try {
+       final fm = FirebaseMessaging.instance;
+-      final settings = await fm.requestPermission(
+-        alert: true,
+-        badge: true,
+-        sound: true,
+-      );
+-      if (settings.authorizationStatus == AuthorizationStatus.denied) return;
+ 
+-      // اشتراك عام: تقدر تبعت لكل العملاء من Firebase Console على topic اسمه all.
+-      await fm.subscribeToTopic('all');
++      final status = (await fm.getNotificationSettings()).authorizationStatus;
++      final granted =
++          status == AuthorizationStatus.authorized ||
++          status == AuthorizationStatus.provisional;
++
++      if (!granted) {
++        // منسألش غير مرة واحدة، ومع شرح قبل نافذة النظام.
++        final userRef = FirebaseFirestore.instance
++            .collection('users')
++            .doc(user.uid);
++        final prompted = (await userRef.get()).data()?['notifPrompted'] == true;
++        if (prompted) return;
++
++        // نستنى شوية عشان الرسالة ما تتزاحمش مع فتح الصفحة أو نافذة التحديث.
++        await Future<void>.delayed(const Duration(seconds: 3));
++        if (!mounted) return;
++
++        final ok = await _confirmNotificationsUse();
++        unawaited(
++          userRef
++              .set({'notifPrompted': true}, SetOptions(merge: true))
++              .catchError((_) {}),
++        );
++        if (!ok || !mounted) return;
++
++        final res = await fm.requestPermission(
++          alert: true,
++          badge: true,
++          sound: true,
++        );
++        if (res.authorizationStatus == AuthorizationStatus.denied) return;
++      }
++
++      await _syncBroadcastTopic(user.uid);
+ 
+       // تسجيل توكن الجهاز بيتم في NotificationService (users/{uid}.fcmTokens)،
+       // فمش بنكرره هنا.
+@@ -646,9 +740,7 @@
+       ),
+       child: TextField(
+         readOnly: true,
+-        onTap: () => Navigator.of(context).push(
+-          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
+-        ),
++        onTap: _openDirectory,
+         textInputAction: TextInputAction.search,
+         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+         decoration: InputDecoration(
+@@ -696,17 +788,9 @@
+                               categoryImages[info.category] ??
+                               ''),
+                     isAll: info.category == 'الكل',
+-                    selected: info.category == 'الكل'
+-                        ? _category == null
+-                        : _category == info.category,
+-                    onTap: () => setState(() {
+-                      if (info.category == 'الكل' ||
+-                          _category == info.category) {
+-                        _category = null;
+-                      } else {
+-                        _category = info.category;
+-                      }
+-                    }),
++                    onTap: () => _openDirectory(
++                      info.category == 'الكل' ? null : info.category,
++                    ),
+                   ),
+                 ),
+             ],
+@@ -952,7 +1036,6 @@
+               ? _parse(snapshot.data!)
+               : (stores: <_StoreItem>[], categoryImages: <String, String>{});
+           final all = parsed.stores;
+-          final showBanner = _category == null;
+ 
+           final scroll = CustomScrollView(
+             physics: const BouncingScrollPhysics(),
+@@ -961,15 +1044,14 @@
+               SliverToBoxAdapter(child: _header()),
+ 
+               // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
+-              if (showBanner)
+-                const SliverToBoxAdapter(
+-                  child: Padding(
+-                    padding: EdgeInsets.only(top: 12),
+-                    child: PromoBanners(),
+-                  ),
++              const SliverToBoxAdapter(
++                child: Padding(
++                  padding: EdgeInsets.only(top: 12),
++                  child: PromoBanners(),
+                 ),
++              ),
+ 
+-              if (showBanner && !loading && !hasError)
++              if (!loading && !hasError)
+                 SliverToBoxAdapter(child: _highlights(all)),
+ 
+               SliverToBoxAdapter(
+@@ -984,9 +1066,7 @@
+                         ),
+                       ),
+                       TextButton(
+-                        onPressed: () => Navigator.of(context).push(
+-                          MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
+-                        ),
++                        onPressed: _openDirectory,
+                         child: const Text('تسوق الكل'),
+                       ),
+                     ],
+@@ -1005,9 +1085,7 @@
+                     width: double.infinity,
+                     height: 56,
+                     child: FilledButton.icon(
+-                      onPressed: () => Navigator.of(context).push(
+-                        MaterialPageRoute(builder: (_) => StoreDirectoryPage(initialCategory: _category)),
+-                      ),
++                      onPressed: _openDirectory,
+                       icon: const Icon(Icons.shopping_bag_rounded),
+                       label: const Text('تسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                       style: FilledButton.styleFrom(
+@@ -1090,16 +1168,44 @@
+   final String label;
+   final String imageUrl;
+   final bool isAll;
+-  final bool selected;
+   final VoidCallback onTap;
+   const _CategoryTile({
+     required this.label,
+     required this.imageUrl,
+     required this.isAll,
+-    required this.selected,
+     required this.onTap,
+   });
+ 
++  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
++  static String _emojiFor(String label) {
++    if (label == 'الكل') return '🛍️';
++    const map = <String, String>{
++      'مطاعم': '🍔',
++      'سوبرماركت': '🛒',
++      'بقالة': '🧺',
++      'خضار وفاكهة': '🥬',
++      'لحوم ودواجن': '🥩',
++      'مخبوزات وحلويات': '🥐',
++      'محمصات وعطارة': '🌰',
++      'كافيه ومشروبات': '☕',
++      'ورد وهدايا': '💐',
++      'أخرى': '📦',
++    };
++    final exact = map[label];
++    if (exact != null) return exact;
++    // احتياطي لو اسم القسم اتغيّر شوية.
++    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
++    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
++    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
++    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
++    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
++    if (label.contains('ورد') || label.contains('هدا')) return '💐';
++    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
++    if (label.contains('صيدل')) return '💊';
++    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
++    return '📦';
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return GestureDetector(
+@@ -1110,7 +1216,7 @@
+           color: kTileBeige,
+           borderRadius: BorderRadius.circular(18),
+           border: Border.all(
+-            color: selected ? Brand.green : Colors.transparent,
++            color: Colors.transparent,
+             width: 2,
+           ),
+         ),
+@@ -1123,22 +1229,11 @@
+                 width: 62,
+                 height: 62,
+                 child: isAll || imageUrl.isEmpty
+-                    ? Container(
+-                        decoration: BoxDecoration(gradient: Brand.softGradient),
+-                        child: Icon(
+-                          Icons.grid_view_rounded,
+-                          color: Brand.green,
+-                          size: 28,
+-                        ),
+-                      )
++                    ? _emojiBox()
+                     : Image.network(
+                         thumb(imageUrl, w: 200),
+                         fit: BoxFit.cover,
+-                        errorBuilder: (_, _, _) => Container(
+-                          decoration: BoxDecoration(
+-                            gradient: Brand.softGradient,
+-                          ),
+-                        ),
++                        errorBuilder: (_, _, _) => _emojiBox(),
+                       ),
+               ),
+             ),
+@@ -1150,7 +1245,7 @@
+               style: TextStyle(
+                 fontSize: 12.5,
+                 fontWeight: FontWeight.w800,
+-                color: selected ? Brand.green : Brand.ink,
++                color: Brand.ink,
+               ),
+             ),
+           ],
+@@ -1158,4 +1253,15 @@
+       ),
+     );
+   }
++
++  Widget _emojiBox() {
++    return Container(
++      alignment: Alignment.center,
++      decoration: BoxDecoration(gradient: Brand.softGradient),
++      child: Text(
++        _emojiFor(label),
++        style: const TextStyle(fontSize: 32, height: 1.1),
++      ),
++    );
++  }
+ }
+diff -ruN a/lib/screens/offers_page.dart b/lib/screens/offers_page.dart
+--- a/lib/screens/offers_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/offers_page.dart	2026-11-15 09:44:06.404965405 +0000
+@@ -2,6 +2,7 @@
+ import 'package:flutter/material.dart';
+ import '../models/store.dart';
+ import '../models/product.dart';
++import '../models/product_offer.dart';
+ import '../services/cart_model.dart';
+ import '../services/catalog_service.dart';
+ import '../theme/brand.dart';
+@@ -52,13 +53,20 @@
+           final name = (m['name'] ?? '').toString().trim();
+           final price = (m['price'] as num?)?.toDouble() ?? 0;
+           final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+-          if (name.isNotEmpty && price > 0 && old > price) {
++          final ends = m['offerEndsAt'];
++          final expired = isOfferExpired(
++            ends is Timestamp ? ends.toDate() : null,
++            DateTime.now(),
++          );
++          if (name.isNotEmpty && price > 0 && old > price && !expired) {
+             result.add(_Offer(store, name, (m['image'] ?? '').toString(), price, old));
+           }
+         }
+       }
+       for (final p in store.products) {
+-        if (p.price > 0 && p.oldPrice > p.price) {
++        if (p.price > 0 &&
++            p.oldPrice > p.price &&
++            !isOfferExpired(p.offerEndsAt, DateTime.now())) {
+           result.add(_Offer(store, p.name, p.imageUrl, p.price, p.oldPrice));
+         }
+       }
+diff -ruN a/lib/screens/store_owner_page.dart b/lib/screens/store_owner_page.dart
+--- a/lib/screens/store_owner_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/store_owner_page.dart	2026-11-15 09:43:57.519045677 +0000
+@@ -2,6 +2,7 @@
+ import 'package:flutter/material.dart';
+ 
+ import '../models/order.dart';
++import '../models/product_offer.dart';
+ import '../services/catalog_service.dart';
+ import '../services/driver_service.dart';
+ import '../services/image_service.dart';
+@@ -27,6 +28,28 @@
+   return e.toString();
+ }
+ 
++/// سطر السعر والعرض في قائمة أصناف صاحب المحل (شارة نص العرض وتاريخ انتهائه بتظهر هنا).
++String _priceLine(_Json m, num price, bool available) {
++  if (!available) return '${formatPrice(price)} • موقوف';
++  final e = m['offerEndsAt'];
++  final ends = e is Timestamp ? e.toDate() : null;
++  final b = StringBuffer(formatPrice(price));
++  if (m['oldPrice'] is num) {
++    b.write('  (بدل ${formatPrice(m['oldPrice'] as num)})');
++  }
++  final text = (m['offerText'] ?? '').toString().trim();
++  if (text.isNotEmpty) b.write('  • $text');
++  if (ends != null) {
++    b.write(
++      isOfferExpired(ends, DateTime.now())
++          ? '  • العرض منتهي'
++          : '  • حتى ${ends.day}/${ends.month}/${ends.year}',
++    );
++  }
++  if (m['bestSeller'] == true) b.write('  • الأكثر مبيعًا');
++  return b.toString();
++}
++
+ /// شاشة صاحب المحل: طلبات محله، أصنافه، وفتح/إغلاق المحل.
+ /// الصلاحيات الحقيقية في firestore.rules (isStoreOwner)، والشاشة دي بتعرض بس.
+ /// صاحب المحل ما يشوفش عنوان العميل ولا رقمه في الشاشة (المحل مش محتاجهم).
+@@ -718,6 +741,7 @@
+         'name': (m['name'] ?? '').toString(),
+         'price': (m['price'] as num?) ?? 0,
+         if (m['oldPrice'] is num) 'oldPrice': m['oldPrice'],
++        if (m['offerEndsAt'] is Timestamp) 'offerEndsAt': m['offerEndsAt'],
+         'image': (m['image'] ?? '').toString(),
+       };
+       bool on(_Json m) => m['available'] != false && m['isAvailable'] != false;
+@@ -728,7 +752,14 @@
+         if (!on(m)) continue;
+         final p = (m['price'] as num?) ?? 0;
+         final o = m['oldPrice'];
+-        if (o is num && o > p && offers.length < 12) offers.add(item(m));
++        final e = m['offerEndsAt'];
++        final expired = isOfferExpired(
++          e is Timestamp ? e.toDate() : null,
++          DateTime.now(),
++        );
++        if (o is num && o > p && !expired && offers.length < 12) {
++          offers.add(item(m));
++        }
+         if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
+       }
+       await _storeRef.update({
+@@ -839,77 +870,59 @@
+     final m = doc.data();
+     final price = (m['price'] as num?)?.toDouble() ?? 0;
+     final old = (m['oldPrice'] as num?)?.toDouble();
+-    final hasOffer = old != null && old > price;
+-    final base = hasOffer ? old : price;
+-    final pct = await showDialog<int>(
++    final hasPriceOffer = old != null && old > price;
++    final hasOffer =
++        hasPriceOffer || (m['offerText'] ?? '').toString().trim().isNotEmpty;
++    // السعر الأصلي (قبل أي خصم): بيتحفظ تلقائيًا ويرجع لما العرض يتلغي.
++    final base = hasPriceOffer ? old : price;
++    final ends = m['offerEndsAt'];
++
++    final choice = await showDialog<_OfferChoice>(
+       context: context,
+       builder: (ctx) => Directionality(
+         textDirection: TextDirection.rtl,
+-        child: AlertDialog(
+-          title: Text(
+-            'عرض على "${m['name'] ?? ''}"',
+-            style: const TextStyle(fontSize: 16),
+-          ),
+-          content: Column(
+-            mainAxisSize: MainAxisSize.min,
+-            crossAxisAlignment: CrossAxisAlignment.start,
+-            children: [
+-              Text(
+-                'السعر الأصلي: ${formatPrice(base)}',
+-                style: TextStyle(color: kMuted),
+-              ),
+-              const SizedBox(height: 12),
+-              Wrap(
+-                spacing: 8,
+-                runSpacing: 8,
+-                children: [
+-                  for (final p in const [10, 15, 20, 25, 30, 40, 50])
+-                    ActionChip(
+-                      label: Text('$p%'),
+-                      onPressed: () => Navigator.pop(ctx, p),
+-                    ),
+-                ],
+-              ),
+-            ],
+-          ),
+-          actions: [
+-            if (hasOffer)
+-              TextButton(
+-                onPressed: () => Navigator.pop(ctx, 0),
+-                child: Text('إلغاء العرض', style: TextStyle(color: kDanger)),
+-              ),
+-            TextButton(
+-              onPressed: () => Navigator.pop(ctx),
+-              child: const Text('رجوع'),
+-            ),
+-          ],
++        child: _OfferDialog(
++          name: (m['name'] ?? '').toString(),
++          base: base,
++          hasOffer: hasOffer,
++          initialEndsAt: ends is Timestamp ? ends.toDate() : null,
+         ),
+       ),
+     );
+-    if (pct == null) return;
++    if (choice == null) return;
+     try {
+-      if (pct == 0) {
+-        await doc.reference.update({
++      final endsField = choice.endsAt == null
++          ? FieldValue.delete()
++          : Timestamp.fromDate(choice.endsAt!);
++      final Map<String, dynamic> update;
++      if (choice.cancel) {
++        update = {
+           'price': base,
+           'oldPrice': FieldValue.delete(),
+-          'updatedAt': FieldValue.serverTimestamp(),
+-        });
++          'offerText': FieldValue.delete(),
++          'offerEndsAt': FieldValue.delete(),
++        };
++      } else if (choice.mode == _OfferMode.text) {
++        update = {
++          'price': base,
++          'oldPrice': FieldValue.delete(),
++          'offerText': choice.text,
++          'offerEndsAt': endsField,
++        };
+       } else {
+-        final np = ((base * (100 - pct) / 100) * 2).round() / 2;
+-        if (np <= 0 || np >= base) {
+-          _say('الخصم ده مش مناسب للسعر.');
+-          return;
+-        }
+-        await doc.reference.update({
+-          'price': np,
++        update = {
++          'price': choice.offerPrice,
+           'oldPrice': base,
+-          'updatedAt': FieldValue.serverTimestamp(),
+-        });
++          'offerText': FieldValue.delete(),
++          'offerEndsAt': endsField,
++        };
+       }
++      update['updatedAt'] = FieldValue.serverTimestamp();
++      await doc.reference.update(update);
+       await CatalogService.bump();
+       await _load();
+       await _syncHighlights();
+-      _say(pct == 0 ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
++      _say(choice.cancel ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
+     } catch (e) {
+       _say('تعذر تفعيل العرض: ${_why(e)}');
+     }
+@@ -1016,11 +1029,7 @@
+                 maxLines: 2,
+                 overflow: TextOverflow.ellipsis,
+               ),
+-              subtitle: Text(
+-                available
+-                    ? '${formatPrice(price)}${m['oldPrice'] is num ? '  (بدل ${formatPrice(m['oldPrice'] as num)})' : ''}${m['bestSeller'] == true ? '  • الأكثر مبيعًا' : ''}'
+-                    : '${formatPrice(price)} • موقوف',
+-              ),
++              subtitle: Text(_priceLine(m, price, available)),
+               trailing: Row(
+                 mainAxisSize: MainAxisSize.min,
+                 children: [
+@@ -1268,4 +1277,316 @@
+       ],
+     );
+   }
++}
++
++enum _OfferMode { percent, price, text }
++
++/// اختيار صاحب المحل من نافذة العرض.
++class _OfferChoice {
++  final bool cancel;
++  final _OfferMode? mode;
++  final double? offerPrice;
++  final String? text;
++  final DateTime? endsAt;
++
++  const _OfferChoice.cancel() : cancel = true, mode = null, offerPrice = null, text = null, endsAt = null;
++
++  const _OfferChoice.apply({
++    required this.mode,
++    this.offerPrice,
++    this.text,
++    this.endsAt,
++  }) : cancel = false;
++}
++
++/// نافذة «عمل عرض على صنف»: نسبة مئوية، سعر مباشر، أو نص حر، مع تاريخ انتهاء اختياري.
++class _OfferDialog extends StatefulWidget {
++  final String name;
++  final double base;
++  final bool hasOffer;
++  final DateTime? initialEndsAt;
++
++  const _OfferDialog({
++    required this.name,
++    required this.base,
++    required this.hasOffer,
++    this.initialEndsAt,
++  });
++
++  @override
++  State<_OfferDialog> createState() => _OfferDialogState();
++}
++
++class _OfferDialogState extends State<_OfferDialog> {
++  static const _quickPercents = [10, 15, 20, 25, 30, 40, 50];
++  static const _textSuggestions = [
++    '2+1 مجانًا',
++    'اشترِ 1 واحصل على 1 مجانًا',
++    'هدية مع الطلب',
++    'خصم للكمية',
++    'عرض اليوم فقط',
++  ];
++
++  _OfferMode _mode = _OfferMode.percent;
++  final _pct = TextEditingController();
++  final _price = TextEditingController();
++  final _text = TextEditingController();
++  DateTime? _endsAt;
++
++  @override
++  void initState() {
++    super.initState();
++    final e = widget.initialEndsAt;
++    if (e != null && !isOfferExpired(e, DateTime.now())) _endsAt = e;
++  }
++
++  @override
++  void dispose() {
++    _pct.dispose();
++    _price.dispose();
++    _text.dispose();
++    super.dispose();
++  }
++
++  /// أرقام عربية/فاصلة → أرقام إنجليزية عشان tryParse.
++  static double? _num(String raw) {
++    const ar = '٠١٢٣٤٥٦٧٨٩';
++    final b = StringBuffer();
++    for (final c in raw.trim().split('')) {
++      final i = ar.indexOf(c);
++      b.write(i >= 0 ? '$i' : (c == '،' || c == ',' || c == '٫' ? '.' : c));
++    }
++    return double.tryParse(b.toString());
++  }
++
++  /// العرض الحالي حسب الأدخلات، أو null لو غير صالح (بنستخدم نموذج ProductOffer للتحقق).
++  ProductOffer? get _offer {
++    try {
++      switch (_mode) {
++        case _OfferMode.percent:
++          final v = _num(_pct.text);
++          if (v == null) return null;
++          return ProductOffer.percentage(
++            originalPrice: widget.base,
++            percentage: v,
++          );
++        case _OfferMode.price:
++          final v = _num(_price.text);
++          if (v == null) return null;
++          return ProductOffer.fixedPrice(
++            originalPrice: widget.base,
++            offerPrice: v,
++          );
++        case _OfferMode.text:
++          final t = _text.text.trim();
++          if (t.length > 60) return null;
++          return ProductOffer.text(
++            originalPrice: widget.base,
++            description: t,
++          );
++      }
++    } on ArgumentError {
++      return null;
++    }
++  }
++
++  String? get _hint {
++    switch (_mode) {
++      case _OfferMode.percent:
++        if (_pct.text.trim().isEmpty) return null;
++        return _offer == null ? 'اكتب نسبة بين 1 و 99.' : null;
++      case _OfferMode.price:
++        if (_price.text.trim().isEmpty) return null;
++        return _offer == null
++            ? 'السعر الجديد لازم يكون أقل من ${formatPrice(widget.base)}.'
++            : null;
++      case _OfferMode.text:
++        return null;
++    }
++  }
++
++  Future<void> _pickDate() async {
++    final now = DateTime.now();
++    final picked = await showDatePicker(
++      context: context,
++      initialDate: _endsAt ?? now.add(const Duration(days: 1)),
++      firstDate: DateTime(now.year, now.month, now.day),
++      lastDate: now.add(const Duration(days: 365)),
++      helpText: 'آخر يوم للعرض',
++    );
++    if (picked != null) {
++      // العرض بيفضل شغال لحد آخر اليوم المختار.
++      setState(() {
++        _endsAt = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
++      });
++    }
++  }
++
++  void _submit() {
++    final o = _offer;
++    if (o == null) return;
++    Navigator.pop(
++      context,
++      _OfferChoice.apply(
++        mode: _mode,
++        offerPrice: o.offerPrice,
++        text: o.description,
++        endsAt: _endsAt,
++      ),
++    );
++  }
++
++  Widget _preview() {
++    final o = _offer;
++    if (o == null) return const SizedBox.shrink();
++    final String line;
++    if (o.type == ProductOfferType.text) {
++      line = 'هيظهر على الصنف شارة: «${o.description}»';
++    } else {
++      line =
++          'السعر بعد الخصم: ${formatPrice(o.effectivePrice)}'
++          '  (وفّر ${formatPrice(o.savings)} — ${o.calculatedPercentage?.toStringAsFixed(0)}%)';
++    }
++    return Container(
++      width: double.infinity,
++      margin: const EdgeInsets.only(top: 12),
++      padding: const EdgeInsets.all(10),
++      decoration: BoxDecoration(
++        color: kPrimarySoft,
++        borderRadius: BorderRadius.circular(10),
++      ),
++      child: Text(line, style: const TextStyle(fontWeight: FontWeight.w800)),
++    );
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final hint = _hint;
++    return AlertDialog(
++      title: Text(
++        'عرض على "${widget.name}"',
++        style: const TextStyle(fontSize: 16),
++      ),
++      content: SingleChildScrollView(
++        child: Column(
++          mainAxisSize: MainAxisSize.min,
++          crossAxisAlignment: CrossAxisAlignment.start,
++          children: [
++            Text(
++              'السعر الأصلي: ${formatPrice(widget.base)}',
++              style: TextStyle(color: kMuted),
++            ),
++            const SizedBox(height: 12),
++            SegmentedButton<_OfferMode>(
++              showSelectedIcon: false,
++              segments: const [
++                ButtonSegment(value: _OfferMode.percent, label: Text('نسبة %')),
++                ButtonSegment(value: _OfferMode.price, label: Text('سعر مباشر')),
++                ButtonSegment(value: _OfferMode.text, label: Text('نص حر')),
++              ],
++              selected: {_mode},
++              onSelectionChanged: (v) => setState(() => _mode = v.first),
++            ),
++            const SizedBox(height: 12),
++            if (_mode == _OfferMode.percent) ...[
++              Wrap(
++                spacing: 8,
++                runSpacing: 8,
++                children: [
++                  for (final p in _quickPercents)
++                    ActionChip(
++                      label: Text('$p%'),
++                      onPressed: () => setState(() => _pct.text = '$p'),
++                    ),
++                ],
++              ),
++              const SizedBox(height: 8),
++              TextField(
++                controller: _pct,
++                keyboardType: const TextInputType.numberWithOptions(decimal: true),
++                decoration: const InputDecoration(
++                  labelText: 'أو اكتب نسبة الخصم %',
++                ),
++                onChanged: (_) => setState(() {}),
++              ),
++            ] else if (_mode == _OfferMode.price) ...[
++              TextField(
++                controller: _price,
++                keyboardType: const TextInputType.numberWithOptions(decimal: true),
++                decoration: InputDecoration(
++                  labelText: 'بدل ${formatPrice(widget.base)} يبقى',
++                  suffixText: 'ج.م',
++                ),
++                onChanged: (_) => setState(() {}),
++              ),
++            ] else ...[
++              Wrap(
++                spacing: 8,
++                runSpacing: 8,
++                children: [
++                  for (final t in _textSuggestions)
++                    ActionChip(
++                      label: Text(t),
++                      onPressed: () => setState(() => _text.text = t),
++                    ),
++                ],
++              ),
++              const SizedBox(height: 8),
++              TextField(
++                controller: _text,
++                maxLength: 60,
++                decoration: const InputDecoration(
++                  labelText: 'نص العرض (مثل 2+1 مجانًا)',
++                ),
++                onChanged: (_) => setState(() {}),
++              ),
++            ],
++            if (hint != null)
++              Padding(
++                padding: const EdgeInsets.only(top: 6),
++                child: Text(hint, style: TextStyle(color: kDanger, fontSize: 12)),
++              ),
++            _preview(),
++            const SizedBox(height: 8),
++            Row(
++              children: [
++                Expanded(
++                  child: OutlinedButton.icon(
++                    onPressed: _pickDate,
++                    icon: const Icon(Icons.event_outlined, size: 18),
++                    label: Text(
++                      _endsAt == null
++                          ? 'تاريخ انتهاء (اختياري)'
++                          : 'حتى ${_endsAt!.day}/${_endsAt!.month}/${_endsAt!.year}',
++                    ),
++                  ),
++                ),
++                if (_endsAt != null)
++                  IconButton(
++                    tooltip: 'بدون تاريخ انتهاء',
++                    icon: const Icon(Icons.close),
++                    onPressed: () => setState(() => _endsAt = null),
++                  ),
++              ],
++            ),
++          ],
++        ),
++      ),
++      actions: [
++        if (widget.hasOffer)
++          TextButton(
++            onPressed: () => Navigator.pop(context, const _OfferChoice.cancel()),
++            child: Text('إلغاء العرض', style: TextStyle(color: kDanger)),
++          ),
++        TextButton(
++          onPressed: () => Navigator.pop(context),
++          child: const Text('رجوع'),
++        ),
++        FilledButton(
++          onPressed: _offer == null ? null : _submit,
++          child: const Text('تفعيل العرض'),
++        ),
++      ],
++    );
++  }
+ }
+diff -ruN a/lib/screens/store_page.dart b/lib/screens/store_page.dart
+--- a/lib/screens/store_page.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/lib/screens/store_page.dart	2026-11-15 09:43:14.701755847 +0000
+@@ -10,6 +10,7 @@
+ 
+ import '../models/app_role.dart';
+ import '../models/product.dart';
++import '../models/product_offer.dart';
+ import '../models/store.dart';
+ import '../services/cart_model.dart';
+ import '../services/catalog_service.dart';
+@@ -167,13 +168,23 @@
+ 
+   Product _parse(String id, _Json m) {
+     final price = m['price'];
++    final ends = m['offerEndsAt'];
++    // العرض المنتهي بيتجاهله التطبيق: السعر بيرجع للأصلي وبيختفي الخصم والنص.
++    final offer = resolveOfferDisplay(
++      price: price is num ? price.toDouble() : 0,
++      oldPrice: (m['oldPrice'] is num) ? (m['oldPrice'] as num).toDouble() : 0,
++      text: (m['offerText'] ?? '').toString(),
++      endsAt: ends is Timestamp ? ends.toDate() : null,
++    );
+     return Product(
+       (m['name'] ?? '').toString(),
+-      price is num ? price.toDouble() : 0,
++      offer.price,
+       (m['image'] ?? '').toString(),
+       id,
+       m['available'] != false && m['isAvailable'] != false,
+-      (m['oldPrice'] is num) ? (m['oldPrice'] as num).toDouble() : 0,
++      offer.oldPrice,
++      offer.text,
++      offer.endsAt,
+     );
+   }
+ 
+@@ -1074,6 +1085,27 @@
+     );
+   }
+ 
++  Widget _offerBadge(String text, Color color, {double? maxWidth}) {
++    return Container(
++      constraints: BoxConstraints(maxWidth: maxWidth ?? 200),
++      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
++      decoration: BoxDecoration(
++        color: color,
++        borderRadius: BorderRadius.circular(8),
++      ),
++      child: Text(
++        text,
++        maxLines: 2,
++        overflow: TextOverflow.ellipsis,
++        style: const TextStyle(
++          color: Colors.white,
++          fontSize: 10.5,
++          fontWeight: FontWeight.w800,
++        ),
++      ),
++    );
++  }
++
+   Widget _addControl() {
+     return ListenableBuilder(
+       listenable: cart,
+@@ -1142,27 +1174,30 @@
+               fit: StackFit.expand,
+               children: [
+                 _image(),
+-                if (product.hasOffer)
++                if (product.hasOffer || product.offerText.isNotEmpty)
+                   Positioned(
+                     top: 6,
+                     right: 6,
+-                    child: Container(
+-                      padding: const EdgeInsets.symmetric(
+-                        horizontal: 7,
+-                        vertical: 3,
+-                      ),
+-                      decoration: BoxDecoration(
+-                        color: kDanger,
+-                        borderRadius: BorderRadius.circular(8),
+-                      ),
+-                      child: Text(
+-                        'خصم ${((1 - product.price / product.oldPrice) * 100).round()}%',
+-                        style: const TextStyle(
+-                          color: Colors.white,
+-                          fontSize: 10.5,
+-                          fontWeight: FontWeight.w800,
+-                        ),
+-                      ),
++                    child: Column(
++                      crossAxisAlignment: CrossAxisAlignment.end,
++                      children: [
++                        if (product.hasOffer)
++                          _offerBadge(
++                            'خصم ${((1 - product.price / product.oldPrice) * 100).round()}%',
++                            kDanger,
++                          ),
++                        if (product.offerText.isNotEmpty)
++                          Padding(
++                            padding: EdgeInsets.only(
++                              top: product.hasOffer ? 4 : 0,
++                            ),
++                            child: _offerBadge(
++                              product.offerText,
++                              Brand.goldDeep,
++                              maxWidth: 120,
++                            ),
++                          ),
++                      ],
+                     ),
+                   ),
+                 Positioned(bottom: 8, left: 8, child: _addControl()),
+diff -ruN a/test/product_offer_test.dart b/test/product_offer_test.dart
+--- a/test/product_offer_test.dart	2026-11-15 08:11:45.000000000 +0000
++++ b/test/product_offer_test.dart	2026-11-15 09:43:14.714022221 +0000
+@@ -100,4 +100,51 @@
+       throwsArgumentError,
+     );
+   });
++
++  group('resolveOfferDisplay (العروض المنتهية)', () {
++    final now = DateTime(2026, 11, 15, 12);
++
++    test('عرض ساري: يبقى السعر والخصم والنص', () {
++      final d = resolveOfferDisplay(
++        price: 80,
++        oldPrice: 100,
++        text: '2+1 مجانًا',
++        endsAt: DateTime(2026, 11, 16),
++        now: now,
++      );
++      expect(d.price, 80);
++      expect(d.oldPrice, 100);
++      expect(d.text, '2+1 مجانًا');
++    });
++
++    test('عرض منتهي: يرجع السعر الأصلي ويختفي الخصم والنص', () {
++      final d = resolveOfferDisplay(
++        price: 80,
++        oldPrice: 100,
++        text: '2+1 مجانًا',
++        endsAt: DateTime(2026, 11, 14),
++        now: now,
++      );
++      expect(d.price, 100);
++      expect(d.oldPrice, 0);
++      expect(d.text, '');
++    });
++
++    test('بدون تاريخ انتهاء: العرض مفتوح', () {
++      final d = resolveOfferDisplay(price: 80, oldPrice: 100, now: now);
++      expect(d.price, 80);
++      expect(d.oldPrice, 100);
++    });
++
++    test('عرض نصي منتهي: السعر ثابت والنص يختفي', () {
++      final d = resolveOfferDisplay(
++        price: 50,
++        text: 'هدية',
++        endsAt: now,
++        now: now,
++      );
++      expect(d.price, 50);
++      expect(d.text, '');
++    });
++  });
+ }
+--- a/firestore.rules	2026-11-15 08:11:45.000000000 +0000
++++ b/firestore.rules	2026-11-15 09:43:14.713130209 +0000
+@@ -245,8 +245,11 @@
+     // صنف يكتبه صاحب المحل: حقول معروفة بس وبأنواع صحيحة.
+     function validOwnerProduct(d) {
+       return d.keys().hasOnly(['name', 'price', 'image', 'available', 'isAvailable',
+-                               'oldPrice', 'bestSeller', 'createdAt', 'updatedAt']) &&
++                               'oldPrice', 'bestSeller', 'createdAt', 'updatedAt',
++                               'offerText', 'offerEndsAt']) &&
+         (!('oldPrice' in d) || (d.oldPrice is number && d.oldPrice > d.price && d.oldPrice <= 20000)) &&
++        (!('offerText' in d) || (d.offerText is string && d.offerText.size() > 0 && d.offerText.size() <= 120)) &&
++        (!('offerEndsAt' in d) || d.offerEndsAt is timestamp) &&
+         (!('bestSeller' in d) || d.bestSeller is bool) &&
+         d.keys().hasAll(['name', 'price']) &&
+         d.name is string && d.name.size() > 0 && d.name.size() <= 120 &&
+--- a/firestore.indexes.json	2026-11-15 08:11:45.000000000 +0000
++++ b/firestore.indexes.json	2026-11-15 09:13:35.444200581 +0000
+@@ -109,6 +109,146 @@
+           "order": "ASCENDING"
+         }
+       ]
++    },
++    {
++      "collectionGroup": "orders",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "deliveredBy",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "collectedAmount",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "courierEarning",
++          "order": "ASCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "orders",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "deliveredBy",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "deliveredAt",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "collectedAmount",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "courierEarning",
++          "order": "ASCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "orders",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "courierId",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "deliveredBy",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "collectedAmount",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "courierEarning",
++          "order": "ASCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "orders",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "courierId",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "deliveredBy",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "deliveredAt",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "collectedAmount",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "courierEarning",
++          "order": "ASCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "orders",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "deliveredAt",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "collectedAmount",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "courierEarning",
++          "order": "ASCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "courier_settlements",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "courierId",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "amount",
++          "order": "ASCENDING"
++        }
++      ]
+     }
+   ],
+   "fieldOverrides": []
+--- a/rules-tests/rules.test.js	2026-11-15 08:11:45.000000000 +0000
++++ b/rules-tests/rules.test.js	2026-11-15 09:43:14.713590903 +0000
+@@ -207,6 +207,22 @@
+   await assertFails(deleteDoc(doc(db, 'stores/shop2/products/p1')));
+ });
+ 
++test('owner: عروض الأصناف (سعر قبل الخصم، نص حر، تاريخ انتهاء) بقيم سليمة فقط', async () => {
++  const db = as('owner1');
++  const ref = (id) => doc(db, `stores/shop1/products/${id}`);
++  const p = { name: 'صنف', price: 20, isAvailable: true, available: true, createdAt: serverTimestamp() };
++  const ends = new Date(Date.now() + 86400000);
++  await assertSucceeds(setDoc(ref('o1'), { ...p, oldPrice: 25, offerEndsAt: ends }));
++  await assertSucceeds(setDoc(ref('o2'), { ...p, offerText: '2+1 مجانًا', offerEndsAt: ends }));
++  await assertSucceeds(updateDoc(ref('o2'), { offerText: 'هدية مع الطلب', updatedAt: serverTimestamp() }));
++  await assertFails(setDoc(ref('o3'), { ...p, oldPrice: 15 })); // السعر قبل الخصم لازم يكون أكبر
++  await assertFails(setDoc(ref('o4'), { ...p, offerText: '' }));
++  await assertFails(setDoc(ref('o5'), { ...p, offerText: 'x'.repeat(121) }));
++  await assertFails(setDoc(ref('o6'), { ...p, offerText: 5 }));
++  await assertFails(setDoc(ref('o7'), { ...p, offerEndsAt: 'غدًا' }));
++  await assertFails(setDoc(doc(as('owner2'), 'stores/shop1/products/o8'), { ...p, offerText: 'x' }));
++});
++
+ test('owner: عميل عادي ما يكتبش أصناف', async () => {
+   await assertFails(setDoc(doc(as('cust1'), 'stores/shop1/products/px'), { name: 'x', price: 5 }));
+ });

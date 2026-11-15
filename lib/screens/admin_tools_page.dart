@@ -1,0 +1,616 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../services/delivery_service.dart';
+import '../services/promo_service.dart';
+import '../theme/app_theme.dart';
+import '../utils/format.dart';
+import '../widgets/app_header.dart';
+import '../widgets/dialogs.dart';
+
+String _err(Object e) => e is FirebaseException
+    ? (e.code == 'permission-denied'
+          ? 'مفيش صلاحية — انشر القواعد من Firebase Console'
+          : e.code)
+    : e.toString();
+
+void _say(BuildContext c, String m) {
+  if (!c.mounted) return;
+  ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(m)));
+}
+
+/// مركز إعدادات التشغيل للأدمن: مناطق التوصيل، كوبونات الخصم، والمشرفين.
+class AdminToolsPage extends StatelessWidget {
+  const AdminToolsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile(IconData i, String t, String s, Widget page) => Card(
+      child: ListTile(
+        leading: Icon(i, color: kPrimary),
+        title: Text(t, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Text(s),
+        trailing: const Icon(Icons.chevron_left),
+        onTap: () =>
+            Navigator.of(context).push(MaterialPageRoute(builder: (_) => page)),
+      ),
+    );
+    return Scaffold(
+      body: Column(
+        children: [
+          const InnerHeader(title: 'إعدادات التشغيل'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                tile(
+                  Icons.map_outlined,
+                  'مناطق التوصيل',
+                  'سعر توصيل لكل منطقة',
+                  const AdminAreasPage(),
+                ),
+                tile(
+                  Icons.local_offer_outlined,
+                  'كوبونات الخصم',
+                  'إضافة وإيقاف أكواد الخصم',
+                  const AdminPromosPage(),
+                ),
+                tile(
+                  Icons.supervisor_account_outlined,
+                  'المشرفين',
+                  'مشرف يدير مجموعة مناديب',
+                  const AdminSupervisorsPage(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── مناطق التوصيل ─────────────────────────
+
+class AdminAreasPage extends StatefulWidget {
+  const AdminAreasPage({super.key});
+
+  @override
+  State<AdminAreasPage> createState() => _AdminAreasPageState();
+}
+
+class _AdminAreasPageState extends State<AdminAreasPage> {
+  List<DeliveryArea>? _areas;
+
+  @override
+  void initState() {
+    super.initState();
+    DeliveryService.load(force: true).then((a) {
+      if (mounted) setState(() => _areas = List.of(a));
+    });
+  }
+
+  Future<void> _save() async {
+    try {
+      await DeliveryService.save(_areas!);
+      if (!mounted) return;
+      _say(context, 'تم الحفظ.');
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر الحفظ: ${_err(e)}');
+    }
+  }
+
+  Future<void> _edit([int? index]) async {
+    final name = TextEditingController(
+      text: index == null ? '' : _areas![index].name,
+    );
+    final fee = TextEditingController(
+      text: index == null ? '' : _areas![index].fee.toStringAsFixed(0),
+    );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(index == null ? 'منطقة جديدة' : 'تعديل المنطقة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'اسم المنطقة'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: fee,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'سعر التوصيل'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('رجوع'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || ok != true) return;
+    final n = name.text.trim();
+    final f = double.tryParse(fee.text.trim().replaceAll(',', '.'));
+    if (n.isEmpty || n.length > 60 || f == null || f < 0 || f > 1000) {
+      _say(context, 'اكتب اسم وسعر صحيحين.');
+      return;
+    }
+    setState(() {
+      if (index == null) {
+        _areas!.add(DeliveryArea(n, f));
+      } else {
+        _areas![index] = DeliveryArea(n, f);
+      }
+    });
+    await _save();
+  }
+
+  Future<void> _remove(int i) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'حذف منطقة',
+      message: 'حذف "${_areas![i].name}"؟',
+      confirmLabel: 'حذف',
+      destructive: true,
+    );
+    if (!mounted || !ok) return;
+    setState(() => _areas!.removeAt(i));
+    await _save();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final areas = _areas;
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: areas == null ? null : () => _edit(),
+        icon: const Icon(Icons.add),
+        label: const Text('منطقة'),
+      ),
+      body: Column(
+        children: [
+          const InnerHeader(title: 'مناطق التوصيل'),
+          Expanded(
+            child: areas == null
+                ? Center(child: CircularProgressIndicator(color: kPrimary))
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                    children: [
+                      Text(
+                        areas.isEmpty
+                            ? 'لسه مفيش مناطق. العملاء بيدفعوا 20 جنيه توصيل. أول ما تضيف منطقة، العميل هيختار منطقته وقت الطلب.'
+                            : 'العميل بيختار منطقته وقت الطلب وسعر التوصيل بيتحسب منها.',
+                        style: TextStyle(color: kMuted),
+                      ),
+                      const SizedBox(height: 10),
+                      for (var i = 0; i < areas.length; i++)
+                        Card(
+                          child: ListTile(
+                            title: Text(areas[i].name),
+                            subtitle: Text(formatPrice(areas[i].fee)),
+                            onTap: () => _edit(i),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () => _remove(i),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── الكوبونات ─────────────────────────
+
+class AdminPromosPage extends StatefulWidget {
+  const AdminPromosPage({super.key});
+
+  @override
+  State<AdminPromosPage> createState() => _AdminPromosPageState();
+}
+
+class _AdminPromosPageState extends State<AdminPromosPage> {
+  CollectionReference<Map<String, dynamic>> get _col =>
+      FirebaseFirestore.instance.collection('promos');
+
+  Future<void> _add() async {
+    final code = TextEditingController();
+    final pct = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('كوبون جديد'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: code,
+                textDirection: TextDirection.ltr,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'الكود (حروف إنجليزي وأرقام)',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: pct,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'نسبة الخصم % (من 1 لـ 50)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('رجوع'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('إضافة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || ok != true) return;
+    final c = PromoService.normalize(code.text);
+    final p = double.tryParse(pct.text.trim());
+    if (c.length < 3 || c.length > 20 || p == null || p <= 0 || p > 50) {
+      _say(context, 'كود (3 حروف أو أكتر) ونسبة من 1 لـ 50.');
+      return;
+    }
+    try {
+      await _col.doc(c).set({
+        'percent': p,
+        'active': true,
+        'note': '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر الحفظ: ${_err(e)}');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _add,
+        icon: const Icon(Icons.add),
+        label: const Text('كوبون'),
+      ),
+      body: Column(
+        children: [
+          const InnerHeader(title: 'كوبونات الخصم'),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _col.limit(200).snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return Center(
+                    child: Text('تعذر التحميل: ${_err(snap.error!)}'),
+                  );
+                }
+                if (!snap.hasData) {
+                  return Center(
+                    child: CircularProgressIndicator(color: kPrimary),
+                  );
+                }
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return const Center(child: Text('مفيش كوبونات لسه.'));
+                }
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                  children: [
+                    for (final d in docs)
+                      Card(
+                        child: ListTile(
+                          title: Text(
+                            d.id,
+                            textDirection: TextDirection.ltr,
+                            textAlign: TextAlign.start,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          subtitle: Text(
+                            'خصم ${(d.data()['percent'] as num?)?.toStringAsFixed(0) ?? '?'}%',
+                          ),
+                          leading: Switch(
+                            value: d.data()['active'] == true,
+                            onChanged: (v) => d.reference
+                                .update({
+                                  'active': v,
+                                  'updatedAt': FieldValue.serverTimestamp(),
+                                })
+                                .catchError((e) {
+                                  if (!context.mounted) return;
+                                  _say(context, 'تعذر التعديل: ${_err(e)}');
+                                }),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () =>
+                                d.reference.delete().catchError((e) {
+                                  if (!context.mounted) return;
+                                  _say(context, 'تعذر الحذف: ${_err(e)}');
+                                }),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── المشرفين ─────────────────────────
+
+class AdminSupervisorsPage extends StatefulWidget {
+  const AdminSupervisorsPage({super.key});
+
+  @override
+  State<AdminSupervisorsPage> createState() => _AdminSupervisorsPageState();
+}
+
+class _AdminSupervisorsPageState extends State<AdminSupervisorsPage> {
+  CollectionReference<Map<String, dynamic>> get _col =>
+      FirebaseFirestore.instance.collection('supervisors');
+
+  Future<void> _add() async {
+    final uid = TextEditingController();
+    final name = TextEditingController();
+    final phone = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('مشرف جديد'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'الـ UID من Firebase Console ← Authentication ← Users. لازم يكون سجّل دخول التطبيق مرة.',
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: uid,
+                  textDirection: TextDirection.ltr,
+                  decoration: const InputDecoration(labelText: 'UID'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: name,
+                  decoration: const InputDecoration(labelText: 'الاسم'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: phone,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'الموبايل (اختياري)',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('رجوع'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('إضافة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || ok != true) return;
+    final id = uid.text.trim();
+    if (!RegExp(r'^[A-Za-z0-9]{20,40}$').hasMatch(id) ||
+        name.text.trim().isEmpty) {
+      _say(context, 'UID غير صحيح أو الاسم فاضي.');
+      return;
+    }
+    try {
+      await _col.doc(id).set({
+        'name': name.text.trim(),
+        'phone': phone.text.trim(),
+        'active': true,
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر الحفظ: ${_err(e)}');
+    }
+  }
+
+  Future<void> _assign(String supId, String supName) async {
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> couriers;
+    try {
+      couriers =
+          (await FirebaseFirestore.instance
+                  .collection('couriers')
+                  .limit(200)
+                  .get())
+              .docs;
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر تحميل المناديب: ${_err(e)}');
+      return;
+    }
+    if (!mounted) return;
+    final mine = <String>{
+      for (final c in couriers)
+        if (c.data()['supervisorId'] == supId) c.id,
+    };
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: StatefulBuilder(
+          builder: (ctx, setS) => SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'مناديب $supName',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final c in couriers)
+                          CheckboxListTile(
+                            value: mine.contains(c.id),
+                            title: Text(
+                              (c.data()['name'] ?? 'مندوب').toString(),
+                            ),
+                            subtitle:
+                                (c.data()['supervisorId'] != null &&
+                                    c.data()['supervisorId'] != supId &&
+                                    !mine.contains(c.id))
+                                ? const Text('تابع لمشرف تاني')
+                                : null,
+                            onChanged: (v) async {
+                              try {
+                                await c.reference.update({
+                                  'supervisorId': v == true
+                                      ? supId
+                                      : FieldValue.delete(),
+                                });
+                                setS(
+                                  () => v == true
+                                      ? mine.add(c.id)
+                                      : mine.remove(c.id),
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                _say(context, 'تعذر التعديل: ${_err(e)}');
+                              }
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _add,
+        icon: const Icon(Icons.add),
+        label: const Text('مشرف'),
+      ),
+      body: Column(
+        children: [
+          const InnerHeader(title: 'المشرفين'),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _col.limit(100).snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  return Center(
+                    child: Text('تعذر التحميل: ${_err(snap.error!)}'),
+                  );
+                }
+                if (!snap.hasData) {
+                  return Center(
+                    child: CircularProgressIndicator(color: kPrimary),
+                  );
+                }
+                final docs = snap.data!.docs;
+                if (docs.isEmpty) {
+                  return const Center(child: Text('مفيش مشرفين لسه.'));
+                }
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
+                  children: [
+                    for (final d in docs)
+                      Card(
+                        child: ListTile(
+                          title: Text((d.data()['name'] ?? 'مشرف').toString()),
+                          subtitle: const Text('اضغط لاختيار مناديبه'),
+                          onTap: () => _assign(
+                            d.id,
+                            (d.data()['name'] ?? 'مشرف').toString(),
+                          ),
+                          leading: Switch(
+                            value: d.data()['active'] != false,
+                            onChanged: (v) => d.reference
+                                .update({'active': v})
+                                .catchError((e) {
+                                  if (!context.mounted) return;
+                                  _say(context, 'تعذر التعديل: ${_err(e)}');
+                                }),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () =>
+                                d.reference.delete().catchError((e) {
+                                  if (!context.mounted) return;
+                                  _say(context, 'تعذر الحذف: ${_err(e)}');
+                                }),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
