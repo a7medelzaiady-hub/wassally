@@ -1,7 +1,5 @@
-// اختبارات قواعد Firestore (Emulator). لازم Node + firebase-tools. التشغيل من مجلد rules-tests:
-//   npm install && npm test
-// ملاحظة: اتكتبت من غير ما تتشغّل (البيئة اللي اتكتبت فيها مفيهاش Emulator). لو حصل فشل، راجع الاختبار
-// والقاعدة الاتنين: ممكن الغلط في أي منهم.
+// اختبارات قواعد Firestore على Emulator. التشغيل من مجلد rules-tests: npm install && npm test.
+const assert = require('node:assert/strict');
 const { test, before, after, beforeEach } = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
