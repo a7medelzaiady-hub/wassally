@@ -101,18 +101,12 @@ test('strictOrders: اعتماد الإجمالي بدون تغيير الحال
 });
 
 test('customer: يقدر يعدّل الطلب وبيانات التواصل أثناء التجهيز قبل تعيين المندوب', async () => {
-  await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
+  await prepareOrderWithFeed();
   const db = as('cust1');
-  const b = writeBatch(db);
-  b.update(doc(db, 'orders/o1'), {
-    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
-    subtotal: 30, total: 50, notes: 'تعديل', customerName: 'Ali',
-    editedAt: serverTimestamp(),
-  });
-  b.update(doc(db, 'orders/o1/private/contact'), {
-    userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 2',
-  });
-  await assertSucceeds(b.commit());
+  await assertSucceeds(customerEditBatch(db, 'o1').commit());
+  const feed = (await getDoc(doc(as('cour1'), 'courier_available_orders/o1'))).data();
+  assert.equal(feed.total, 50);
+  assert.equal(feed.items[0].qty, 3);
   await assertFails(deleteDoc(doc(db, 'orders/o1/private/contact')));
 });
 
