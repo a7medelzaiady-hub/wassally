@@ -366,6 +366,44 @@ class _OfferCard extends StatelessWidget {
                     ),
                     PositionedDirectional(
                       bottom: 8,
+                      end: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.94),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              formatPrice(item.price),
+                              style: TextStyle(
+                                color: Brand.ink,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            if (item.hasPriceDiscount) ...[
+                              const SizedBox(width: 5),
+                              Text(
+                                formatPrice(item.oldPrice),
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 10.5,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    PositionedDirectional(
+                      bottom: 8,
                       start: 8,
                       child: Material(
                         color: Brand.green,
@@ -431,31 +469,7 @@ class _OfferCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (item.hasPriceDiscount)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              formatPrice(item.oldPrice),
-                              style: const TextStyle(
-                                color: Color(0xFFE34B55),
-                                fontSize: 12,
-                                decoration: TextDecoration.lineThrough,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 7),
-                            Text(
-                              formatPrice(item.price),
-                              style: TextStyle(
-                                color: Brand.ink,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ],
-                        )
-                      else
+                      if (!item.hasPriceDiscount)
                         Text(
                           item.text,
                           maxLines: 1,
