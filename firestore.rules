@@ -371,7 +371,8 @@ service cloud.firestore {
 
       // العميل: يعدّل طلبه أو يلغيه طالما لسه جديد (المحل ما قبلهوش).
       function canCustomerUpdate(k) {
-        return resource.data.get('status', '') == 'new' && (
+        return resource.data.get('status', '') in ['new', 'preparing'] &&
+          resource.data.get('courierId', '') == '' && (
           ('editedAt' in k &&
             k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
                        'promoCode', 'customerName', 'editedAt']) &&
@@ -518,7 +519,8 @@ service cloud.firestore {
         // العميل يعدّل بياناته أو يحذفها (مع حذف الطلب) طالما الطلب لسه new.
         allow update, delete: if signedIn() && doc == 'contact' &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['new', 'preparing'] &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
           (request.method == 'delete' || validContact(request.resource.data));
       }
 
