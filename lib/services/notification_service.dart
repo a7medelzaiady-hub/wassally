@@ -12,7 +12,7 @@ import 'live_alerts_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
-/// - بتطلب إذن الإشعارات وتسجّل توكن الجهاز في users/{uid}.fcmTokens.
+/// - بتقرأ حالة الإذن، وتُسجّل توكن الجهاز في users/{uid}.fcmTokens بعد الموافقة.
 /// - الإشعارات نفسها بتتبعت من Cloud Functions (فولدر functions).
 /// - لما التطبيق يكون مفتوح بنعرض الإشعار كشريط في أسفل الشاشة.
 class NotificationService {
