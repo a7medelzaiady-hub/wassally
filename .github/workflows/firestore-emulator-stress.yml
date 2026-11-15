@@ -17,6 +17,7 @@ on:
     paths:
       - 'firestore.rules'
       - 'firebase.json'
+      - 'functions/**'
       - 'rules-tests/**'
       - '.github/workflows/firestore-emulator-stress.yml'
   workflow_dispatch:
