@@ -341,7 +341,7 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── الإشعارات ─────────────────────────
 
-  /// شرح واضح قبل طلب إذن الإشعارات، بيظهر مرة واحدة بس لكل حساب.
+  /// شرح واضح قبل طلب إذن الإشعارات، وقرار عرضه محفوظ محليًا لكل جهاز.
   Future<bool> _confirmNotificationsUse() async {
     final ok = await showDialog<bool>(
       context: context,
