@@ -223,6 +223,31 @@ service cloud.firestore {
         n.get('editedAt', null) == request.time;
     }
 
+    // مستند قائمة المندوبين نسخة عامة محدودة من الطلب؛ يجب أن يطابق الطلب بعد الـ Batch.
+    // لا يحتوي على أي بيانات تواصل أو معرف العميل.
+    function feedMatchesOrder(orderId, orderData) {
+      let feedPath = /databases/$(database)/documents/courier_available_orders/$(orderId);
+      return existsAfter(feedPath) &&
+        feedDataMatchesOrder(getAfter(feedPath).data, orderData);
+    }
+
+    function feedDataMatchesOrder(f, orderData) {
+      return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']) &&
+        f.get('storeId', '') == orderData.get('storeId', '') &&
+        f.get('storeName', '') == orderData.get('storeName', '') &&
+        f.get('area', '') == orderData.get('area', '') &&
+        f.get('items', []) == orderData.get('items', []) &&
+        f.get('subtotal', -1) == orderData.get('subtotal', -2) &&
+        f.get('deliveryFee', -1) == orderData.get('deliveryFee', -2) &&
+        f.get('finalDeliveryFee', null) == orderData.get('finalDeliveryFee', null) &&
+        f.get('discount', 0) == orderData.get('discount', 0) &&
+        f.get('total', -1) == orderData.get('total', -2) &&
+        f.get('status', '') == 'preparing' &&
+        orderData.get('status', '') == 'preparing' &&
+        f.get('createdAt', null) == orderData.get('createdAt', null);
+    }
+
     // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
     function validVerification(k) {
       return !('verifiedTotal' in k) || (
@@ -355,7 +380,14 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
           'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']);
 
-      allow update: if false;
+      // العميل صاحب الطلب يحدّث نسخة القائمة في نفس Batch تعديل الطلب فقط.
+      // getAfter يربط المستندين بالقيم النهائية ويمنع إدخال أي PII.
+      allow update: if signedIn() &&
+        get(/databases/$(database)/documents/orders/$(orderId)).data.get('userId', '') == request.auth.uid &&
+        get(/databases/$(database)/documents/orders/$(orderId)).data.get('status', '') == 'preparing' &&
+        get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
+        getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('editedAt', null) == request.time &&
+        feedMatchesOrder(orderId, getAfter(/databases/$(database)/documents/orders/$(orderId)).data);
 
       allow delete: if signedIn() && (isAdmin() ||
         isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')) ||
@@ -377,7 +409,9 @@ service cloud.firestore {
             'editedAt' in k &&
             k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
                        'promoCode', 'customerName', 'editedAt']) &&
-            validCustomerEdit(request.resource.data, resource.data))
+            validCustomerEdit(request.resource.data, resource.data) &&
+            (resource.data.get('status', '') != 'preparing' ||
+              feedMatchesOrder(orderId, request.resource.data)))
           ||
           (resource.data.get('status', '') == 'new' &&
             k.hasOnly(['status']) &&
