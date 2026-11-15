@@ -1,0 +1,44 @@
+name: Firestore Emulator Stress Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'rules-tests/**'
+      - '.github/workflows/firestore-emulator-stress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firestore-emulator-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install isolated test dependencies
+        working-directory: rules-tests
+        run: npm install --no-audit --no-fund
+
+      - name: Run Firestore rules and concurrency stress tests
+        working-directory: rules-tests
+        env:
+          WASALLY_STRESS_MAX_CLIENTS: '500'
+        run: npm test
