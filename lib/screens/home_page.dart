@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
 import '../models/store.dart';
@@ -403,11 +404,10 @@ class _HomePageState extends State<HomePage>
         return;
       }
 
-      final userRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid);
-      final prompted = (await userRef.get()).data()?['notifPrompted'] == true;
-      if (prompted) return;
+      // حالة عرض الشرح محلية لكل جهاز؛ إذن أندرويد نفسه خاص بالجهاز وليس بالحساب.
+      final prefs = await SharedPreferences.getInstance();
+      final promptKey = 'notification_prompted_${user.uid}';
+      if (prefs.getBool(promptKey) == true) return;
 
       // نعرض الشرح داخل التطبيق أولًا، ثم نطلب إذن أندرويد مرة واحدة.
       await Future<void>.delayed(const Duration(seconds: 3));
@@ -416,16 +416,13 @@ class _HomePageState extends State<HomePage>
       final accepted = await _confirmNotificationsUse();
       if (!mounted) return;
       if (!accepted) {
-        await userRef.set({'notifPrompted': true}, SetOptions(merge: true));
+        await prefs.setBool(promptKey, true);
         return;
       }
 
       final granted =
           await NotificationService.requestPermissionAndRegister();
-      await userRef.set({
-        'notifPrompted': true,
-        'notifPermissionGranted': granted,
-      }, SetOptions(merge: true));
+      await prefs.setBool(promptKey, true);
 
       if (!granted) {
         _toast('الإشعارات لسه مقفولة. تقدر تفعّلها من إعدادات التطبيق.');
