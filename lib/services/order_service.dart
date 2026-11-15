@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/order.dart';
 import '../models/store.dart';
@@ -40,8 +44,88 @@ class OrderService {
   static CollectionReference<Map<String, dynamic>> get _orders =>
       FirebaseFirestore.instance.collection('orders');
 
-  /// بتبعت الطلب وتفرّغ السلة. بترجع رقم مستند الطلب.
+  static Future<String>? _activePlaceOrder;
+
+  /// يمنع الضغط المتكرر من إنشاء أكثر من طلب أثناء تنفيذ نفس العملية.
   static Future<String> placeOrder({
+    required CartModel cart,
+    required String name,
+    required String phone,
+    required String address,
+    String notes = '',
+    String courierNotes = '',
+  }) {
+    final active = _activePlaceOrder;
+    if (active != null) return active;
+
+    final pending = _placeOrder(
+      cart: cart,
+      name: name,
+      phone: phone,
+      address: address,
+      notes: notes,
+      courierNotes: courierNotes,
+    );
+    _activePlaceOrder = pending;
+    return pending.whenComplete(() {
+      if (identical(_activePlaceOrder, pending)) _activePlaceOrder = null;
+    });
+  }
+
+  /// بصمة ثابتة لا تحتفظ ببيانات التواصل نفسها داخل SharedPreferences.
+  /// زوج من تجزئتين 32-bit يكفي لاكتشاف تغيّر محتوى محاولة الطلب محليًا.
+  static String _orderFingerprint(
+    Map<String, dynamic> orderData,
+    Map<String, dynamic> contactData,
+  ) {
+    final safeOrder = Map<String, dynamic>.from(orderData)..remove('createdAt');
+    final bytes = utf8.encode(jsonEncode({
+      'order': safeOrder,
+      'contact': contactData,
+    }));
+    var first = 0x811c9dc5;
+    var second = 0x9e3779b9;
+    for (final byte in bytes) {
+      first = ((first ^ byte) * 0x01000193) & 0xffffffff;
+      second = ((second ^ byte) * 0x045d9f3b) & 0xffffffff;
+    }
+    return '${first.toRadixString(16)}${second.toRadixString(16)}';
+  }
+
+  /// يعيد استخدام معرّف نفس المحاولة بعد انقطاع الاتصال، ولا يخزن PII محليًا.
+  static Future<String> _pendingOrderId({
+    required String uid,
+    required Map<String, dynamic> orderData,
+    required Map<String, dynamic> contactData,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final tokenKey = 'wasally_pending_order_token_$uid';
+    final fingerprintKey = 'wasally_pending_order_fingerprint_$uid';
+    final fingerprint = _orderFingerprint(orderData, contactData);
+
+    var token = prefs.getString(tokenKey);
+    if (token == null ||
+        token.isEmpty ||
+        prefs.getString(fingerprintKey) != fingerprint) {
+      final random = Random.secure();
+      token = List.generate(
+        32,
+        (_) => random.nextInt(16).toRadixString(16),
+      ).join();
+      await prefs.setString(tokenKey, token);
+      await prefs.setString(fingerprintKey, fingerprint);
+    }
+    return '${uid}_$token';
+  }
+
+  static Future<void> _clearPendingOrderId(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('wasally_pending_order_token_$uid');
+    await prefs.remove('wasally_pending_order_fingerprint_$uid');
+  }
+
+  /// بتبعت الطلب وتفرّغ السلة. بترجع رقم مستند الطلب.
+  static Future<String> _placeOrder({
     required CartModel cart,
     required String name,
     required String phone,
@@ -116,27 +200,56 @@ class OrderService {
       'createdAt': FieldValue.serverTimestamp(),
     };
 
-    final ref = _orders.doc();
-    final batch = FirebaseFirestore.instance.batch()..set(ref, data);
-    batch.set(OrderContactService.ref(ref.id), {
+    final contactData = <String, dynamic>{
       'userName': name,
       'phone': phone,
       'address': address,
       if (courierNotes.trim().isNotEmpty) 'courierNotes': courierNotes.trim(),
-    });
+    };
+    final orderId = await _pendingOrderId(
+      uid: user.uid,
+      orderData: data,
+      contactData: contactData,
+    );
+    final ref = _orders.doc(orderId);
+    final batch = FirebaseFirestore.instance.batch()..set(ref, data);
+    batch.set(OrderContactService.ref(ref.id), contactData);
 
     try {
       await batch.commit();
     } on FirebaseException catch (e) {
-      // في وضع التطوير فقط، وبدون أي بيانات شخصية (كود الخطأ فقط).
-      if (kDebugMode) debugPrint('ORDER ERROR [${e.code}]');
-      if (e.code == 'permission-denied') {
-        throw StateError('تعذر إرسال الطلب (${e.code}). حاول مرة تانية أو تواصل مع الدعم.');
+      // قد يكون السيرفر حفظ الـ Batch ثم انقطع الرد. نتحقق من نفس المستند
+      // قبل إعادة المحاولة، حتى لا ننشئ طلبًا ثانيًا للشراء نفسه.
+      var alreadyCreated = false;
+      try {
+        final existing = await ref.get();
+        alreadyCreated = existing.exists &&
+            existing.data()?['userId'] == user.uid &&
+            existing.data()?['storeId'] == store.id &&
+            existing.data()?['total'] == cart.total;
+      } catch (_) {
+        // عند تعذر التحقق نحتفظ بالمفتاح ليُعاد استخدامه في المحاولة التالية.
       }
-      if (e.code == 'unavailable') {
-        throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+
+      if (alreadyCreated) {
+        if (kDebugMode) debugPrint('ORDER RETRY CONFIRMED [${e.code}]');
+      } else {
+        if (kDebugMode) debugPrint('ORDER ERROR [${e.code}]');
+        if (e.code == 'permission-denied') {
+          throw StateError('تعذر إرسال الطلب (${e.code}). حاول مرة تانية أو تواصل مع الدعم.');
+        }
+        if (e.code == 'unavailable') {
+          throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+        }
+        throw StateError('تعذر إرسال الطلب (${e.code}).');
       }
-      throw StateError('تعذر إرسال الطلب (${e.code}).');
+    }
+
+    try {
+      await _clearPendingOrderId(user.uid);
+    } catch (_) {
+      // فشل التنظيف لا يكرر الطلب؛ المفتاح لا يحتوي على بيانات شخصية.
+      if (kDebugMode) debugPrint('ORDER IDEMPOTENCY CLEANUP ERROR');
     }
 
     // نحفظ البيانات للمرة الجاية. لو فشل الحفظ ده الطلب نفسه ما يتأثرش.
