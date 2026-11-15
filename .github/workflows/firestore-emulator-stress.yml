@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - codex/pr1-safe-integration-20261115
+      - fix/spark-client-order-feed-sync
     paths:
       - 'firestore.rules'
       - 'firebase.json'
