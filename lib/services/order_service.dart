@@ -349,6 +349,35 @@ class OrderService {
           : courierNotes.trim(),
     });
 
+    // أثناء التحضير، قائمة المندوبين تتحدث ذريًا مع الطلب وبيانات التواصل.
+    // feedData لا ينسخ بيانات التواصل أو هوية العميل.
+    if (order.status == OrderStatus.preparing && order.courierId.isEmpty) {
+      batch.set(
+        FirebaseFirestore.instance
+            .collection('courier_available_orders')
+            .doc(order.id),
+        OrderStatusWriter.feedData({
+          'storeId': order.storeId,
+          'storeName': order.storeName,
+          'area': order.area,
+          'items': lines.map((l) => {
+            'name': l.name,
+            'price': l.price,
+            'qty': l.qty,
+            if (l.productId.isNotEmpty) 'productId': l.productId,
+          }).toList(),
+          'subtotal': subtotal,
+          'deliveryFee': order.deliveryFee,
+          'finalDeliveryFee': order.finalDeliveryFee,
+          'discount': discount,
+          'total': total,
+          'createdAt': order.createdAt == null
+              ? FieldValue.serverTimestamp()
+              : Timestamp.fromDate(order.createdAt!),
+        }),
+      );
+    }
+
     try {
       await batch.commit();
     } on FirebaseException catch (e) {
