@@ -495,10 +495,13 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // العميل يعدّل بياناته طالما الطلب new (وبيانات صحيحة بس)
   await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '123' }));
-  // بعد ما الحالة تتغيّر (preparing): لا تعديل ولا حذف
+  // أثناء التجهيز يظل العميل قادرًا على تحديث بياناته ما دام المندوب لم يستلم الطلب.
   await setOrderState({ status: 'preparing' });
-  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
+  await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
   await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
+  // بعد تعيين المندوب تُقفل بيانات التواصل عن العميل.
+  await setOrderState({ courierId: 'cour1' });
+  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
   // وهو new: الحذف ينجح
   await seed();
   await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
@@ -511,4 +514,29 @@ test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها
   await assertFails(setDoc(doc(as('owner2'), 'notifications/x3'), n())); // صاحب محل تاني
   await assertFails(setDoc(doc(as('owner1'), 'notifications/x4'), n({ orderId: 'nope' }))); // طلب مش موجود
   await assertFails(setDoc(doc(as('cour1'), 'notifications/x5'), n())); // مندوب مش مكلّف
+});
+
+
+test('special_requests: العميل ينشئ طلبًا صالحًا وصاحب المحل المعني فقط يقرأه', async () => {
+  const request = {
+    storeId: 'shop1', storeName: 'S', userId: 'cust1',
+    description: 'منتج مخصوص', quantity: 2, imageUrl: '',
+    voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/sr1'), request));
+  await assertSucceeds(getDoc(doc(as('owner1'), 'special_requests/sr1')));
+  await assertFails(getDoc(doc(as('owner2'), 'special_requests/sr1')));
+  await assertFails(getDoc(doc(as('cust2'), 'special_requests/sr1')));
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/bad'), {
+    ...request, quantity: 0,
+  }));
+});
+
+test('store owner: حذف المحل وفك ربط حسابه يتمان في Batch واحدة', async () => {
+  const db = as('owner1');
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'stores/shop1'));
+  batch.delete(doc(db, 'storeOwners/owner1'));
+  await assertSucceeds(batch.commit());
+  await assertFails(getDoc(doc(db, 'storeOwners/owner1')));
 });
