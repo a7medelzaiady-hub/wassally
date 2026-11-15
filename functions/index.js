@@ -117,40 +117,107 @@ async function notify(uids, title, body, data = {}) {
 
 
 /**
- * قائمة آمنة للطلبات التي يمكن للمندوبين التقديم عليها.
- * لا تحتوي اسم العميل أو ملاحظاته أو هاتفه أو عنوانه أو بيانات الاتصال الخاصة.
- * الكتابة من السيرفر فقط، وتُحذف بمجرد التعيين أو الخروج من preparing.
+ * Keep the courier feed consistent with the latest order state.
+ * Event delivery can be duplicated or out of order, so reconcile from the
+ * authoritative order document inside a transaction. This prevents a delayed
+ * "preparing/unassigned" event from resurrecting an order after courier claim.
  */
+const COURIER_FEED_FIELDS = [
+  'status', 'courierId', 'storeId', 'storeName', 'area', 'items',
+  'subtotal', 'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'createdAt',
+];
+
+function sameFirestoreValue(a, b) {
+  if (a === b) return true;
+  if (a && typeof a.isEqual === 'function') return a.isEqual(b);
+  if (b && typeof b.isEqual === 'function') return b.isEqual(a);
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function sameFeedDocument(existing, next) {
+  const oldKeys = Object.keys(existing || {});
+  const newKeys = Object.keys(next || {});
+  return oldKeys.length === newKeys.length &&
+    newKeys.every((key) => Object.prototype.hasOwnProperty.call(existing, key) &&
+      sameFirestoreValue(existing[key], next[key]));
+}
+
+function courierFeedData(order) {
+  const numberOrZero = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const items = Array.isArray(order.items)
+    ? order.items.slice(0, 100).map((item) => {
+        const source = item || {};
+        const row = {
+          name: String(source.name || 'منتج').slice(0, 120),
+          price: Math.max(0, Math.min(20000, numberOrZero(source.price))),
+          qty: Math.max(1, Math.min(50, Math.trunc(numberOrZero(source.qty) || 1))),
+        };
+        if (typeof source.productId === 'string' && source.productId.length > 0) {
+          row.productId = source.productId.slice(0, 120);
+        }
+        return row;
+      })
+    : [];
+
+  const data = {
+    storeId: String(order.storeId || '').slice(0, 100),
+    storeName: String(order.storeName || '').slice(0, 100),
+    area: String(order.area || '').slice(0, 60),
+    items,
+    subtotal: numberOrZero(order.subtotal),
+    deliveryFee: numberOrZero(order.deliveryFee),
+    discount: numberOrZero(order.discount),
+    total: numberOrZero(order.total),
+    status: 'preparing',
+    createdAt: order.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (order.finalDeliveryFee != null) {
+    data.finalDeliveryFee = numberOrZero(order.finalDeliveryFee);
+  }
+  return data;
+}
+
 exports.syncCourierAvailableOrder = onDocumentWritten('orders/{orderId}', async (event) => {
+  const before = event.data && event.data.before && event.data.before.exists
+    ? event.data.before.data()
+    : null;
   const after = event.data && event.data.after && event.data.after.exists
     ? event.data.after.data()
     : null;
+
+  const wasAvailable = !!before && before.status === 'preparing' &&
+    String(before.courierId || '').trim() === '';
+  const isAvailable = !!after && after.status === 'preparing' &&
+    String(after.courierId || '').trim() === '';
+
+  if (!wasAvailable && !isAvailable) return;
+  if (before && after && !COURIER_FEED_FIELDS.some(
+    (key) => !sameFirestoreValue(before[key], after[key])
+  )) return;
+
   const id = event.params.orderId;
-  const ref = db.collection('courier_available_orders').doc(id);
+  const orderRef = db.collection('orders').doc(id);
+  const feedRef = db.collection('courier_available_orders').doc(id);
 
-  if (!after || after.status !== 'preparing' ||
-      String(after.courierId || '').trim() !== '') {
-    await ref.delete().catch((e) => {
-      if (e.code !== 5) throw e;
-    });
-    return;
-  }
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    const feedSnap = await tx.get(feedRef);
+    const current = orderSnap.exists ? orderSnap.data() : null;
+    const currentlyAvailable = !!current && current.status === 'preparing' &&
+      String(current.courierId || '').trim() === '';
 
-  const safeItems = Array.isArray(after.items)
-    ? after.items.slice(0, 15).map((item) => ({
-        name: String((item && item.name) || '').slice(0, 100),
-        qty: Math.max(1, Math.min(50, Number((item && item.qty) || 1))),
-      }))
-    : [];
+    if (!currentlyAvailable) {
+      if (feedSnap.exists) tx.delete(feedRef);
+      return;
+    }
 
-  await ref.set({
-    storeId: String(after.storeId || ''),
-    storeName: String(after.storeName || '').slice(0, 100),
-    items: safeItems,
-    total: Number(after.total) || 0,
-    status: 'preparing',
-    courierId: '',
-    createdAt: after.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+    const next = courierFeedData(current);
+    if (!feedSnap.exists || !sameFeedDocument(feedSnap.data(), next)) {
+      tx.set(feedRef, next);
+    }
   });
 });
 
