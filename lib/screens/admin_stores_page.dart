@@ -315,14 +315,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
     _name = TextEditingController(text: (data['name'] ?? '').toString());
 
     final storedCategory = (data['category'] ?? '').toString();
-    _category =
-        const {
-          'صيدليات',
-          'صيدلية',
-          'pharmacy',
-          'pharmacies',
-        }.contains(storedCategory.trim().toLowerCase())
-        ? ''
+    _category = isPharmacyCategory(storedCategory)
+        ? 'صيدليات'
         : storedCategory;
 
     _time = TextEditingController(text: (data['time'] ?? '').toString());

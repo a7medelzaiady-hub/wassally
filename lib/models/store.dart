@@ -36,6 +36,7 @@ const Map<String, IconData> iconOptions = {
   'coffee': Icons.local_cafe,
   'flowers': Icons.local_florist,
   'store': Icons.store,
+  'pharmacy': Icons.local_pharmacy,
 };
 
 class Store {

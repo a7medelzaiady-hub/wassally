@@ -31,6 +31,7 @@ const List<CategoryInfo> kCategories = [
   CategoryInfo(category: 'محمصات وعطارة', title: 'محمصات وعطارة', description: 'مكسرات وتوابل وأعشاب.', icon: Icons.grain, tint: Color(0xFFEFE2D2), accent: Color(0xFF80552E)),
   CategoryInfo(category: 'كافيه ومشروبات', title: 'كافيه ومشروبات', description: 'مشروبات ساخنة وباردة.', icon: Icons.local_cafe, tint: Color(0xFFEADCF5), accent: Color(0xFF74459B)),
   CategoryInfo(category: 'ورد وهدايا', title: 'ورد وهدايا', description: 'ورد وهدايا للمناسبات.', icon: Icons.local_florist, tint: Color(0xFFFBD3DD), accent: Color(0xFFB4234F)),
+  CategoryInfo(category: 'صيدليات', title: 'صيدليات', description: 'منتجات الصيدليات والعناية الصحية.', icon: Icons.local_pharmacy, tint: Color(0xFFD9F0E8), accent: Color(0xFF167A58)),
   CategoryInfo(category: 'أخرى', title: 'متاجر متنوعة', description: 'أنشطة ومحلات متنوعة.', icon: Icons.store, tint: Color(0xFFE5E7EB), accent: Color(0xFF4B5563)),
 ];
 

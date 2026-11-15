@@ -73,7 +73,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
               try {
                 final data = doc.data();
                 final store = Store.fromMap(doc.id, data);
-                if (store.active && !store.isPharmacy) stores.add((store: store, data: data));
+                if (store.active) stores.add((store: store, data: data));
               } catch (e) {
                 debugPrint('Store parse error ${doc.id}: $e');
               }
@@ -81,11 +81,14 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
             stores.sort((a, b) => a.store.order.compareTo(b.store.order));
             final q = _search.text.trim().toLowerCase();
             final visible = stores.where((item) {
-              final categoryOk = _category == null || item.store.category == _category;
+              final categoryOk = _category == null ||
+                  (isPharmacyCategory(_category!)
+                      ? item.store.isPharmacy
+                      : item.store.category == _category);
               return categoryOk && (q.isEmpty || item.store.name.toLowerCase().contains(q));
             }).toList();
 
-            final categories = stores.map((e) => e.store.category).where((e) => e.trim().isNotEmpty).toSet().toList()..sort();
+            final categories = stores.map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category).where((e) => e.trim().isNotEmpty).toSet().toList()..sort();
             return Column(children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
