@@ -495,11 +495,18 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // العميل يعدّل بياناته طالما الطلب new (وبيانات صحيحة بس)
   await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '123' }));
-  // بعد ما الحالة تتغيّر (preparing): لا تعديل ولا حذف
+  // أثناء preparing يظل العميل قادرًا على تعديل بيانات التواصل قبل تعيين المندوب.
   await setOrderState({ status: 'preparing' });
-  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
+  await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
+  // الحذف يظل مقصورًا على حالة new.
   await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
-  // وهو new: الحذف ينجح
+
+  // بمجرد تعيين المندوب، تُقفل بيانات التواصل أمام العميل.
+  await setOrderState({ status: 'preparing', courierId: 'cour1' });
+  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
+  await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
+
+  // وهو new: الحذف ينجح.
   await seed();
   await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
 });
