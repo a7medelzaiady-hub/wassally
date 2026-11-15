@@ -156,10 +156,14 @@ service cloud.firestore {
     // الخصم: صفر، أو كود نشط في promos/{code} والخصم ما يتعداش نسبته من المجموع.
     function promoOk(d) {
       return d.get('discount', 0) == 0 || (
-        d.get('promoCode', '') is string && d.discount is number && d.discount > 0 &&
+        d.get('promoCode', '') is string && d.get('promoCode', '').size() > 0 &&
+        d.discount is number && d.discount > 0 &&
         d.subtotal is number && d.discount < d.subtotal &&
-        exists(/databases/$(database)/documents/promos/$(d.promoCode)) && get(/databases/$(database)/documents/promos/$(d.promoCode)).data.active == true &&
-        d.discount <= d.subtotal * get(/databases/$(database)/documents/promos/$(d.promoCode)).data.percent / 100 + 0.01);
+        exists(/databases/$(database)/documents/promos/$(d.promoCode)) &&
+        get(/databases/$(database)/documents/promos/$(d.promoCode)).data.get('active', false) == true &&
+        get(/databases/$(database)/documents/promos/$(d.promoCode)).data.get('percent', 0) is number &&
+        // ضرب في 0.01 بدل القسمة على 100 عشان نتجنب أي مشكلة في قسمة الأعداد الصحيحة.
+        d.discount <= d.subtotal * get(/databases/$(database)/documents/promos/$(d.promoCode)).data.get('percent', 0) * 0.01 + 0.01);
     }
 
     // المحل لازم يكون موجود ونشط (أي نوع محل: مطعم، بقالة، ورد، صيدلية...).
