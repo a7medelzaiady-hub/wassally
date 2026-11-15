@@ -7,7 +7,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 
-/// تعديل الطلب قبل ما المحل يقبله (الحالة "new"): كميات الأصناف وبيانات التوصيل.
+/// تعديل الطلب قبل استلام المندوب: في حالتي new وpreparing طالما courierId فارغ.
 /// القواعد (firestore.rules) هي اللي بتمنع التعديل لو الحالة اتغيّرت.
 class EditOrderPage extends StatefulWidget {
   final AppOrder order;
