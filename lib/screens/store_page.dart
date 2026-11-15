@@ -1,5 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -65,6 +69,16 @@ class _StorePageState extends State<StorePage> {
   bool _showAppbar = true;
   bool _canEditStore = false; // المدير (كل المحلات) وصاحب المحل (محله) يشوفوا أزرار الإضافة والرفع
 
+  final _specialRequestCtrl = TextEditingController();
+  final _voiceRecorder = AudioRecorder();
+  int _specialQty = 1;
+  String? _specialImageUrl;
+  String? _voicePath;
+  bool _recording = false;
+  bool _sendingSpecial = false;
+  int _recordSeconds = 0;
+  Timer? _recordTimer;
+
   DocumentReference<_Json> get _storeRef =>
       FirebaseFirestore.instance.collection('stores').doc(store.id);
 
@@ -105,6 +119,9 @@ class _StorePageState extends State<StorePage> {
     _debounce?.cancel();
     _scroll.dispose();
     _searchCtrl.dispose();
+    _specialRequestCtrl.dispose();
+    _recordTimer?.cancel();
+    _voiceRecorder.dispose();
     super.dispose();
   }
 
@@ -147,6 +164,209 @@ class _StorePageState extends State<StorePage> {
         setState(() => _canEditStore = true);
       }
     } catch (_) {}
+  }
+
+  Future<void> _pickSpecialImage() async {
+    if (_sendingSpecial) return;
+    try {
+      final url = await ImageService.pickAndUpload('products', storeId: store.id);
+      if (url != null && mounted) setState(() => _specialImageUrl = url);
+    } catch (e) {
+      _say('تعذر إرفاق الصورة: $e');
+    }
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_sendingSpecial) return;
+    if (_recording) {
+      try {
+        final path = await _voiceRecorder.stop();
+        _recordTimer?.cancel();
+        if (!mounted) return;
+        setState(() {
+          _recording = false;
+          _voicePath = path;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _recording = false);
+        _say('تعذر إنهاء التسجيل.');
+      }
+      return;
+    }
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        _say('اسمح باستخدام الميكروفون لتسجيل الرسالة الصوتية.');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/wasally-request-${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _voiceRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 32000,
+          sampleRate: 22050,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recording = true;
+        _recordSeconds = 0;
+        _voicePath = null;
+      });
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        if (_recordSeconds >= 15) {
+          _toggleVoiceRecording();
+          return;
+        }
+        setState(() => _recordSeconds++);
+      });
+    } catch (e) {
+      _say('تعذر بدء التسجيل: $e');
+    }
+  }
+
+  Future<void> _sendSpecialRequest() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final description = _specialRequestCtrl.text.trim();
+    if (user == null) {
+      _say('سجّل الدخول الأول لإرسال الطلب.');
+      return;
+    }
+    if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
+      _say('اكتب وصف المنتج أو أرفق صورة أو رسالة صوتية.');
+      return;
+    }
+    if (_recording) {
+      _say('أنه التسجيل الصوتي الأول.');
+      return;
+    }
+    setState(() => _sendingSpecial = true);
+    try {
+      String? voiceBase64;
+      if (_voicePath != null) {
+        final bytes = await File(_voicePath!).readAsBytes();
+        voiceBase64 = base64Encode(bytes);
+        if (voiceBase64.length > 700000) {
+          throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
+        }
+      }
+      await FirebaseFirestore.instance.collection('special_requests').add({
+        'storeId': store.id,
+        'storeName': store.name,
+        'userId': user.uid,
+        'description': description,
+        'quantity': _specialQty,
+        'imageUrl': _specialImageUrl ?? '',
+        'voiceBase64': voiceBase64 ?? '',
+        'status': 'new',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      setState(() {
+        _specialRequestCtrl.clear();
+        _specialQty = 1;
+        _specialImageUrl = null;
+        _voicePath = null;
+      });
+      _say('تم إرسال الطلب الخاص للمحل.');
+    } catch (e) {
+      _say('تعذر إرسال الطلب الخاص: $e');
+    } finally {
+      if (mounted) setState(() => _sendingSpecial = false);
+    }
+  }
+
+  Widget _specialRequestCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Brand.gold.withValues(alpha: 0.55), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('طلب خاص / منتج غير موجود؟',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Brand.ink)),
+          const SizedBox(height: 4),
+          Text('اكتب اللي محتاجه أو أرفق صورة أو رسالة صوتية وسيقوم المحل بتجهيزه لك',
+              style: TextStyle(fontSize: 15, height: 1.5, color: Brand.ink)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _specialRequestCtrl,
+            minLines: 1,
+            maxLines: 3,
+            maxLength: 300,
+            decoration: const InputDecoration(
+              hintText: 'مثال: رغيف حواوشي مخصوص بدون...',
+              counterText: '',
+              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _sendingSpecial ? null : _pickSpecialImage,
+                icon: const Icon(Icons.attach_file),
+                label: Text(_specialImageUrl == null ? 'إرفاق صورة' : 'تم إرفاق صورة'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _sendingSpecial ? null : _toggleVoiceRecording,
+                icon: Icon(_recording ? Icons.stop_circle_outlined : Icons.mic_none),
+                label: Text(_recording
+                    ? 'إيقاف التسجيل (${_recordSeconds}/15 ث)'
+                    : (_voicePath == null ? 'رسالة صوتية' : 'تم تسجيل الصوت')),
+              ),
+            ],
+          ),
+          if (_specialImageUrl != null || _voicePath != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('المرفقات جاهزة للإرسال',
+                  style: TextStyle(color: Brand.greenDark, fontWeight: FontWeight.w700)),
+            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              IconButton(
+                onPressed: _specialQty > 1 && !_sendingSpecial
+                    ? () => setState(() => _specialQty--)
+                    : null,
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text('$_specialQty', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              IconButton(
+                onPressed: _specialQty < 99 && !_sendingSpecial
+                    ? () => setState(() => _specialQty++)
+                    : null,
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: _sendingSpecial ? null : _sendSpecialRequest,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6B1A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+                  shape: const StadiumBorder(),
+                ),
+                child: _sendingSpecial
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('إضافة للطلب', style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _onScroll() {
@@ -295,6 +515,7 @@ class _StorePageState extends State<StorePage> {
 
     return Column(
       children: [
+        _specialRequestCard(),
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
           child: Row(
