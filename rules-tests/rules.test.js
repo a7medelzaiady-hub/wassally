@@ -2,6 +2,7 @@
 //   npm install && npm test
 // تُشغّل الاختبارات على Firestore Emulator عبر GitHub Actions أو npm test.
 const { test, before, after, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
@@ -64,7 +65,9 @@ test('إجمالي الطلب: غير المتطابق حسابيًا يُرفض
 });
 
 const actorUidOf = (role) => (role === 'admin' ? 'admin1' : role === 'courier' ? 'cour1' : role === 'owner' ? 'owner1' : 'cust1');
-const changeStatus = (db, orderId, from, to, role) => {
+const changeStatus = async (db, orderId, from, to, role) => {
+  const existing = await getDoc(doc(db, `orders/${orderId}`));
+  const createdAt = existing.data().createdAt;
   const b = writeBatch(db);
   b.update(doc(db, `orders/${orderId}`), { status: to });
   b.set(doc(db, `orders/${orderId}/statusHistory/${to}`), {
@@ -75,7 +78,7 @@ const changeStatus = (db, orderId, from, to, role) => {
       storeId: 'shop1', storeName: 'S', area: '',
       items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
       subtotal: 20, deliveryFee: 20, discount: 0, total: 40,
-      status: 'preparing', createdAt: serverTimestamp(),
+      status: 'preparing', createdAt,
     });
   }
   return b.commit();
@@ -179,8 +182,9 @@ test('feed sync: يمنع تحديثًا غير مطابق أو كتابة feed 
   mismatch.update(doc(db, 'courier_available_orders/o1'), { total: 999 });
   await assertFails(mismatch.commit());
 
-  const stranger = writeBatch(as('cust2'));
-  stranger.update(doc(as('cust2'), 'courier_available_orders/o1'), { total: 60 });
+  const strangerDb = as('cust2');
+  const stranger = writeBatch(strangerDb);
+  stranger.update(doc(strangerDb, 'courier_available_orders/o1'), { total: 60 });
   await assertFails(stranger.commit());
 });
 
@@ -640,9 +644,9 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // العميل يعدّل بياناته طالما الطلب new (وبيانات صحيحة بس)
   await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01112345678' }));
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '123' }));
-  // بعد ما الحالة تتغيّر (preparing): لا تعديل ولا حذف
+  // أثناء preparing يظل العميل قادرًا على تعديل بيانات التواصل قبل تعيين المندوب.
   await setOrderState({ status: 'preparing' });
-  await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
+  await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
   await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
   // وهو new: الحذف ينجح
   await seed();
