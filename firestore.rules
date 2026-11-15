@@ -519,12 +519,16 @@ service cloud.firestore {
           existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           validContact(request.resource.data);
-        // العميل يعدّل بياناته أو يحذفها (مع حذف الطلب) طالما الطلب لسه new.
-        allow update, delete: if signedIn() && doc == 'contact' &&
+        // العميل يعدّل بيانات التواصل حتى استلام المندوب، ويحذفها فقط مع طلب new.
+        allow update: if signedIn() && doc == 'contact' &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['new', 'preparing'] &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
-          (request.method == 'delete' || validContact(request.resource.data));
+          validContact(request.resource.data);
+        allow delete: if signedIn() && doc == 'contact' &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '';
       }
 
       // سجل الحالات: create فقط. معرّف المستند = الحالة الجديدة، فمفيش حدث بيتكرر.
