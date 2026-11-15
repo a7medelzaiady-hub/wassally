@@ -219,7 +219,7 @@ class _OffersPageState extends State<OffersPage> {
                           crossAxisCount: 2,
                           mainAxisSpacing: 12,
                           crossAxisSpacing: 12,
-                          childAspectRatio: 0.67,
+                          childAspectRatio: 0.74,
                         ),
                         delegate: SliverChildBuilderDelegate((context, i) {
                           final item = items[i];
@@ -289,6 +289,8 @@ class _OfferCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // نفس كارت المنتجات في صفحة المحل: صورة كبيرة وزر (+) دائري
+              // فوق الصورة، بدون زر "أضف للسلة" العريض أسفل الكارت.
               Expanded(
                 flex: 5,
                 child: Stack(
@@ -315,12 +317,36 @@ class _OfferCard extends StatelessWidget {
                             ),
                           ),
                     PositionedDirectional(
-                      top: 10,
-                      start: 10,
+                      top: 8,
+                      end: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Brand.green,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(
+                          item.store.category,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                    PositionedDirectional(
+                      top: 8,
+                      start: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFE83F50),
@@ -332,8 +358,30 @@ class _OfferCard extends StatelessWidget {
                               : 'عرض خاص',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 11,
                             fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                    PositionedDirectional(
+                      bottom: 8,
+                      start: 8,
+                      child: Material(
+                        color: Brand.green,
+                        elevation: 3,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: onAdd,
+                          child: const SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: Icon(
+                              Icons.add_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
                           ),
                         ),
                       ),
@@ -342,38 +390,47 @@ class _OfferCard extends StatelessWidget {
                 ),
               ),
               Expanded(
-                flex: 4,
+                flex: 3,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
+                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            item.name,
-                            maxLines: 2,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Brand.ink,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
+                      Text(
+                        item.name,
+                        maxLines: 2,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Brand.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.storefront_outlined,
+                            size: 14,
+                            color: Brand.green,
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              item.store.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                      Text(
-                        item.store.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
                       if (item.hasPriceDiscount)
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -387,7 +444,7 @@ class _OfferCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 7),
                             Text(
                               formatPrice(item.price),
                               style: TextStyle(
@@ -401,7 +458,7 @@ class _OfferCard extends StatelessWidget {
                       else
                         Text(
                           item.text,
-                          maxLines: 2,
+                          maxLines: 1,
                           textAlign: TextAlign.center,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -410,28 +467,6 @@ class _OfferCard extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 40,
-                        child: FilledButton.icon(
-                          onPressed: onAdd,
-                          icon: const Icon(
-                            Icons.shopping_cart_outlined,
-                            size: 17,
-                          ),
-                          label: const Text('أضف للسلة'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Brand.green,
-                            foregroundColor: Colors.white,
-                            shape: const StadiumBorder(),
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            textStyle: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
