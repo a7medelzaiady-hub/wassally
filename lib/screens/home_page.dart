@@ -1029,7 +1029,22 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
-          return Stack(children: [scroll, PositionedDirectional(end: 18, bottom: 18, child: GlossyFab(icon: Icons.local_offer_rounded, tooltip: 'عروض وخصومات', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OffersPage())))]),);
+          return Stack(
+            children: [
+              scroll,
+              PositionedDirectional(
+                end: 18,
+                bottom: 18,
+                child: GlossyFab(
+                  icon: Icons.local_offer_rounded,
+                  tooltip: 'عروض وخصومات',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const OffersPage()),
+                  ),
+                ),
+              ),
+            ],
+          );
         },
       ),
     );
