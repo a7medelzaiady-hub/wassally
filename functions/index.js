@@ -180,7 +180,7 @@ function courierFeedData(order) {
   return data;
 }
 
-exports.syncCourierAvailableOrder = onDocumentWritten('orders/{orderId}', async (event) => {
+exports.syncCourierAvailableOrder = onDocumentWritten({ document: 'orders/{orderId}', retry: true }, async (event) => {
   const before = event.data && event.data.before && event.data.before.exists
     ? event.data.before.data()
     : null;
