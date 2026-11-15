@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
@@ -61,7 +65,7 @@ class StoreOwnerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         floatingActionButton: const FeedbackFab(),
         body: Column(
@@ -79,6 +83,7 @@ class StoreOwnerPage extends StatelessWidget {
                 tabs: [
                   Tab(text: 'الطلبات'),
                   Tab(text: 'الأصناف والعروض'),
+                  Tab(text: 'الطلبات الخاصة'),
                 ],
               ),
             ),
@@ -87,6 +92,7 @@ class StoreOwnerPage extends StatelessWidget {
                 children: [
                   _OwnerOrdersTab(storeId: storeId),
                   _OwnerProductsTab(storeId: storeId),
+                  _OwnerSpecialRequestsTab(storeId: storeId),
                 ],
               ),
             ),
@@ -176,7 +182,14 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
         }
         await batch.commit();
       }
-      await store.delete();
+      // حذف المحل وربط حساب المالك في Batch واحدة؛ القواعد تتحقق من
+      // ملكية المحل والـ storeId القديم قبل إتمام العمليتين ذريًا.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) throw StateError('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
+      final batch = FirebaseFirestore.instance.batch();
+      batch.delete(store);
+      batch.delete(FirebaseFirestore.instance.collection('storeOwners').doc(uid));
+      await batch.commit();
       await CatalogService.bump();
       messenger.showSnackBar(const SnackBar(content: Text('تم حذف المحل.')));
     } catch (e) {
@@ -1595,4 +1608,140 @@ class _OfferDialogState extends State<_OfferDialog> {
       ],
     );
   }
+}
+
+
+/// الطلبات الخاصة التي يرسلها العملاء عندما لا يجدون المنتج في قائمة المحل.
+class _OwnerSpecialRequestsTab extends StatelessWidget {
+  final String storeId;
+  const _OwnerSpecialRequestsTab({required this.storeId});
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = FirebaseFirestore.instance
+        .collection('special_requests')
+        .where('storeId', isEqualTo: storeId)
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot<_Json>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text('تعذر تحميل الطلبات الخاصة.'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) {
+          return const EmptyState(
+            icon: Icons.inbox_outlined,
+            title: 'لا توجد طلبات خاصة',
+            message: 'طلبات المنتجات غير الموجودة هتظهر هنا.',
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(12),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final data = docs[index].data();
+            final created = data['createdAt'];
+            final date = created is Timestamp ? created.toDate() : null;
+            return Card(
+              color: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      (data['description'] ?? '').toString().isEmpty
+                          ? 'طلب بدون وصف نصي'
+                          : (data['description'] ?? '').toString(),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                    ),
+                    const SizedBox(height: 6),
+                    Text('الكمية: ${data['quantity'] ?? 1}'),
+                    if (date != null)
+                      Text('${date.day}/${date.month}/${date.year} • ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                    if ((data['imageUrl'] ?? '').toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          data['imageUrl'].toString(),
+                          height: 150,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Text('تعذر عرض الصورة المرفقة'),
+                        ),
+                      ),
+                    ],
+                    if ((data['voiceBase64'] ?? '').toString().isNotEmpty)
+                      _SpecialVoicePlayer(encoded: data['voiceBase64'].toString()),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SpecialVoicePlayer extends StatefulWidget {
+  final String encoded;
+  const _SpecialVoicePlayer({required this.encoded});
+
+  @override
+  State<_SpecialVoicePlayer> createState() => _SpecialVoicePlayerState();
+}
+
+class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
+  late final AudioPlayer _player = AudioPlayer();
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play() async {
+    try {
+      await _player.stop();
+      await _player.setSource(BytesSource(base64Decode(widget.encoded)));
+      await _player.resume();
+      if (mounted) setState(() => _playing = true);
+      _player.onPlayerComplete.listen((_) {
+        if (mounted) setState(() => _playing = false);
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _playing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: AlignmentDirectional.centerStart,
+    child: OutlinedButton.icon(
+      onPressed: _playing
+          ? () async {
+              await _player.pause();
+              if (mounted) setState(() => _playing = false);
+            }
+          : _play,
+      icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
+      label: Text(_playing ? 'إيقاف مؤقت' : 'تشغيل الرسالة الصوتية'),
+    ),
+  );
 }
