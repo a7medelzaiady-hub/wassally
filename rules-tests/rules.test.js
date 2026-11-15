@@ -70,6 +70,14 @@ const changeStatus = (db, orderId, from, to, role) => {
   b.set(doc(db, `orders/${orderId}/statusHistory/${to}`), {
     from, to, actorUid: actorUidOf(role), actorRole: role, at: serverTimestamp(),
   });
+  if (to === 'preparing' && ['admin', 'owner'].includes(role)) {
+    b.set(doc(db, `courier_available_orders/${orderId}`), {
+      storeId: 'shop1', storeName: 'S', area: '',
+      items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
+      subtotal: 20, deliveryFee: 20, discount: 0, total: 40,
+      status: 'preparing', createdAt: serverTimestamp(),
+    });
+  }
   return b.commit();
 };
 
