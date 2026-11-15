@@ -26,7 +26,15 @@ class OffersPage extends StatefulWidget {
 }
 
 class _OffersPageState extends State<OffersPage> {
-  late final Future<QuerySnapshot<Map<String, dynamic>>> _future =
+  late Future<QuerySnapshot<Map<String, dynamic>>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> _load() =>
       CatalogService.get(FirebaseFirestore.instance.collection('stores'), 'stores');
 
   List<_Offer> _offers(QuerySnapshot<Map<String, dynamic>> snap) {
@@ -87,7 +95,8 @@ class _OffersPageState extends State<OffersPage> {
                 const BrandHeader(title: 'عروض وخصومات'),
                 Expanded(child: EmptyState(icon: Icons.cloud_off, title: 'تعذر تحميل العروض',
                   message: 'تأكد من الاتصال بالإنترنت وحاول تاني.',
-                  actionLabel: 'إعادة المحاولة', onAction: () => setState(() {}))),
+                  actionLabel: 'إعادة المحاولة',
+                  onAction: () => setState(() => _future = _load()))),
               ]);
             }
             if (!snap.hasData) {
