@@ -158,7 +158,7 @@ service cloud.firestore {
       return d.get('discount', 0) == 0 || (
         d.get('promoCode', '') is string && d.discount is number && d.discount > 0 &&
         d.subtotal is number && d.discount < d.subtotal &&
-        get(/databases/$(database)/documents/promos/$(d.promoCode)).data.get('active', false) == true &&
+        exists(/databases/$(database)/documents/promos/$(d.promoCode)) && get(/databases/$(database)/documents/promos/$(d.promoCode)).data.active == true &&
         d.discount <= d.subtotal * get(/databases/$(database)/documents/promos/$(d.promoCode)).data.percent / 100 + 0.01);
     }
 
