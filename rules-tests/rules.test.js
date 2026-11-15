@@ -121,6 +121,10 @@ test('customer: يقدر يعدّل الطلب وبيانات التواصل أ�
   b.update(doc(db, 'orders/o1/private/contact'), {
     userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 2',
   });
+  b.update(doc(db, 'courier_available_orders/o1'), {
+    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+    subtotal: 30, total: 50,
+  });
   await assertSucceeds(b.commit());
   await assertFails(deleteDoc(doc(db, 'orders/o1/private/contact')));
 });
