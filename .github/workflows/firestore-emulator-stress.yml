@@ -10,6 +10,14 @@ on:
       - 'firebase.json'
       - 'rules-tests/**'
       - '.github/workflows/firestore-emulator-stress.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'rules-tests/**'
+      - '.github/workflows/firestore-emulator-stress.yml'
   workflow_dispatch:
 
 permissions:
