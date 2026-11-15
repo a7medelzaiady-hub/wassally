@@ -463,7 +463,8 @@ service cloud.firestore {
 
       function evalOrderUpdate() {
         let k = request.resource.data.diff(resource.data).affectedKeys();
-        return (resource.data.get('userId', '') == request.auth.uid &&\n            ((k.hasOnly(['customerHidden']) && request.resource.data.get('customerHidden', false) == true) || canCustomerUpdate(k))) ||
+        return (resource.data.get('userId', '') == request.auth.uid &&
+            ((k.hasOnly(['customerHidden']) && request.resource.data.get('customerHidden', false) == true) || canCustomerUpdate(k))) ||
           ((resource.data.get('courierId', '') == request.auth.uid ||
             resource.data.get('courierId', '') == '') &&
             isCourier() && canCourierUpdate(k)) ||

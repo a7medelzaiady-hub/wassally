@@ -3,7 +3,7 @@ name: Flutter CI
 # تحديد متى يتم تشغيل السكريبت (عند عمل Push أو Pull Request على فرع main)
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "codex/pr1-safe-integration-20261115" ]
   pull_request:
     branches: [ "main" ]
 
