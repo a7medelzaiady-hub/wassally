@@ -583,9 +583,28 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           actorRole: 'courier',
         );
       }
-    } catch (_) {
+    } on FirebaseException catch (e) {
+      debugPrint(
+        'Courier status update failed: code=${e.code}, message=${e.message}',
+      );
+      final message = switch (e.code) {
+        'permission-denied' =>
+          'التحديث مرفوض من صلاحيات الطلب. حدّث الشاشة وتأكد أن الطلب ما زال مسندًا إليك.',
+        'unavailable' || 'deadline-exceeded' =>
+          'الاتصال بقاعدة البيانات غير مستقر. تحقق من الإنترنت وحاول مرة أخرى.',
+        'failed-precondition' =>
+          'تعذر تحديث الطلب بسبب شرط أو إعداد غير مكتمل. حدّث الشاشة وحاول مرة أخرى.',
+        _ => 'تعذر تحديث الحالة (${e.code}). حاول مرة أخرى.',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } on StateError catch (e) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر تحديث الحالة، جرّب تاني.')),
+        SnackBar(content: Text(e.message.toString())),
+      );
+    } catch (e, stack) {
+      debugPrint('Courier status update unexpected error: $e\n$stack');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('حدث خطأ غير متوقع أثناء تحديث الحالة.')),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
