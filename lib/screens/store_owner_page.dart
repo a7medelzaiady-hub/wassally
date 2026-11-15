@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -1702,7 +1702,7 @@ class _SpecialVoicePlayer extends StatefulWidget {
 }
 
 class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
-  late final AudioPlayer _player = AudioPlayer();
+  late final audio.AudioPlayer _player = audio.AudioPlayer();
   bool _playing = false;
 
   @override
@@ -1714,7 +1714,7 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
   Future<void> _play() async {
     try {
       await _player.stop();
-      await _player.setSource(BytesSource(base64Decode(widget.encoded)));
+      await _player.setSource(audio.BytesSource(base64Decode(widget.encoded)));
       await _player.resume();
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.listen((_) {
