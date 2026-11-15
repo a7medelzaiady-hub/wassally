@@ -1074,7 +1074,7 @@ class _HomePageState extends State<HomePage>
                       ),
                       TextButton(
                         onPressed: _openDirectory,
-                        child: const Text('تسوق الكل'),
+                        child: const Text('عرض كل المحلات'),
                       ),
                     ],
                   ),
@@ -1094,7 +1094,7 @@ class _HomePageState extends State<HomePage>
                     child: FilledButton.icon(
                       onPressed: _openDirectory,
                       icon: const Icon(Icons.shopping_bag_rounded),
-                      label: const Text('تسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                      label: const Text('ابدأ التسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                       style: FilledButton.styleFrom(
                         backgroundColor: Brand.green,
                         foregroundColor: Colors.white,
@@ -1129,8 +1129,10 @@ class _HomePageState extends State<HomePage>
           return Stack(
             children: [
               scroll,
+              // زر العروض على يمين الشاشة في واجهة RTL؛ زر الشكاوى
+              // العائم تابع للـ MainShell ويظهر على الجهة المقابلة.
               PositionedDirectional(
-                end: 18,
+                start: 18,
                 bottom: 18,
                 child: Material(
                   color: Colors.transparent,
