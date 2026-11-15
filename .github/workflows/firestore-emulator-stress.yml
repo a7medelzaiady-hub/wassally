@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - codex/pr1-safe-integration-20261115
     paths:
       - 'firestore.rules'
       - 'firebase.json'
