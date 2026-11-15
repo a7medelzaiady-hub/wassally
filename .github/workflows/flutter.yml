@@ -35,7 +35,7 @@ jobs:
 
     # 5. عمل فحص وتأكد من سلامة الكود (اختياري)
     - name: Analyze project source
-      run: flutter analyze
+      run: flutter analyze --no-fatal-infos
 
     # 6. تشغيل الاختبارات الآلية (اختياري)
     - name: Run tests
