@@ -58,12 +58,11 @@ android {
         release {
             // امنع إنشاء إصدار Release موقّع بمفتاح Debug بالخطأ.
             // جهّز android/key.properties ومفتاح الإصدار قبل بناء APK/AAB للنشر.
-            if (!keystorePropertiesFile.exists()) {
-                throw GradleException(
-                    "Missing android/key.properties: release builds must use your private signing key."
-                )
+            // لا نُجبر Debug على امتلاك مفتاح Release. عند وجود المفتاح فقط،
+            // نربط Release به؛ وعند غيابه نمنع مهام إخراج Release أدناه.
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -76,4 +75,25 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+
+// فحص مفتاح التوقيع عند تنفيذ مهام إخراج Release فقط، وليس أثناء تقييم
+// إعدادات Gradle؛ وبذلك يظل flutter build apk --debug مستقلاً عن أسرار النشر.
+tasks.configureEach {
+    val isReleaseArtifactTask =
+        name.endsWith("Release") &&
+            (name.startsWith("assemble") ||
+                name.startsWith("bundle") ||
+                name.startsWith("package"))
+
+    if (isReleaseArtifactTask) {
+        doFirst {
+            if (!keystorePropertiesFile.exists()) {
+                throw GradleException(
+                    "Missing android/key.properties: release APK/AAB builds require the existing private upload key."
+                )
+            }
+        }
+    }
 }
