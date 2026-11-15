@@ -6,6 +6,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../screens/order_details_page.dart';
+import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
@@ -21,6 +23,7 @@ class NotificationService {
       GlobalKey<ScaffoldMessengerState>();
 
   static StreamSubscription<RemoteMessage>? _foreground;
+  static StreamSubscription<RemoteMessage>? _opened;
   static StreamSubscription<String>? _refresh;
   static String? _token;
 
@@ -54,7 +57,15 @@ class NotificationService {
       });
 
       await _foreground?.cancel();
+      await _opened?.cancel();
       _foreground = FirebaseMessaging.onMessage.listen(_showInApp);
+      _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openOrder);
+
+      // لو التطبيق اتفتح من إشعار والتطبيق كان مقفول، افتح نفس الطلب بعد تجهيز الواجهة.
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _openOrder(initialMessage));
+      }
     } catch (e) {
       debugPrint('تعذر تفعيل الإشعارات: $e');
     }
@@ -64,8 +75,10 @@ class NotificationService {
   static Future<void> dispose() async {
     await LiveAlerts.stop();
     await _foreground?.cancel();
+    await _opened?.cancel();
     await _refresh?.cancel();
     _foreground = null;
+    _opened = null;
     _refresh = null;
     if (!_supported) return;
 
@@ -90,6 +103,16 @@ class NotificationService {
     }, SetOptions(merge: true));
   }
 
+  static void _openOrder(RemoteMessage message) {
+    final orderId = (message.data['orderId'] ?? '').toString().trim();
+    if (orderId.isEmpty) return;
+    final navigator = rootNavigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.push(MaterialPageRoute<void>(
+      builder: (_) => OrderDetailsPage(orderId: orderId),
+    ));
+  }
+
   static void _showInApp(RemoteMessage message) {
     final n = message.notification;
     if (n == null) return;
@@ -106,6 +129,9 @@ class NotificationService {
           content: Text(parts.join(' — ')),
           duration: const Duration(seconds: 6),
           behavior: SnackBarBehavior.floating,
+          action: (message.data['orderId'] ?? '').toString().isNotEmpty
+              ? SnackBarAction(label: 'عرض الطلب', onPressed: () => _openOrder(message))
+              : null,
         ),
       );
   }
