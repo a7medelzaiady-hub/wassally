@@ -36,7 +36,11 @@ class _EditOrderPageState extends State<EditOrderPage> {
   late final TextEditingController _courierNotes = TextEditingController(
     text: widget.order.courierNotes,
   );
-  late final List<OrderLine> _lines = List.of(widget.order.items);
+  // الأصناف اللي المحل علّمها «غير متاحة» بتبدأ بكمية صفر (العميل يقدر يرجّعها لو حب).
+  late final List<OrderLine> _lines = [
+    for (final l in widget.order.items)
+      widget.order.unavailableItems.contains(l.name) ? l.withQty(0) : l,
+  ];
   bool _saving = false;
 
   @override

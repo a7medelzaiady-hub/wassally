@@ -469,6 +469,50 @@ class _OwnerOrderCard extends StatefulWidget {
 class _OwnerOrderCardState extends State<_OwnerOrderCard> {
   bool _busy = false;
 
+  /// الأصناف اللي المحل اختارها «غير متاحة» (محلي لحد ما يضغط «بلّغ العميل»).
+  late Set<String> _unavailable = {...widget.order.unavailableItems};
+
+  @override
+  void didUpdateWidget(covariant _OwnerOrderCard old) {
+    super.didUpdateWidget(old);
+    // لو العميل ردّ (العلامة اتشالت) أو الحالة اتغيّرت، نزامن الاختيار مع الطلب.
+    if (old.order.unavailableItems.join('|') !=
+        widget.order.unavailableItems.join('|')) {
+      _unavailable = {...widget.order.unavailableItems};
+    }
+  }
+
+  bool get _unavailableChanged {
+    final saved = widget.order.unavailableItems.toSet();
+    return saved.length != _unavailable.length || !saved.containsAll(_unavailable);
+  }
+
+  Future<void> _sendUnavailable() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.setUnavailableItems(widget.order, _unavailable);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            _unavailable.isEmpty
+                ? 'تم شيل علامة النقص.'
+                : 'تم تبليغ العميل. هيكمّل من غير الأصناف دي أو يلغي.',
+          ),
+        ),
+      );
+    } on StateError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تعذر تبليغ العميل. جرّب تاني.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _markReady() async {
     if (_busy) return;
     final ok = await confirmDialog(
@@ -587,8 +631,39 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
-                  Expanded(child: Text('${line.name} × ${line.qty}')),
+                  Expanded(
+                    child: Text(
+                      '${line.name} × ${line.qty}',
+                      style: _unavailable.contains(line.name)
+                          ? TextStyle(
+                              color: kDanger,
+                              decoration: TextDecoration.lineThrough,
+                            )
+                          : null,
+                    ),
+                  ),
                   Text(formatPrice(line.total)),
+                  if (isNew)
+                    IconButton(
+                      tooltip: _unavailable.contains(line.name)
+                          ? 'الصنف متاح'
+                          : 'صنف غير متاح',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                              if (!_unavailable.remove(line.name)) {
+                                _unavailable.add(line.name);
+                              }
+                            }),
+                      icon: Icon(
+                        _unavailable.contains(line.name)
+                            ? Icons.remove_circle
+                            : Icons.remove_circle_outline,
+                        size: 20,
+                        color: kDanger,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -613,13 +688,36 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
               ),
             ],
           ),
+          if (isNew && _unavailableChanged) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _sendUnavailable,
+                style: FilledButton.styleFrom(backgroundColor: kDanger),
+                icon: const Icon(Icons.campaign_outlined),
+                label: Text(
+                  _unavailable.isEmpty ? 'شيل علامة النقص' : 'بلّغ العميل بالصنف الناقص',
+                ),
+              ),
+            ),
+          ] else if (isNew && o.hasUnavailableItems) ...[
+            const SizedBox(height: 10),
+            Text(
+              'في انتظار رد العميل على الأصناف الناقصة. لو ماردّش تقدر ترفض الطلب.',
+              style: text.bodySmall?.copyWith(
+                color: kDanger,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
           if (isNew) ...[
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _busy
+                    onPressed: _busy || o.hasUnavailableItems || _unavailable.isNotEmpty
                         ? null
                         : () => _move(OrderStatus.preparing),
                     icon: const Icon(Icons.soup_kitchen),

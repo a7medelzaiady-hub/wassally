@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, updateDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, increment } = require('firebase/firestore');
+const { doc, setDoc, updateDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, increment, deleteField } = require('firebase/firestore');
 
 let env;
 before(async () => {
@@ -320,6 +320,43 @@ test('owner: يبدأ التجهيز ويرفض طلبًا جديدًا مع س�
   await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
   await seed();
   await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'cancelled', 'owner'));
+});
+
+test('صنف غير متاح: المحل يعلّم، والعميل يكمّل من غيره، وبعدها المحل يبدأ التجهيز', async () => {
+  const owner = as('owner1');
+  const cust = as('cust1');
+  // المحل يعلّم الصنف. محل تاني أو العميل ما يقدروش.
+  await assertFails(updateDoc(doc(as('owner2'), 'orders/o1'), { unavailableItems: ['p'] }));
+  await assertFails(updateDoc(doc(cust, 'orders/o1'), { unavailableItems: ['p'] }));
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: [] }));
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: 'p' }));
+  await assertSucceeds(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'] }));
+  // مينفعش يبدأ التجهيز وهو معلّم، لكن الرفض متاح.
+  await assertFails(changeStatus(owner, 'o1', 'new', 'preparing', 'owner'));
+  // العميل لازم يشيل العلامة في نفس التعديل.
+  const edit = (db, over) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'orders/o1'), {
+      items: [{ name: 'q', price: 10, qty: 1, productId: 'p2' }],
+      subtotal: 10, total: 30, editedAt: serverTimestamp(), ...over,
+    });
+    b.update(doc(db, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 3' });
+    return b;
+  };
+  await assertFails(edit(cust, {}).commit());
+  await assertSucceeds(edit(cust, { unavailableItems: deleteField() }).commit());
+  const after = (await getDoc(doc(owner, 'orders/o1'))).data();
+  assert.equal('unavailableItems' in after, false);
+  await assertSucceeds(changeStatus(owner, 'o1', 'new', 'preparing', 'owner'));
+});
+
+test('صنف غير متاح: المحل يرفض الطلب المعلّم، ولا يعلّم طلبًا اتقبل', async () => {
+  const owner = as('owner1');
+  await assertSucceeds(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'] }));
+  await assertSucceeds(changeStatus(owner, 'o1', 'new', 'cancelled', 'owner'));
+  await seed();
+  await assertSucceeds(changeStatus(owner, 'o1', 'new', 'preparing', 'owner'));
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'] }));
 });
 
 test('owner: ما يقدرش يسلّم أو يرجّع للخلف أو يغيّر طلب محل تاني', async () => {

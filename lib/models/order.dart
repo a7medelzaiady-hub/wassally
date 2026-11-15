@@ -130,6 +130,10 @@ class AppOrder {
   final bool ready;
   final DateTime? readyAt;
 
+  /// أسماء الأصناف اللي المحل علّمها «غير متاحة» وهو الطلب لسه جديد. العميل لازم يرد
+  /// (يكمّل من غيرها أو يلغي) قبل ما المحل يبدأ التجهيز.
+  final List<String> unavailableItems;
+
   const AppOrder({
     required this.id,
     required this.storeName,
@@ -161,6 +165,7 @@ class AppOrder {
     this.verifiedTotal,
     this.ready = false,
     this.readyAt,
+    this.unavailableItems = const [],
   });
 
   /// الطلب متاح للمناديب: جاهز من المحل ومحدّش خده لسه.
@@ -205,8 +210,11 @@ class AppOrder {
       verifiedTotal: verifiedTotal,
       ready: ready,
       readyAt: readyAt,
+      unavailableItems: unavailableItems,
     );
   }
+
+  bool get hasUnavailableItems => unavailableItems.isNotEmpty;
 
   bool get isVerified => verifiedTotal != null;
 
@@ -268,6 +276,10 @@ class AppOrder {
       readyAt: m['readyAt'] is Timestamp
           ? (m['readyAt'] as Timestamp).toDate()
           : null,
+      unavailableItems: [
+        for (final n in (m['unavailableItems'] as List?) ?? const [])
+          if (n != null && n.toString().isNotEmpty) n.toString(),
+      ],
     );
   }
 }

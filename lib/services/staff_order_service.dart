@@ -342,6 +342,43 @@ class StaffOrderService {
     }
   }
 
+  /// المحل بيعلّم أصناف «غير متاحة» على طلب جديد (أو بيشيل العلامة لو [names] فاضية).
+  /// الطلب بيفضل «جديد» والعميل بيتبلّغ يقرر: يكمّل من غيرها أو يلغي.
+  static Future<void> setUnavailableItems(
+    AppOrder order,
+    Iterable<String> names,
+  ) async {
+    final clean = <String>[];
+    for (final n in names) {
+      final t = n.trim();
+      if (t.isNotEmpty && !clean.contains(t)) clean.add(t);
+    }
+    if (clean.length > 20) {
+      throw StateError('عدد الأصناف غير المتاحة أكبر من المسموح.');
+    }
+    try {
+      await _orders.doc(order.id).update({
+        'unavailableItems': clean.isEmpty ? FieldValue.delete() : clean,
+      });
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw StateError('الطلب اتغيّرت حالته ومبقاش ينفع تعلّم أصناف. حدّث وحاول تاني.');
+      }
+      if (e.code == 'unavailable') {
+        throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+      }
+      throw StateError('تعذر تحديث الطلب (${e.code}).');
+    }
+    if (clean.isEmpty) return;
+    await _notify(
+      order.userId,
+      'صنف غير متاح في طلبك',
+      '${order.storeName}: ${clean.join('، ')} غير متاح حاليًا. '
+          'افتح الطلب وكمّل من غيره أو ألغيه.',
+      order.id,
+    );
+  }
+
   /// اعتماد الإجمالي من غير تغيير الحالة. الحالة بتفضل زي ما هي.
   static Future<void> verifyTotal(AppOrder order, double total) {
     if (!total.isFinite || total < 0) {

@@ -340,6 +340,9 @@ class OrderService {
       if (discount == 0 && order.discount > 0) 'discount': FieldValue.delete(),
       if (discount == 0 && order.discount > 0) 'promoCode': FieldValue.delete(),
       'editedAt': FieldValue.serverTimestamp(),
+      // تعديل العميل هو رده على «صنف غير متاح»: نشيل العلامة عشان المحل يقدر يبدأ التجهيز.
+      if (order.unavailableItems.isNotEmpty)
+        'unavailableItems': FieldValue.delete(),
     });
     batch.update(OrderContactService.ref(order.id), {
       'userName': name,

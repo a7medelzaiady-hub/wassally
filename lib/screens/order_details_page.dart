@@ -484,11 +484,42 @@ class _Details extends StatelessWidget {
                 style: TextStyle(color: kMuted, fontSize: 12),
               ),
             ),
+          if (order.hasUnavailableItems && order.status == OrderStatus.newOrder) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4E0),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE59A00)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFE59A00)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'المحل بلّغنا إن الأصناف دي مش متاحة حاليًا: '
+                      '${order.unavailableItems.join('، ')}.\n'
+                      'اضغط «كمّل من غير الأصناف دي» وهنحسب الإجمالي من جديد، أو ألغي الطلب. '
+                      'المحل مش هيبدأ التجهيز قبل ما تختار.',
+                      style: const TextStyle(fontWeight: FontWeight.w700, height: 1.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: onEdit,
             icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text('تعديل الطلب'),
+            label: Text(
+              order.hasUnavailableItems && order.status == OrderStatus.newOrder
+                  ? 'كمّل من غير الأصناف دي'
+                  : 'تعديل الطلب',
+            ),
           ),
           const SizedBox(height: 8),
           Row(
