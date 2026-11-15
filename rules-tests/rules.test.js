@@ -485,6 +485,76 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
 });
 
+test('race: تعديل العميل وتعيين المندوب في نفس الوقت لا يسمحان بتعديل بعد الاستلام', async () => {
+  const courierDb = as('cour1');
+  for (let i = 0; i < 8; i++) {
+    const orderId = `race-${i}`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `orders/${orderId}`), {
+        ...baseOrder('cust1', { status: 'preparing', createdAt: new Date() }),
+      });
+      await setDoc(doc(db, `orders/${orderId}/private/contact`), {
+        userName: 'Ali Hassan',
+        phone: '01012345678',
+        address: 'العنوان الأصلي للاختبار',
+      });
+      await setDoc(doc(db, `courier_available_orders/${orderId}`), {
+        storeId: 'shop1',
+        storeName: 'S',
+        area: '',
+        items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
+        subtotal: 20,
+        deliveryFee: 20,
+        total: 40,
+        status: 'preparing',
+        createdAt: new Date(),
+      });
+    });
+
+    const customerDb = as('cust1');
+    const edit = writeBatch(customerDb);
+    edit.update(doc(customerDb, `orders/${orderId}`), {
+      items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+      subtotal: 30,
+      total: 50,
+      editedAt: serverTimestamp(),
+    });
+    edit.update(doc(customerDb, `orders/${orderId}/private/contact`), {
+      address: 'العنوان الجديد بعد التعديل',
+    });
+
+    const claim = writeBatch(courierDb);
+    claim.update(doc(courierDb, `orders/${orderId}`), {
+      courierId: 'cour1',
+      courierName: 'C',
+      courierPhone: '01012345678',
+      courierAt: serverTimestamp(),
+    });
+    claim.delete(doc(courierDb, `courier_available_orders/${orderId}`));
+
+    const [editResult, claimResult] = await Promise.allSettled([
+      edit.commit(),
+      claim.commit(),
+    ]);
+    assert.equal(claimResult.status, 'fulfilled', 'the valid courier claim must win or follow the edit');
+    const finalOrder = await getDoc(doc(courierDb, `orders/${orderId}`));
+    assert.equal(finalOrder.data().courierId, 'cour1');
+
+    const finalContact = await getDoc(doc(courierDb, `orders/${orderId}/private/contact`));
+    if (editResult.status === 'fulfilled') {
+      assert.equal(finalOrder.data().total, 50);
+      assert.equal(finalContact.data().address, 'العنوان الجديد بعد التعديل');
+    } else {
+      assert.equal(finalOrder.data().total, 40);
+      assert.equal(finalContact.data().address, 'العنوان الأصلي للاختبار');
+    }
+
+    const available = await getDoc(doc(courierDb, `courier_available_orders/${orderId}`));
+    assert.equal(available.exists(), false, 'a claimed order must not remain in the courier feed');
+  }
+});
+
 test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل/يحذف وهو new بس', async () => {
   await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
   await assertSucceeds(getDoc(doc(as('admin1'), contactPath)));
