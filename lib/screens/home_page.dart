@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
@@ -15,6 +14,7 @@ import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
 import '../services/navigation.dart';
+import '../services/notification_service.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -59,7 +59,6 @@ class _HomePageState extends State<HomePage>
   String _address = '';
 
   // الإشعارات.
-  StreamSubscription<RemoteMessage>? _msgSub;
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
 
   // الجرس: أنيميشن الهز + الصوت.
@@ -114,7 +113,6 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
-    _msgSub?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
     super.dispose();
@@ -399,76 +397,81 @@ class _HomePageState extends State<HomePage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      final fm = FirebaseMessaging.instance;
-
-      final status = (await fm.getNotificationSettings()).authorizationStatus;
-      final granted =
-          status == AuthorizationStatus.authorized ||
-          status == AuthorizationStatus.provisional;
-
-      if (!granted) {
-        // منسألش غير مرة واحدة، ومع شرح قبل نافذة النظام.
-        final userRef = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid);
-        final prompted = (await userRef.get()).data()?['notifPrompted'] == true;
-        if (prompted) return;
-
-        // نستنى شوية عشان الرسالة ما تتزاحمش مع فتح الصفحة أو نافذة التحديث.
-        await Future<void>.delayed(const Duration(seconds: 3));
-        if (!mounted) return;
-
-        final ok = await _confirmNotificationsUse();
-        unawaited(
-          userRef
-              .set({'notifPrompted': true}, SetOptions(merge: true))
-              .catchError((_) {}),
-        );
-        if (!ok || !mounted) return;
-
-        final res = await fm.requestPermission(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
-        if (res.authorizationStatus == AuthorizationStatus.denied) return;
+      if (await NotificationService.hasPermission()) {
+        await _syncBroadcastTopic(user.uid);
+        return;
       }
 
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid);
+      final prompted = (await userRef.get()).data()?['notifPrompted'] == true;
+      if (prompted) return;
+
+      // نعرض الشرح داخل التطبيق أولًا، ثم نطلب إذن أندرويد مرة واحدة.
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+
+      final accepted = await _confirmNotificationsUse();
+      if (!mounted) return;
+      if (!accepted) {
+        await userRef.set({'notifPrompted': true}, SetOptions(merge: true));
+        return;
+      }
+
+      final granted =
+          await NotificationService.requestPermissionAndRegister();
+      await userRef.set({
+        'notifPrompted': true,
+        'notifPermissionGranted': granted,
+      }, SetOptions(merge: true));
+
+      if (!granted) {
+        _toast('الإشعارات لسه مقفولة. تقدر تفعّلها من إعدادات التطبيق.');
+        return;
+      }
       await _syncBroadcastTopic(user.uid);
-
-      // تسجيل توكن الجهاز بيتم في NotificationService (users/{uid}.fcmTokens)،
-      // فمش بنكرره هنا.
-
-      // الإشعار وإنت فاتح التطبيق.
-      // ملاحظة: الجرس بيرن من الـ StreamBuilder في _bell() عند زيادة العدد،
-      // فمفيش حاجة هنا عشان ما يرنش مرتين.
-      _msgSub = FirebaseMessaging.onMessage.listen((m) {
-        final n = m.notification;
-        if (n == null || !mounted) return;
-        final text = [
-          n.title,
-          n.body,
-        ].where((e) => e != null && e.trim().isNotEmpty).join('\n');
-        if (text.isEmpty) return;
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(text),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'عرض',
-                onPressed: _openNotifications,
-              ),
-            ),
-          );
-      });
     } catch (e) {
       debugPrint('Notifications init error: $e');
     }
   }
 
-  void _openNotifications() {
+  Future<void> _showNotificationSettingsHelp() async {
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('الإشعارات غير مفعّلة'),
+          content: const Text(
+            'تقدر تشوف سجل إشعاراتك هنا، لكن علشان توصلك تنبيهات الطلبات فورًا '
+            'افتح إعدادات التطبيق وفعّل السماح بالإشعارات.',
+            style: TextStyle(height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('لاحقًا'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('فتح الإعدادات'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (openSettings == true) {
+      await Geolocator.openAppSettings();
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    if (!await NotificationService.hasPermission() && mounted) {
+      await _showNotificationSettingsHelp();
+      if (!mounted) return;
+    }
+    if (!mounted) return;
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
   }
