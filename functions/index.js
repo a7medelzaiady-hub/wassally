@@ -159,6 +159,25 @@ exports.onOrderCreated = onDocumentCreated('orders/{orderId}', async (event) => 
   if (!order) return;
   const id = event.params.orderId;
 
+  const receivedTitle = 'تم استلام طلبك ' + shortId(id);
+  const receivedBody = 'طلبك وصلنا وهنبدأ نتابعه معاك. تقدر تتابع حالته من صفحة طلباتي.';
+
+  // سجل ثابت المعرّف يمنع تكرار إشعار الاستلام لو أعادت Firestore تشغيل الحدث.
+  if (order.userId) {
+    await db.collection('notifications').doc(`order_${id}_received`).set({
+      userId: order.userId,
+      title: receivedTitle,
+      body: receivedBody,
+      type: 'received',
+      orderId: id,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await notify([order.userId], receivedTitle, receivedBody, {
+      type: 'status', orderId: id, status: 'new',
+    });
+  }
+
   await notify(
     [...(await adminUids()), ...(await ownerUids(order.storeId))],
     'طلب جديد ' + shortId(id),
