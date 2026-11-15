@@ -407,7 +407,7 @@ class _Details extends StatelessWidget {
             decoration: _card,
             child: Row(
               children: [
-                const Icon(Icons.storefront_outlined, color: kPrimary),
+                Icon(Icons.storefront_outlined, color: kPrimary),
                 const SizedBox(width: 10),
                 const Expanded(child: Text('شاركنا رأيك في المحل')),
                 FilledButton.tonal(
