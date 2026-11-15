@@ -117,6 +117,8 @@ test('customer: يقدر يعدّل الطلب وبيانات التواصل أ�
 // ينشئ حالة preparing مع feed مطابق باستخدام صلاحيات صاحب المحل، كما يفعل التطبيق.
 async function prepareOrderWithFeed(orderId = 'o1') {
   const db = as('owner1');
+  const original = await getDoc(doc(db, `orders/${orderId}`));
+  const createdAt = original.data().createdAt;
   const b = writeBatch(db);
   b.update(doc(db, `orders/${orderId}`), { status: 'preparing' });
   b.set(doc(db, `orders/${orderId}/statusHistory/preparing`), {
@@ -125,7 +127,7 @@ async function prepareOrderWithFeed(orderId = 'o1') {
   b.set(doc(db, `courier_available_orders/${orderId}`), {
     storeId: 'shop1', storeName: 'S', area: '', items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
     subtotal: 20, deliveryFee: 20, discount: 0, total: 40, status: 'preparing',
-    createdAt: new Date(),
+    createdAt,
   });
   await assertSucceeds(b.commit());
 }
@@ -172,6 +174,49 @@ test('feed sync: يمنع تحديثًا غير مطابق أو كتابة feed 
   const stranger = writeBatch(as('cust2'));
   stranger.update(doc(as('cust2'), 'courier_available_orders/o1'), { total: 60 });
   await assertFails(stranger.commit());
+});
+
+test('claim/edit race: التزامن الفعلي لا يترك feed قديمًا أو بيانات جزئية', async () => {
+  const courierDb = as('cour1');
+  for (let i = 0; i < 10; i++) {
+    const orderId = `parallel-${i}`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      const createdAt = new Date();
+      await setDoc(doc(db, `orders/${orderId}`), {
+        ...baseOrder('cust1', { status: 'preparing', createdAt }),
+      });
+      await setDoc(doc(db, `orders/${orderId}/private/contact`), {
+        userName: 'Ali Hassan', phone: '01012345678', address: 'العنوان الأصلي',
+      });
+      await setDoc(doc(db, `courier_available_orders/${orderId}`), {
+        storeId: 'shop1', storeName: 'S', area: '',
+        items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
+        subtotal: 20, deliveryFee: 20, discount: 0, total: 40,
+        status: 'preparing', createdAt,
+      });
+    });
+    const customerDb = as('cust1');
+    const edit = customerEditBatch(customerDb, orderId);
+    const claim = writeBatch(courierDb);
+    claim.update(doc(courierDb, `orders/${orderId}`), {
+      courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+    });
+    claim.delete(doc(courierDb, `courier_available_orders/${orderId}`));
+    const [editResult, claimResult] = await Promise.allSettled([edit.commit(), claim.commit()]);
+    assert.equal(claimResult.status, 'fulfilled');
+    const finalOrder = (await getDoc(doc(courierDb, `orders/${orderId}`))).data();
+    const finalContact = (await getDoc(doc(courierDb, `orders/${orderId}/private/contact`))).data();
+    assert.equal(finalOrder.courierId, 'cour1');
+    assert.equal((await getDoc(doc(courierDb, `courier_available_orders/${orderId}`))).exists(), false);
+    if (editResult.status === 'fulfilled') {
+      assert.equal(finalOrder.total, 50);
+      assert.equal(finalContact.address, 'عنوان تجريبي 2');
+    } else {
+      assert.equal(finalOrder.total, 40);
+      assert.equal(finalContact.address, 'العنوان الأصلي');
+    }
+  }
 });
 
 test('claim/edit race: الاستلام أولًا يمنع التعديل بالكامل', async () => {
