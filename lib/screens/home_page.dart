@@ -468,9 +468,16 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _openNotifications() async {
-    if (!await NotificationService.hasPermission() && mounted) {
+    final enabled = await NotificationService.hasPermission();
+    if (!mounted) return;
+    if (!enabled) {
       await _showNotificationSettingsHelp();
       if (!mounted) return;
+    } else {
+      // لو المستخدم فعّل الإذن من إعدادات الجهاز، سجّل التوكن عند رجوعه للتطبيق.
+      await NotificationService.init();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await _syncBroadcastTopic(uid);
     }
     if (!mounted) return;
     Navigator.of(context)
