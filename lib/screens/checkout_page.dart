@@ -160,7 +160,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر إرسال الطلب (${e.runtimeType}). تأكد من الاتصال وحاول تاني.')),
+        const SnackBar(content: Text('تعذر إرسال الطلب. تأكد من الاتصال وحاول تاني.')),
       );
     }
   }

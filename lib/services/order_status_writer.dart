@@ -104,10 +104,11 @@ class OrderStatusWriter {
         (actorRole == 'admin' || actorRole == 'storeOwner')) {
       batch.set(feedRef, feedData(data, extra));
     }
-    // طلب اتلغى وهو في القايمة: شيله (للمدير/المحل بس، العميل ماله صلاحية حذف).
+    // طلب اتلغى وهو في القايمة: شيله. للمدير بس: القواعد مش بتسمح لصاحب المحل
+    // بإلغاء طلب في «جاري التحضير» (الرفض متاح له وهو «جديد» بس)، والعميل ماله صلاحية حذف.
     if (to == OrderStatus.cancelled &&
         currentStatus == 'preparing' &&
-        (actorRole == 'admin' || actorRole == 'storeOwner')) {
+        actorRole == 'admin') {
       batch.delete(feedRef);
     }
 
