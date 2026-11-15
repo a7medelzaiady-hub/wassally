@@ -55,3 +55,18 @@ rules-tests/node_modules/
 
 # Local Android SDK/Flutter paths (machine-specific)
 /android/local.properties
+ 
+# Build and binaries 
+/build/ 
+*.apk 
+*.aab 
+*.apks 
+*.ipa 
+# Keys and secrets 
+*.jks 
+*.keystore 
+**/key.properties 
+*.pem 
+# Node and cache 
+**/node_modules/ 
+.dart_tool/
