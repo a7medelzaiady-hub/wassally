@@ -305,6 +305,58 @@ class _Details extends StatelessWidget {
     );
   }
 
+  // تقييم المحل مستقل عن وجود مندوب؛ بعض الطلبات قد تُسلّم دون إسناد مندوب ظاهر.
+  void _showStoreRatingDialog(BuildContext context) {
+    double rating = 5;
+    bool submitting = false;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('قيّم المحل', textAlign: TextAlign.center),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(order.storeName, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) {
+                  final value = i + 1.0;
+                  return IconButton(
+                    onPressed: () => setDialogState(() => rating = value),
+                    icon: Icon(value <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                      color: kAccent, size: 30),
+                  );
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('رجوع')),
+            FilledButton(
+              onPressed: submitting ? null : () async {
+                setDialogState(() => submitting = true);
+                String message;
+                try {
+                  await RatingService.rateStore(orderId: order.id, storeId: order.storeId, rating: rating);
+                  message = 'شكراً لتقييم المحل! ❤️';
+                } catch (e) {
+                  message = e is StateError ? e.message : 'تعذر تسجيل تقييم المحل. حاول مرة أخرى.';
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+              },
+              child: submitting
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('إرسال التقييم'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -348,6 +400,24 @@ class _Details extends StatelessWidget {
           ),
         ],
 
+        if (order.status == OrderStatus.delivered && order.storeId.isNotEmpty && order.courierName.isEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: _card,
+            child: Row(
+              children: [
+                const Icon(Icons.storefront_outlined, color: kPrimary),
+                const SizedBox(width: 10),
+                const Expanded(child: Text('شاركنا رأيك في المحل')),
+                FilledButton.tonal(
+                  onPressed: () => _showStoreRatingDialog(context),
+                  child: const Text('تقييم المحل'),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(16),
