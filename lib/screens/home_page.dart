@@ -782,13 +782,26 @@ class _HomePageState extends State<HomePage>
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              color: Brand.ink,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: Brand.ink,
+                  ),
+                ),
+              ),
+              if (offer)
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const OffersPage()),
+                  ),
+                  child: const Text('كل العروض'),
+                ),
+            ],
           ),
         ),
         SizedBox(
