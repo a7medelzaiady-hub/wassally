@@ -40,3 +40,7 @@ jobs:
     # 6. تشغيل الاختبارات الآلية (اختياري)
     - name: Run tests
       run: flutter test
+
+    # تحليل واختبارات Dart لا تكفي وحدها؛ نبني APK Debug لاكتشاف أخطاء Android/Gradle/plugins.
+    - name: Build Android debug APK
+      run: flutter build apk --debug
