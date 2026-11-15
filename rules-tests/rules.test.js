@@ -3,6 +3,7 @@
 // ملاحظة: اتكتبت من غير ما تتشغّل (البيئة اللي اتكتبت فيها مفيهاش Emulator). لو حصل فشل، راجع الاختبار
 // والقاعدة الاتنين: ممكن الغلط في أي منهم.
 const { test, before, after, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
@@ -100,20 +101,153 @@ test('strictOrders: اعتماد الإجمالي بدون تغيير الحال
 });
 
 test('customer: يقدر يعدّل الطلب وبيانات التواصل أثناء التجهيز قبل تعيين المندوب', async () => {
-  await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
+  await prepareOrderWithFeed();
   const db = as('cust1');
-  const b = writeBatch(db);
-  b.update(doc(db, 'orders/o1'), {
-    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
-    subtotal: 30, total: 50, notes: 'تعديل', customerName: 'Ali',
-    editedAt: serverTimestamp(),
-  });
-  b.update(doc(db, 'orders/o1/private/contact'), {
-    userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 2',
-  });
-  await assertSucceeds(b.commit());
+  await assertSucceeds(customerEditBatch(db, 'o1').commit());
+  const feed = (await getDoc(doc(as('cour1'), 'courier_available_orders/o1'))).data();
+  assert.equal(feed.total, 50);
+  assert.equal(feed.items[0].qty, 3);
   await assertFails(deleteDoc(doc(db, 'orders/o1/private/contact')));
 });
+
+async function prepareOrderWithFeed(orderId = 'o1') {
+  const db = as('owner1');
+  const original = await getDoc(doc(db, `orders/${orderId}`));
+  const createdAt = original.data().createdAt;
+  const b = writeBatch(db);
+  b.update(doc(db, `orders/${orderId}`), { status: 'preparing' });
+  b.set(doc(db, `orders/${orderId}/statusHistory/preparing`), {
+    from: 'new', to: 'preparing', actorUid: 'owner1', actorRole: 'owner', at: serverTimestamp(),
+  });
+  b.set(doc(db, `courier_available_orders/${orderId}`), {
+    storeId: 'shop1', storeName: 'S', area: '', items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
+    subtotal: 20, deliveryFee: 20, discount: 0, total: 40, status: 'preparing',
+    createdAt,
+  });
+  await assertSucceeds(b.commit());
+}
+
+function customerEditBatch(db, orderId, { qty = 3, address = 'عنوان تجريبي 2' } = {}) {
+  const b = writeBatch(db);
+  b.update(doc(db, `orders/${orderId}`), {
+    items: [{ name: 'p', price: 10, qty, productId: 'p1' }],
+    subtotal: qty * 10, total: qty * 10 + 20, editedAt: serverTimestamp(),
+  });
+  b.update(doc(db, `orders/${orderId}/private/contact`), { address });
+  b.update(doc(db, `courier_available_orders/${orderId}`), {
+    items: [{ name: 'p', price: 10, qty, productId: 'p1' }],
+    subtotal: qty * 10, total: qty * 10 + 20,
+  });
+  return b;
+}
+
+test('feed sync: تعديل العميل يحدّث الطلب والـ feed ذريًا دون PII', async () => {
+  await prepareOrderWithFeed();
+  const db = as('cust1');
+  await assertSucceeds(customerEditBatch(db, 'o1').commit());
+  const feed = (await getDoc(doc(as('cour1'), 'courier_available_orders/o1'))).data();
+  assert.equal(feed.subtotal, 30);
+  assert.equal(feed.total, 50);
+  assert.equal(feed.items[0].qty, 3);
+  for (const key of ['userId', 'userName', 'phone', 'address', 'courierPhone', 'customerName']) {
+    assert.equal(Object.hasOwn(feed, key), false, `feed must not expose ${key}`);
+  }
+});
+
+test('feed sync: يمنع تحديثًا غير مطابق أو كتابة feed من مستخدم آخر', async () => {
+  await prepareOrderWithFeed();
+  const db = as('cust1');
+  const mismatch = writeBatch(db);
+  mismatch.update(doc(db, 'orders/o1'), {
+    items: [{ name: 'p', price: 10, qty: 4, productId: 'p1' }],
+    subtotal: 40, total: 60, editedAt: serverTimestamp(),
+  });
+  mismatch.update(doc(db, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 3' });
+  mismatch.update(doc(db, 'courier_available_orders/o1'), { total: 999 });
+  await assertFails(mismatch.commit());
+
+  const strangerDb = as('cust2');
+  const stranger = writeBatch(strangerDb);
+  stranger.update(doc(strangerDb, 'courier_available_orders/o1'), { total: 60 });
+  await assertFails(stranger.commit());
+});
+
+test('claim/edit race: التزامن الفعلي لا يترك feed قديمًا أو بيانات جزئية', async () => {
+  const courierDb = as('cour1');
+  for (let i = 0; i < 10; i++) {
+    const orderId = `parallel-${i}`;
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      const createdAt = new Date();
+      await setDoc(doc(db, `orders/${orderId}`), {
+        ...baseOrder('cust1', { status: 'preparing', createdAt }),
+      });
+      await setDoc(doc(db, `orders/${orderId}/private/contact`), {
+        userName: 'Ali Hassan', phone: '01012345678', address: 'العنوان الأصلي',
+      });
+      await setDoc(doc(db, `courier_available_orders/${orderId}`), {
+        storeId: 'shop1', storeName: 'S', area: '',
+        items: [{ name: 'p', price: 10, qty: 2, productId: 'p1' }],
+        subtotal: 20, deliveryFee: 20, discount: 0, total: 40,
+        status: 'preparing', createdAt,
+      });
+    });
+    const customerDb = as('cust1');
+    const edit = customerEditBatch(customerDb, orderId);
+    const claim = writeBatch(courierDb);
+    claim.update(doc(courierDb, `orders/${orderId}`), {
+      courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+    });
+    claim.delete(doc(courierDb, `courier_available_orders/${orderId}`));
+    const [editResult, claimResult] = await Promise.allSettled([edit.commit(), claim.commit()]);
+    assert.equal(claimResult.status, 'fulfilled');
+    const finalOrder = (await getDoc(doc(courierDb, `orders/${orderId}`))).data();
+    const finalContact = (await getDoc(doc(courierDb, `orders/${orderId}/private/contact`))).data();
+    assert.equal(finalOrder.courierId, 'cour1');
+    assert.equal((await getDoc(doc(courierDb, `courier_available_orders/${orderId}`))).exists(), false);
+    if (editResult.status === 'fulfilled') {
+      assert.equal(finalOrder.total, 50);
+      assert.equal(finalContact.address, 'عنوان تجريبي 2');
+    } else {
+      assert.equal(finalOrder.total, 40);
+      assert.equal(finalContact.address, 'العنوان الأصلي');
+    }
+  }
+});
+
+test('claim/edit race: الاستلام أولًا يمنع التعديل بالكامل', async () => {
+  await prepareOrderWithFeed();
+  const courierDb = as('cour1');
+  const claim = writeBatch(courierDb);
+  claim.update(doc(courierDb, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+  });
+  claim.delete(doc(courierDb, 'courier_available_orders/o1'));
+  await assertSucceeds(claim.commit());
+  await assertFails(customerEditBatch(as('cust1'), 'o1').commit());
+  const order = (await getDoc(doc(courierDb, 'orders/o1'))).data();
+  assert.equal(order.courierId, 'cour1');
+  assert.equal(order.total, 40);
+  assert.equal((await getDoc(doc(courierDb, 'courier_available_orders/o1'))).exists(), false);
+});
+
+test('claim/edit race: التعديل أولًا يحدّث feed ثم الاستلام يزيله ذريًا', async () => {
+  await prepareOrderWithFeed();
+  const customerDb = as('cust1');
+  await assertSucceeds(customerEditBatch(customerDb, 'o1').commit());
+  const courierDb = as('cour1');
+  const claim = writeBatch(courierDb);
+  claim.update(doc(courierDb, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+  });
+  claim.delete(doc(courierDb, 'courier_available_orders/o1'));
+  await assertSucceeds(claim.commit());
+  const order = (await getDoc(doc(courierDb, 'orders/o1'))).data();
+  assert.equal(order.courierId, 'cour1');
+  assert.equal(order.total, 50);
+  assert.equal((await getDoc(doc(courierDb, 'courier_available_orders/o1'))).exists(), false);
+});
+
 
 test('customer: تعديل الطلب وبيانات التواصل يُرفض بعد تعيين المندوب', async () => {
   await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));

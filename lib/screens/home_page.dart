@@ -26,10 +26,26 @@ import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
 import 'offers_page.dart';
 import '../widgets/promo_banners.dart';
-import 'categories_landing_page.dart' show kCategoryPhotos;
 import 'notifications_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
+
+const Map<String, String> kCategoryPhotos = {
+  'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
+  'سوبرماركت': 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=70',
+  'ورد': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
+  // اسم القسم الفعلي في المحلات «ورد وهدايا»؛ المفتاح القديم «ورد» ما كانش بيطابقه فالصورة ما كانتش بتظهر.
+  'ورد وهدايا': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
+  // الصور التالية لم أتحقق من روابطها (لا يوجد اتصال بالإنترنت أثناء الكتابة). لو رابط ما فتحش
+  // بيظهر الإيموجي الملوّن بدل الصورة، وتقدر تبدّله من Firestore (app_info/category_images) من غير نشر تحديث.
+  'بقالة': 'https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=700&q=70',
+  'خضار وفاكهة': 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=700&q=70',
+  'لحوم ودواجن': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=700&q=70',
+  'مخبوزات وحلويات': 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=700&q=70',
+  'محمصات وعطارة': 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=700&q=70',
+  'كافيه ومشروبات': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=700&q=70',
+  'صيدليات': 'https://images.unsplash.com/photo-1576602976047-174e57a47881?auto=format&fit=crop&w=700&q=70',
+};
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {

@@ -317,20 +317,21 @@ class OrderService {
       if (discount >= subtotal) discount = 0;
     }
     final total = subtotal + order.deliveryFee - discount;
+    final updatedItems = lines
+        .map(
+          (l) => {
+            'name': l.name,
+            'price': l.price,
+            'qty': l.qty,
+            if (l.productId.isNotEmpty) 'productId': l.productId,
+          },
+        )
+        .toList();
 
     final ref = _orders.doc(order.id);
     final batch = FirebaseFirestore.instance.batch();
     batch.update(ref, {
-      'items': lines
-          .map(
-            (l) => {
-              'name': l.name,
-              'price': l.price,
-              'qty': l.qty,
-              if (l.productId.isNotEmpty) 'productId': l.productId,
-            },
-          )
-          .toList(),
+      'items': updatedItems,
       'subtotal': subtotal,
       'total': total,
       'notes': notes,
@@ -348,6 +349,22 @@ class OrderService {
           ? FieldValue.delete()
           : courierNotes.trim(),
     });
+
+    // أثناء التحضير، قائمة المندوبين تتحدث في نفس Batch مع الطلب وبيانات التواصل.
+    // نحدّث الحقول المتغيرة فقط ونحافظ على createdAt الأصلي كما هو.
+    if (order.status == OrderStatus.preparing && order.courierId.isEmpty) {
+      batch.update(
+        FirebaseFirestore.instance
+            .collection('courier_available_orders')
+            .doc(order.id),
+        {
+          'items': updatedItems,
+          'subtotal': subtotal,
+          'discount': discount,
+          'total': total,
+        },
+      );
+    }
 
     try {
       await batch.commit();
