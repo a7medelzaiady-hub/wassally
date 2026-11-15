@@ -33,27 +33,67 @@ class NotificationService {
   static DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 
-  /// بتتنادي بعد تسجيل الدخول. أي فشل هنا ما يوقفش التطبيق.
-  static Future<void> init() async {
-    if (!_supported) return;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  static bool _isGranted(AuthorizationStatus status) =>
+      status == AuthorizationStatus.authorized ||
+      status == AuthorizationStatus.provisional;
 
+  /// قراءة حالة الإذن فقط؛ لا تفتح نافذة النظام تلقائيًا عند تسجيل الدخول.
+  static Future<bool> hasPermission() async {
+    if (!_supported) return false;
+    try {
+      final settings =
+          await FirebaseMessaging.instance.getNotificationSettings();
+      return _isGranted(settings.authorizationStatus);
+    } catch (e) {
+      debugPrint('تعذر قراءة إذن الإشعارات: $e');
+      return false;
+    }
+  }
+
+  /// يطلب الإذن بعد عرض شرح داخل التطبيق، ثم يسجل التوكن عند الموافقة.
+  static Future<bool> requestPermissionAndRegister() async {
+    if (!_supported) return false;
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (!_isGranted(settings.authorizationStatus)) return false;
+      await _registerGrantedDevice();
+      return true;
+    } catch (e) {
+      debugPrint('تعذر طلب إذن الإشعارات: $e');
+      return false;
+    }
+  }
+
+  /// بتتنادي بعد تسجيل الدخول. لا تطلب الإذن؛ تسجل الجهاز فقط لو الإذن ممنوح.
+  static Future<void> init() async {
+    if (!await hasPermission()) return;
+    await _registerGrantedDevice();
+  }
+
+  static Future<void> _registerGrantedDevice() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!_supported || user == null) return;
     try {
       final messaging = FirebaseMessaging.instance;
-      final settings = await messaging.requestPermission();
-      if (settings.authorizationStatus == AuthorizationStatus.denied) return;
-
       final token = await messaging.getToken();
-      if (token == null) return;
-      _token = token;
-      await _saveToken(user.uid, token);
+      if (token != null) {
+        _token = token;
+        await _saveToken(user.uid, token);
+      }
 
       await _refresh?.cancel();
       _refresh = messaging.onTokenRefresh.listen((newToken) {
         _token = newToken;
         final current = FirebaseAuth.instance.currentUser;
-        if (current != null) _saveToken(current.uid, newToken);
+        if (current != null) {
+          _saveToken(current.uid, newToken).catchError((e) {
+            debugPrint('تعذر تحديث توكن الإشعارات: $e');
+          });
+        }
       });
 
       await _foreground?.cancel();
@@ -61,13 +101,14 @@ class NotificationService {
       _foreground = FirebaseMessaging.onMessage.listen(_showInApp);
       _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openOrder);
 
-      // لو التطبيق اتفتح من إشعار والتطبيق كان مقفول، افتح نفس الطلب بعد تجهيز الواجهة.
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _openOrder(initialMessage));
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _openOrder(initialMessage),
+        );
       }
     } catch (e) {
-      debugPrint('تعذر تفعيل الإشعارات: $e');
+      debugPrint('تعذر تسجيل جهاز الإشعارات: $e');
     }
   }
 
