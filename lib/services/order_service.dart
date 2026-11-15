@@ -283,7 +283,7 @@ class OrderService {
     return ref.id;
   }
 
-  /// العميل يعدّل طلبه (الأصناف والبيانات) طالما حالته "new" (المحل ما قبلهوش).
+  /// العميل يعدّل طلبه (الأصناف والبيانات) طالما لم يُعيّن/يستلم مندوبًا (new أو preparing).
   /// الإجمالي بيتحسب من جديد، والخصم بيتحسب بنفس نسبته القديمة.
   static Future<void> updateOrder({
     required AppOrder order,
