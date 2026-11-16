@@ -969,7 +969,7 @@ export async function cloudinarySignature(
     byte.toString(16).padStart(2, "0")).join("");
 }
 
-function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
+export function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return { format: "jpg", mime: "image/jpeg" };
   }
@@ -1074,7 +1074,9 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   const secureUrl = typeof result.secure_url === "string" ? result.secure_url : "";
   let parsedUrl: URL;
   try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
-  if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname.endsWith("cloudinary.com")) {
+  if (parsedUrl.protocol !== "https:" ||
+      !(parsedUrl.hostname === "res.cloudinary.com" || parsedUrl.hostname.endsWith(".res.cloudinary.com")) ||
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
     throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
   }
   return response({ url: secureUrl });
