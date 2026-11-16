@@ -503,7 +503,14 @@ class StaffOrderService {
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('سجّل دخول الأول.');
-    await FirebaseFirestore.instance.collection('delivery_issues').doc(issueId).update({
+    final ref = FirebaseFirestore.instance.collection('delivery_issues').doc(issueId);
+    final snap = await ref.get();
+    final data = snap.data();
+    if (data == null || data['orderId'] != orderId ||
+        data['courierId'] != uid || data['status'] != 'return_to_store') {
+      throw StateError('قرار الإرجاع لا يخص هذا الطلب أو لم يصدر من الإدارة.');
+    }
+    await ref.update({
       'status': 'returned_to_store',
       'returnedAt': FieldValue.serverTimestamp(),
       'returnedBy': uid,
