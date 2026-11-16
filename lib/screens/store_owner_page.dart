@@ -1187,7 +1187,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                 child: FilledButton.icon(
                   onPressed: _busy ? null : _markReady,
                   icon: const Icon(Icons.inventory_2_outlined),
-                  label: const Text('الطلب جاهز للاستلام'),
+                  label: Text(o.courierId.isEmpty ? 'جاهز — إتاحة لمندوب خارجي' : 'الطلب جاهز للاستلام'),
                 ),
               ),
           ],
