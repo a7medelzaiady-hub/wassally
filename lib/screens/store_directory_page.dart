@@ -177,7 +177,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                               style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5)),
                                           const Spacer(),
                                           Row(children: [
-                                            if (minOrder != null) Text('الحد الأدنى ${minOrder} ج', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                                            if (minOrder != null) Text('الحد الأدنى $minOrder ج', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
                                             const Spacer(),
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
