@@ -522,7 +522,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   if (promoCode && Number(order.discount ?? 0) > 0 && Number(order.subtotal ?? 0) > 0) {
     const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
     const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
-    const percent = Number(promo.percent ?? 0);
+    const percent = typeof promo.percent === "number" ? promo.percent : 0;
     if (promo.active === true && Number.isFinite(percent) && percent > 0 && percent <= 50) {
       const previousPercent = Number(order.discount) / Number(order.subtotal) * 100;
       discount = calculateDiscount(subtotal, Math.min(previousPercent, percent));
