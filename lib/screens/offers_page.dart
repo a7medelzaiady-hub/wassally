@@ -16,11 +16,12 @@ import 'store_page.dart';
 
 class _Offer {
   final Store store;
-  final String name, image, text;
+  final String id, name, image, text;
   final double price, oldPrice;
 
   const _Offer({
     required this.store,
+    this.id = '',
     required this.name,
     required this.image,
     required this.price,
@@ -39,7 +40,7 @@ class OffersPage extends StatefulWidget {
 }
 
 class _OffersPageState extends State<OffersPage> {
-  late Future<QuerySnapshot<Map<String, dynamic>>> _future;
+  late Future<List<_Offer>> _future;
 
   @override
   void initState() {
@@ -48,29 +49,37 @@ class _OffersPageState extends State<OffersPage> {
   }
 
   // صفحة العروض تتجاوز كاش الكتالوج عمدًا؛ لازم تعرض أحدث العروض عند فتحها.
-  Future<QuerySnapshot<Map<String, dynamic>>> _load() =>
-      CatalogService.get(
-        FirebaseFirestore.instance.collection('stores'),
-        'stores',
-        cacheable: false,
-      );
+  Future<List<_Offer>> _load() async {
+    final snap = await CatalogService.get(
+      FirebaseFirestore.instance.collection('stores'),
+      'stores',
+      cacheable: false,
+    );
+    final storeDocs = snap.docs.where((d) => d.data()['active'] != false);
+    final groups = await Future.wait(storeDocs.map((doc) async {
+      final data = doc.data();
+      Store store;
+      try {
+        store = Store.fromMap(doc.id, data);
+      } catch (_) {
+        return <_Offer>[];
+      }
+      final result = <_Offer>[];
+      final seen = <String>{};
 
-  List<_Offer> _offers(QuerySnapshot<Map<String, dynamic>> snap) {
-    final result = <_Offer>[];
-    final seen = <String>{};
-
-    void add(Store store, Map<String, dynamic> data) {
-      final name = (data['name'] ?? '').toString().trim();
-      final price = (data['price'] as num?)?.toDouble() ?? 0;
-      final old = (data['oldPrice'] as num?)?.toDouble() ?? 0;
-      final text = (data['offerText'] ?? '').toString().trim();
-      final ends = data['offerEndsAt'];
+      void add(Map<String, dynamic> item, {String id = ''}) {
+      final name = (item['name'] ?? '').toString().trim();
+      final price = (item['price'] as num?)?.toDouble() ?? 0;
+      final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+      final text = (item['offerText'] ?? '').toString().trim();
+      final ends = item['offerEndsAt'];
       final expired = isOfferExpired(
         ends is Timestamp ? ends.toDate() : null,
         DateTime.now(),
       );
       final hasDiscount = old > price && price > 0;
       if (name.isEmpty || price <= 0 || expired ||
+          item['available'] == false || item['isAvailable'] == false ||
           (!hasDiscount && text.isEmpty)) {
         return;
       }
@@ -79,43 +88,46 @@ class _OffersPageState extends State<OffersPage> {
       if (!seen.add(key)) return;
       result.add(_Offer(
         store: store,
+        id: id,
         name: name,
-        image: (data['image'] ?? '').toString(),
+        image: (item['image'] ?? '').toString(),
         price: price,
         oldPrice: hasDiscount ? old : 0,
         text: text,
       ));
-    }
-
-    for (final doc in snap.docs) {
-      final data = doc.data();
-      if (data['active'] == false) continue;
-
-      Store store;
-      try {
-        store = Store.fromMap(doc.id, data);
-      } catch (_) {
-        continue;
       }
 
-      // ملخص العروض المزامن من كتالوج منتجات المحل.
+      // الملخص السريع والعناصر القديمة للتوافق مع النسخ السابقة.
       final highlights = data['offerItems'];
       if (highlights is List) {
         for (final entry in highlights) {
-          if (entry is Map) add(store, Map<String, dynamic>.from(entry));
+          if (entry is Map) add(Map<String, dynamic>.from(entry));
         }
       }
-
-      // توافق مع المنتجات القديمة المخزنة داخل مستند المحل.
       final legacy = data['products'];
       if (legacy is List) {
         for (final entry in legacy) {
-          if (entry is Map) add(store, Map<String, dynamic>.from(entry));
+          if (entry is Map) add(Map<String, dynamic>.from(entry));
         }
       }
-    }
 
-    return result;
+      // المصدر الأساسي للعروض هو كتالوج المحل نفسه، وليس ملخصًا محدودًا
+      // قد يفشل تحديثه أو لا يحتوي إلا على أول مجموعة من الأصناف.
+      try {
+        final products = await doc.reference
+            .collection('products')
+            .orderBy('name')
+            .limit(500)
+            .get(const GetOptions(source: Source.server));
+        for (final product in products.docs) {
+          add(product.data(), id: product.id);
+        }
+      } catch (error) {
+        debugPrint('Offers products load failed for ${doc.id}: $error');
+      }
+      return result;
+    }));
+    return groups.expand((group) => group).toList(growable: false);
   }
 
   Future<void> _refresh() async {
@@ -129,7 +141,7 @@ class _OffersPageState extends State<OffersPage> {
       item.name,
       item.price,
       item.image,
-      '',
+      item.id,
       true,
       item.oldPrice,
       item.text,
@@ -159,7 +171,7 @@ class _OffersPageState extends State<OffersPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: const Color(0xFFF6F8FA),
-        body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        body: FutureBuilder<List<_Offer>>(
           future: _future,
           builder: (context, snap) {
             if (snap.hasError) {
@@ -187,7 +199,7 @@ class _OffersPageState extends State<OffersPage> {
               );
             }
 
-            final items = _offers(snap.data!);
+            final items = snap.data!;
             return RefreshIndicator(
               onRefresh: _refresh,
               child: CustomScrollView(
