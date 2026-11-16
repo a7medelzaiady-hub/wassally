@@ -703,10 +703,10 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
     : `${folder}/${isApplicant ? requestedStoreId : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const allowedFormats = "jpg,jpeg,png,webp";
-  const params = `allowed_formats=${allowedFormats}&folder=${uploadFolder}&timestamp=${timestamp}`;
+  const params = `allowed_formats=${allowedFormats}&folder=${uploadFolder}&overwrite=false&timestamp=${timestamp}&unique_filename=true&use_filename=false`;
   const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(params + env.CLOUDINARY_API_SECRET));
   const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, allowedFormats, signature });
+  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, allowedFormats, overwrite: false, uniqueFilename: true, useFilename: false, signature });
 }
 
 export default {
