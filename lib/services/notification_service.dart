@@ -32,7 +32,7 @@ class NotificationService {
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  static DocumentReference> _userDoc(String uid) =>
+  static DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 
   static bool _isGranted(AuthorizationStatus status) =>
