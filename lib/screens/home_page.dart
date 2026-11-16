@@ -443,9 +443,8 @@ class _HomePageState extends State<HomePage>
       (snapshot) {
         final data = snapshot.data();
         final active = snapshot.exists &&
-            (data == null ||
-                !data.containsKey('active') ||
-                data['active'] == true);
+            data != null &&
+            (!data.containsKey('active') || data['active'] == true);
         if (active == lastSubscribedState) return;
         lastSubscribedState = active;
         if (active) {
