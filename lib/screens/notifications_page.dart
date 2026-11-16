@@ -185,7 +185,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   .collection('notifications')
                   .where('userId', isEqualTo: uid)
                   .orderBy('createdAt', descending: true)
-                  .limit(100)
+                  .limit(_limit)
                   .snapshots(),
               builder: (context, snap) {
                 if (snap.hasError) {
@@ -239,8 +239,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       : ListView.builder(
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-                          itemCount: entries.length,
+                          itemCount: entries.length + (docs.length == _limit ? 1 : 0),
                           itemBuilder: (context, i) {
+                            if (i == entries.length) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Center(
+                                  child: TextButton(
+                                    onPressed: () => setState(() => _limit += 100),
+                                    child: const Text('تحميل إشعارات أقدم'),
+                                  ),
+                                ),
+                              );
+                            }
                             final e = entries[i];
                             if (e is String) return _GroupLabel(e);
                             final d =
