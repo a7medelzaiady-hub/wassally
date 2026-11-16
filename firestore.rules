@@ -122,6 +122,7 @@ service cloud.firestore {
             resource.data.get('courierId', '').size() > 0))) ||
         (resource.data.get('status', '') == 'on_the_way' &&
           request.resource.data.get('status', '') == 'delivered' &&
+          resource.data.get('courierArrivedAt', null) is timestamp &&
           k.hasAll(stampKeys()));
     }
 
@@ -495,6 +496,7 @@ service cloud.firestore {
               resource.data.get('ready', false) == true) ||
            (resource.data.get('status', '') == 'on_the_way' &&
               request.resource.data.get('status', '') == 'delivered' &&
+              resource.data.get('courierArrivedAt', null) is timestamp &&
               !('activeDeliveryIssueId' in resource.data))) &&
           historyGate(orderId, k)
         );
