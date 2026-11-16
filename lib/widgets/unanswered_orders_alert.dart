@@ -48,9 +48,13 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
 
     if (overdue.isEmpty) return const SizedBox.shrink();
 
-    final oldestActivity = overdue
-        .map((order) => order.editedAt ?? order.createdAt!)
-        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final activities = overdue
+        .map((order) => order.editedAt ?? order.createdAt)
+        .whereType<DateTime>()
+        .toList();
+    final oldestActivity = activities.reduce(
+      (a, b) => a.isBefore(b) ? a : b,
+    );
     final oldest = _now.difference(oldestActivity).inMinutes;
     final countLabel = overdue.length >= 100 ? '100+' : overdue.length.toString();
 
