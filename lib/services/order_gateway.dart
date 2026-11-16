@@ -46,33 +46,24 @@ class OrderGateway {
       throw StateError('إعداد بوابة الطلبات غير صحيح.');
     }
 
-    final http.Response result;
+    late final http.Response result;
+    final client = http.Client();
     try {
-      result = await http
-          .Request(method, uri)
-          .finalize()
-          .toBytes()
-          .then((bytes) => http.Response.bytes(
-                bytes,
-                0,
-              ));
+      final request = http.Request(method, uri)
+        ..headers.addAll({
+          'Authorization': 'Bearer $idToken',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        })
+        ..body = jsonEncode(payload);
+      final streamed = await client
+          .send(request)
+          .timeout(const Duration(seconds: 25));
+      result = await http.Response.fromStream(streamed);
     } catch (_) {
-      // التنفيذ الفعلي أدناه يستخدم request موحدًا لدعم POST وPATCH.
-      try {
-        final request = http.Request(method, uri)
-          ..headers.addAll({
-            'Authorization': 'Bearer $idToken',
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          })
-          ..body = jsonEncode(payload);
-        final streamed = await http.Client()
-            .send(request)
-            .timeout(const Duration(seconds: 25));
-        result = await http.Response.fromStream(streamed);
-      } catch (_) {
-        throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
-      }
+      throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
+    } finally {
+      client.close();
     }
 
     Map<String, dynamic> body = {};
