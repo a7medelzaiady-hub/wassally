@@ -341,6 +341,7 @@ class OrderService {
               .map((e) => {
                     if (e.key.id.isNotEmpty) 'productId': e.key.id,
                     if (e.key.id.isEmpty) 'name': e.key.name,
+                    'expectedPrice': e.key.price,
                     'qty': e.value,
                   })
               .toList(),
