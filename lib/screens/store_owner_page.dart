@@ -1247,7 +1247,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         final hasPriceDiscount = o is num && o > p;
         if ((hasPriceDiscount || offerText.isNotEmpty) &&
             !expired &&
-            offers.length < 40) {
+            offers.length < 12) {
           offers.add(item(m));
         }
         if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
