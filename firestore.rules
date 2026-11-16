@@ -598,6 +598,15 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('courierResumedBy', '') == request.auth.uid &&
           getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('courierResumedAt', null) == request.time
         ) || (
+          // المندوب يبدأ الرحلة بعد جاهزية المحل؛ لا يمكنه إغلاق الطلب مباشرة.
+          resource.data.get('status', '') == 'preparing' &&
+          resource.data.get('courierId', '') == request.auth.uid &&
+          resource.data.get('ready', false) == true &&
+          k.hasOnly(['status', 'pickedUpAt']) &&
+          request.resource.data.get('status', '') == 'on_the_way' &&
+          request.resource.data.get('pickedUpAt', null) == request.time &&
+          historyGate(orderId, k)
+        ) || (
           // بلاغ التسليم من المندوب لا يغلق الطلب ولا يكتب ختم التحصيل.
           resource.data.get('status', '') == 'on_the_way' &&
           resource.data.get('courierId', '') == request.auth.uid &&
