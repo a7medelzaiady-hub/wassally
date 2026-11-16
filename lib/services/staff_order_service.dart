@@ -259,7 +259,6 @@ class StaffOrderService {
   static Stream<List<Courier>> watchCouriers({int limit = 100}) {
     return FirebaseFirestore.instance
         .collection('couriers')
-        .where('active', isEqualTo: true)
         .limit(limit.clamp(1, 200).toInt())
         .snapshots()
         .map((
@@ -268,6 +267,8 @@ class StaffOrderService {
       final list = <Courier>[];
       for (final d in snap.docs) {
         final m = d.data();
+        // قواعد Firestore تعتبر غياب active نشطًا للتوافق مع السجلات القديمة.
+        if (m['active'] == false) continue;
         list.add(
           Courier(
             id: d.id,
@@ -454,7 +455,9 @@ class StaffOrderService {
           (order['courierId'] ?? '').toString().isNotEmpty) {
         throw StateError('الطلب لم يعد متاحًا للتعيين.');
       }
-      if (courierData['active'] != true) {
+      // نفس تعريف النشاط في قواعد Firestore: غياب active يعني نشطًا
+      // للتوافق مع سجلات المندوبين القديمة، والقيمة false وحدها توقف الحساب.
+      if (courierData['active'] == false) {
         throw StateError('المندوب غير نشط.');
       }
       tx.update(orderRef, {
