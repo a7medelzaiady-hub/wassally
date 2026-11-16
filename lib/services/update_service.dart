@@ -8,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import 'notification_service.dart';
 import 'play_update.dart';
-import 'worker_notify_service.dart';
 
 /// فحص وجود إصدار أحدث من التطبيق.
 ///
@@ -44,9 +43,11 @@ class UpdateService {
   static Future<void> checkForUpdates(BuildContext context) async {
     attachLifecycle();
     if (_checked) return;
+    final result = await _fetch();
+    if (result == null) return; // فشل الاتصال: اسمح بإعادة المحاولة لاحقًا.
     _checked = true;
-    final hasUpdate = await _fetch();
-    if (await PlayUpdate.tryUpdate(force: hasUpdate && _force)) return;
+    final hasUpdate = result;
+    if (hasUpdate && await PlayUpdate.tryUpdate(force: _force)) return;
     if (!hasUpdate) return;
     if (!context.mounted) return;
     final showDialogNow = _force || !await _isSnoozed();
@@ -72,20 +73,26 @@ class UpdateService {
       if (_available) _showBanner();
       return;
     }
-    if (await _fetch()) _showBanner();
+    final result = await _fetch();
+    if (result == true) _showBanner();
   }
 
   /// بتقرا app_info/version وتحدّث الحالة. بترجّع true لو فيه إصدار أحدث.
-  static Future<bool> _fetch() async {
+  static Future<bool?> _fetch() async {
     try {
       final info = await PackageInfo.fromPlatform();
       final doc = await FirebaseFirestore.instance
           .collection('app_info')
           .doc('version')
           .get();
-      _lastCheck = DateTime.now();
       final data = doc.data();
-      if (data == null) return _available = false;
+      if (data == null) {
+        _lastCheck = DateTime.now();
+        _available = false;
+        _force = false;
+        _url = '';
+        return false;
+      }
 
       final latest = (data['latest_version'] ?? '').toString().trim();
       final url = _playUrl(
@@ -95,10 +102,25 @@ class UpdateService {
       _force = data['force_update'] == true && _validUrl(url);
       _url = url;
       _available = latest.isNotEmpty && isNewer(info.version, latest);
+      _lastCheck = DateTime.now();
       return _available;
     } catch (e) {
       debugPrint('تعذر فحص التحديثات: $e');
-      return false;
+      return null;
+    }
+  }
+
+  /// يفتح صفحة التطبيق الرسمية على Google Play عند الضغط على إشعار التحديث.
+  static Future<void> openStoreFromNotification() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final url = _playUrl(info.packageName, '');
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('تعذر فتح Google Play: $e');
+      NotificationService.messengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('تعذر فتح Google Play')),
+      );
     }
   }
 
