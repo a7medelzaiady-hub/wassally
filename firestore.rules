@@ -187,12 +187,20 @@ service cloud.firestore {
     // زي تطبيقات التوصيل الصغيرة: العميل بيحسب الأسعار، والقواعد بتتأكد من الشكل والحدود بس.
     // مراجعة السعر الحقيقي بتتم عند الأدمن (verifiedTotal) والمندوب بيحصّل المبلغ المعتمد.
     // مفيش حد صغير للأصناف: الحد الأقصى 100 صنف، ومفيش قراءات لكل صنف.
+    function customerNotRestricted(uid) {
+      let p = /databases/$(database)/documents/customer_restrictions/$(uid);
+      return !exists(p) ||
+        get(p).data.get('active', false) != true ||
+        get(p).data.get('expiresAt', request.time) <= request.time;
+    }
+
     function validNewOrder(d) {
       return d.keys().hasOnly(orderKeys().concat(['area', 'promoCode', 'discount', 'freeDelivery'])) &&
         d.keys().hasAll(orderKeys()) &&
         (!('freeDelivery' in d) || (d.freeDelivery == true && d.deliveryFee == 0)) &&
         d.get('area', '') is string && d.get('area', '').size() <= 60 &&
         promoOk(d) &&
+        customerNotRestricted(request.auth.uid) &&
         d.userId == request.auth.uid &&
         d.status == 'new' &&
         d.paymentMethod == 'cash' &&
@@ -760,6 +768,66 @@ service cloud.firestore {
         get(/databases/$(database)/documents/orders/$(d.orderId)).data.status == 'delivered' &&
         get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId &&
         getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('lastReviewId', '') == rid;
+    }
+
+    // تقييم العميل من المندوب أو صاحب المحل: سجل داخلي لا يراه العميل.
+    function validCustomerReview(rid, d) {
+      return d.keys().hasOnly(['orderId', 'customerId', 'reviewerId', 'reviewerRole',
+                               'storeId', 'rating', 'reason', 'comment', 'createdAt']) &&
+        d.keys().hasAll(['orderId', 'customerId', 'reviewerId', 'reviewerRole',
+                         'storeId', 'rating', 'reason', 'comment', 'createdAt']) &&
+        d.orderId is string && d.orderId.size() > 0 &&
+        rid == d.orderId + '_' + d.reviewerRole &&
+        d.customerId is string && d.reviewerId == request.auth.uid &&
+        d.reviewerRole in ['courier', 'store_owner'] &&
+        d.storeId is string && d.storeId.size() > 0 &&
+        d.rating is int && d.rating >= 1 && d.rating <= 5 &&
+        d.reason in ['positive', 'unavailable', 'wrong_address', 'refused_order',
+                     'no_cash', 'abusive_behavior', 'other'] &&
+        d.comment is string && d.comment.size() <= 300 &&
+        d.createdAt == request.time &&
+        exists(/databases/$(database)/documents/orders/$(d.orderId)) &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('userId', '') == d.customerId &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId &&
+        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('status', '') == 'delivered' &&
+        ((d.reviewerRole == 'courier' && isCourier() &&
+            get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierId', '') == request.auth.uid &&
+            get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('deliveredBy', '') == request.auth.uid) ||
+         (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId)));
+    }
+
+    function validCustomerRestriction(uid, d) {
+      return d.keys().hasOnly(['customerId', 'active', 'reason', 'sourceOrderId',
+                               'createdAt', 'createdBy', 'expiresAt']) &&
+        d.keys().hasAll(['customerId', 'active', 'reason', 'sourceOrderId',
+                         'createdAt', 'createdBy', 'expiresAt']) &&
+        d.customerId == uid && d.active == true &&
+        d.reason is string && d.reason.size() >= 5 && d.reason.size() <= 300 &&
+        d.sourceOrderId is string && d.sourceOrderId.size() > 0 &&
+        d.createdAt == request.time && d.createdBy == request.auth.uid &&
+        d.expiresAt is timestamp && d.expiresAt > request.time &&
+        exists(/databases/$(database)/documents/orders/$(d.sourceOrderId)) &&
+        get(/databases/$(database)/documents/orders/$(d.sourceOrderId)).data.get('userId', '') == uid;
+    }
+
+    match /customer_reviews/{rid} {
+      allow get, list: if signedIn() &&
+        (isAdmin() || resource.data.get('reviewerId', '') == request.auth.uid);
+      allow create: if signedIn() && validCustomerReview(rid, request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // التقييد مؤقت وبقرار إداري فقط؛ التقييم المنخفض وحده لا يفرضه تلقائيًا.
+    match /customer_restrictions/{uid} {
+      allow get: if signedIn() && (isAdmin() || request.auth.uid == uid);
+      allow list: if isAdmin();
+      allow create: if isAdmin() && validCustomerRestriction(uid, request.resource.data);
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'clearedAt', 'clearedBy']) &&
+        request.resource.data.get('active', true) == false &&
+        request.resource.data.get('clearedAt', null) == request.time &&
+        request.resource.data.get('clearedBy', '') == request.auth.uid;
+      allow delete: if false;
     }
 
     match /reviews/{rid} {
