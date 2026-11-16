@@ -382,9 +382,6 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   }
 
   const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
-  if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
-    throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
-  }
 
   let discount = 0;
   let normalizedPromo = "";
