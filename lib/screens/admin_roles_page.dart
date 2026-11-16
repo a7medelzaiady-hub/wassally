@@ -17,8 +17,11 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
   final _uid = TextEditingController();
   final _name = TextEditingController();
   final _phone = TextEditingController();
+  String? _storeId;
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream =
       FirebaseFirestore.instance.collection('couriers').limit(200).snapshots();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _stores =
+      FirebaseFirestore.instance.collection('stores').limit(200).snapshots();
   bool _busy = false;
 
   CollectionReference<Map<String, dynamic>> get _col =>
@@ -55,11 +58,13 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
         'name': name,
         'phone': _phone.text.trim(),
         'active': true,
+        'storeId': _storeId ?? FieldValue.delete(),
       }, SetOptions(merge: true));
       _uid.clear();
       _name.clear();
       _phone.clear();
-      _toast('تمت إضافة المندوب.');
+      setState(() => _storeId = null);
+      _toast('تم حفظ المندوب وربطه بالمحل المحدد.');
     } on FirebaseException catch (e) {
       _toast(
         e.code == 'permission-denied'
@@ -122,6 +127,29 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
             controller: _phone,
             keyboardType: TextInputType.phone,
             decoration: const InputDecoration(labelText: 'الموبايل (اختياري)'),
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: _stores,
+            builder: (context, snapshot) {
+              final stores = snapshot.data?.docs ?? const [];
+              return DropdownButtonFormField<String>(
+                key: ValueKey('courier-store-$_storeId'),
+                initialValue: stores.any((d) => d.id == _storeId) ? _storeId : null,
+                decoration: const InputDecoration(
+                  labelText: 'المحل التابع له المندوب (اختياري)',
+                  helperText: 'اتركه بدون اختيار لو المندوب خارجي.',
+                ),
+                items: [
+                  for (final store in stores)
+                    DropdownMenuItem<String>(
+                      value: store.id,
+                      child: Text((store.data()['name'] ?? store.id).toString()),
+                    ),
+                ],
+                onChanged: (value) => setState(() => _storeId = value),
+              );
+            },
           ),
           const SizedBox(height: 16),
           _busy
