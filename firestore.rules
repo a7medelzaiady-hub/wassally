@@ -575,9 +575,9 @@ service cloud.firestore {
           resource.data.get('activeDeliveryIssueId', '') is string &&
           resource.data.get('activeDeliveryIssueId', '').size() > 0 &&
           get(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'returned_to_store' &&
-          k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'activeDeliveryIssueId']) &&
-          !('courierId' in request.resource.data) &&
+          k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
           !('activeDeliveryIssueId' in request.resource.data) &&
+          request.resource.data.get('lastDeliveryIssueId', '') == resource.data.get('activeDeliveryIssueId', '') &&
           historyGate(orderId, k)
         ) || (
           k.hasOnly(['status', 'pickedUpAt', 'courierId', 'courierName',
@@ -843,11 +843,17 @@ service cloud.firestore {
         d.createdAt == request.time &&
         order.get('userId', '') == d.customerId &&
         order.get('storeId', '') == d.storeId &&
-        order.get('status', '') == 'delivered' &&
         ((d.reviewerRole == 'courier' && isCourier() &&
-            order.get('courierId', '') == request.auth.uid &&
-            order.get('deliveredBy', '') == request.auth.uid) ||
-         (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId)));
+            ((order.get('status', '') == 'delivered' &&
+              order.get('courierId', '') == request.auth.uid &&
+              order.get('deliveredBy', '') == request.auth.uid) ||
+             (order.get('status', '') == 'cancelled' &&
+              order.get('lastDeliveryIssueId', '') is string &&
+              order.get('lastDeliveryIssueId', '').size() > 0 &&
+              get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('status', '') == 'returned_to_store' &&
+              get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('courierId', '') == request.auth.uid))) ||
+         (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId) &&
+            order.get('status', '') == 'delivered'));
     }
 
     function validCustomerRestriction(uid, d) {
