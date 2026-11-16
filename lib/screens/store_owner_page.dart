@@ -82,21 +82,7 @@ class StoreOwnerPage extends StatelessWidget {
     return StreamBuilder<List<AppOrder>>(
       stream: StaffOrderService.watchForStore(storeId, limit: 100),
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: EmptyState(
-              icon: Icons.lock_outline,
-              title: 'تعذر تحميل الطلبات',
-              message: _why(snapshot.error!),
-            ),
-          );
-        }
-        if (!snapshot.hasData) {
-          return Scaffold(
-            body: Center(child: CircularProgressIndicator(color: kPrimary)),
-          );
-        }
-        final orders = snapshot.data!;
+        final orders = snapshot.data ?? const <AppOrder>[];
         return DefaultTabController(
           length: 3,
           child: Scaffold(
@@ -124,7 +110,12 @@ class StoreOwnerPage extends StatelessWidget {
                 Expanded(
                   child: TabBarView(
                     children: [
-                      _OwnerOrdersTab(storeId: storeId, orders: orders),
+                      _OwnerOrdersTab(
+                        storeId: storeId,
+                        orders: orders,
+                        loading: !snapshot.hasData && !snapshot.hasError,
+                        error: snapshot.error,
+                      ),
                       _OwnerProductsTab(storeId: storeId),
                       _OwnerSpecialRequestsTab(storeId: storeId),
                     ],
@@ -620,7 +611,14 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
 class _OwnerOrdersTab extends StatefulWidget {
   final String storeId;
   final List<AppOrder> orders;
-  const _OwnerOrdersTab({required this.storeId, required this.orders});
+  final bool loading;
+  final Object? error;
+  const _OwnerOrdersTab({
+    required this.storeId,
+    required this.orders,
+    required this.loading,
+    required this.error,
+  });
 
   @override
   State<_OwnerOrdersTab> createState() => _OwnerOrdersTabState();
@@ -634,6 +632,16 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.error != null) {
+      return EmptyState(
+        icon: Icons.lock_outline,
+        title: 'تعذر تحميل الطلبات',
+        message: _why(widget.error!),
+      );
+    }
+    if (widget.loading) {
+      return Center(child: CircularProgressIndicator(color: kPrimary));
+    }
     final all = widget.orders;
     final current = all.where(_isCurrent).toList();
     final past = all.where((o) => !_isCurrent(o)).toList();
