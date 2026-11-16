@@ -403,6 +403,39 @@ test('customer reviews: المندوب وصاحب المحل يقيّمان ال
   }));
 });
 
+test('customer reviews: المراجع يقدر يتحقق من تقييمه فقط باستعلام محدود', async () => {
+  const { collection, getDocs, query, where } = require('firebase/firestore');
+  await setOrder({ status: 'delivered', courierId: 'cour1', deliveredBy: 'cour1' });
+  await assertSucceeds(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1'),
+  ));
+
+  const courierQuery = query(
+    collection(as('cour1'), 'customer_reviews'),
+    where('reviewerId', '==', 'cour1'),
+    where('orderId', '==', 'o1'),
+    where('reviewerRole', '==', 'courier'),
+  );
+  const courierReviews = await assertSucceeds(getDocs(courierQuery));
+  assert.equal(courierReviews.size, 1);
+
+  const ownerEmptyQuery = query(
+    collection(as('owner1'), 'customer_reviews'),
+    where('reviewerId', '==', 'owner1'),
+    where('orderId', '==', 'o1'),
+    where('reviewerRole', '==', 'store_owner'),
+  );
+  const ownerReviews = await assertSucceeds(getDocs(ownerEmptyQuery));
+  assert.equal(ownerReviews.size, 0);
+
+  const forgedQuery = query(
+    collection(as('cust1'), 'customer_reviews'),
+    where('orderId', '==', 'o1'),
+  );
+  await assertFails(getDocs(forgedQuery));
+});
+
 test('customer reviews: يمنع التقييم المزور أو قبل التسليم أو من طرف غير مشارك', async () => {
   await assertFails(setDoc(
     doc(as('cour1'), 'customer_reviews/o1_courier'),
