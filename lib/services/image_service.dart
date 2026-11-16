@@ -84,12 +84,13 @@ class ImageService {
     final apiKey = (signed['apiKey'] ?? '').toString();
     final timestamp = (signed['timestamp'] ?? '').toString();
     final uploadFolder = (signed['folder'] ?? '').toString();
+    final publicId = (signed['publicId'] ?? '').toString();
     final allowedFormats = (signed['allowedFormats'] ?? '').toString();
     final signature = (signed['signature'] ?? '').toString();
     final overwrite = signed['overwrite'] == false ? 'false' : '';
     final uniqueFilename = signed['uniqueFilename'] == true ? 'true' : '';
     final useFilename = signed['useFilename'] == false ? 'false' : '';
-    if ([cloudName, apiKey, timestamp, uploadFolder, allowedFormats, signature,
+    if ([cloudName, apiKey, timestamp, uploadFolder, publicId, allowedFormats, signature,
       overwrite, uniqueFilename, useFilename]
         .any((value) => value.isEmpty)) {
       throw StateError('بيانات توقيع الصورة ناقصة.');
@@ -100,6 +101,7 @@ class ImageService {
       ..fields['api_key'] = apiKey
       ..fields['timestamp'] = timestamp
       ..fields['folder'] = uploadFolder
+      ..fields['public_id'] = publicId
       ..fields['allowed_formats'] = allowedFormats
       ..fields['overwrite'] = overwrite
       ..fields['unique_filename'] = uniqueFilename
