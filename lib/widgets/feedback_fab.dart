@@ -350,6 +350,13 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                   },
                 ),
               ],
+              if (_kind == FeedbackKind.restrictionAppeal) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'سيُربط اعتراضك تلقائيًا بقرار التقييد المسجل على حسابك، وستتمكن من متابعة رد الإدارة من «شكاواي واقتراحاتي».',
+                  style: TextStyle(fontSize: 12.5, color: Colors.black54),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _msg,
@@ -357,7 +364,9 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                 maxLines: 6,
                 maxLength: FeedbackService.maxLength,
                 decoration: const InputDecoration(
-                  labelText: 'اكتب رسالتك',
+                  labelText: _kind == FeedbackKind.restrictionAppeal
+                      ? 'اشرح سبب اعتراضك وأي معلومات تدعم طلب المراجعة'
+                      : 'اكتب رسالتك',
                   alignLabelWithHint: true,
                 ),
                 validator: (v) =>
