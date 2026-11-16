@@ -297,8 +297,6 @@ class OrderService {
       'subtotal': cart.subtotal,
       'deliveryFee': cart.effectiveFee,
       if (cart.area.isNotEmpty) 'area': cart.area,
-          'expectedDeliveryFee': cart.effectiveFee,
-          'expectedTotal': cart.total,
       if (cart.discount > 0) 'promoCode': cart.promoCode.trim().toUpperCase(),
       if (cart.discount > 0) 'discount': cart.discount,
       'total': cart.total,
@@ -338,6 +336,8 @@ class OrderService {
           'customerName': _firstName(name),
           'notes': notes,
           'area': cart.area,
+          'expectedDeliveryFee': cart.effectiveFee,
+          'expectedTotal': cart.total,
           if (cart.discount > 0) 'promoCode': cart.promoCode,
           'items': cart.items.entries
               .map((e) => {
