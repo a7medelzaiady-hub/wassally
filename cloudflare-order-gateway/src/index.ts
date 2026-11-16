@@ -81,7 +81,7 @@ function encodeFields(fields: JsonMap): Record<string, unknown> {
 }
 
 export function firstName(value: unknown): string {
-  return String(value ?? "").trim().split(/\\s+/)[0] ?? "";
+  return String(value ?? "").trim().split(/\s+/)[0] ?? "";
 }
 
 function money(value: number): number {
