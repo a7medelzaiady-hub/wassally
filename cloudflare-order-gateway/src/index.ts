@@ -41,7 +41,7 @@ function corsHeaders(request: Request, env: Env): Headers {
   if (origin && (!allowed.length || allowed.includes(origin))) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
-    headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    headers.set("Access-Control-Allow-Methods", "POST, PATCH, OPTIONS");
     headers.set("Access-Control-Max-Age", "600");
   }
   return headers;
@@ -447,6 +447,143 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
 
+async function updateOrder(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  let input: any;
+  try {
+    input = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات التعديل غير مفهومة.");
+  }
+  const lines = Array.isArray(input.items) ? input.items : [];
+  const customerName = String(input.customerName ?? "").trim().split(/\\s+/)[0] ?? "";
+  const notes = String(input.notes ?? "").trim();
+  const contact = validateContact(input.contact);
+  if (!customerName || customerName.length > 30 || notes.length > 500) {
+    throw new HttpError(400, "راجع الاسم والملاحظات.");
+  }
+
+  const token = await googleAccessToken(env);
+  const orderPath = `orders/${encodeURIComponent(orderId)}`;
+  const orderDoc = await getDocument(env, orderPath, token);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية تعديل هذا الطلب.");
+  if (!["new", "preparing"].includes(String(order.status)) || String(order.courierId ?? "") !== "") {
+    throw new HttpError(409, "لم يعد ممكنًا تعديل الطلب بعد استلامه أو تغيير حالته.");
+  }
+
+  const storeId = String(order.storeId ?? "");
+  if (!storeId) throw new HttpError(409, "بيانات المحل غير مكتملة.");
+  const [storeDoc, contactDoc, feedDoc] = await Promise.all([
+    getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
+    getDocument(env, `${orderPath}/private/contact`, token),
+    order.status === "preparing"
+      ? getDocument(env, `courier_available_orders/${encodeURIComponent(orderId)}`, token)
+      : Promise.resolve(null),
+  ]);
+  if (!storeDoc || !contactDoc) throw new HttpError(409, "بيانات الطلب الخاصة أو كتالوج المحل غير متاح.");
+  if (order.status === "preparing" && !feedDoc) {
+    throw new HttpError(409, "تعذر تحديث قائمة المندوبين بأمان. حدّث الطلب وحاول مرة أخرى.");
+  }
+  const store = decodeFields(storeDoc.fields ?? {});
+  const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
+
+  const deliveryFee = Number(order.deliveryFee);
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 500) {
+    throw new HttpError(409, "رسوم التوصيل في الطلب غير صالحة.");
+  }
+  let discount = 0;
+  let promoCode = String(order.promoCode ?? "").trim().toUpperCase();
+  if (promoCode && Number(order.discount ?? 0) > 0 && Number(order.subtotal ?? 0) > 0) {
+    const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
+    const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
+    const percent = Number(promo.percent ?? 0);
+    if (promo.active === true && Number.isFinite(percent) && percent > 0 && percent <= 50) {
+      const previousPercent = Number(order.discount) / Number(order.subtotal) * 100;
+      discount = calculateDiscount(subtotal, Math.min(previousPercent, percent));
+    } else {
+      promoCode = "";
+    }
+  } else {
+    promoCode = "";
+  }
+  const total = money(subtotal + deliveryFee - discount);
+  if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
+
+  const updatedOrder: JsonMap = {
+    ...order,
+    items,
+    subtotal,
+    total,
+    notes,
+    customerName,
+  };
+  delete updatedOrder.unavailableItems;
+  if (discount > 0 && promoCode) {
+    updatedOrder.discount = discount;
+    updatedOrder.promoCode = promoCode;
+  } else {
+    delete updatedOrder.discount;
+    delete updatedOrder.promoCode;
+  }
+  const updatedContact = contact;
+  const writes: any[] = [
+    {
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}`,
+        fields: encodeFields(updatedOrder),
+      },
+      updateTransforms: [{ fieldPath: "editedAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: orderDoc.updateTime
+        ? { updateTime: orderDoc.updateTime }
+        : { exists: true },
+    },
+    {
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}/private/contact`,
+        fields: encodeFields(updatedContact),
+      },
+      currentDocument: contactDoc.updateTime
+        ? { updateTime: contactDoc.updateTime }
+        : { exists: true },
+    },
+  ];
+  if (order.status === "preparing" && feedDoc) {
+    const feed = decodeFields(feedDoc.fields ?? {});
+    const updatedFeed = {
+      ...feed,
+      items,
+      subtotal,
+      discount,
+      total,
+    };
+    writes.push({
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/courier_available_orders/${encodeURIComponent(orderId)}`,
+        fields: encodeFields(updatedFeed),
+      },
+      currentDocument: feedDoc.updateTime
+        ? { updateTime: feedDoc.updateTime }
+        : { exists: true },
+    });
+  }
+  const committed = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes }),
+    },
+  );
+  if (committed.status === 409 || committed.status === 400) {
+    throw new HttpError(409, "حالة الطلب اتغيرت أثناء التعديل. حدّث الصفحة وحاول مرة أخرى.");
+  }
+  if (!committed.ok) throw new HttpError(503, "تعذر حفظ تعديل الطلب.");
+  return response({ orderId, subtotal, deliveryFee, discount, total, items });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     let headers: Headers;
@@ -461,11 +598,14 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
     }
-    if (request.method !== "POST" || url.pathname !== "/v1/orders") {
-      return response({ error: "Not found." }, 404, headers);
-    }
+    const editMatch = url.pathname.match(/^\\/v1\\/orders\\/([^/]+)$/);
+    const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
+    const isEdit = request.method === "PATCH" && editMatch !== null;
+    if (!isCreate && !isEdit) return response({ error: "Not found." }, 404, headers);
     try {
-      const result = await createOrder(request, env);
+      const result = isCreate
+        ? await createOrder(request, env)
+        : await updateOrder(request, env, decodeURIComponent(editMatch![1]));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
       return new Response(await result.text(), {
