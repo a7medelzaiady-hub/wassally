@@ -268,7 +268,7 @@ class StaffOrderService {
       for (final d in snap.docs) {
         final m = d.data();
         // قواعد Firestore تعتبر غياب active نشطًا للتوافق مع السجلات القديمة.
-        if (m['active'] == false) continue;
+        if (m.containsKey('active') && m['active'] != true) continue;
         list.add(
           Courier(
             id: d.id,
@@ -457,7 +457,7 @@ class StaffOrderService {
       }
       // نفس تعريف النشاط في قواعد Firestore: غياب active يعني نشطًا
       // للتوافق مع سجلات المندوبين القديمة، والقيمة false وحدها توقف الحساب.
-      if (courierData['active'] == false) {
+      if (courierData.containsKey('active') && courierData['active'] != true) {
         throw StateError('المندوب غير نشط.');
       }
       tx.update(orderRef, {
