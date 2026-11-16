@@ -120,12 +120,20 @@ service cloud.firestore {
       return {'new': 0, 'preparing': 1, 'on_the_way': 2, 'delivered': 3, 'cancelled': 9}[st];
     }
 
-    // كل انتقال إداري للأمام فقط، ولا يمكن إعادة فتح طلب نهائي حتى لو لم يوجد flag.
+    // انتقالات الإدارة متسلسلة: لا تخطي للتجهيز/الجاهزية ولا إعادة فتح حالة نهائية.
     function adminMoveOk(k) {
-      return !('status' in k) || (
-        !(resource.data.get('status', '') in ['delivered', 'cancelled']) &&
-        (request.resource.data.get('status', '') == 'cancelled' ||
-         statusRank(request.resource.data.get('status', '')) > statusRank(resource.data.get('status', ''))));
+      return !('status' in k) ||
+        (resource.data.get('status', '') == 'new' &&
+          request.resource.data.get('status', '') in ['preparing', 'cancelled']) ||
+        (resource.data.get('status', '') == 'preparing' &&
+          (request.resource.data.get('status', '') == 'cancelled' ||
+           (request.resource.data.get('status', '') == 'on_the_way' &&
+            resource.data.get('ready', false) == true &&
+            resource.data.get('courierId', '') is string &&
+            resource.data.get('courierId', '').size() > 0))) ||
+        (resource.data.get('status', '') == 'on_the_way' &&
+          request.resource.data.get('status', '') == 'delivered' &&
+          k.hasAll(stampKeys()));
     }
 
     // لو strictOrders شغّال: تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch).
@@ -524,6 +532,7 @@ service cloud.firestore {
           validStatus(request.resource.data.get('status', '')) &&
           validVerification(k) &&
           deliveryStampOk(resource.data.get('courierId', ''), k) &&
+          stampRequired(k) &&
           (!('courierId' in k) ||
             validCourierForAssignment(request.resource.data.get('courierId', ''))) &&
           adminMoveOk(k) &&
