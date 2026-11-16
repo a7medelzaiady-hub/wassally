@@ -432,6 +432,7 @@ test('customer reviews: يمنع التقييم المزور أو قبل الت�
 });
 
 test('customer restrictions: الإدارة فقط تفرض تقييدًا مؤقتًا، والقواعد تمنع الطلب حتى رفعه', async () => {
+  const { collection, getDocs } = require('firebase/firestore');
   const restriction = {
     customerId: 'cust1',
     active: true,
