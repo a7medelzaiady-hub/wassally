@@ -7,12 +7,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/order_details_page.dart';
+import '../screens/support_chat_page.dart';
 import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
-/// - بتقرأ حالة الإذن، وتُسجّل معرّف تثبيت الجهاز في users/{uid}.fcmInstallationIds بعد الموافقة.
+/// - بتسجل FCM registration token الحقيقي في users/{uid}.fcmTokens بعد الموافقة.
 /// - الإشعارات نفسها بتتبعت من Cloud Functions (فولدر functions).
 /// - لما التطبيق يكون مفتوح بنعرض الإشعار كشريط في أسفل الشاشة.
 class NotificationService {
@@ -24,9 +25,8 @@ class NotificationService {
 
   static StreamSubscription<RemoteMessage>? _foreground;
   static StreamSubscription<RemoteMessage>? _opened;
-  static StreamSubscription<String>? _registered;
-  static StreamSubscription<String>? _unregistered;
-  static String? _installationId;
+  static StreamSubscription<String>? _tokenRefresh;
+  static String? _fcmToken;
 
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -80,80 +80,82 @@ class NotificationService {
     if (!_supported || user == null) return;
     try {
       final messaging = FirebaseMessaging.instance;
-      await _registered?.cancel();
-      await _unregistered?.cancel();
-      _registered = messaging.onRegistered.listen((fid) {
-        _installationId = fid;
+      await _tokenRefresh?.cancel();
+      final token = await messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        _fcmToken = token;
+        await _saveToken(user.uid, token);
+      }
+      _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) {
+        _fcmToken = nextToken;
         final current = FirebaseAuth.instance.currentUser;
         if (current != null) {
-          _saveInstallationId(current.uid, fid).catchError((e) {
-            debugPrint('تعذر حفظ معرّف تثبيت الإشعارات: $e');
+          _saveToken(current.uid, nextToken).catchError((e) {
+            debugPrint('تعذر تحديث رمز الإشعارات: $e');
           });
         }
       });
-      _unregistered = messaging.onUnregistered.listen((fid) {
-        if (_installationId == fid) _installationId = null;
-        final current = FirebaseAuth.instance.currentUser;
-        if (current != null) {
-          _removeInstallationId(current.uid, fid).catchError((e) {
-            debugPrint('تعذر حذف معرّف تثبيت الإشعارات: $e');
-          });
-        }
-      });
-      await messaging.register();
 
       await _foreground?.cancel();
       await _opened?.cancel();
       _foreground = FirebaseMessaging.onMessage.listen(_showInApp);
-      _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openOrder);
+      _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
 
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _openOrder(initialMessage),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) => _openMessage(initialMessage));
       }
     } catch (e) {
       debugPrint('تعذر تسجيل جهاز الإشعارات: $e');
     }
   }
 
-  /// بتتنادي قبل تسجيل الخروج، عشان الجهاز ميستلمش إشعارات الحساب ده.
+  /// بتتنادي قبل تسجيل الخروج عشان الرمز ما يفضلش مربوط بالحساب السابق.
   static Future<void> dispose() async {
     await LiveAlerts.stop();
     await _foreground?.cancel();
     await _opened?.cancel();
-    await _registered?.cancel();
-    await _unregistered?.cancel();
+    await _tokenRefresh?.cancel();
     _foreground = null;
     _opened = null;
-    _registered = null;
-    _unregistered = null;
+    _tokenRefresh = null;
     if (!_supported) return;
 
     final user = FirebaseAuth.instance.currentUser;
-    final fid = _installationId;
-    _installationId = null;
-    try {
-      if (user != null && fid != null) {
-        await _removeInstallationId(user.uid, fid);
+    final token = _fcmToken;
+    _fcmToken = null;
+    if (user != null && token != null) {
+      try {
+        await _removeToken(user.uid, token);
+      } catch (e) {
+        debugPrint('تعذر إلغاء ربط رمز الإشعارات: $e');
       }
-      await FirebaseMessaging.instance.unregister();
-    } catch (e) {
-      debugPrint('تعذر إلغاء تسجيل الإشعارات: $e');
     }
   }
 
-  static Future<void> _saveInstallationId(String uid, String fid) {
+  static Future<void> _saveToken(String uid, String token) {
     return _userDoc(uid).set({
-      'fcmInstallationIds': FieldValue.arrayUnion([fid]),
+      'fcmTokens': FieldValue.arrayUnion([token]),
     }, SetOptions(merge: true));
   }
 
-  static Future<void> _removeInstallationId(String uid, String fid) {
+  static Future<void> _removeToken(String uid, String token) {
     return _userDoc(uid).set({
-      'fcmInstallationIds': FieldValue.arrayRemove([fid]),
+      'fcmTokens': FieldValue.arrayRemove([token]),
     }, SetOptions(merge: true));
+  }
+
+  static void _openMessage(RemoteMessage message) {
+    final type = (message.data['type'] ?? '').toString();
+    if (type == 'support_chat') {
+      final chatUid = (message.data['chatUid'] ?? '').toString().trim();
+      if (chatUid.isEmpty) return;
+      rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
+        builder: (_) => SupportChatPage(chatUid: chatUid),
+      ));
+      return;
+    }
+    _openOrder(message);
   }
 
   static void _openOrder(RemoteMessage message) {
@@ -184,7 +186,9 @@ class NotificationService {
           behavior: SnackBarBehavior.floating,
           action: (message.data['orderId'] ?? '').toString().isNotEmpty
               ? SnackBarAction(label: 'عرض الطلب', onPressed: () => _openOrder(message))
-              : null,
+              : (message.data['type'] == 'support_chat'
+                  ? SnackBarAction(label: 'فتح المحادثة', onPressed: () => _openMessage(message))
+                  : null),
         ),
       );
   }
