@@ -93,7 +93,8 @@ class ImageService {
     final result = jsonDecode(uploadResponse.body);
     final url = result is Map ? result['url'] as String? : null;
     if (url == null || !isValidImageUrl(url) ||
-        !Uri.parse(url).host.endsWith('cloudinary.com')) {
+        !((Uri.parse(url).host == 'res.cloudinary.com') ||
+          Uri.parse(url).host.endsWith('.res.cloudinary.com'))) {
       throw StateError('خدمة الصور لم ترجع رابطًا آمنًا صالحًا.');
     }
     return url;
