@@ -118,10 +118,12 @@ service cloud.firestore {
           (request.resource.data.get('status', '') == 'cancelled' ||
            (request.resource.data.get('status', '') == 'on_the_way' &&
             resource.data.get('ready', false) == true &&
+            request.resource.data.get('pickedUpAt', null) == request.time &&
             resource.data.get('courierId', '') is string &&
             resource.data.get('courierId', '').size() > 0))) ||
         (resource.data.get('status', '') == 'on_the_way' &&
           request.resource.data.get('status', '') == 'delivered' &&
+          resource.data.get('pickedUpAt', null) is timestamp &&
           resource.data.get('courierArrivedAt', null) is timestamp &&
           k.hasAll(stampKeys()));
     }
@@ -488,14 +490,16 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('courierResumedAt', null) == request.time
         ) || (
           resource.data.get('courierId', '') == request.auth.uid &&
-          k.hasOnly(['status', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
+          k.hasOnly(['status', 'pickedUpAt', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
           deliveryStampOk(request.auth.uid, k) &&
           stampRequired(k) &&
           ((resource.data.get('status', '') == 'preparing' &&
               request.resource.data.get('status', '') == 'on_the_way' &&
-              resource.data.get('ready', false) == true) ||
+              resource.data.get('ready', false) == true &&
+              request.resource.data.get('pickedUpAt', null) == request.time) ||
            (resource.data.get('status', '') == 'on_the_way' &&
               request.resource.data.get('status', '') == 'delivered' &&
+              resource.data.get('pickedUpAt', null) is timestamp &&
               resource.data.get('courierArrivedAt', null) is timestamp &&
               !('activeDeliveryIssueId' in resource.data))) &&
           historyGate(orderId, k)
@@ -573,7 +577,7 @@ service cloud.firestore {
           !('activeDeliveryIssueId' in request.resource.data) &&
           historyGate(orderId, k)
         ) || (
-          k.hasOnly(['status', 'courierId', 'courierName',
+          k.hasOnly(['status', 'pickedUpAt', 'courierId', 'courierName',
                      'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
                      'deliveredBy', 'deliveredAt', 'collectedAmount',
                      'courierEarning', 'finalDeliveryFee']) &&
