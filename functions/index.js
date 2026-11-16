@@ -69,10 +69,10 @@ async function devicesOf(uids) {
       if (!snap.exists) return;
       const data = snap.data();
       // FCM HTTP v1 requires an FCM registration token, not a Firebase Installation ID.
-      const tokens = [
+      const tokens = new Set([
         ...(Array.isArray(data.fcmTokens) ? data.fcmTokens : []),
         ...(typeof data.fcmToken === 'string' ? [data.fcmToken] : []),
-      ];
+      ]);
       for (const token of tokens) {
         if (typeof token === 'string' && token.length > 0) out.push({ uid, token });
       }
@@ -108,16 +108,17 @@ async function notify(uids, title, body, data = {}) {
     }
   });
   await Promise.all(
-    dead.map((e) =>
-      db
-        .collection('users')
-        .doc(e.uid)
-        .update({
-          fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token),
-          fcmToken: admin.firestore.FieldValue.delete(),
-        })
-        .catch(() => {}),
-    ),
+    dead.map(async (e) => {
+      const ref = db.collection('users').doc(e.uid);
+      const snap = await ref.get().catch(() => null);
+      const patch = {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token),
+      };
+      if (snap && snap.exists && snap.get('fcmToken') === e.token) {
+        patch.fcmToken = admin.firestore.FieldValue.delete();
+      }
+      await ref.update(patch).catch(() => {});
+    }),
   );
 }
 
