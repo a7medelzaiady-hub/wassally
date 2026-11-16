@@ -114,6 +114,8 @@ class LiveAlerts {
       _db
           .collection('complaints')
           .where('userId', isEqualTo: uid)
+          .orderBy('createdAt', descending: true)
+          .limit(100)
           .snapshots()
           .listen(
             (snap) async {
@@ -169,6 +171,8 @@ class LiveAlerts {
       _db
           .collection('support_chats')
           .where('unreadForAdmin', isEqualTo: true)
+          .orderBy('lastAt', descending: true)
+          .limit(100)
           .snapshots()
           .listen(
             (snap) {
@@ -210,6 +214,8 @@ class LiveAlerts {
       _db
           .collection('complaints')
           .where('status', isEqualTo: 'open')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
           .snapshots()
           .listen(
             (snap) {
@@ -252,6 +258,8 @@ class LiveAlerts {
           .collection('orders')
           .where('storeId', isEqualTo: storeId)
           .where('status', isEqualTo: 'new')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
           .snapshots()
           .listen(
             (snap) {
@@ -289,7 +297,12 @@ class LiveAlerts {
     var first = true;
     final seen = <String>{};
     _subs.add(
-      _db.collection('courier_available_orders').snapshots().listen(
+      _db
+          .collection('courier_available_orders')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .snapshots()
+          .listen(
         (snap) {
           if (snap.metadata.hasPendingWrites) return;
           if (first) {
@@ -329,6 +342,9 @@ class LiveAlerts {
       _db
           .collection('orders')
           .where('courierId', isEqualTo: uid)
+          .where('status', isEqualTo: 'preparing')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
           .snapshots()
           .listen(
             (snap) {
