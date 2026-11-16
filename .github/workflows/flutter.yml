@@ -53,4 +53,6 @@ jobs:
 
     # 7. تحقق من Gradle وAndroid plugins دون الحاجة إلى مفتاح Release
     - name: Build debug APK
-      run: flutter build apk --debug
+      run: >-
+        flutter build apk --debug
+        --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
