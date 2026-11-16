@@ -18,8 +18,6 @@ final bool kImageUploadEnabled = true;
 class ImageService {
   const ImageService._();
 
-  static const String _cloudName = 'g3n5pdfz';
-
   /// المجلدات المسموحة؛ التوقيع يربط المستخدم بالمحل على الخادم.
   static const Set<String> _allowedFolders = {'stores', 'products', 'banners'};
 
