@@ -82,7 +82,6 @@ class OrderStatusWriter {
     }
 
     final data = snapshot.data()!;
-    final assignedCourierId = (data['courierId'] ?? '').toString();
     final cancellingBeforePickup = to == OrderStatus.cancelled &&
         currentStatus == 'preparing' &&
         actorRole == 'admin';
@@ -92,7 +91,7 @@ class OrderStatusWriter {
       'status': to.key,
       // عند إلغاء طلب في مرحلة التجهيز، نزيل الإسناد حتى لا يظل الطلب
       // مرتبطًا بمندوب بعد إغلاقه. لا نسمح بهذا بعد بدء الطريق.
-      if (cancellingBeforePickup && assignedCourierId.isNotEmpty) ...{
+      if (cancellingBeforePickup) ...{
         'courierId': FieldValue.delete(),
         'courierName': FieldValue.delete(),
         'courierPhone': FieldValue.delete(),
