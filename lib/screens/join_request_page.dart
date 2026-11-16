@@ -31,7 +31,8 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   final _store = TextEditingController();
   final _address = TextEditingController();
   final _storePhone = TextEditingController();
-  final _storeImageUrl = TextEditingController();
+  String _storeImageUrl = '';
+  bool _uploadingStoreImage = false;
   final _registrationNumber = TextEditingController();
   final _proofUrl = TextEditingController();
   final _vehicle = TextEditingController();
@@ -48,7 +49,6 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
       _store,
       _address,
       _storePhone,
-      _storeImageUrl,
       _registrationNumber,
       _proofUrl,
       _vehicle,
@@ -68,10 +68,35 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
     return result;
   }
 
+
+  Future<void> _pickStoreImage() async {
+    setState(() => _uploadingStoreImage = true);
+    try {
+      final url = await ImageService.pickAndUpload('stores');
+      if (url != null && mounted) {
+        setState(() => _storeImageUrl = url);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر رفع الصورة. حاول بصورة أخرى.')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingStoreImage = false);
+    }
+  }
+
   Future<void> _send() async {
     if (!(_form.currentState?.validate() ?? false)) return;
 
     final isStore = widget.type == JoinType.storeOwner;
+    if (isStore && _storeImageUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اختار صورة للمحل أولاً.')),
+      );
+      return;
+    }
+
     if (isStore &&
         _registrationNumber.text.trim().isEmpty &&
         _proofUrl.text.trim().isEmpty &&
@@ -99,7 +124,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         storeName: _store.text,
         storeCategory: _storeCategory ?? '',
         address: _address.text,
-        storeImageUrl: _storeImageUrl.text,
+        storeImageUrl: _storeImageUrl,
         registrationNumber: _registrationNumber.text,
         proofUrl: _proofUrl.text,
         vehicle: _vehicle.text,
@@ -256,17 +281,53 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 },
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _storeImageUrl,
-                keyboardType: TextInputType.url,
-                textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(
-                  labelText: 'رابط صورة واجهة/المحل (مطلوب)',
-                  prefixIcon: Icon(Icons.photo_outlined),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                validator: (value) => isValidImageUrl(value ?? '')
-                    ? null
-                    : 'أدخل رابط صورة صحيح يبدأ بـ https://',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_storeImageUrl.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          _storeImageUrl,
+                          height: 160,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const SizedBox(
+                            height: 80,
+                            child: Center(child: Text('تعذر عرض الصورة')),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    OutlinedButton.icon(
+                      onPressed: _busy || _uploadingStoreImage
+                          ? null
+                          : _pickStoreImage,
+                      icon: _uploadingStoreImage
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.add_a_photo_outlined),
+                      label: Text(_uploadingStoreImage
+                          ? 'جاري رفع الصورة...'
+                          : _storeImageUrl.isEmpty
+                              ? 'اختار صورة المحل (مطلوب)'
+                              : 'تغيير صورة المحل'),
+                    ),
+                    Text(
+                      'اختار صورة من معرض الموبايل، والتطبيق هيرفعها تلقائيًا.',
+                      style: TextStyle(color: kMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -279,6 +340,147 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   final number = _digits((value ?? '').trim());
                   return number.isEmpty ||
                           RegExp(r'^[A-Za-z0-9/-]{6,30}
+                      : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _proofUrl,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط إثبات النشاط (اختياري)',
+                  prefixIcon: Icon(Icons.verified_outlined),
+                ),
+                validator: (value) {
+                  final proof = (value ?? '').trim();
+                  final uri = Uri.tryParse(proof);
+                  return proof.isEmpty ||
+                          (uri != null && uri.scheme == 'https' && uri.host.isNotEmpty)
+                      ? null
+                      : 'أدخل رابط إثبات صحيح يبدأ بـ https://';
+                },
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (value) =>
+                    (value ?? '').trim().length < 2
+                    ? 'اكتب وسيلة التوصيل'
+                    : null,
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(number)
+                      ? null
+                      : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _proofUrl,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط إثبات النشاط (اختياري)',
+                  prefixIcon: Icon(Icons.verified_outlined),
+                ),
+                validator: (value) =>
+                    (value ?? '').trim().isEmpty || isValidImageUrl(value ?? '')
+                    ? null
+                    : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (value) =>
+                    (value ?? '').trim().length < 2
+                    ? 'اكتب وسيلة التوصيل'
+                    : null,
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(number)
                       ? null
                       : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
                 },
