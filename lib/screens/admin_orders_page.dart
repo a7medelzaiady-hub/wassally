@@ -674,11 +674,15 @@ class _ManageSheetState extends State<_ManageSheet> {
         _last = okMessage;
       });
       _maybeFinish();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _err = 'تعذر التنفيذ، تأكد من الصلاحيات.';
+        _err = error is StateError
+            ? error.message
+            : error is FirebaseException
+                ? 'تعذر التنفيذ (${error.code}). راجع حالة الطلب والصلاحيات.'
+                : 'تعذر التنفيذ. حاول مرة أخرى.';
       });
     }
   }
