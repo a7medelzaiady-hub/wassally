@@ -118,7 +118,10 @@ test('إجمالي الطلب: غير المتطابق حسابيًا يُرفض
 const actorUidOf = (role) => (role === 'admin' ? 'admin1' : role === 'courier' ? 'cour1' : role === 'owner' ? 'owner1' : 'cust1');
 const changeStatus = (db, orderId, from, to, role) => {
   const b = writeBatch(db);
-  b.update(doc(db, `orders/${orderId}`), { status: to });
+  b.update(doc(db, `orders/${orderId}`), {
+    status: to,
+    ...(to === 'on_the_way' ? { pickedUpAt: serverTimestamp() } : {}),
+  });
   b.set(doc(db, `orders/${orderId}/statusHistory/${to}`), {
     from, to, actorUid: actorUidOf(role), actorRole: role, at: serverTimestamp(),
   });
@@ -617,7 +620,7 @@ const deliveryIssueData = (over = {}) => ({
 });
 
 test('delivery issue: الوصول والبلاغ يتسجلان ذريًا ولا يمكن التسليم مع بلاغ مفتوح', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   const courier = as('cour1');
   const orderRef = doc(courier, 'orders/o1');
   await assertSucceeds(updateDoc(orderRef, { courierArrivedAt: serverTimestamp() }));
@@ -632,7 +635,7 @@ test('delivery issue: الوصول والبلاغ يتسجلان ذريًا ول
 });
 
 test('delivery issue: لا بلاغ قبل تسجيل الوصول أو دون محاولة تواصل أو من مندوب آخر', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(setDoc(
     doc(as('cour1'), 'delivery_issues/no-arrival'),
     deliveryIssueData(),
@@ -840,7 +843,7 @@ test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اك
 });
 
 test('delivery stamp: الأدمن يختم باسم المندوب المعيّن، والمبلغ المعتمد هو المحصّل', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date(), verifiedTotal: 28 });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date(), verifiedTotal: 28 });
   await assertFails(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 40 })));
   await assertSucceeds(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 28 })));
 });
