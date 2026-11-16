@@ -704,6 +704,11 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
   });
   await assertSucceeds(close.commit());
+  // المندوب يحتفظ بحق تقييم العميل بعد الإرجاع الموثق والإلغاء الإداري.
+  await assertSucceeds(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1'),
+  ));
 });
 
 test('admin cancellation: إلغاء طلب قيد التجهيز يزيل تعيين المندوب', async () => {
