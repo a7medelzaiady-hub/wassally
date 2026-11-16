@@ -898,12 +898,10 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
           Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
           const Divider(height: 18),
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: customerId.isEmpty
-                ? const Stream.empty()
-                : FirebaseFirestore.instance
-                    .collection('customer_restrictions')
-                    .doc(customerId)
-                    .snapshots(),
+            stream: FirebaseFirestore.instance
+                .collection('customer_restrictions')
+                .doc(customerId)
+                .snapshots(),
             builder: (context, restrictionSnap) {
               final restriction = restrictionSnap.data?.data();
               final expiry = restriction?['expiresAt'];
