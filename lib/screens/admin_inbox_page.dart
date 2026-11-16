@@ -1110,13 +1110,13 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
                         : () => _restrict(customerId, orderId, reason),
                     icon: const Icon(Icons.gpp_maybe_outlined),
                     label: const Text('مراجعة التقييد لمدة 3 أيام'),
+                  )
+                else
+                  const Text(
+                    'تنبيه ومراجعة فقط: لا يُتاح التقييد قبل تكرار الوقائع في طلبات مختلفة ومراجعتها يدويًا.',
+                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
                   ),
               ],
-            )
-          else if (rating <= 2 && widget.lowRatingOrderCount < 2)
-            const Text(
-              'يُتاح التنبيه والمراجعة فقط حاليًا. لا يُفرض تقييد بسبب تقييم منخفض واحد؛ يلزم تكرار الوقائع في طلبات مختلفة ومراجعتها يدويًا.',
-              style: TextStyle(fontSize: 11.5, color: Colors.black54),
             )
           else
             const Text(
