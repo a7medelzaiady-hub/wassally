@@ -10,6 +10,7 @@ import '../screens/order_details_page.dart';
 import '../screens/support_chat_page.dart';
 import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
+import 'update_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -151,6 +152,10 @@ class NotificationService {
 
   static void _openMessage(RemoteMessage message) {
     final type = (message.data['type'] ?? '').toString();
+    if (type == 'app_update') {
+      unawaited(UpdateService.openStoreFromNotification());
+      return;
+    }
     if (type == 'support_chat') {
       final chatUid = (message.data['chatUid'] ?? '').toString().trim();
       if (chatUid.isEmpty) return;
@@ -195,7 +200,11 @@ class NotificationService {
                   ? SnackBarAction(
                       label: 'فتح المحادثة',
                       onPressed: () => _openMessage(message))
-                  : null),
+                  : (message.data['type'] == 'app_update'
+                      ? SnackBarAction(
+                          label: 'تحديث الآن',
+                          onPressed: () => _openMessage(message))
+                      : null)),
         ),
       );
   }
