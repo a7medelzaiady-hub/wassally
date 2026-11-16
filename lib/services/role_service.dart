@@ -16,11 +16,15 @@ class RoleInfo {
   /// كل الأدوار التي يمتلكها الحساب.
   final Set<AppRole> roles;
 
+  /// صاحب محل مسجل ومسودته ما زالت في انتظار مراجعة الإدارة.
+  final bool pendingStoreOwner;
+
   const RoleInfo(
     this.role, [
     this.name = '',
     this.storeId = '',
     this.roles = const {},
+    this.pendingStoreOwner = false,
   ]);
 
   Set<AppRole> get held => roles.isEmpty ? {role} : roles;
@@ -54,6 +58,7 @@ class RoleService {
           'n': info.name,
           's': info.storeId,
           'ro': [for (final r in info.held) r.name],
+          'p': info.pendingStoreOwner,
         }),
       );
     } catch (_) {}
@@ -82,6 +87,7 @@ class RoleService {
         (m['n'] ?? '').toString(),
         (m['s'] ?? '').toString(),
         roles,
+        m['p'] == true,
       );
     } catch (_) {
       return null;
@@ -115,6 +121,9 @@ class RoleService {
     final courierF = safeRead(db.collection('couriers').doc(user.uid));
 
     final ownerF = safeRead(db.collection('storeOwners').doc(user.uid));
+    final pendingStoreRequestF = safeRead(
+      db.collection('role_requests').doc('${user.uid}_store_owner'),
+    );
 
     final supF = safeRead(db.collection('supervisors').doc(user.uid));
 
@@ -166,6 +175,16 @@ class RoleService {
         ((oData?['active'] as bool?) ?? true) &&
         storeId.isNotEmpty;
 
+    final pendingStoreRequest = await pendingStoreRequestF;
+    final pendingData = pendingStoreRequest?.data();
+    final pendingStoreId = (pendingData?['storeId'] ?? '').toString();
+    final isPendingStoreOwner =
+        !isOwner &&
+        pendingStoreRequest != null &&
+        pendingStoreRequest.exists &&
+        pendingData?['status'] == 'pending' &&
+        pendingStoreId.isNotEmpty;
+
     // بيانات المشرف.
     final sup = await supF;
     final sData = sup?.data();
@@ -178,7 +197,7 @@ class RoleService {
       if (isAdmin) AppRole.admin,
       if (isSup) AppRole.supervisor,
       if (isCourier) AppRole.courier,
-      if (isOwner) AppRole.storeOwner,
+      if (isOwner || isPendingStoreOwner) AppRole.storeOwner,
     };
 
     // تحديد الدور الأساسي.
@@ -188,7 +207,7 @@ class RoleService {
         ? AppRole.supervisor
         : isCourier
         ? AppRole.courier
-        : isOwner
+        : (isOwner || isPendingStoreOwner)
         ? AppRole.storeOwner
         : AppRole.customer;
 
@@ -197,11 +216,17 @@ class RoleService {
       AppRole.admin => adminName,
       AppRole.supervisor => (sData?['name'] ?? '').toString(),
       AppRole.courier => (cData?['name'] ?? '').toString(),
-      AppRole.storeOwner => (oData?['name'] ?? '').toString(),
+      AppRole.storeOwner => (oData?['name'] ?? pendingData?['name'] ?? '').toString(),
       AppRole.customer => '',
     };
 
-    final info = RoleInfo(primary, name, isOwner ? storeId : '', roles);
+    final info = RoleInfo(
+      primary,
+      name,
+      isOwner ? storeId : (isPendingStoreOwner ? pendingStoreId : ''),
+      roles,
+      isPendingStoreOwner,
+    );
 
     // نتيجة «عميل» غير مؤكدة (فشل تحقق الأدمن أو قراءة دور): نرجّع آخر دور محفوظ
     // لو موجود بدل ما المندوب/المدير يتحوّل لشاشة العميل بسبب نت ضعيف، ومن غير ما نحفظها.
