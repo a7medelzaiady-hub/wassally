@@ -1094,7 +1094,12 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           ],
           if (o.status == OrderStatus.onTheWay && o.customerConfirmedAt == null) ...[
             const SizedBox(height: 12),
-            if (o.activeDeliveryIssueId.isNotEmpty)
+            if (o.customerDeliveryReportedAt != null)
+              const Text(
+                'تم إبلاغ العميل بالتسليم. في انتظار تأكيده للاستلام.',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              )
+            else if (o.activeDeliveryIssueId.isNotEmpty)
               _activeDeliveryIssuePanel(o)
             else if (o.courierArrivedAt == null)
               SizedBox(
