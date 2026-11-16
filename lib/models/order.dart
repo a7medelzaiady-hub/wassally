@@ -108,6 +108,7 @@ class AppOrder {
   final String courierId;
   final String courierName;
   final String courierPhone;
+  final String deliveryMode;
   final String storeId;
   final String userId;
 
@@ -168,6 +169,7 @@ class AppOrder {
     this.courierId = '',
     this.courierName = '',
     this.courierPhone = '',
+    this.deliveryMode = '',
     this.storeId = '',
     this.userId = '',
     this.finalDeliveryFee,
@@ -218,6 +220,7 @@ class AppOrder {
       courierId: courierId,
       courierName: courierName,
       courierPhone: courierPhone,
+      deliveryMode: deliveryMode,
       storeId: storeId,
       userId: userId,
       finalDeliveryFee: finalDeliveryFee,
@@ -284,6 +287,7 @@ class AppOrder {
       courierId: (m['courierId'] ?? '').toString(),
       courierName: (m['courierName'] ?? '').toString(),
       courierPhone: (m['courierPhone'] ?? '').toString(),
+      deliveryMode: (m['deliveryMode'] ?? '').toString(),
       storeId: (m['storeId'] ?? '').toString(),
       userId: (m['userId'] ?? '').toString(),
       finalDeliveryFee: (m['finalDeliveryFee'] as num?)?.toDouble(),
