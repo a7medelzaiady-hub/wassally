@@ -67,16 +67,48 @@ class _RequestsTab extends StatefulWidget {
 }
 
 class _RequestsTabState extends State<_RequestsTab> {
-  int _limit = 100;
+  static const int _pageSize = 100;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _moreDocs = [];
+  bool _loadingMore = false;
+  bool _hasMore = true;
+
+  Future<void> _loadMore(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> firstPage,
+  ) async {
+    if (_loadingMore || !_hasMore) return;
+    final cursor = _moreDocs.isNotEmpty
+        ? _moreDocs.last
+        : (firstPage.isNotEmpty ? firstPage.last : null);
+    if (cursor == null) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await FirebaseFirestore.instance
+          .collection('role_requests')
+          .where('status', isEqualTo: 'pending')
+          .startAfterDocument(cursor)
+          .limit(_pageSize)
+          .get();
+      if (!mounted) return;
+      final known = {...firstPage.map((d) => d.id), ..._moreDocs.map((d) => d.id)};
+      setState(() {
+        _moreDocs.addAll(page.docs.where((d) => !known.contains(d.id)));
+        _hasMore = page.docs.length == _pageSize;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loadingMore = false);
+      debugPrint('Load more role requests: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // من غير orderBy عشان ما نحتاجش فهرس مركّب. الترتيب هنا في الكود.
+      // أول 100 طلب فقط تظل لحظية؛ الصفحات التالية تُقرأ مرة واحدة عند الطلب.
       stream: FirebaseFirestore.instance
           .collection('role_requests')
           .where('status', isEqualTo: 'pending')
-          .limit(_limit)
+          .limit(_pageSize)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -89,7 +121,7 @@ class _RequestsTabState extends State<_RequestsTab> {
         if (!snap.hasData) {
           return Center(child: CircularProgressIndicator(color: kPrimary));
         }
-        final docs = [...snap.data!.docs]
+        final docs = [...snap.data!.docs, ..._moreDocs]
           ..sort((a, b) {
             final x = a.data()['createdAt'];
             final y = b.data()['createdAt'];
@@ -104,12 +136,12 @@ class _RequestsTabState extends State<_RequestsTab> {
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length + (docs.length >= _limit ? 1 : 0),
+          itemCount: docs.length + (_hasMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 12),
           itemBuilder: (_, i) => i == docs.length
               ? TextButton(
-                  onPressed: () => setState(() => _limit += 100),
-                  child: const Text('تحميل المزيد من الطلبات'),
+                  onPressed: _loadingMore ? null : () => _loadMore(snap.data!.docs),
+                  child: Text(_loadingMore ? 'جارٍ التحميل...' : 'تحميل المزيد من الطلبات'),
                 )
               : _RequestCard(doc: docs[i]),
         );
@@ -428,16 +460,48 @@ class _ApplicantsTab extends StatefulWidget {
 }
 
 class _ApplicantsTabState extends State<_ApplicantsTab> {
-  int _limit = 100;
+  static const int _pageSize = 100;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _moreDocs = [];
+  bool _loadingMore = false;
+  bool _hasMore = true;
+
+  Future<void> _loadMore(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> firstPage,
+  ) async {
+    if (_loadingMore || !_hasMore) return;
+    final cursor = _moreDocs.isNotEmpty
+        ? _moreDocs.last
+        : (firstPage.isNotEmpty ? firstPage.last : null);
+    if (cursor == null) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await FirebaseFirestore.instance
+          .collectionGroup('applicants')
+          .orderBy('createdAt', descending: true)
+          .startAfterDocument(cursor)
+          .limit(_pageSize)
+          .get();
+      if (!mounted) return;
+      final known = {...firstPage.map((d) => d.id), ..._moreDocs.map((d) => d.id)};
+      setState(() {
+        _moreDocs.addAll(page.docs.where((d) => !known.contains(d.id)));
+        _hasMore = page.docs.length == _pageSize;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _loadingMore = false);
+      debugPrint('Load more applicants: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // نحمّل أحدث التقديمات على دفعات حتى لا يفتح المدير Stream غير محدود.
+      // أول 100 تقديم تظل لحظية؛ الصفحات التالية تُقرأ مرة واحدة عند الطلب.
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
           .orderBy('createdAt', descending: true)
-          .limit(_limit)
+          .limit(_pageSize)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -450,7 +514,7 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
         if (!snap.hasData) {
           return Center(child: CircularProgressIndicator(color: kPrimary));
         }
-        final docs = [...snap.data!.docs]
+        final docs = [...snap.data!.docs, ..._moreDocs]
           ..sort((a, b) {
             final x = a.data()['createdAt'];
             final y = b.data()['createdAt'];
@@ -466,12 +530,12 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length + (docs.length >= _limit ? 1 : 0),
+          itemCount: docs.length + (_hasMore ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 12),
           itemBuilder: (_, i) => i == docs.length
               ? TextButton(
-                  onPressed: () => setState(() => _limit += 100),
-                  child: const Text('تحميل المزيد من التقديمات'),
+                  onPressed: _loadingMore ? null : () => _loadMore(snap.data!.docs),
+                  child: Text(_loadingMore ? 'جارٍ التحميل...' : 'تحميل المزيد من التقديمات'),
                 )
               : _ApplicantCard(doc: docs[i]),
         );
