@@ -201,6 +201,25 @@ class OrderService {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
+
+    // فحص واجهة مبكر لشرح سبب التقييد؛ قواعد Firestore تظل الحماية النهائية
+    // وتمنع الطلب حتى لو استخدم العميل إصدارًا قديمًا من التطبيق.
+    final restriction = await FirebaseFirestore.instance
+        .collection('customer_restrictions')
+        .doc(user.uid)
+        .get();
+    final restrictionData = restriction.data();
+    final expiresAt = restrictionData?['expiresAt'];
+    if (restrictionData?['active'] == true &&
+        expiresAt is Timestamp &&
+        expiresAt.toDate().isAfter(DateTime.now())) {
+      final until = expiresAt.toDate();
+      throw StateError(
+        'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
+        '${until.day}/${until.month}/${until.year}. تواصل مع الإدارة لو محتاج مراجعة.',
+      );
+    }
+
     if (cart.isEmpty) throw StateError('السلة فاضية');
     if (cart.items.length > kMaxOrderLines) {
       throw const OrderLimitException(
