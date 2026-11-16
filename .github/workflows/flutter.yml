@@ -41,6 +41,16 @@ jobs:
     - name: Run tests
       run: flutter test
 
+    # تفريغ مساحة من الأدوات غير المطلوبة قبل تنزيل NDK وبناء Android.
+    - name: Free disk space before Android build
+      run: |
+        sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
+        sudo rm -rf /usr/local/lib/android/sdk/system-images
+        sudo apt-get clean
+        rm -rf build .dart_tool
+        flutter pub get
+        df -h /
+
     # 7. تحقق من Gradle وAndroid plugins دون الحاجة إلى مفتاح Release
     - name: Build debug APK
       run: flutter build apk --debug
