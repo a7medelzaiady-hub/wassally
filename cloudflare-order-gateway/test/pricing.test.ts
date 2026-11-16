@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, effectiveCatalogPrice, firstName, isRecentAuthTime } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, firstName, isRecentAuthTime } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
@@ -66,6 +66,35 @@ describe("customer name normalization", () => {
     expect(firstName("Single")).toBe("Single");
     expect(firstName("   ")).toBe("");
     expect(firstName(null)).toBe("");
+  });
+});
+
+
+describe("server-side image content validation", () => {
+  it("accepts JPEG, PNG, and WEBP signatures", () => {
+    expect(detectImageContent(new Uint8Array([0xff, 0xd8, 0xff, 0x00]))).toEqual({
+      format: "jpg",
+      mime: "image/jpeg",
+    });
+    expect(detectImageContent(new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]))).toEqual({
+      format: "png",
+      mime: "image/png",
+    });
+    expect(detectImageContent(new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00,
+      0x57, 0x45, 0x42, 0x50,
+    ]))).toEqual({
+      format: "webp",
+      mime: "image/webp",
+    });
+  });
+
+  it("rejects extensions or MIME spoofing without a supported file signature", () => {
+    expect(detectImageContent(new TextEncoder().encode("<svg></svg>"))).toBeNull();
+    expect(detectImageContent(new Uint8Array([0x25, 0x50, 0x44, 0x46]))).toBeNull();
+    expect(detectImageContent(new Uint8Array([]))).toBeNull();
   });
 });
 
