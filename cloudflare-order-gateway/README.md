@@ -65,7 +65,7 @@ flutter build apk --release --dart-define=WASALLY_ORDER_GATEWAY_URL=https://YOUR
 2. انشر نسخة التطبيق التي تحتوي عنوان Worker، واجعلها النسخة المطلوبة قبل التحويل.
 3. تحقق من نجاح إنشاء طلب حقيقي تجريبي عبر Worker.
 4. فعّل `app_info/security.serverOrders = true` من Firebase Console.
-5. بعد التفعيل، قواعد Firestore ترفض إنشاء الطلبات وكتابة `orderLimits` مباشرة من تطبيق العميل. حساب الخدمة فقط ينفذ الكتابة بعد التحقق في Worker.
+5. بعد التفعيل، قواعد Firestore ترفض إنشاء الطلبات وتعديل أصنافها وكتابة `orderLimits` مباشرة من تطبيق العميل. حساب الخدمة فقط ينفذ الكتابة بعد التحقق في Worker؛ إلغاء الطلب المسموح يظل عبر قواعد Firestore.
 
 ## تنبيهات تشغيلية
 
