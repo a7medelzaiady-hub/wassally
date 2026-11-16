@@ -710,7 +710,8 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
   const applicantStore = applicantStoreDoc ? decodeFields(applicantStoreDoc.fields ?? {}) : {};
   const isApplicant = (applicantStoreDoc !== null && applicantStore.ownerUid === uid &&
     (storeId === "" || storeId === requestedStoreId)) ||
-    (folder === "stores" && storeId === "" && !requestedStoreId);
+    (folder === "stores" && storeId === "" &&
+      (!roleRequestDoc || ["pending", "rejected"].includes(String(roleRequest.status))));
   if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner) || isApplicant)) {
     throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
   }
