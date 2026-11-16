@@ -68,47 +68,58 @@ class _OffersPageState extends State<OffersPage> {
       final seen = <String>{};
 
       void add(Map<String, dynamic> item, {String id = ''}) {
-      final name = (item['name'] ?? '').toString().trim();
-      final price = (item['price'] as num?)?.toDouble() ?? 0;
-      final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-      final text = (item['offerText'] ?? '').toString().trim();
-      final ends = item['offerEndsAt'];
-      final expired = isOfferExpired(
-        ends is Timestamp ? ends.toDate() : null,
-        DateTime.now(),
-      );
-      final hasDiscount = old > price && price > 0;
-      if (name.isEmpty || price <= 0 || expired ||
-          item['available'] == false || item['isAvailable'] == false ||
-          (!hasDiscount && text.isEmpty)) {
-        return;
-      }
+        final name = (item['name'] ?? '').toString().trim();
+        final price = (item['price'] as num?)?.toDouble() ?? 0;
+        final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+        final text = (item['offerText'] ?? '').toString().trim();
+        final ends = item['offerEndsAt'];
+        final expired = isOfferExpired(
+          ends is Timestamp ? ends.toDate() : null,
+          DateTime.now(),
+        );
+        final hasDiscount = old > price && price > 0;
+        if (name.isEmpty || price <= 0 || expired ||
+            item['available'] == false || item['isAvailable'] == false ||
+            (!hasDiscount && text.isEmpty)) {
+          return;
+        }
+  
+        final key = '${store.id}/${name.toLowerCase()}';
+        if (!seen.add(key)) return;
+        result.add(_Offer(
+          store: store,
+          id: id,
+          name: name,
+          image: (item['image'] ?? '').toString(),
+          price: price,
+          oldPrice: hasDiscount ? old : 0,
+          text: text,
+        ));
+        }
 
-      final key = '${store.id}/${name.toLowerCase()}';
-      if (!seen.add(key)) return;
-      result.add(_Offer(
-        store: store,
-        id: id,
-        name: name,
-        image: (item['image'] ?? '').toString(),
-        price: price,
-        oldPrice: hasDiscount ? old : 0,
-        text: text,
-      ));
-      }
-
-      // المصدر الأساسي للعروض هو كتالوج المحل نفسه.
+      // المصدر الأساسي للعروض هو كتالوج المحل نفسه. نقرأ على صفحات
+      // حتى لا تختفي العروض الموجودة بعد أول 200 أو 500 صنف.
       var loadedCatalog = false;
       try {
-        final products = await doc.reference
-            .collection('products')
-            .orderBy('name')
-            .limit(500)
-            .get(const GetOptions(source: Source.server));
-        loadedCatalog = true;
-        for (final product in products.docs) {
-          add(product.data(), id: product.id);
-        }
+        Query<Map<String, dynamic>> query =
+            doc.reference.collection('products').limit(200);
+        DocumentSnapshot<Map<String, dynamic>>? cursor;
+        do {
+          if (cursor != null) {
+            query = doc.reference
+                .collection('products')
+                .limit(200)
+                .startAfterDocument(cursor);
+          }
+          final products =
+              await query.get(const GetOptions(source: Source.server));
+          loadedCatalog = true;
+          for (final product in products.docs) {
+            add(product.data(), id: product.id);
+          }
+          cursor = products.docs.isEmpty ? null : products.docs.last;
+          if (products.docs.length < 200) break;
+        } while (cursor != null);
       } catch (error) {
         debugPrint('Offers products load failed for ${doc.id}: $error');
       }
