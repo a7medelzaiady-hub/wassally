@@ -850,6 +850,7 @@ service cloud.firestore {
              (order.get('status', '') == 'cancelled' &&
               order.get('lastDeliveryIssueId', '') is string &&
               order.get('lastDeliveryIssueId', '').size() > 0 &&
+              order.get('courierId', '') == request.auth.uid &&
               get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('status', '') == 'store_confirmed_return' &&
               get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('courierId', '') == request.auth.uid))) ||
          (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId) &&
@@ -945,6 +946,9 @@ service cloud.firestore {
         signedIn() &&
         isStoreOwner(resource.data.get('storeId', '')) &&
         resource.data.get('status', '') == 'returned_to_store' &&
+        exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'on_the_way' &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
         request.resource.data.get('status', '') == 'store_confirmed_return' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'storeReceivedAt', 'storeReceivedBy'
