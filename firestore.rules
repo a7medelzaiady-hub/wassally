@@ -711,6 +711,15 @@ service cloud.firestore {
 
       allow update: if signedIn() && evalOrderUpdate();
 
+      // حذف الحساب (Spark بدون Functions): العميل يخفي اسمه وملاحظاته من طلبه المنتهي فقط
+      // (delivered / cancelled)، وبالقيم الثابتة دي بس. أي حقل تاني (أسعار، حالة...) مرفوض.
+      allow update: if signedIn() &&
+        resource.data.get('userId', '') == request.auth.uid &&
+        resource.data.status in ['delivered', 'cancelled'] &&
+        changedKeys().hasOnly(['customerName', 'notes']) &&
+        request.resource.data.customerName == 'عميل محذوف' &&
+        request.resource.data.notes == '';
+
       // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
       allow delete: if signedIn() &&
         resource.data.userId == request.auth.uid &&
@@ -739,10 +748,12 @@ service cloud.firestore {
           get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['new', 'preparing'] &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
           validContact(request.resource.data);
+        // الحذف: طلب new لسه ما اتقبلش، أو طلب منتهي (delivered / cancelled) لحذف الحساب.
         allow delete: if signedIn() && doc == 'contact' &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '';
+          ((get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
+            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '') ||
+           get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['delivered', 'cancelled']);
       }
 
       // سجل الحالات: create فقط. معرّف المستند = الحالة الجديدة، فمفيش حدث بيتكرر.
@@ -1173,7 +1184,8 @@ service cloud.firestore {
         (signedIn() && resource.data.userId == request.auth.uid &&
           resource.data.status == 'rejected' &&
           validRoleRequest(rid, request.resource.data));
-      allow delete: if false;
+      // صاحب الطلب يحذف طلب انضمامه (حذف الحساب).
+      allow delete: if signedIn() && resource.data.get('userId', '') == request.auth.uid;
     }
 
     // ───────────── الشكاوى والاقتراحات ─────────────
@@ -1208,7 +1220,8 @@ service cloud.firestore {
         request.resource.data.status in ['open', 'in_progress', 'resolved'] &&
         request.resource.data.get('adminNote', '') is string &&
         request.resource.data.get('adminNote', '').size() <= 500;
-      allow delete: if false;
+      // صاحب الشكوى يحذف شكواه (حذف الحساب).
+      allow delete: if signedIn() && resource.data.get('userId', '') == request.auth.uid;
     }
 
     // أصحاب المحلات: كل صاحب محل يقرأ مستنده هو، والمدير يقرأ الكل ويضيف ويعدّل ويوقف.
@@ -1452,7 +1465,8 @@ service cloud.firestore {
           changedKeys().hasOnly(['unreadForAdmin']) &&
           request.resource.data.unreadForAdmin == false));
 
-      allow delete: if false;
+      // صاحب المحادثة يحذفها (حذف الحساب).
+      allow delete: if signedIn() && request.auth.uid == uid;
 
       match /messages/{mid} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
@@ -1465,7 +1479,9 @@ service cloud.firestore {
           request.resource.data.createdAt == request.time &&
           ((request.resource.data.senderRole == 'user' && request.auth.uid == uid) ||
            (request.resource.data.senderRole == 'admin' && isAdmin()));
-        allow update, delete: if false;
+        allow update: if false;
+        // صاحب المحادثة يحذف رسائله (حذف الحساب).
+        allow delete: if signedIn() && request.auth.uid == uid;
       }
     }
   }

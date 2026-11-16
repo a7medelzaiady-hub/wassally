@@ -1435,3 +1435,54 @@ test('courier settlements: لا يقبل مبلغًا غير صالح أو إي�
   });
   await assertFails(inconsistentUnits.commit());
 });
+
+// ───────────── حذف الحساب على Spark (بدون Cloud Functions) ─────────────
+// ملاحظة: مكتوبة من غير تشغيل (مفيش Emulator في بيئة الكتابة). شغّلها قبل نشر القواعد.
+const seedFinished = () => seed(async (db) => {
+  await setDoc(doc(db, 'orders/done1'), { ...baseOrder('cust1', { status: 'delivered' }), courierId: 'cour1', createdAt: new Date() });
+  await setDoc(doc(db, 'orders/done1/private/contact'), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+  await setDoc(doc(db, 'orders/live1'), { ...baseOrder('cust1', { status: 'on_the_way' }), courierId: 'cour1', createdAt: new Date() });
+  await setDoc(doc(db, 'orders/live1/private/contact'), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+});
+
+test('حذف الحساب: العميل يمسح بيانات الاتصال من طلبه المنتهي فقط', async () => {
+  await seedFinished();
+  await assertSucceeds(deleteDoc(doc(as('cust1'), 'orders/done1/private/contact')));
+  await assertFails(deleteDoc(doc(as('cust1'), 'orders/live1/private/contact')));
+  await assertFails(deleteDoc(doc(as('cust2'), 'orders/done1/private/contact')));
+});
+
+test('حذف الحساب: إخفاء الاسم والملاحظات في الطلب المنتهي بقيم ثابتة فقط', async () => {
+  await seedFinished();
+  const hide = { customerName: 'عميل محذوف', notes: '' };
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/done1'), hide));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/done1'), { customerName: 'حد تاني', notes: '' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/done1'), { ...hide, total: 1 }));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/done1'), { ...hide, status: 'new' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/live1'), hide));
+  await assertFails(updateDoc(doc(as('cust2'), 'orders/done1'), hide));
+});
+
+test('حذف الحساب: الشكاوى وطلبات الانضمام بتتحذف لصاحبها بس', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'complaints/c1'), { userId: 'cust1', kind: 'complaint', message: 'مشكلة في الطلب', status: 'open', createdAt: new Date() });
+    await setDoc(doc(db, 'role_requests/cust1_courier'), { userId: 'cust1', type: 'courier', status: 'pending', createdAt: new Date() });
+  });
+  await assertFails(deleteDoc(doc(as('cust2'), 'complaints/c1')));
+  await assertSucceeds(deleteDoc(doc(as('cust1'), 'complaints/c1')));
+  await assertFails(deleteDoc(doc(as('cust2'), 'role_requests/cust1_courier')));
+  await assertSucceeds(deleteDoc(doc(as('cust1'), 'role_requests/cust1_courier')));
+});
+
+test('حذف الحساب: صاحب محادثة الدعم يحذف رسائلها والمحادثة، وغيره لأ', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'support_chats/cust1'), {
+      userId: 'cust1', lastMessage: 'مرحبا', lastSender: 'user', lastAt: new Date(), unreadForAdmin: true, unreadForUser: false,
+    });
+    await setDoc(doc(db, 'support_chats/cust1/messages/m1'), { senderId: 'cust1', senderRole: 'user', text: 'مرحبا', createdAt: new Date() });
+  });
+  await assertFails(deleteDoc(doc(as('cust2'), 'support_chats/cust1/messages/m1')));
+  await assertFails(deleteDoc(doc(as('cust2'), 'support_chats/cust1')));
+  await assertSucceeds(deleteDoc(doc(as('cust1'), 'support_chats/cust1/messages/m1')));
+  await assertSucceeds(deleteDoc(doc(as('cust1'), 'support_chats/cust1')));
+});

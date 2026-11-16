@@ -263,6 +263,20 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _deleteAccount() async {
+    try {
+      if (await AuthService.hasActiveOrders()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('عندك طلب شغال لسه. استنى لحد ما يوصل أو يتلغي وبعدين احذف حسابك.'),
+          ),
+        );
+        return;
+      }
+    } catch (_) {
+      // لو الفحص فشل (نت مثلًا) كمّل، والفحص بيتكرر جوه deleteAccount.
+    }
+    if (!mounted) return;
     final reason = await _askReason();
     if (reason == null || !mounted) return;
     final ok = await confirmDialog(
@@ -301,6 +315,13 @@ class _AccountPageState extends State<AccountPage> {
                 ? 'اتلغى حذف الحساب'
                 : 'تعذر حذف الحساب (${e.code}). جرّب تاني.',
           ),
+        ),
+      );
+    } on ActiveOrdersException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('عندك طلب شغال لسه. استنى لحد ما يوصل أو يتلغي وبعدين احذف حسابك.'),
         ),
       );
     } catch (_) {

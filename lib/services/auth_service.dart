@@ -141,11 +141,31 @@ class AuthService {
     }
   }
 
+  static const _activeOrderStatuses = ['new', 'preparing', 'on_the_way'];
+  static const _finishedOrderStatuses = ['delivered', 'cancelled'];
+
+  /// هل عند العميل طلب لسه شغال؟ لو آه مينفعش يحذف حسابه قبل ما الطلب يخلص.
+  static Future<bool> hasActiveOrders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final snap = await FirebaseFirestore.instance
+        .collection('orders')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', whereIn: _activeOrderStatuses)
+        .limit(1)
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
   /// حذف الحساب نهائيًا. بيطلب تأكيد الهوية بجوجل الأول (شرط من Firebase).
-  /// بعد الحذف، دالة السيرفر (onUserDeleted) بتشيل البيانات الشخصية من الطلبات القديمة.
+  /// على خطة Spark مفيش Cloud Functions، فالتطبيق نفسه بينضّف بيانات المستخدم قبل ما
+  /// يحذف الحساب (انظر [_eraseUserData]). لو الحساب ليه أدوار (مندوب/صاحب محل/مشرف/مدير)
+  /// بيفضل مستند الدور لحد ما الإدارة تشيله.
   static Future<void> deleteAccount([BuildContext? context]) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+
+    if (await hasActiveOrders()) throw const ActiveOrdersException();
 
     final provider = GoogleAuthProvider();
     if (kIsWeb) {
@@ -160,14 +180,88 @@ class AuthService {
     cart.clear();
     shellTab.value = 0;
     await NotificationService.dispose();
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .delete();
-    } catch (_) {
-      // لو فشل، دالة السيرفر هتمسح الملف الشخصي برضه.
-    }
+    await _eraseUserData(user.uid);
     await user.delete();
   }
+
+  /// بيمسح بيانات المستخدم من Firestore بأفضل مجهود (كل خطوة مستقلة، وفشل خطوة
+  /// ما بيوقفش حذف الحساب). بيرجّع عدد الخطوات اللي فشلت.
+  ///  • بيتمسح: الإشعارات، الشكاوى، طلبات الانضمام، محادثة الدعم ورسائلها، بيانات الاتصال
+  ///    (الاسم والهاتف والعنوان) من الطلبات المنتهية، ومستند المستخدم.
+  ///  • بيتخفى: اسم العميل وملاحظاته في الطلبات المنتهية (بتتحط "عميل محذوف").
+  ///  • بيفضل (سجل محاسبي/تشغيلي): الطلبات المنتهية نفسها بالأصناف والإجمالي ومعرّف
+  ///    الحساب المحذوف، والتقييمات، وسجل الحالات.
+  static Future<int> _eraseUserData(String uid) async {
+    final db = FirebaseFirestore.instance;
+    var failures = 0;
+
+    Future<void> step(String name, Future<void> Function() run) async {
+      try {
+        await run();
+      } catch (e) {
+        failures++;
+        debugPrint('account erase step "$name" failed: $e');
+      }
+    }
+
+    Future<void> deleteQuery(Query<Map<String, dynamic>> q) async {
+      for (var i = 0; i < 50; i++) {
+        final page = await q.limit(100).get();
+        if (page.docs.isEmpty) return;
+        final batch = db.batch();
+        for (final d in page.docs) {
+          batch.delete(d.reference);
+        }
+        await batch.commit();
+        if (page.docs.length < 100) return;
+      }
+    }
+
+    await step('notifications', () => deleteQuery(
+        db.collection('notifications').where('userId', isEqualTo: uid)));
+    await step('complaints', () => deleteQuery(
+        db.collection('complaints').where('userId', isEqualTo: uid)));
+    await step('role_requests', () => deleteQuery(
+        db.collection('role_requests').where('userId', isEqualTo: uid)));
+
+    await step('support_chat', () async {
+      final chat = db.collection('support_chats').doc(uid);
+      await deleteQuery(chat.collection('messages'));
+      await chat.delete();
+    });
+
+    // الطلبات المنتهية: امسح بيانات الاتصال وأخفِ الاسم والملاحظات. 5 طلبات في الـ batch
+    // (10 عمليات) عشان حد قراءات القواعد في الـ batch الواحد.
+    await step('orders', () async {
+      final q = db
+          .collection('orders')
+          .where('userId', isEqualTo: uid)
+          .where('status', whereIn: _finishedOrderStatuses);
+      DocumentSnapshot<Map<String, dynamic>>? last;
+      for (var i = 0; i < 80; i++) {
+        var page = q.limit(5);
+        if (last != null) page = page.startAfterDocument(last);
+        final snap = await page.get();
+        if (snap.docs.isEmpty) return;
+        final batch = db.batch();
+        for (final d in snap.docs) {
+          batch.delete(d.reference.collection('private').doc('contact'));
+          batch.update(d.reference, {'customerName': 'عميل محذوف', 'notes': ''});
+        }
+        await batch.commit();
+        last = snap.docs.last;
+        if (snap.docs.length < 5) return;
+      }
+    });
+
+    await step('user_doc', () => db.collection('users').doc(uid).delete());
+    return failures;
+  }
+}
+
+/// بيترمي لما العميل يحاول يحذف حسابه وعنده طلب لسه شغال.
+class ActiveOrdersException implements Exception {
+  const ActiveOrdersException();
+  @override
+  String toString() => 'ActiveOrdersException';
 }
