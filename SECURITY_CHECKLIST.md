@@ -7,8 +7,7 @@
 4. انشر `firestore.rules` على الإنتاج. المفاتيح الجديدة مغلقة افتراضيًا (المستند `app_info/security` غير موجود)، فالسلوك لا يتغير، ما عدا: `users` بقيت whitelist، و`notifications` و`reviews` مفعّلة.
 5. بعد ما معظم المستخدمين يحدّثون (استخدم `force_update` للنسخ القديمة): أنشئ من Console مستند `app_info/security` بحقول boolean:
    - `strictOrders = true` ← سجل الحالات إلزامي والأدمن لا يرجع للخلف.
-   - `enforcePrices = true` ← الأسعار تُطابق الكتالوج (حتى 8 أصناف). **لا تفعّله قبل ترحيل كل أصناف المتاجر إلى `stores/{id}/products`** (الأصناف القديمة داخل مستند المتجر ليس لها productId، فطلباتها ستُرفض).
-   - `orderRateLimit = true` ← فاصل 20 ثانية من قواعد Firestore القديمة. هذا المفتاح يخص مسار التوافق فقط؛ بعد تفعيل `serverOrders` يصبح Worker هو الذي يكتب `orderLimits` ذريًا.
+   - `orderRateLimit = true` ← فاصل 20 ثانية لمسار التوافق القديم فقط؛ عند تفعيل `serverOrders` يتولى Worker كتابة `orderLimits` ذريًا.
    - التراجع فوري: غيّر القيمة إلى false.
 
 ## اختبار القواعد
