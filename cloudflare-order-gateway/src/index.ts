@@ -273,7 +273,7 @@ async function resolveItems(
     const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
     if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
     seen.add(identity);
-    const price = effectiveCatalogPrice(product);
+    const price = effectiveCatalogPrice(isLegacy\n      ? { ...product, oldPrice: 0, offerEndsAt: null }\n      : product);
     const expectedPrice = Number(line?.expectedPrice);
     // expectedPrice is only a stale-cart check; the saved price always comes from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
@@ -339,7 +339,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   ]);
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
-  if (store.active === false) throw new HttpError(409, "المحل مغلق حاليًا.");
+  if (store.active !== undefined && store.active !== true) {\n    throw new HttpError(409, "المحل مغلق حاليًا.");\n  }
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
   if (restriction.active === true &&
       restriction.expiresAt instanceof Date &&
@@ -352,13 +352,13 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.");
   }
 
-  const areaList = areasDoc ? (decodeFields(areasDoc.fields ?? {}).areas as JsonMap[] ?? []) : [];
+  const rawAreas = areasDoc ? decodeFields(areasDoc.fields ?? {}).areas : null;\n  const areaList = Array.isArray(rawAreas) ? rawAreas as JsonMap[] : [];
   let deliveryFee = Number(env.DEFAULT_DELIVERY_FEE ?? 20);
   let orderArea = "";
   if (areaList.length) {
     const selected = areaList.find((entry) => String(entry.name ?? "").trim() === area);
     if (!selected) throw new HttpError(400, "اختار منطقة توصيل صالحة.");
-    deliveryFee = Number(selected.fee);
+    if (typeof selected.fee !== "number") {\n      throw new HttpError(409, "سعر منطقة التوصيل غير صالح في الإعدادات.");\n    }\n    deliveryFee = selected.fee;
     orderArea = area;
   } else if (area) {
     throw new HttpError(400, "قائمة مناطق التوصيل غير مفعّلة؛ أعد تحميل صفحة الدفع.");
