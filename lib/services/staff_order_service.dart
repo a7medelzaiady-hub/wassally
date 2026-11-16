@@ -343,6 +343,162 @@ class StaffOrderService {
     }
   }
 
+  /// تسجيل وصول المندوب لعنوان العميل. لا يغيّر حالة الطلب.
+  static Future<void> recordCourierArrival(String orderId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final ref = _orders.doc(orderId);
+    final snap = await ref.get();
+    final data = snap.data();
+    if (data == null ||
+        data['status'] != 'on_the_way' ||
+        data['courierId'] != uid ||
+        (data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
+      throw StateError('لا يمكن تسجيل الوصول لهذه الحالة من الطلب.');
+    }
+    await ref.update({'courierArrivedAt': FieldValue.serverTimestamp()});
+  }
+
+  /// تسجيل تعذر تسليم بعد الوصول ومحاولة التواصل. يظل الطلب في الطريق حتى قرار الإدارة.
+  static Future<String> reportDeliveryIssue(
+    AppOrder order, {
+    required String reason,
+    required String note,
+    required bool contactAttempted,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    const allowed = {
+      'no_answer',
+      'wrong_address',
+      'refused_order',
+      'no_cash',
+      'customer_requested_delay',
+      'unsafe_location',
+      'other',
+    };
+    if (!allowed.contains(reason)) throw ArgumentError.value(reason, 'reason');
+    if (!contactAttempted) {
+      throw StateError('سجّل محاولة الاتصال بالعميل أولًا.');
+    }
+    final cleanNote = note.trim();
+    if (cleanNote.length > 300) throw StateError('الملاحظة أطول من المسموح.');
+
+    final db = FirebaseFirestore.instance;
+    final orderRef = _orders.doc(order.id);
+    final current = await orderRef.get();
+    final data = current.data();
+    if (data == null ||
+        data['status'] != 'on_the_way' ||
+        data['courierId'] != uid ||
+        data['courierArrivedAt'] is! Timestamp ||
+        (data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
+      throw StateError('سجّل وصولك للعنوان أولًا، أو حدّث الطلب قبل المحاولة.');
+    }
+
+    final issueRef = db.collection('delivery_issues').doc();
+    final batch = db.batch();
+    batch.set(issueRef, {
+      'orderId': order.id,
+      'courierId': uid,
+      'customerId': order.userId,
+      'storeId': order.storeId,
+      'reason': reason,
+      'note': cleanNote,
+      'contactAttempted': true,
+      'status': 'open',
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(orderRef, {'activeDeliveryIssueId': issueRef.id});
+    await batch.commit();
+    await _notify(
+      order.userId,
+      'تعذر تسليم طلبك',
+      'المندوب وصل للعنوان ولم تكتمل عملية التسليم. الإدارة تراجع الموقف وستتواصل معك.',
+      order.id,
+    );
+    return issueRef.id;
+  }
+
+  static Stream<DocumentSnapshot<Map<String, dynamic>>> watchDeliveryIssue(
+    String issueId,
+  ) => FirebaseFirestore.instance
+      .collection('delivery_issues')
+      .doc(issueId)
+      .snapshots();
+
+  /// الإدارة تحدد إعادة المحاولة أو الإرجاع للمحل بعد مراجعة البلاغ.
+  static Future<void> decideDeliveryIssue({
+    required String issueId,
+    required String orderId,
+    required String status,
+    required String decision,
+  }) async {
+    if (!['in_review', 'retry', 'return_to_store'].contains(status)) {
+      throw ArgumentError.value(status, 'status');
+    }
+    final db = FirebaseFirestore.instance;
+    final issueRef = db.collection('delivery_issues').doc(issueId);
+    final snap = await issueRef.get();
+    final data = snap.data();
+    if (data == null || data['orderId'] != orderId) {
+      throw StateError('بلاغ التسليم غير موجود أو لا يخص هذا الطلب.');
+    }
+    await issueRef.update({
+      'status': status,
+      'adminDecision': decision.trim().substring(
+        0,
+        decision.trim().length.clamp(0, 300).toInt(),
+      ),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
+    });
+    final courierId = (data['courierId'] ?? '').toString();
+    final customerId = (data['customerId'] ?? '').toString();
+    final message = status == 'retry'
+        ? 'الإدارة وافقت على إعادة محاولة التسليم. تواصل مع العميل واستأنف التوصيل.'
+        : status == 'return_to_store'
+            ? 'الإدارة طلبت إرجاع الطلب للمحل. لا تغلق الطلب قبل تأكيد الإرجاع.'
+            : 'الإدارة تراجع بلاغ تعذر التسليم.';
+    await _notify(courierId, 'تحديث بلاغ التسليم', message, orderId);
+    await _notify(customerId, 'تحديث بخصوص طلبك', message, orderId);
+  }
+
+  /// المندوب يستأنف التوصيل بعد قرار الإدارة بإعادة المحاولة.
+  static Future<void> resumeDeliveryAfterIssue({
+    required String orderId,
+    required String issueId,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final db = FirebaseFirestore.instance;
+    final orderRef = _orders.doc(orderId);
+    final issueRef = db.collection('delivery_issues').doc(issueId);
+    final batch = db.batch();
+    batch.update(issueRef, {
+      'status': 'resolved',
+      'courierResumedAt': FieldValue.serverTimestamp(),
+      'courierResumedBy': uid,
+    });
+    batch.update(orderRef, {'activeDeliveryIssueId': FieldValue.delete()});
+    await batch.commit();
+  }
+
+  /// المندوب يؤكد رجوع الطلب للمحل بعد قرار الإدارة.
+  static Future<void> confirmDeliveryReturnedToStore({
+    required String orderId,
+    required String issueId,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    await FirebaseFirestore.instance.collection('delivery_issues').doc(issueId).update({
+      'status': 'returned_to_store',
+      'returnedAt': FieldValue.serverTimestamp(),
+      'returnedBy': uid,
+    });
+  }
+
   /// المحل بيعلّم أصناف «غير متاحة» على طلب جديد (أو بيشيل العلامة لو [names] فاضية).
   /// الطلب بيفضل «جديد» والعميل بيتبلّغ يقرر: يكمّل من غيرها أو يلغي.
   static Future<void> setUnavailableItems(
