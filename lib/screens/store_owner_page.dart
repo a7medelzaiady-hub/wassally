@@ -243,7 +243,7 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
                               Text(
                                 'قيد مراجعة الإدارة • المحل غير ظاهر للعملاء',
                                 style: TextStyle(
-                                  color: kWarning,
+                                  color: kPrimary,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 12,
                                 ),
@@ -495,7 +495,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                         Text(
                           active
                               ? 'المحل مفتوح ويستقبل طلبات'
-                              : 'المحل مقفول ومش ظاهر للعملاء',
+                              : 'المحل مقفول أو بانتظار تفعيل الإدارة',
                           style: TextStyle(
                             color: active ? kSuccess : kDanger,
                             fontWeight: FontWeight.w700,
@@ -514,7 +514,10 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                       ],
                     ),
                   ),
-                  Switch(value: active, onChanged: _busy ? null : _setActive),
+                  Switch(
+                    value: active,
+                    onChanged: _busy || !active ? null : _setActive,
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
