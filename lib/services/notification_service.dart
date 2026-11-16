@@ -15,7 +15,7 @@ import 'update_service.dart';
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
 /// - بتسجل FCM registration token الحقيقي في users/{uid}.fcmTokens بعد الموافقة.
-/// - الإشعارات نفسها بتتبعت من Cloudflare Worker مجانًا بدون الحاجة لباقة Blaze.
+/// - الإشعارات الموثوقة تُرسل من أحداث الخادم؛ إشعار الطلب الجديد يرسله Order Gateway.
 /// - لما التطبيق يكون مفتوح بنعرض الإشعار كشريط في أسفل الشاشة.
 class NotificationService {
   const NotificationService._();
