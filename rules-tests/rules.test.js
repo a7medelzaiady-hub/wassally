@@ -521,6 +521,21 @@ test('courier lifecycle: لا يبدأ المندوب الرحلة قبل تجه
 // ───────────── إحصائيات المندوب، التقدّم على طلب، طلبات الانضمام، الشكاوى ─────────────
 const { query, collection, where, getDocs } = require('firebase/firestore');
 const setOrder = (patch) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), patch));
+
+test('admin lifecycle: لا يتخطى المراحل ولا يعيد فتح الطلب النهائي ولا يسلّم دون ختم', async () => {
+  // لا يمكن بدء الطريق من new مباشرة.
+  await assertFails(changeStatus(as('admin1'), 'o1', 'new', 'on_the_way', 'admin'));
+  await assertSucceeds(changeStatus(as('admin1'), 'o1', 'new', 'preparing', 'admin'));
+  // لا يمكن بدء الطريق قبل تعيين مندوب وجاهزية المحل.
+  await assertFails(changeStatus(as('admin1'), 'o1', 'preparing', 'on_the_way', 'admin'));
+  await setOrder({ courierId: 'cour1', ready: true });
+  await assertSucceeds(changeStatus(as('admin1'), 'o1', 'preparing', 'on_the_way', 'admin'));
+  // لا يمكن إتمام التسليم دون الختم المالي.
+  await assertFails(changeStatus(as('admin1'), 'o1', 'on_the_way', 'delivered', 'admin'));
+  await setOrder({ status: 'delivered', deliveredBy: 'cour1', deliveredAt: new Date(),
+    collectedAmount: 40, courierEarning: 20 });
+  await assertFails(changeStatus(as('admin1'), 'o1', 'delivered', 'cancelled', 'admin'));
+});
 const stamp = (over = {}) => ({
   status: 'delivered', deliveredBy: 'cour1', deliveredAt: serverTimestamp(), collectedAmount: 40, courierEarning: 20, ...over,
 });
