@@ -172,6 +172,7 @@ class RoleRequestService {
         batch.update(storeRef, {
           'approved': true,
           'active': readyToPublish,
+          'ownerUid': FieldValue.delete(),
           'approvedAt': FieldValue.serverTimestamp(),
           'approvedBy': admin,
         });
