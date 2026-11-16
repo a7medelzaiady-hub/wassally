@@ -21,7 +21,7 @@ class AdminInboxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
@@ -34,6 +34,7 @@ class AdminInboxPage extends StatelessWidget {
               Tab(text: 'المحادثات'),
               Tab(text: 'الشكاوى والاقتراحات'),
               Tab(text: 'تقييم العملاء'),
+              Tab(text: 'تعذر التسليم'),
             ],
           ),
         ),
@@ -44,6 +45,7 @@ class AdminInboxPage extends StatelessWidget {
             _ChatsTab(),
             _ComplaintsTab(),
             _CustomerRatingsTab(),
+            _DeliveryIssuesTab(),
           ],
         ),
       ),
@@ -958,6 +960,199 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
               padding: EdgeInsets.only(top: 8),
               child: LinearProgressIndicator(),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeliveryIssuesTab extends StatelessWidget {
+  const _DeliveryIssuesTab();
+
+  static const _reasons = {
+    'no_answer': 'العميل لا يرد',
+    'wrong_address': 'العنوان غير صحيح',
+    'refused_order': 'رفض الاستلام',
+    'no_cash': 'لا يملك قيمة الطلب النقدي',
+    'customer_requested_delay': 'طلب تأجيل التسليم',
+    'unsafe_location': 'المكان غير آمن',
+    'other': 'سبب آخر',
+  };
+
+  static const _statuses = {
+    'open': 'جديدة',
+    'in_review': 'قيد المراجعة',
+    'retry': 'إعادة محاولة معتمدة',
+    'return_to_store': 'مطلوب إرجاعه للمحل',
+    'returned_to_store': 'تم الإرجاع للمحل',
+    'resolved': 'تم الحل',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('delivery_issues')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .snapshots(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return EmptyState(
+            icon: Icons.lock_outline,
+            title: 'تعذر تحميل بلاغات التسليم',
+            message: _errText(snap.error),
+          );
+        }
+        if (!snap.hasData) {
+          return Center(child: CircularProgressIndicator(color: kPrimary));
+        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return const EmptyState(
+            icon: Icons.delivery_dining_outlined,
+            title: 'لا توجد بلاغات تعذر تسليم',
+            message: 'عند تسجيل المندوب مشكلة في الوصول للعميل ستظهر هنا.',
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (_, index) => _DeliveryIssueCard(doc: docs[index]),
+        );
+      },
+    );
+  }
+}
+
+class _DeliveryIssueCard extends StatefulWidget {
+  final _Doc doc;
+  const _DeliveryIssueCard({required this.doc});
+
+  @override
+  State<_DeliveryIssueCard> createState() => _DeliveryIssueCardState();
+}
+
+class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
+  bool _busy = false;
+
+  Future<void> _decide(String status) async {
+    final orderId = (widget.doc.data()['orderId'] ?? '').toString();
+    final decision = switch (status) {
+      'in_review' => 'الإدارة بدأت مراجعة تعذر التسليم.',
+      'retry' => 'الإدارة وافقت على إعادة محاولة التسليم بعد التواصل مع العميل.',
+      'return_to_store' => 'الإدارة طلبت إعادة الطلب إلى المحل.',
+      _ => 'تم تحديث البلاغ.',
+    };
+    final labels = {
+      'in_review': 'بدء المراجعة',
+      'retry': 'إعادة المحاولة',
+      'return_to_store': 'إرجاع للمحل',
+    };
+    final ok = await confirmDialog(
+      context,
+      title: labels[status] ?? 'تحديث البلاغ',
+      message: decision,
+      confirmLabel: labels[status] ?? 'تأكيد',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.decideDeliveryIssue(
+        issueId: widget.doc.id,
+        orderId: orderId,
+        status: status,
+        decision: decision,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إرسال قرار الإدارة للمندوب والعميل.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر تحديث البلاغ: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.doc.data();
+    final status = (data['status'] ?? 'open').toString();
+    final reason = _DeliveryIssuesTab._reasons[(data['reason'] ?? '').toString()] ?? 'سبب غير محدد';
+    final orderId = (data['orderId'] ?? '').toString();
+    final courierId = (data['courierId'] ?? '').toString();
+    final customerId = (data['customerId'] ?? '').toString();
+    final note = (data['note'] ?? '').toString();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'بلاغ تعذر التسليم',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+              ),
+              Chip(
+                label: Text(_DeliveryIssuesTab._statuses[status] ?? status),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          Text('الطلب: $orderId', style: const TextStyle(fontSize: 12)),
+          Text('المندوب: $courierId', style: const TextStyle(fontSize: 12)),
+          Text('العميل: $customerId', style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 6),
+          Text('السبب: $reason'),
+          if (note.isNotEmpty) Text('ملاحظة المندوب: $note'),
+          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
+          if (status == 'open' || status == 'in_review') ...[
+            const Divider(height: 18),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (status == 'open')
+                  OutlinedButton(
+                    onPressed: _busy ? null : () => _decide('in_review'),
+                    child: const Text('قيد المراجعة'),
+                  ),
+                FilledButton.tonal(
+                  onPressed: _busy ? null : () => _decide('retry'),
+                  child: const Text('إعادة المحاولة'),
+                ),
+                FilledButton.tonal(
+                  onPressed: _busy ? null : () => _decide('return_to_store'),
+                  child: const Text('إرجاع للمحل'),
+                ),
+              ],
+            ),
+          ] else if (status == 'returned_to_store') ...[
+            const SizedBox(height: 8),
+            const Text(
+              'المندوب أكد رجوع الطلب. افتح الطلب في لوحة الإدارة لإغلاقه بعد مراجعة الحالة.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ],
+          if (_busy) const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: LinearProgressIndicator(),
+          ),
         ],
       ),
     );
