@@ -142,7 +142,9 @@ class AdminStoresPage extends StatefulWidget {
 }
 
 class _AdminStoresPageState extends State<AdminStoresPage> {
-  late final Stream<QuerySnapshot<_Json>> _stream = _stores.snapshots();
+  int _limit = 100;
+  Stream<QuerySnapshot<_Json>> get _stream =>
+      _stores.orderBy('name').limit(_limit).snapshots();
 
   void _say(String message) {
     if (mounted) {
@@ -289,8 +291,16 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                  itemCount: docs.length,
+                  itemCount: docs.length + (docs.length >= _limit ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index == docs.length) {
+                      return Center(
+                        child: TextButton(
+                          onPressed: () => setState(() => _limit += 100),
+                          child: const Text('تحميل المزيد من المحلات'),
+                        ),
+                      );
+                    }
                     final doc = docs[index];
                     final data = doc.data();
 
