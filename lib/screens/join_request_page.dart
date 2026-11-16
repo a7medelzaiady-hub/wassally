@@ -5,11 +5,12 @@ import '../services/role_request_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 
-/// نموذج الانضمام كصاحب محل أو مندوب. بيتحفظ في role_requests ويظهر للمدير.
+/// نموذج الانضمام كصاحب محل أو مندوب.
 class JoinRequestPage extends StatefulWidget {
   final JoinType type;
   final String initialName;
   final String initialPhone;
+
   const JoinRequestPage({
     super.key,
     required this.type,
@@ -26,7 +27,6 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   late final _name = TextEditingController(text: widget.initialName);
   late final _phone = TextEditingController(text: widget.initialPhone);
   final _store = TextEditingController();
-  String? _storeCategory;
   final _address = TextEditingController();
   final _storePhone = TextEditingController();
   final _storeImageUrl = TextEditingController();
@@ -34,37 +34,60 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   final _proofUrl = TextEditingController();
   final _vehicle = TextEditingController();
   final _notes = TextEditingController();
+
+  String? _storeCategory;
   bool _busy = false;
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _store, _address, _storePhone, _storeImageUrl, _registrationNumber, _proofUrl, _vehicle, _notes]) {
-      c.dispose();
+    for (final controller in [
+      _name,
+      _phone,
+      _store,
+      _address,
+      _storePhone,
+      _storeImageUrl,
+      _registrationNumber,
+      _proofUrl,
+      _vehicle,
+      _notes,
+    ]) {
+      controller.dispose();
     }
     super.dispose();
   }
 
-  String _digits(String v) {
-    const ar = '٠١٢٣٤٥٦٧٨٩';
-    var out = v.replaceAll(RegExp(r'[\s\-]'), '');
-    for (var i = 0; i < 10; i++) {
-      out = out.replaceAll(ar[i], '$i');
+  String _digits(String value) {
+    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+    var result = value.replaceAll(RegExp(r'[\s\-]'), '');
+    for (var i = 0; i < arabicDigits.length; i++) {
+      result = result.replaceAll(arabicDigits[i], '$i');
     }
-    return out;
+    return result;
   }
 
   Future<void> _send() async {
     if (!(_form.currentState?.validate() ?? false)) return;
-    if (widget.type == JoinType.storeOwner &&
-        _registrationNumber.text.trim().isEmpty && _proofUrl.text.trim().isEmpty && _digits(_storePhone.text).isEmpty) {
+
+    final isStore = widget.type == JoinType.storeOwner;
+    if (isStore &&
+        _registrationNumber.text.trim().isEmpty &&
+        _proofUrl.text.trim().isEmpty &&
+        _digits(_storePhone.text).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أدخل رقم السجل التجاري أو رابط إثبات النشاط أو تليفون المحل.')),
+        const SnackBar(
+          content: Text(
+            'أدخل رقم السجل التجاري أو رابط إثبات النشاط أو تليفون المحل.',
+          ),
+        ),
       );
       return;
     }
+
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
+
     try {
       await RoleRequestService.submit(
         type: widget.type,
@@ -80,6 +103,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         vehicle: _vehicle.text,
         notes: _notes.text,
       );
+      if (!mounted) return;
       nav.pop();
       messenger.showSnackBar(
         const SnackBar(content: Text('اتبعت طلبك. هنراجعه ونرد عليك.')),
@@ -98,8 +122,9 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   @override
   Widget build(BuildContext context) {
     final isStore = widget.type == JoinType.storeOwner;
+
     return Scaffold(
-      appBar: AppBar(title: Text('انضم كـ ${widget.type.label}')),
+      appBar: AppBar(title: Text('انضم كـ ' + widget.type.label)),
       body: Form(
         key: _form,
         child: ListView(
@@ -118,8 +143,8 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 labelText: 'الاسم',
                 prefixIcon: Icon(Icons.person_outline),
               ),
-              validator: (v) =>
-                  (v ?? '').trim().length < 2 ? 'اكتب اسمك' : null,
+              validator: (value) =>
+                  (value ?? '').trim().length < 2 ? 'اكتب اسمك' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -127,27 +152,29 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
               keyboardType: TextInputType.phone,
               textDirection: TextDirection.ltr,
               decoration: InputDecoration(
-                labelText: isStore ? 'رقم موبايل صاحب المحل (اختياري)' : 'رقم الموبايل',
-                prefixIcon: Icon(Icons.phone_outlined),
+                labelText: isStore
+                    ? 'رقم موبايل صاحب المحل (اختياري)'
+                    : 'رقم الموبايل',
+                prefixIcon: const Icon(Icons.phone_outlined),
               ),
-              validator: (v) {
-                final value = _digits(v ?? '');
-                if (isStore && value.isEmpty) return null;
-                return isValidEgyptianMobile(value)
+              validator: (value) {
+                final phone = _digits(value ?? '');
+                if (isStore && phone.isEmpty) return null;
+                return isValidEgyptianMobile(phone)
                     ? null
                     : 'اكتب رقم موبايل مصري صحيح (11 رقم)';
               },
             ),
-            const SizedBox(height: 12),
             if (isStore) ...[
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _store,
                 decoration: const InputDecoration(
                   labelText: 'اسم المحل',
                   prefixIcon: Icon(Icons.storefront_outlined),
                 ),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'اكتب اسم المحل' : null,
+                validator: (value) =>
+                    (value ?? '').trim().length < 2 ? 'اكتب اسم المحل' : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
@@ -159,20 +186,40 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 ),
                 items: const [
                   DropdownMenuItem(value: 'مطاعم', child: Text('مطاعم')),
-                  DropdownMenuItem(value: 'سوبرماركت', child: Text('سوبر ماركت')),
+                  DropdownMenuItem(
+                    value: 'سوبرماركت',
+                    child: Text('سوبر ماركت'),
+                  ),
                   DropdownMenuItem(value: 'بقالة', child: Text('بقالة')),
-                  DropdownMenuItem(value: 'خضار وفاكهة', child: Text('خضار وفاكهة')),
-                  DropdownMenuItem(value: 'لحوم ودواجن', child: Text('لحوم ودواجن')),
-                  DropdownMenuItem(value: 'مخبوزات وحلويات', child: Text('مخبوزات وحلويات')),
-                  DropdownMenuItem(value: 'محمصات وعطارة', child: Text('محمصات وعطارة')),
-                  DropdownMenuItem(value: 'كافيه ومشروبات', child: Text('كافيه ومشروبات')),
-                  DropdownMenuItem(value: 'ورد وهدايا', child: Text('ورد وهدايا')),
+                  DropdownMenuItem(
+                    value: 'خضار وفاكهة',
+                    child: Text('خضار وفاكهة'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'لحوم ودواجن',
+                    child: Text('لحوم ودواجن'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'مخبوزات وحلويات',
+                    child: Text('مخبوزات وحلويات'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'محمصات وعطارة',
+                    child: Text('محمصات وعطارة'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'كافيه ومشروبات',
+                    child: Text('كافيه ومشروبات'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'ورد وهدايا',
+                    child: Text('ورد وهدايا'),
+                  ),
                   DropdownMenuItem(value: 'أخرى', child: Text('نشاط آخر')),
                 ],
                 onChanged: (value) => setState(() => _storeCategory = value),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'اختار نوع نشاط المحل'
-                    : null,
+                validator: (value) =>
+                    value == null || value.isEmpty ? 'اختار نوع نشاط المحل' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -183,7 +230,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   labelText: 'عنوان المحل',
                   prefixIcon: Icon(Icons.location_on_outlined),
                 ),
-                validator: (v) => (v ?? '').trim().length < 5
+                validator: (value) => (value ?? '').trim().length < 5
                     ? 'اكتب العنوان بالتفصيل'
                     : null,
               ),
@@ -196,9 +243,10 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   labelText: 'رقم تليفون المحل (اختياري - بديل إثبات النشاط)',
                   prefixIcon: Icon(Icons.store_mall_directory_outlined),
                 ),
-                validator: (v) {
-                  final value = _digits(v ?? '');
-                  return value.isEmpty || RegExp(r'^[0-9]{8,11}$').hasMatch(value)
+                validator: (value) {
+                  final phone = _digits(value ?? '');
+                  return phone.isEmpty ||
+                          RegExp(r'^[0-9]{8,11}$').hasMatch(phone)
                       ? null
                       : 'اكتب رقم تليفون صحيح من 8 إلى 11 رقمًا';
                 },
@@ -212,7 +260,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   labelText: 'رابط صورة واجهة/المحل (مطلوب)',
                   prefixIcon: Icon(Icons.photo_outlined),
                 ),
-                validator: (v) => isValidImageUrl(v ?? '')
+                validator: (value) => isValidImageUrl(value ?? '')
                     ? null
                     : 'أدخل رابط صورة صحيح يبدأ بـ https://',
               ),
@@ -223,51 +271,10 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   labelText: 'رقم السجل التجاري (اختياري)',
                   prefixIcon: Icon(Icons.badge_outlined),
                 ),
-                validator: (v) {
-                  final value = (v ?? '').trim();
-                  return value.isEmpty || RegExp(r'^[A-Za-z0-9\\-/]{6,30}
-            ] else
-              TextFormField(
-                controller: _vehicle,
-                decoration: const InputDecoration(
-                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
-                  prefixIcon: Icon(Icons.two_wheeler),
-                ),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
-              ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'ملاحظات (اختياري)',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : _send,
-              child: _busy
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('إرسال الطلب'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-).hasMatch(value)
+                validator: (value) {
+                  final number = (value ?? '').trim();
+                  return number.isEmpty ||
+                          RegExp(r'^[A-Za-z0-9\\-/]{6,30}$').hasMatch(number)
                       ? null
                       : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
                 },
@@ -281,23 +288,30 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                   labelText: 'رابط إثبات النشاط (اختياري)',
                   prefixIcon: Icon(Icons.verified_outlined),
                 ),
-                validator: (v) => (v ?? '').trim().isEmpty || isValidImageUrl(v ?? '')
+                validator: (value) =>
+                    (value ?? '').trim().isEmpty || isValidImageUrl(value ?? '')
                     ? null
                     : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
               ),
               const SizedBox(height: 6),
-              Text('يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
-                  style: TextStyle(color: kMuted, fontSize: 12)),
-            ] else
+              Text(
+                'يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _vehicle,
                 decoration: const InputDecoration(
                   labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
                   prefixIcon: Icon(Icons.two_wheeler),
                 ),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
+                validator: (value) =>
+                    (value ?? '').trim().length < 2
+                    ? 'اكتب وسيلة التوصيل'
+                    : null,
               ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _notes,
