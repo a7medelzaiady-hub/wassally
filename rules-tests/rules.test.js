@@ -1012,12 +1012,13 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   approve.set(doc(adminDb, 'storeOwners/cust3'), {
     name: 'صاحب المحل', storeId: 'draft3', active: true,
   });
-  approve.update(doc(adminDb, 'stores/draft3'), { approved: true, active: true });
+  approve.update(doc(adminDb, 'stores/draft3'), { approved: true, active: true, ownerUid: deleteField() });
   approve.update(doc(adminDb, 'role_requests/cust3_store_owner'), {
     status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1',
   });
   await assertSucceeds(approve.commit());
-  await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3')));
+  const publicStore = await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3')));
+  assert.equal(publicStore.data().ownerUid, undefined);
   await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3/products/p1')));
   await assertSucceeds(getDoc(doc(as('cust3'), 'stores/draft3')));
 
@@ -1026,7 +1027,7 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   approve6.set(doc(adminDb, 'storeOwners/cust6'), {
     name: 'صاحب المحل', storeId: 'draft6', active: true,
   });
-  approve6.update(doc(adminDb, 'stores/draft6'), { approved: true, active: false });
+  approve6.update(doc(adminDb, 'stores/draft6'), { approved: true, active: false, ownerUid: deleteField() });
   approve6.update(doc(adminDb, 'role_requests/cust6_store_owner'), {
     status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1',
   });
