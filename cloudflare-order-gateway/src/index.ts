@@ -238,7 +238,6 @@ async function queryAccountDocuments(
   parent = "",
   allDescendants = false,
 ): Promise<FirestoreDoc[]> {
-  const root = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
   const endpoint = `${firestoreDocumentsUrl(env)}${parent ? `/${parent}` : ""}:runQuery`;
   const docs: FirestoreDoc[] = [];
   let cursor = "";
@@ -394,21 +393,9 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   })));
 
   if (ownedStoreId) {
-    const remainingOwners = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: "storeOwners" }],
-          where: { fieldFilter: {
-            field: { fieldPath: "storeId" }, op: "EQUAL", value: { stringValue: ownedStoreId },
-          } },
-          limit: 100,
-        },
-      }),
-    });
-    if (!remainingOwners.ok) throw new HttpError(503, "تعذر التحقق من مالكي المحل بعد حذف الحساب.");
-    const rows = await remainingOwners.json() as Array<{ document?: FirestoreDoc }>;
+    const remainingOwnerDocs = await queryAccountDocuments(
+      env, token, "storeOwners", "storeId", ownedStoreId,
+    );
     const activeOwner = rows.some((row) => {
       if (!row.document) return false;
       return decodeFields(row.document.fields ?? {}).active !== false;
