@@ -62,10 +62,19 @@ String _priceLine(_Json m, num price, bool available) {
 class StoreOwnerPage extends StatelessWidget {
   final String storeId;
   final String name;
-  const StoreOwnerPage({super.key, required this.storeId, this.name = ''});
+  final bool pendingApproval;
+  const StoreOwnerPage({
+    super.key,
+    required this.storeId,
+    this.name = '',
+    this.pendingApproval = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (pendingApproval) {
+      return _PendingStoreSetup(storeId: storeId, name: name);
+    }
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -100,6 +109,177 @@ class StoreOwnerPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────── تجهيز المحل قبل الموافقة ───────────────────────
+
+class _PendingStoreSetup extends StatefulWidget {
+  final String storeId;
+  final String name;
+
+  const _PendingStoreSetup({required this.storeId, required this.name});
+
+  @override
+  State<_PendingStoreSetup> createState() => _PendingStoreSetupState();
+}
+
+class _PendingStoreSetupState extends State<_PendingStoreSetup> {
+  bool _uploading = false;
+
+  Future<void> _changeImage() async {
+    if (_uploading) return;
+    setState(() => _uploading = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final url = await ImageService.pickAndUpload(
+        'stores',
+        storeId: widget.storeId,
+      );
+      if (url != null) {
+        await FirebaseFirestore.instance
+            .collection('stores')
+            .doc(widget.storeId)
+            .update({
+              'image': url,
+              'imageUrl': url,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+        if (!mounted) return;
+        messenger.showSnackBar(
+          const SnackBar(content: Text('تم تحديث صورة المحل.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تحديث الصورة: ${_why(e)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final storeRef = FirebaseFirestore.instance
+        .collection('stores')
+        .doc(widget.storeId);
+    return Scaffold(
+      floatingActionButton: const FeedbackFab(),
+      body: Column(
+        children: [
+          StaffHeader(
+            title: 'تجهيز المحل',
+            subtitle: widget.name.isEmpty ? 'مسودة المحل' : 'أهلاً ${widget.name}',
+          ),
+          StreamBuilder<DocumentSnapshot<_Json>>(
+            stream: storeRef.snapshots(),
+            builder: (context, snapshot) {
+              final data = snapshot.data?.data();
+              if (snapshot.hasError) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('تعذر تحميل بيانات المحل. حاول مرة أخرى.'),
+                );
+              }
+              if (data == null) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                );
+              }
+              final title = (data['name'] ?? 'المحل').toString();
+              final category = (data['category'] ?? '').toString();
+              final image = (data['imageUrl'] ?? data['image'] ?? '').toString();
+              final count = (data['productCount'] as num?)?.toInt() ?? 0;
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: kLine),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: image.isEmpty
+                                ? Container(
+                                    color: kPrimarySoft,
+                                    child: Icon(Icons.store, color: kPrimary),
+                                  )
+                                : Image.network(
+                                    image,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        Container(color: kPrimarySoft),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(category, style: TextStyle(color: kMuted)),
+                              Text(
+                                'قيد مراجعة الإدارة • المحل غير ظاهر للعملاء',
+                                style: TextStyle(
+                                  color: kWarning,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _uploading ? null : _changeImage,
+                      icon: _uploading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.photo_camera_outlined),
+                      label: const Text('رفع أو تغيير صورة المحل'),
+                    ),
+                    Text(
+                      'أضف 5 أصناف على الأقل وصورة واضحة. لن يظهر المحل للعملاء إلا بعد موافقة الإدارة.',
+                      style: TextStyle(color: kMuted, fontSize: 12),
+                    ),
+                    Text(
+                      'عدد الأصناف المسجل: $count',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Expanded(child: _OwnerProductsTab(storeId: widget.storeId)),
+        ],
       ),
     );
   }
