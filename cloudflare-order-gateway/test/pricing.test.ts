@@ -40,3 +40,20 @@ describe("trusted catalog pricing", () => {
     expect(() => effectiveCatalogPrice({ price: 20001 })).toThrow();
   });
 });
+
+
+describe("courier notification payload", () => {
+  it("sends only a minimal new-order notice to the server-controlled couriers topic", async () => {
+    const { courierTopicMessage } = await import("../src/index");
+    const payload = courierTopicMessage("abcde_1234567890123456", "متجر تجريبي");
+    expect(payload.message.topic).toBe("couriers");
+    expect(payload.message.data).toEqual({
+      type: "available_order",
+      orderId: "abcde_1234567890123456",
+    });
+    expect(payload.message.notification.title).toContain("#ABCDE");
+    expect(payload.message.notification.body).toContain("متجر تجريبي");
+    expect(JSON.stringify(payload)).not.toContain("phone");
+    expect(JSON.stringify(payload)).not.toContain("address");
+  });
+});
