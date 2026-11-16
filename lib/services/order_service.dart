@@ -298,6 +298,7 @@ class OrderService {
       'deliveryFee': cart.effectiveFee,
       if (cart.area.isNotEmpty) 'area': cart.area,
           'expectedDeliveryFee': cart.effectiveFee,
+          'expectedTotal': cart.total,
       if (cart.discount > 0) 'promoCode': cart.promoCode.trim().toUpperCase(),
       if (cart.discount > 0) 'discount': cart.discount,
       'total': cart.total,
@@ -463,6 +464,7 @@ class OrderService {
         payload: {
           'customerName': _firstName(name),
           'notes': notes,
+          'expectedTotal': total,
           'items': lines
               .map((line) => {
                     if (line.productId.isNotEmpty) 'productId': line.productId,
