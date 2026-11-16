@@ -121,7 +121,10 @@ class _RequestCardState extends State<_RequestCard> {
     final stores = await FirebaseFirestore.instance.collection('stores').limit(100).get();
     if (!mounted) return null;
     final existing = {
-      for (final d in stores.docs) d.id: (d.data()['name'] ?? d.id).toString(),
+      for (final d in stores.docs)
+        if ((d.data()['active'] as bool?) == true &&
+            d.data()['approved'] != false)
+          d.id: (d.data()['name'] ?? d.id).toString(),
     };
     final ctrl = TextEditingController(
       text: '${widget.doc.data()['storeName'] ?? ''}'.trim(),
