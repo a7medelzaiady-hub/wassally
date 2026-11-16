@@ -373,7 +373,7 @@ class _RequestCardState extends State<_RequestCard> {
             line(Icons.photo_outlined, 'صورة المحل: ${m['storeImageUrl'] ?? ''}'),
             line(Icons.badge_outlined, 'السجل التجاري: ${m['registrationNumber'] ?? 'غير مرفق'}'),
             line(Icons.verified_outlined, 'إثبات النشاط: ${m['proofUrl'] ?? 'غير مرفق'}'),
-            line(Icons.store_mall_directory_outlined, 'تليفون المحل: ${m['storePhone'] ?? 'غير مرفق'}'),
+            line(Icons.store_mall_directory_outlined, 'تليفون المحل: ${(m['storePhone'] ?? '').toString().trim().isEmpty ? 'غير مرفق' : m['storePhone']}'),
           ],
           line(Icons.two_wheeler, '${m['vehicle'] ?? ''}'),
           line(Icons.sticky_note_2_outlined, '${m['notes'] ?? ''}'),
