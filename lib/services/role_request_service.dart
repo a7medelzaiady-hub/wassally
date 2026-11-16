@@ -47,6 +47,7 @@ class RoleRequestService {
     String storeImageUrl = '',
     String registrationNumber = '',
     String proofUrl = '',
+    String storePhone = '',
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل دخول الأول.');
@@ -55,7 +56,9 @@ class RoleRequestService {
       'userEmail': user.email ?? '',
       'type': type.key,
       'name': name.trim(),
-      'phone': phone,
+      if (phone.trim().isNotEmpty) 'phone': phone.trim(),
+      if (type == JoinType.storeOwner && storePhone.trim().isNotEmpty)
+        'storePhone': storePhone.trim(),
       if (type == JoinType.storeOwner) 'storeName': storeName.trim(),
       if (type == JoinType.storeOwner) 'storeCategory': storeCategory.trim(),
       if (type == JoinType.storeOwner) 'address': address.trim(),
@@ -118,7 +121,8 @@ class RoleRequestService {
       }
       batch.set(db.collection('storeOwners').doc(uid), {
         'name': (m['name'] ?? '').toString(),
-        'phone': (m['phone'] ?? '').toString(),
+        if ((m['phone'] ?? '').toString().isNotEmpty)
+          'phone': (m['phone'] ?? '').toString(),
         'storeId': storeId,
         'active': true,
       });
