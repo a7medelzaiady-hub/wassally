@@ -429,7 +429,6 @@ test('delivery lifecycle: المندوب الخارجي يسلم النقدية 
     collectedAmount: 40,
     courierEarning: 20,
   }));
-  const owner = as('owner1');
   const b = writeBatch(owner);
   b.update(doc(owner, 'orders/o1'), {
     status: 'delivered',
