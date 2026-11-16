@@ -100,6 +100,7 @@ class RoleRequestService {
       requestData['storeId'] = storeId;
 
       final batch = db.batch();
+      final previousCount = previousStore?.data()?['productCount'];
       final storeData = <String, dynamic>{
         'name': storeName.trim(),
         'category': storeCategory.trim(),
@@ -111,7 +112,7 @@ class RoleRequestService {
         'image': storeImageUrl.trim(),
         'imageUrl': storeImageUrl.trim(),
         'storePhone': storePhone.trim(),
-        'productCount': (previousStore?.data()?['productCount'] as num?)?.toInt() ?? 0,
+        'productCount': previousCount is num ? previousCount.toInt() : 0,
         if (previousStore == null) 'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
