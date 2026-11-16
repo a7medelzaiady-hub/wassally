@@ -83,6 +83,10 @@ function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export function catalogPriceMatches(expected: number, actual: number): boolean {
+  return Number.isFinite(expected) && expected > 0 && Math.abs(expected - actual) < 0.01;
+}
+
 export function calculateDiscount(subtotal: number, percent: number): number {
   if (!Number.isFinite(subtotal) || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
     return 0;
