@@ -363,6 +363,10 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 500) {
     throw new HttpError(409, "رسوم التوصيل غير مضبوطة في إعدادات الإدارة.");
   }
+  const expectedDeliveryFee = Number(input.expectedDeliveryFee);
+  if (!Number.isFinite(expectedDeliveryFee) || Math.abs(expectedDeliveryFee - deliveryFee) >= 0.01) {
+    throw new HttpError(409, "رسوم التوصيل اتغيرت. راجع الإجمالي قبل تأكيد الطلب.");
+  }
 
   const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
   if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
