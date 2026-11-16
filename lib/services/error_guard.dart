@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
-import 'package:flutter/foundation.dart' show FlutterError, kDebugMode, debugPrint;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart'
+    show FlutterError, kDebugMode, debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 /// حماية من الأعطال المفاجئة: أي خطأ غير متوقع (في Flutter أو في كود async خارج أي try/catch)
@@ -19,6 +22,14 @@ class ErrorGuard {
     if (recent.length > 20) recent.removeAt(0);
     debugPrint(line);
     if (stack != null && kDebugMode) debugPrint(stack.toString());
+    final supported = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+         defaultTargetPlatform == TargetPlatform.iOS ||
+         defaultTargetPlatform == TargetPlatform.macOS);
+    if (supported && Firebase.apps.isNotEmpty) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: false)
+          .catchError((_) {});
+    }
   }
 
   /// بيشغّل [body] جوه zone محمية، ويركّب معالجات الأعطال العامة.
