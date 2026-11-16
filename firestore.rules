@@ -707,7 +707,7 @@ service cloud.firestore {
       );
 
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
-      allow create: if signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
+      allow create: if !securityFlag('serverOrders') && signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
 
       allow update: if signedIn() && evalOrderUpdate();
 
@@ -825,7 +825,7 @@ service cloud.firestore {
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.
     match /orderLimits/{uid} {
-      allow create, update: if signedIn() && request.auth.uid == uid &&
+      allow create, update: if !securityFlag('serverOrders') && signedIn() && request.auth.uid == uid &&
         request.resource.data.keys().hasOnly(['lastAt']) &&
         request.resource.data.lastAt == request.time;
       allow read, delete: if false;
