@@ -80,7 +80,7 @@ class ImageService {
       await request.send().timeout(const Duration(seconds: 90)),
     );
     if (uploadResponse.statusCode != 200) {
-      String message = 'تعذر رفع الصورة (' + uploadResponse.statusCode.toString() + ').';
+      String message = 'تعذر رفع الصورة (${uploadResponse.statusCode}).';
       try {
         final data = jsonDecode(uploadResponse.body);
         if (data is Map && data['error'] is String) {
