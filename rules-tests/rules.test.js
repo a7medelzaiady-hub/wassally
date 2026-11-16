@@ -48,6 +48,8 @@ beforeEach(() => seed());
 test('users: whitelist يمنع حقول غريبة', async () => {
   const db = as('cust1');
   await assertSucceeds(setDoc(doc(db, 'users/cust1'), { name: 'Ali', phone: '010', address: 'x' }, { merge: true }));
+  await assertSucceeds(setDoc(doc(db, 'users/cust1'), { fcmInstallationIds: ['installation-id-1'] }, { merge: true }));
+  await assertFails(setDoc(doc(db, 'users/cust1'), { fcmInstallationIds: Array(21).fill('installation-id') }, { merge: true }));
   await assertFails(setDoc(doc(db, 'users/cust1'), { wallet: 999 }, { merge: true }));
   await assertFails(setDoc(doc(db, 'users/cust1'), { role: 'admin' }, { merge: true }));
 });
