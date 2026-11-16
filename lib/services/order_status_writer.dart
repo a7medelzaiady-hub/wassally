@@ -111,15 +111,17 @@ class OrderStatusWriter {
       'status': to.key,
       if (to == OrderStatus.onTheWay)
         'pickedUpAt': FieldValue.serverTimestamp(),
-      // إزالة إسناد المندوب عند إلغاء الطلب قبل الاستلام أو بعد رجوعه للمحل.
-      if (cancellingBeforePickup || cancellingAfterReturn) ...{
+      // قبل الاستلام نلغي الإسناد، أما بعد الرجوع فنحتفظ بالمندوب كسجل تاريخي.
+      if (cancellingBeforePickup) ...{
         'courierId': FieldValue.delete(),
         'courierName': FieldValue.delete(),
         'courierPhone': FieldValue.delete(),
         'courierAt': FieldValue.delete(),
       },
-      if (cancellingAfterReturn)
+      if (cancellingAfterReturn) ...{
+        'lastDeliveryIssueId': activeIssueId,
         'activeDeliveryIssueId': FieldValue.delete(),
+      },
     };
 
     final batch = db.batch();
