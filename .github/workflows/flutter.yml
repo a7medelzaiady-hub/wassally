@@ -26,7 +26,7 @@ jobs:
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.x' # يمكنك تحديد إصدار معين مثل 3.22.0 أو تركه هكذا لأحدث إصدار مستقر
+        flutter-version: '3.50.0' # مثبت على إصدار Stable محدد لتكرارية البناء
         channel: 'stable'
 
     # 4. تحميل المكتبات والمخازن (pub get)
