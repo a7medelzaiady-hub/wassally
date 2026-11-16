@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_theme.dart';
 import 'notification_service.dart';
+import 'play_update.dart';
 
 /// فحص وجود إصدار أحدث من التطبيق.
 ///
@@ -36,7 +37,11 @@ class UpdateService {
     attachLifecycle();
     if (_checked) return;
     _checked = true;
-    if (!await _fetch()) return;
+    final hasUpdate = await _fetch();
+    // التحديث من داخل التطبيق عبر Google Play: لو اتولّى التحديث منكملش بالنافذة اليدوية.
+    // الإجباري بيتحدد من app_info/version (force_update)، والباقي Play بيحدد وجود إصدار أحدث.
+    if (await PlayUpdate.tryUpdate(force: hasUpdate && _force)) return;
+    if (!hasUpdate) return;
     if (!context.mounted) return;
     final showDialogNow = _force || !await _isSnoozed();
     if (!context.mounted) return;
