@@ -57,7 +57,7 @@ class FeedbackService {
           .doc(user.uid)
           .get();
       linkedOrderId = (restriction.data()?['sourceOrderId'] ?? '').toString();
-      if (!restriction.exists || linkedOrderId!.isEmpty) {
+      if (!restriction.exists || linkedOrderId.isEmpty) {
         throw StateError('لا يوجد قرار تقييد مسجل على حسابك لتقديم اعتراض عليه.');
       }
     }
