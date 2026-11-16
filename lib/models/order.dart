@@ -129,6 +129,9 @@ class AppOrder {
 
   /// معرّف بلاغ التسليم المفتوح الذي ينتظر قرار الإدارة.
   final String activeDeliveryIssueId;
+
+  /// آخر بلاغ إرجاع موثق، للاحتفاظ بتاريخ المندوب وتمكين تقييم العميل بعد الإلغاء.
+  final String lastDeliveryIssueId;
   final double collectedAmount;
   final double courierEarning;
 
@@ -172,6 +175,7 @@ class AppOrder {
     this.pickedUpAt,
     this.courierArrivedAt,
     this.activeDeliveryIssueId = '',
+    this.lastDeliveryIssueId = '',
     this.collectedAmount = 0,
     this.courierEarning = 0,
     this.verifiedTotal,
@@ -220,6 +224,7 @@ class AppOrder {
       pickedUpAt: pickedUpAt,
       courierArrivedAt: courierArrivedAt,
       activeDeliveryIssueId: activeDeliveryIssueId,
+      lastDeliveryIssueId: lastDeliveryIssueId,
       collectedAmount: collectedAmount,
       courierEarning: courierEarning,
       verifiedTotal: verifiedTotal,
@@ -291,6 +296,7 @@ class AppOrder {
           ? (m['courierArrivedAt'] as Timestamp).toDate()
           : null,
       activeDeliveryIssueId: (m['activeDeliveryIssueId'] ?? '').toString(),
+      lastDeliveryIssueId: (m['lastDeliveryIssueId'] ?? '').toString(),
       collectedAmount: (m['collectedAmount'] as num?)?.toDouble() ?? 0,
       courierEarning: (m['courierEarning'] as num?)?.toDouble() ?? 0,
       verifiedTotal: (m['verifiedTotal'] as num?)?.toDouble(),
