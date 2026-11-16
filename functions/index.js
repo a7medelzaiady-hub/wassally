@@ -89,7 +89,7 @@ async function notify(uids, title, body, data = {}) {
   if (entries.length === 0) return;
 
   const res = await admin.messaging().sendEach(entries.map((entry) => ({
-    // Admin SDK 13.x لا يعرّف حقل fid بعد؛ FCM يقبل FID في token أثناء فترة الترحيل.
+    // FCM يقبل FID داخل token أثناء فترة الترحيل؛ الحقل fid هو المسار الموصى به بعد الترقية إلى Admin SDK 14.1+.
     token: entry.fid || entry.token,
     notification: { title, body },
     data,
