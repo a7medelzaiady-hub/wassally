@@ -370,6 +370,10 @@ const customerReview = (role, reviewerId, over = {}) => ({
 });
 
 test('customer reviews: المندوب وصاحب المحل يقيّمان العميل بعد التسليم مرة واحدة', async () => {
+  await assertFails(setDoc(
+    doc(as('owner1'), 'customer_reviews/o1_store_owner'),
+    customerReview('store_owner', 'owner1'),
+  ));
   await setOrder({ status: 'delivered', courierId: 'cour1', deliveredBy: 'cour1' });
   await assertSucceeds(setDoc(
     doc(as('cour1'), 'customer_reviews/o1_courier'),
