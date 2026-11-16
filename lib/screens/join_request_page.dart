@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/image_service.dart';
 import '../services/role_request_service.dart';
+import '../services/navigation.dart' show roleInfoOverride;
+import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 
@@ -103,6 +105,8 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         vehicle: _vehicle.text,
         notes: _notes.text,
       );
+      final refreshedRole = await RoleService.load();
+      roleInfoOverride.value = refreshedRole;
       if (!mounted) return;
       nav.pop();
       messenger.showSnackBar(
