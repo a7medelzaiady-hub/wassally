@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, effectiveCatalogPrice } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, effectiveCatalogPrice } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
     expect(calculateDiscount(123.45, 10)).toBe(12.34);
     expect(calculateDiscount(50, 50)).toBe(25);
     expect(calculateDiscount(20, 0)).toBe(0);
+  });
+
+  it("uses client prices only to detect a stale cart, never as the saved price", () => {
+    expect(catalogPriceMatches(17.5, 17.5)).toBe(true);
+    expect(catalogPriceMatches(17, 17.5)).toBe(false);
+    expect(catalogPriceMatches(Number.NaN, 17.5)).toBe(false);
   });
 
   it("uses the catalog price, not a client-supplied amount", () => {
