@@ -26,6 +26,7 @@ class AdminBannersPage extends StatefulWidget {
 
 class _AdminBannersPageState extends State<AdminBannersPage> {
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream = _banners
+      .limit(100)
       .snapshots();
   bool _busy = false;
 
