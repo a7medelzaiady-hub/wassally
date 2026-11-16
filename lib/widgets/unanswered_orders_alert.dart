@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
@@ -18,6 +19,8 @@ class UnansweredOrdersAlert extends StatefulWidget {
 
 class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
   Timer? _clock;
+  final AudioPlayer _player = AudioPlayer();
+  final Set<String> _alertedOrderIds = <String>{};
   late DateTime _now;
 
   @override
@@ -25,13 +28,47 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
     super.initState();
     _now = DateTime.now();
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+      _notifyNewlyOverdue();
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _notifyNewlyOverdue());
+  }
+
+  @override
+  void didUpdateWidget(covariant UnansweredOrdersAlert oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _notifyNewlyOverdue();
+  }
+
+  void _notifyNewlyOverdue() {
+    final newlyOverdue = widget.orders.where((order) {
+      if (order.status != OrderStatus.newOrder || order.hasUnavailableItems) {
+        return false;
+      }
+      final createdAt = order.createdAt;
+      return createdAt != null &&
+          _now.difference(createdAt) >= const Duration(minutes: 5) &&
+          !_alertedOrderIds.contains(order.id);
+    }).toList();
+    if (newlyOverdue.isEmpty) return;
+    _alertedOrderIds.addAll(newlyOverdue.map((order) => order.id));
+    _playAlert();
+  }
+
+  Future<void> _playAlert() async {
+    try {
+      await _player.stop();
+      await _player.play(AssetSource('sounds/bell.wav'));
+    } catch (e) {
+      debugPrint('Unanswered order alert sound failed: $e');
+    }
   }
 
   @override
   void dispose() {
     _clock?.cancel();
+    _player.dispose();
     super.dispose();
   }
 
