@@ -52,7 +52,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
         .map((order) => order.editedAt ?? order.createdAt!)
         .reduce((a, b) => a.isBefore(b) ? a : b);
     final oldest = _now.difference(oldestActivity).inMinutes;
-    final countLabel = overdue.length >= 100 ? '100+' : '\${overdue.length}';
+    final countLabel = overdue.length >= 100 ? '100+' : overdue.length.toString();
 
     return Container(
       width: double.infinity,
