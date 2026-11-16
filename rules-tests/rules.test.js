@@ -442,10 +442,18 @@ test('customer restrictions: الإدارة فقط تفرض تقييدًا مؤ�
     expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
   };
   await assertFails(setDoc(doc(as('cust1'), 'customer_restrictions/cust1'), restriction));
+  await assertFails(setDoc(doc(as('admin1'), 'customer_restrictions/cust2'), {
+    ...restriction, customerId: 'cust2', sourceOrderId: 'missing',
+  }));
   await assertSucceeds(setDoc(doc(as('admin1'), 'customer_restrictions/cust1'), restriction));
   await assertFails(setDoc(doc(as('cust1'), 'orders/restricted-order'), baseOrder('cust1')));
   await assertSucceeds(getDoc(doc(as('cust1'), 'customer_restrictions/cust1')));
   await assertFails(getDoc(doc(as('cust2'), 'customer_restrictions/cust1')));
+  await assertFails(getDocs(collection(as('cust1'), 'customer_restrictions')));
+  await assertSucceeds(getDocs(collection(as('admin1'), 'customer_restrictions')));
+  await assertFails(updateDoc(doc(as('cust1'), 'customer_restrictions/cust1'), {
+    active: false, clearedAt: serverTimestamp(), clearedBy: 'cust1',
+  }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'customer_restrictions/cust1'), {
     active: false,
     clearedAt: serverTimestamp(),
