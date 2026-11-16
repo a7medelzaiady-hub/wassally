@@ -51,7 +51,7 @@ class NotificationService {
     }
   }
 
-  /// يطلب الإذن بعد عرض شرح داخل التطبيق، ثم يسجل التوكن عند الموافقة.
+  /// يطلب الإذن بعد عرض شرح داخل التطبيق، ثم يسجل معرّف التثبيت عند الموافقة.
   static Future<bool> requestPermissionAndRegister() async {
     if (!_supported) return false;
     try {
