@@ -65,7 +65,7 @@ class CustomerRatingService {
 
     var note = comment.trim();
     if (note.length > 300) note = note.substring(0, 300);
-    final id = orderId + '_' + reviewerRole;
+    final id = '${orderId}_$reviewerRole';
     try {
       await FirebaseFirestore.instance.collection('customer_reviews').doc(id).set({
         'orderId': orderId,
