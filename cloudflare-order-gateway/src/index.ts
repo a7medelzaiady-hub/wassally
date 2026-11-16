@@ -80,6 +80,10 @@ function encodeFields(fields: JsonMap): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, encodeValue(value)]));
 }
 
+export function firstName(value: unknown): string {
+  return String(value ?? "").trim().split(/\\s+/)[0] ?? "";
+}
+
 function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -357,7 +361,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const lines = Array.isArray(input.items) ? input.items : [];
   const area = String(input.area ?? "").trim();
   const promoCode = String(input.promoCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const customerName = String(input.customerName ?? "").trim().split(/\s+/)[0] ?? "";
+  const customerName = firstName(input.customerName);
   const notes = String(input.notes ?? "").trim();
   const contact = validateContact(input.contact);
 
@@ -527,7 +531,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     throw new HttpError(400, "صيغة بيانات التعديل غير صحيحة.");
   }
   const lines = Array.isArray(input.items) ? input.items : [];
-  const customerName = String(input.customerName ?? "").trim().split(/\\s+/)[0] ?? "";
+  const customerName = firstName(input.customerName);
   const notes = String(input.notes ?? "").trim();
   const contact = validateContact(input.contact);
   if (!customerName || customerName.length > 30 || notes.length > 500) {
