@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 /// بيانات العميل الشخصية في الطلب (الاسم الكامل، الموبايل، العنوان).
 ///
@@ -42,15 +41,11 @@ class OrderContactService {
           .collection('private')
           .doc('contact');
 
-  /// بترجع null لو مفيش مستند أو الصلاحية مش متاحة (مثلًا الطلب اتسلّم).
+  /// ترجع null فقط لو المستند غير موجود.
+  /// أخطاء الصلاحيات/الشبكة تخرج للواجهة كي تعرض السبب وتتيح إعادة المحاولة.
   static Future<OrderContact?> load(String orderId) async {
-    try {
-      final snap = await ref(orderId).get();
-      final data = snap.data();
-      return data == null ? null : OrderContact.fromMap(data);
-    } catch (e) {
-      debugPrint('Order contact unavailable: $e');
-      return null;
-    }
+    final snap = await ref(orderId).get();
+    final data = snap.data();
+    return data == null ? null : OrderContact.fromMap(data);
   }
 }
