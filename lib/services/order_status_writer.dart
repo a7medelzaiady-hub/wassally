@@ -100,7 +100,7 @@ class OrderStatusWriter {
         throw StateError('لا يمكن إلغاء طلب خرج للتوصيل قبل توثيق رجوعه للمحل.');
       }
       final issue = await db.collection('delivery_issues').doc(activeIssueId).get();
-      if (issue.data()?['status'] != 'returned_to_store') {
+      if (issue.data()?['status'] != 'store_confirmed_return') {
         throw StateError('لازم المندوب يؤكد رجوع الطلب للمحل قبل إغلاقه.');
       }
       cancellingAfterReturn = true;
