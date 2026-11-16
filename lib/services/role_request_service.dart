@@ -31,7 +31,7 @@ class RoleRequestService {
   static Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> watchMine() {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
-    return _col.where('userId', isEqualTo: uid).snapshots().map((s) => s.docs);
+    return _col.where('userId', isEqualTo: uid).orderBy('createdAt', descending: true).limit(50).snapshots().map((s) => s.docs);
   }
 
   /// بيبعت الطلب (أو يعيد التقديم بعد الرفض: set بيستبدل المستند، والقواعد بتسمح بده للمرفوض بس).
@@ -131,7 +131,7 @@ class RoleRequestService {
 
   /// طلبات الانضمام المعلقة للأدمن.
   static Stream<QuerySnapshot<Map<String, dynamic>>> watchPending() =>
-      _col.where('status', isEqualTo: 'pending').snapshots();
+      _col.where('status', isEqualTo: 'pending').orderBy('createdAt', descending: true).limit(100).snapshots();
 
   /// للمدير: قبول طلب. بيكتب الدور (couriers أو storeOwners) وبيقفل الطلب في نفس الـ batch.
   /// لصاحب المحل: إما [storeId] لمحل موجود، أو [newStoreName] لمحل جديد (بيتعمل له مستند في stores).
