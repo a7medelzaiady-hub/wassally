@@ -138,10 +138,13 @@ test('statusHistory: لا تعديل ولا حذف', async () => {
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1/statusHistory/preparing'), { from: 'x' }));
 });
 
-test('order lifecycle: تغيير الحالة بلا سجل يُرفض والرجوع للخلف يُرفض افتراضيًا', async () => {
+test('order lifecycle: تغيير الحالة بلا سجل أو بتخطي مرحلة أو رجوع للخلف يُرفض افتراضيًا', async () => {
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { status: 'preparing' }));
-  await assertSucceeds(changeStatus(as('admin1'), 'o1', 'new', 'on_the_way', 'admin'));
-  await assertFails(changeStatus(as('admin1'), 'o1', 'on_the_way', 'new', 'admin'));
+  await assertFails(changeStatus(as('admin1'), 'o1', 'new', 'on_the_way', 'admin'));
+  await assertSucceeds(changeStatus(as('admin1'), 'o1', 'new', 'preparing', 'admin'));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'preparing' }));
+  await assertFails(changeStatus(as('admin1'), 'o1', 'preparing', 'new', 'admin'));
 });
 
 test('order lifecycle: اعتماد الإجمالي دون تغيير الحالة يظل مسموحًا', async () => {
