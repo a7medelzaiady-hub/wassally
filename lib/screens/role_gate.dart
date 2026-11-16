@@ -48,6 +48,10 @@ class _RoleGateState extends State<RoleGate> {
 
   /// تنبيهات الدردشة والشكاوى اللحظية (المدير بياخد تنبيهات زيادة).
   void _startAlerts(RoleInfo info) {
+    if (info.pendingStoreOwner) {
+      LiveAlerts.stop();
+      return;
+    }
     LiveAlerts.start(
       isAdmin: info.held.contains(AppRole.admin),
       storeId: info.held.contains(AppRole.storeOwner) ? info.storeId : '',
@@ -122,7 +126,11 @@ class _RoleGateState extends State<RoleGate> {
       case AppRole.courier:
         return CourierOrdersPage(name: name);
       case AppRole.storeOwner:
-        return StoreOwnerPage(storeId: info.storeId, name: name);
+        return StoreOwnerPage(
+          storeId: info.storeId,
+          name: name,
+          pendingApproval: info.pendingStoreOwner,
+        );
       case AppRole.supervisor:
         return SupervisorPage(name: name);
       case AppRole.customer:
