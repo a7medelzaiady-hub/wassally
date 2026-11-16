@@ -45,8 +45,8 @@ class PriceCheck {
 
 /// بيقارن أسعار [order] بأسعار [store] الحالية.
 ///
-/// ملاحظة: الأسعار في الطلب بتتخزن باسم الصنف، فالمقارنة بالاسم. لو الأدمن
-/// غيّر سعر أو اسم صنف بعد ما العميل طلب، هتظهر كفرق والأدمن هو اللي يقرر.
+/// المطابقة تعتمد على productId عند توفره. الأصناف القديمة بلا معرف لا تُطابق
+/// تلقائيًا إذا تكرر الاسم، لتجنب اختيار صنف بناءً على سعر العميل.
 ///
 /// [extraProducts]: أصناف المحل المخزنة في stores/{id}/products (النظام الجديد).
 /// الأصناف القديمة (مصفوفة جوه مستند المحل) بتتقرا من [store] نفسه.
@@ -66,17 +66,20 @@ PriceCheck checkOrderPrices(
   var anyDiff = false;
 
   for (final line in order.items) {
-    final matches = catalog.where((p) => p.name == line.name).toList();
-    if (matches.isEmpty) {
+    // نستخدم معرّف مستند الكتالوج متى توفر؛ الاسم وحده ليس هوية فريدة للصنف.
+    final matches = line.productId.isNotEmpty
+        ? catalog.where((p) => p.id == line.productId).toList()
+        : catalog.where((p) => p.name == line.name).toList();
+
+    // المعرف المفقود أو الاسم المكرر يجعل المطابقة غير مؤكدة؛ لا نختار
+    // الصنف الذي يوافق السعر المرسل من العميل لأن ذلك يسمح بإخفاء التلاعب.
+    if (matches.length != 1) {
       anyMissing = true;
       issues.add(PriceIssue(line.name, line.price, null));
       continue;
     }
-    // لو فيه أكتر من صنف بنفس الاسم، بنفضّل اللي سعره زي الطلب.
-    final product = matches.firstWhere(
-      (p) => (p.price - line.price).abs() < 0.01,
-      orElse: () => matches.first,
-    );
+
+    final product = matches.single;
     catalogSubtotal += product.price * line.qty;
     if ((product.price - line.price).abs() >= 0.01) {
       anyDiff = true;
