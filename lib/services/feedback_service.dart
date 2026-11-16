@@ -8,7 +8,8 @@ import 'role_service.dart';
 enum FeedbackKind {
   complaint('complaint', 'شكوى'),
   suggestion('suggestion', 'اقتراح'),
-  orderIssue('order_issue', 'مشكلة في طلب');
+  orderIssue('order_issue', 'مشكلة في طلب'),
+  restrictionAppeal('restriction_appeal', 'اعتراض على تقييد');
 
   final String key;
   final String label;
@@ -46,8 +47,19 @@ class FeedbackService {
     if (text.length < minLength) {
       throw ArgumentError('اكتب $minLength حروف على الأقل.');
     }
-    if (kind == FeedbackKind.orderIssue && (orderId ?? '').isEmpty) {
+    String? linkedOrderId = orderId;
+    if (kind == FeedbackKind.orderIssue && (linkedOrderId ?? '').isEmpty) {
       throw ArgumentError('اختار الطلب.');
+    }
+    if (kind == FeedbackKind.restrictionAppeal) {
+      final restriction = await FirebaseFirestore.instance
+          .collection('customer_restrictions')
+          .doc(user.uid)
+          .get();
+      linkedOrderId = (restriction.data()?['sourceOrderId'] ?? '').toString();
+      if (!restriction.exists || linkedOrderId!.isEmpty) {
+        throw StateError('لا يوجد قرار تقييد مسجل على حسابك لتقديم اعتراض عليه.');
+      }
     }
     var name = user.displayName ?? '';
     if (name.length > 80) name = name.substring(0, 80);
@@ -57,7 +69,7 @@ class FeedbackService {
       'userName': name,
       'kind': kind.key,
       'message': text.length > maxLength ? text.substring(0, maxLength) : text,
-      if (kind == FeedbackKind.orderIssue) 'orderId': orderId,
+      if (kind == FeedbackKind.orderIssue || kind == FeedbackKind.restrictionAppeal) 'orderId': linkedOrderId,
       'appRole': _roleKey(RoleService.cachedFor(user.uid)?.role),
       'status': 'open',
       'createdAt': FieldValue.serverTimestamp(),
