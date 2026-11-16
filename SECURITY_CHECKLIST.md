@@ -26,7 +26,7 @@ npm test
 ## خطوات يدوية (لا أستطيع تنفيذها)
 1. **App Check:** الحزمة مضافة والتفعيل موجود حاليًا على Android (Play Integrity) وApple (App Attest fallback)، لكنه لا يعمل على الويب. من Firebase Console سجّل التطبيقات بمزوّداتها الصحيحة، راقب Unenforced أولًا ثم فعّل Enforcement تدريجيًا. فشل التفعيل في التطبيق يُسجّل ولا يوقف التشغيل؛ لذلك راقب Crashlytics ولا تعتبر App Check مفروضًا قبل التحقق من Console.
 2. **تقييد مفاتيح API:** Google Cloud Console ← APIs & Services ← Credentials: قيّد مفتاح Android بـ package name + SHA-1، ومفتاح الويب بدومينك، واقصر كل مفتاح على الـ APIs المطلوبة.
-3. **Cloudinary:** التطبيق لم يعد يستخدم unsigned presets؛ يطلب توقيعًا قصير العمر من `POST /v1/uploads/sign` في Cloudflare Worker. قبل إصدار التطبيق: انشر Worker الجديد، واضبط `CLOUDINARY_API_KEY` و`CLOUDINARY_API_SECRET` كـ Secrets، واختبر الرفع لكل دور. بعد تحديث التطبيق، عطّل unsigned presets القديمة (`stores_unsigned`, `products_unsigned`, `banners_unsigned`) من Cloudinary Console. لا تعتمد على Firebase `signUpload` على Spark.
+3. **Cloudinary:** التطبيق لا يتصل بـCloudinary مباشرة؛ يرسل الصورة إلى `POST /v1/uploads` في Cloudflare Worker، الذي يتحقق من الدور والحجم وبصمة JPEG/PNG/WEBP ثم يرفعها بختم خادمي. قبل إصدار التطبيق: انشر Worker الجديد، واضبط `CLOUDINARY_API_KEY` و`CLOUDINARY_API_SECRET` كـ Secrets، واختبر الرفع لكل دور. بعد تحديث التطبيق، عطّل unsigned presets القديمة (`stores_unsigned`, `products_unsigned`, `banners_unsigned`) من Cloudinary Console. لا تعتمد على Firebase `signUpload` على Spark.
 4. **أول Super Admin:** لم أغيّر نموذج الأدمن (كل الأدمن صلاحياتهم متساوية). فصل الصلاحيات وStore Owner يحتاج قرارك (المرحلة 4 على الأرجح).
 
 ---
@@ -48,7 +48,7 @@ npm test
 
 - `onUserDeleted` يحتوي كود تنظيف مستند المستخدم وأدواره ورسائل الدعم والشكاوى وطلبات الانضمام والإشعارات والتقديمات وبيانات التواصل من الطلبات. لكن `firebase.json` لا يعرّف Functions، ولم يثبت نشر الدالة؛ لذلك لا تعتبر تنظيف البيانات بعد حذف الحساب منفذًا على الإنتاج حتى التحقق من النشر أو توفير بديل Worker.
 - عند حذف آخر صاحب محل نشط، يتم إيقاف ظهور المحل، مع الاحتفاظ بالكتالوج لإعادة التعيين أو الحذف الإداري.
-- مسار Cloudflare لتوقيع Cloudinary أصبح موجودًا في الكود، لكنه لا يعمل على الإنتاج قبل نشر Worker وضبط أسرار Cloudinary. صلاحياته: صاحب المحل داخل مجلده، المتقدم داخل مجلد طلبه، والمدير وحده للبانرات.
+- مسار Cloudflare لرفع الصور والتحقق منها خادميًا أصبح موجودًا في الكود، لكنه لا يعمل على الإنتاج قبل نشر Worker وضبط أسرار Cloudinary. صلاحياته: صاحب المحل داخل مجلده، المتقدم داخل مجلد طلبه، والمدير وحده للبانرات.
 - تم إخفاء أقسام الصيدليات والأدوية من واجهات الإصدار الأول، واستبعاد متاجر الصيدليات القديمة من قائمة العميل. راجع صور/نصوص صفحة Google Play وبيانات Firestore قبل النشر.
 - **مهم للتكلفة:** Cloud Functions تتطلب Firebase Blaze حتى لو كان الاستخدام داخل الحصة المجانية. إذا كان مشروع Firebase على Spark فلن يمكن نشر/تشغيل الوظائف؛ راجع `PHASE6_EXECUTION_AR.md` قبل تغيير خطة الفوترة.
 - لم تُشغّل اختبارات Flutter أو Firebase Emulator في بيئة التعديل لعدم توفر Flutter/Dart وFirebase CLI ولتعذر تنزيل npm dependencies. لا تعتبر هذه المرحلة اعتمادًا نهائيًا للنشر.
@@ -69,7 +69,7 @@ npm test
 
 ## تحديث تنفيذ 16 نوفمبر 2026
 
-- `image_service.dart` لا يحتوي unsigned preset أو رفعًا مباشرًا غير موقّع؛ يستخدم `OrderGateway` لطلب توقيع Cloudinary.
+- `image_service.dart` لا يحتوي unsigned preset أو رفعًا مباشرًا غير موقّع؛ يستخدم `OrderGateway` لرفع الصورة عبر Worker مع تحقق خادمي للحجم والصيغة.
 - `cloudflare-order-gateway` يضيف `POST /v1/uploads/sign` مع تحقق Firebase ID token وصلاحية المدير/صاحب المحل/المتقدم، وتوقيع معاملات الرفع بصيغة canonical.
 - يلزم نشر Worker الجديد وإضافة أسرار Cloudinary قبل أن تعمل ميزة رفع الصور في نسخة التطبيق الجديدة. لا يوجد نشر Cloudflare من هذا المستودع تلقائيًا.
 - لا يزال حذف الحساب يعتمد على تنظيف بيانات خلفي غير مثبت النشر؛ هذه نقطة مانعة لاعتماد امتثال حذف الحساب حتى تنفيذ بديل موثوق.
