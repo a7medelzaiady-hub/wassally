@@ -189,7 +189,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final navigator = Navigator.of(context);
 
     try {
-      final orderId = await OrderService.placeOrder(
+      await OrderService.placeOrder(
         cart: cart,
         name: _name.text.trim(),
         phone: _phone.text.replaceAll(RegExp(r'[\s\-]'), ''),
