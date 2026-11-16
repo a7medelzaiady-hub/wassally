@@ -312,8 +312,7 @@ service cloud.firestore {
         (!('fcmToken' in d) || (d.fcmToken is string && d.fcmToken.size() <= 4096)) &&
         (!('fcmTokens' in d) || (d.fcmTokens is list && d.fcmTokens.size() <= 20)) &&
         (!('fcmInstallationIds' in d) ||
-          (d.fcmInstallationIds is list && d.fcmInstallationIds.size() <= 20 &&
-           d.fcmInstallationIds.toSet().size() == d.fcmInstallationIds.size()));
+          (d.fcmInstallationIds is list && d.fcmInstallationIds.size() <= 20));
     }
 
     // صنف يكتبه صاحب المحل: حقول معروفة بس وبأنواع صحيحة.
