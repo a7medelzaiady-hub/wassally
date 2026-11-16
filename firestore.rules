@@ -222,11 +222,11 @@ service cloud.firestore {
     // مراجعة السعر الحقيقي بتتم عند الأدمن (verifiedTotal) والمندوب بيحصّل المبلغ المعتمد.
     // مفيش حد صغير للأصناف: الحد الأقصى 100 صنف، ومفيش قراءات لكل صنف.
     function customerNotRestricted(uid) {
+      // get() على مستند غير موجود بيرمي خطأ تقييم وبيفشل الإنشاء كله، فلازم exists() الأول.
       let p = /databases/$(database)/documents/customer_restrictions/$(uid);
-      let restriction = get(p).data;
-      return restriction == null ||
-        restriction.get('active', false) != true ||
-        restriction.get('expiresAt', request.time) <= request.time;
+      return !exists(p) ||
+        get(p).data.get('active', false) != true ||
+        get(p).data.get('expiresAt', request.time) <= request.time;
     }
 
     function validNewOrder(d) {
