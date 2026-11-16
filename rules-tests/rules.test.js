@@ -354,8 +354,6 @@ test('couriers: عميل لا يزوّد الإحصائية بدون تقييم'
 });
 
 // ───────────── المرحلة 4: صاحب المحل ─────────────
-const flag = (name) => env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'app_info/security'), { [name]: true }));
-
 test('owner: يقرأ طلبات محله فقط (بالاستعلام والقراءة المباشرة)', async () => {
   await env.withSecurityRulesDisabled((c) =>
     setDoc(doc(c.firestore(), 'orders/o2'), { ...baseOrder('cust1', { storeId: 'shop2' }), createdAt: new Date() }));
