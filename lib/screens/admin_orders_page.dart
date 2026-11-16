@@ -268,7 +268,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             ),
             SliverToBoxAdapter(child: _bannersShortcut()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
-            const SliverToBoxAdapter(child: UnansweredOrdersAlert()),
+            SliverToBoxAdapter(child: UnansweredOrdersAlert(orders: all)),
           ];
 
           if (snapshot.hasError) {
