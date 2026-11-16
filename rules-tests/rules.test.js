@@ -797,7 +797,7 @@ test('admin cancellation: إلغاء طلب قيد التجهيز يزيل تع�
   const b = writeBatch(db);
   b.update(doc(db, 'orders/o1'), {
     status: 'cancelled', courierId: deleteField(), courierName: deleteField(),
-    courierPhone: deleteField(), courierAt: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(), deliveryMode: deleteField(),
   });
   b.set(doc(db, 'orders/o1/statusHistory/cancelled'), {
     from: 'preparing', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
@@ -1287,7 +1287,7 @@ test('courier unassignment: لا يُفك الإسناد إلا مع إعادة 
   const partial = writeBatch(admin);
   partial.update(doc(admin, 'orders/o1'), {
     courierId: deleteField(), courierName: deleteField(),
-    courierPhone: deleteField(), courierAt: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(), deliveryMode: deleteField(),
   });
   await assertFails(partial.commit());
   assert.equal((await getDoc(doc(admin, 'orders/o1'))).data().courierId, 'cour1');
@@ -1296,7 +1296,7 @@ test('courier unassignment: لا يُفك الإسناد إلا مع إعادة 
   const atomic = writeBatch(admin);
   atomic.update(doc(admin, 'orders/o1'), {
     courierId: deleteField(), courierName: deleteField(),
-    courierPhone: deleteField(), courierAt: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(), deliveryMode: deleteField(),
   });
   atomic.set(doc(admin, 'courier_available_orders/o1'), {
     storeId: order.storeId, storeName: order.storeName, area: order.area ?? '',
