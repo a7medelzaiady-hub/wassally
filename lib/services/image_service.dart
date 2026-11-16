@@ -60,72 +60,41 @@ class ImageService {
     }
 
     final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
-    final signResponse = await http.post(
-      Uri.parse('$root/v1/uploads/sign'),
-      headers: {
-        'Authorization': 'Bearer $idToken',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({'folder': folder, 'storeId': storeId ?? ''}),
-    ).timeout(const Duration(seconds: 20));
-    if (signResponse.statusCode != 200) {
-      String message = 'تعذر تأمين رفع الصورة (${signResponse.statusCode}).';
-      try {
-        final data = jsonDecode(signResponse.body);
-        if (data is Map && data['error'] is String) message = data['error'] as String;
-      } catch (_) {}
-      throw StateError(message);
-    }
-
-    final signed = jsonDecode(signResponse.body);
-    if (signed is! Map) throw StateError('استجابة توقيع الصورة غير صحيحة.');
-    final cloudName = (signed['cloudName'] ?? '').toString();
-    final apiKey = (signed['apiKey'] ?? '').toString();
-    final timestamp = (signed['timestamp'] ?? '').toString();
-    final uploadFolder = (signed['folder'] ?? '').toString();
-    final publicId = (signed['publicId'] ?? '').toString();
-    final allowedFormats = (signed['allowedFormats'] ?? '').toString();
-    final signature = (signed['signature'] ?? '').toString();
-    final overwrite = signed['overwrite'] == false ? 'false' : '';
-    final uniqueFilename = signed['uniqueFilename'] == true ? 'true' : '';
-    final useFilename = signed['useFilename'] == false ? 'false' : '';
-    if ([cloudName, apiKey, timestamp, uploadFolder, publicId, allowedFormats, signature,
-      overwrite, uniqueFilename, useFilename]
-        .any((value) => value.isEmpty)) {
-      throw StateError('بيانات توقيع الصورة ناقصة.');
-    }
-
-    final uri = Uri.https('api.cloudinary.com', '/v1_1/$cloudName/image/upload');
-    final request = http.MultipartRequest('POST', uri)
-      ..fields['api_key'] = apiKey
-      ..fields['timestamp'] = timestamp
-      ..fields['folder'] = uploadFolder
-      ..fields['public_id'] = publicId
-      ..fields['allowed_formats'] = allowedFormats
-      ..fields['overwrite'] = overwrite
-      ..fields['unique_filename'] = uniqueFilename
-      ..fields['use_filename'] = useFilename
-      ..fields['signature'] = signature
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$root/v1/uploads'),
+    )
+      ..headers['Authorization'] = 'Bearer $idToken'
+      ..headers['Accept'] = 'application/json'
+      ..fields['folder'] = folder
+      ..fields['storeId'] = storeId ?? ''
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
           bytes,
-          filename: picked.name.isEmpty
-              ? '${DateTime.now().millisecondsSinceEpoch}.jpg'
-              : picked.name,
+          filename: picked.name.isEmpty ? 'upload' : picked.name,
         ),
       );
 
-    final response = await http.Response.fromStream(
-      await request.send().timeout(const Duration(seconds: 60)),
+    final uploadResponse = await http.Response.fromStream(
+      await request.send().timeout(const Duration(seconds: 90)),
     );
-    if (response.statusCode != 200) {
-      throw StateError('فشل رفع الصورة (${response.statusCode}).');
+    if (uploadResponse.statusCode != 200) {
+      String message = 'تعذر رفع الصورة (' + uploadResponse.statusCode.toString() + ').';
+      try {
+        final data = jsonDecode(uploadResponse.body);
+        if (data is Map && data['error'] is String) {
+          message = data['error'] as String;
+        }
+      } catch (_) {}
+      throw StateError(message);
     }
-    final result = jsonDecode(response.body);
-    final url = result is Map ? result['secure_url'] as String? : null;
-    if (url == null || url.isEmpty) throw StateError('لم يرجع Cloudinary رابط الصورة.');
+
+    final result = jsonDecode(uploadResponse.body);
+    final url = result is Map ? result['url'] as String? : null;
+    if (url == null || !isValidImageUrl(url)) {
+      throw StateError('خدمة الصور لم ترجع رابطًا آمنًا صالحًا.');
+    }
     return url;
   }
 }
