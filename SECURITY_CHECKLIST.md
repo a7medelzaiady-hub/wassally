@@ -53,3 +53,16 @@ npm test
 - تم إخفاء أقسام الصيدليات والأدوية من واجهات الإصدار الأول، واستبعاد متاجر الصيدليات القديمة من قائمة العميل. راجع صور/نصوص صفحة Google Play وبيانات Firestore قبل النشر.
 - **مهم للتكلفة:** Cloud Functions تتطلب Firebase Blaze حتى لو كان الاستخدام داخل الحصة المجانية. إذا كان مشروع Firebase على Spark فلن يمكن نشر/تشغيل الوظائف؛ راجع `PHASE6_EXECUTION_AR.md` قبل تغيير خطة الفوترة.
 - لم تُشغّل اختبارات Flutter أو Firebase Emulator في بيئة التعديل لعدم توفر Flutter/Dart وFirebase CLI ولتعذر تنزيل npm dependencies. لا تعتبر هذه المرحلة اعتمادًا نهائيًا للنشر.
+
+
+# بوابة الطلبات الموثوقة (Cloudflare Workers — 16 نوفمبر 2026)
+
+- أضيفت خدمة مستقلة في `cloudflare-order-gateway/` للتحقق من أسعار كل صنف من كتالوج Firestore وحساب الخصم ورسوم التوصيل والإجمالي على الخادم.
+- السعر المرسل من Flutter لا يُعتمد؛ يستخدم فقط لاكتشاف تغيّر السعر منذ عرض السلة.
+- الطلب وبيانات التواصل الخاصة و`orderLimits` تُكتب في Firestore Commit ذري واحد.
+- قواعد Firestore تقرأ `app_info/security.serverOrders`: عند تفعيله تمنع إنشاء الطلب وكتابة `orderLimits` من تطبيق العميل مباشرة.
+- تطبيق Flutter يستخدم البوابة عند تمرير `WASALLY_ORDER_GATEWAY_URL` كـ dart-define. عدم ضبط العنوان يبقي وضع التوافق القديم حتى التحويل.
+- **لم يتم إنشاء حساب Cloudflare أو حساب الخدمة أو إضافة Secrets أو نشر Worker أو تفعيل `serverOrders`.** لا تعتبر حماية الأسعار فعالة في الإنتاج حتى تكتمل خطوات `cloudflare-order-gateway/README.md`.
+- يلزم أولًا إعداد بيئة Firebase اختبار منفصلة، واختبار Worker عليها، وتشغيل اختبارات Worker وFirestore Rules وFlutter بنجاح، ثم نشر التطبيق والقواعد على الإنتاج بالترتيب الموثق.
+- حساب الخدمة يتجاوز Firestore Rules؛ لذلك صلاحياته يجب أن تكون `roles/datastore.user` فقط، ولا يُرفع المفتاح إلى GitHub مطلقًا.
+- يجب قياس CPU الفعلي على Cloudflare Free (10ms افتراضيًا لكل طلب) واختبار App Check ومراقبة إساءة الاستخدام قبل تفعيل الإنتاج.
