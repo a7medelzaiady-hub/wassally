@@ -43,6 +43,26 @@ service cloud.firestore {
           .data.get('storeId', '') == storeId;
     }
 
+    // صاحب الطلب يستطيع إدارة مسودة محله فقط أثناء المراجعة أو بعد الرفض لإعادة التقديم.
+    function isStoreApplicant(storeId) {
+      let storePath = /databases/$(database)/documents/stores/$(storeId);
+      let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      return signedIn() &&
+        exists(storePath) &&
+        get(storePath).data.get('ownerUid', '') == request.auth.uid &&
+        exists(requestPath) &&
+        get(requestPath).data.get('storeId', '') == storeId &&
+        get(requestPath).data.get('status', '') in ['pending', 'rejected'];
+    }
+
+    // المتاجر القديمة تعتبر معتمدة ما لم يحدد لها approved=false صراحةً.
+    function isPublicStore(storeId) {
+      let path = /databases/$(database)/documents/stores/$(storeId);
+      return exists(path) &&
+        get(path).data.get('active', true) == true &&
+        get(path).data.get('approved', true) == true;
+    }
+
     // أي صاحب محل نشط (للكتالوج المشترك app_info/catalog).
     function isAnyStoreOwner() {
       return signedIn() &&
@@ -312,13 +332,40 @@ service cloud.firestore {
         (!('isAvailable' in d) || d.isAvailable is bool);
     }
 
-    // المحلات: القراءة لأي مستخدم مسجّل، والكتابة للمدير.
-    // صاحب المحل يعدّل محله هو فقط، وحقول التشغيل بس (فتح/إغلاق، مواعيد، صورة).
-    // الاسم والقسم والترتيب والتقييم للمدير فقط.
+    // المحلات: المسودات يقرأها صاحبها والمدير فقط. العملاء يقرأون المحل المعتمد والنشط فقط.
+    function validStoreDraft(storeId, d) {
+      let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      return signedIn() &&
+        d.keys().hasOnly(['name', 'category', 'address', 'ownerUid', 'active', 'approved',
+                          'time', 'image', 'imageUrl', 'storePhone', 'productCount',
+                          'createdAt', 'updatedAt']) &&
+        d.keys().hasAll(['name', 'category', 'address', 'ownerUid', 'active', 'approved',
+                         'time', 'image', 'imageUrl', 'productCount', 'createdAt']) &&
+        d.ownerUid == request.auth.uid &&
+        d.active == false && d.approved == false &&
+        d.createdAt == request.time &&
+        d.name is string && d.name.size() >= 2 && d.name.size() <= 100 &&
+        d.category is string && d.category.size() > 0 && d.category.size() <= 60 &&
+        d.address is string && d.address.size() >= 5 && d.address.size() <= 300 &&
+        d.imageUrl is string && d.imageUrl.matches('https://.*') &&
+        d.image == d.imageUrl &&
+        d.get('storePhone', '') is string && d.get('storePhone', '').size() <= 20 &&
+        d.productCount == 0 &&
+        existsAfter(requestPath) &&
+        getAfter(requestPath).data.get('type', '') == 'store_owner' &&
+        getAfter(requestPath).data.get('status', '') == 'pending' &&
+        getAfter(requestPath).data.get('storeId', '') == storeId &&
+        getAfter(requestPath).data.get('storeName', '') == d.name &&
+        getAfter(requestPath).data.get('storeCategory', '') == d.category &&
+        getAfter(requestPath).data.get('address', '') == d.address &&
+        getAfter(requestPath).data.get('storeImageUrl', '') == d.imageUrl;
+    }
+
     match /stores/{storeId} {
-      allow read: if signedIn();
-      allow create: if isAdmin();
-      // المدير أو صاحب المحل نفسه يحذف المحل (التطبيق بيحذف الأصناف الأول).
+      allow read: if isAdmin() || isStoreOwner(storeId) ||
+        isStoreApplicant(storeId) || isPublicStore(storeId);
+      allow create: if isAdmin() || validStoreDraft(storeId, request.resource.data);
+      // صاحب المحل المعتمد يستطيع حذف محله؛ مسودات الرفض تظل خاصة ولا تُحذف من العميل.
       allow delete: if isAdmin() || isStoreOwner(storeId);
       allow update: if isAdmin() ||
         (isStoreOwner(storeId) &&
@@ -326,12 +373,43 @@ service cloud.firestore {
                                  'productCount', 'offerItems', 'bestItems',
                                  'updatedAt']) &&
           request.resource.data.get('active', true) is bool &&
+          (!('active' in changedKeys()) || request.resource.data.active == false) &&
           request.resource.data.get('time', '') is string &&
           request.resource.data.get('time', '').size() <= 60 &&
           request.resource.data.get('image', '') is string &&
           request.resource.data.get('image', '').size() <= 1000 &&
           request.resource.data.get('imageUrl', '') is string &&
           request.resource.data.get('imageUrl', '').size() <= 1000 &&
+          (!('productCount' in changedKeys()) ||
+            (request.resource.data.productCount is int &&
+             request.resource.data.productCount >= 0 &&
+             request.resource.data.productCount <= 10000)) &&
+          (!('offerItems' in changedKeys()) ||
+            (request.resource.data.offerItems is list &&
+             request.resource.data.offerItems.size() <= 12)) &&
+          (!('bestItems' in changedKeys()) ||
+            (request.resource.data.bestItems is list &&
+             request.resource.data.bestItems.size() <= 12))) ||
+        (isStoreApplicant(storeId) &&
+          changedKeys().hasOnly(['name', 'category', 'address', 'time', 'image',
+                                 'imageUrl', 'storePhone', 'productCount',
+                                 'offerItems', 'bestItems', 'updatedAt']) &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.active == false &&
+          request.resource.data.approved == false &&
+          request.resource.data.name is string &&
+          request.resource.data.name.size() >= 2 &&
+          request.resource.data.name.size() <= 100 &&
+          request.resource.data.category is string &&
+          request.resource.data.category.size() <= 60 &&
+          request.resource.data.address is string &&
+          request.resource.data.address.size() <= 300 &&
+          request.resource.data.image is string &&
+          request.resource.data.image.size() <= 1000 &&
+          request.resource.data.imageUrl is string &&
+          request.resource.data.imageUrl.size() <= 1000 &&
+          request.resource.data.get('storePhone', '') is string &&
+          request.resource.data.get('storePhone', '').size() <= 20 &&
           (!('productCount' in changedKeys()) ||
             (request.resource.data.productCount is int &&
              request.resource.data.productCount >= 0 &&
@@ -355,12 +433,15 @@ service cloud.firestore {
           resource.data.get('ratingSum', 0) +
           getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
 
-      // أصناف المحل (stores/{id}/products/{pid}): المدير وصاحب المحل.
+      // الأصناف خاصة بصاحب المسودة والمدير حتى الاعتماد؛ بعدها يقرأها العملاء.
       match /products/{productId} {
-        allow read: if signedIn();
-        allow delete: if isAdmin() || isStoreOwner(storeId);
+        allow read: if isAdmin() || isStoreOwner(storeId) ||
+          isStoreApplicant(storeId) || isPublicStore(storeId);
+        allow delete: if isAdmin() || isStoreOwner(storeId) ||
+          isStoreApplicant(storeId);
         allow create, update: if isAdmin() ||
-          (isStoreOwner(storeId) && validOwnerProduct(request.resource.data));
+          ((isStoreOwner(storeId) || isStoreApplicant(storeId)) &&
+            validOwnerProduct(request.resource.data));
       }
     }
 
