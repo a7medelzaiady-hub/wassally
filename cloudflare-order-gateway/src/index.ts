@@ -378,6 +378,21 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
     courierId: "deleted", courierName: "مندوب محذوف", note: "", courierDeleted: true,
   }));
 
+  // Delete unapproved store drafts owned by this account, including product subcollections.
+  const applicantStores = await queryAccountDocuments(env, token, "stores", "ownerUid", uid);
+  for (const draft of applicantStores) {
+    const data = decodeFields(draft.fields ?? {});
+    if (data.active === true || data.approved === true) continue;
+    const storePath = draft.name.split("/documents/")[1];
+    const draftProducts = await queryAccountDocuments(
+      env, token, "products", "", uid, storePath,
+    );
+    await commitFirestoreWrites(env, token, [
+      ...draftProducts.map((product) => ({ delete: product.name })),
+      { delete: draft.name },
+    ]);
+  }
+
   // Delete support messages before their parent document (Firestore has no cascade delete).
   const chatPath = `support_chats/${encodeURIComponent(uid)}`;
   const chatMessages = await queryAccountDocuments(env, token, "messages", "", uid, chatPath);
@@ -409,7 +424,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
             updatedAt: new Date(),
           }),
         },
-        updateMask: { fieldPaths: ["active", "ownerDeleted", "updatedAt"] },
+        updateMask: { fieldPaths: ["active", "ownerDeleted", "updatedAt", "ownerUid"] },
       }]);
     }
   }
