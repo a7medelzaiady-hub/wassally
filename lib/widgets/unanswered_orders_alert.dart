@@ -68,6 +68,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
         final firstCreatedAt = docs.first.data()['createdAt'] as Timestamp;
         final oldest = _now.difference(firstCreatedAt.toDate()).inMinutes;
         final count = docs.length;
+        final countLabel = count == 100 ? '100+' : '$count';
         return Container(
           width: double.infinity,
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -83,7 +84,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  'تنبيه: يوجد $count طلب جديد لم يتم الرد عليه منذ 5 دقائق أو أكثر.',
+                  'تنبيه: يوجد $countLabel طلب جديد لم يتم الرد عليه منذ 5 دقائق أو أكثر.',
                   style: TextStyle(
                     color: kDanger,
                     fontWeight: FontWeight.w800,
