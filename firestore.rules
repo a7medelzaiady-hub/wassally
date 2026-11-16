@@ -823,11 +823,13 @@ service cloud.firestore {
       allow get: if signedIn() && (isAdmin() || request.auth.uid == uid);
       allow list: if isAdmin();
       allow create: if isAdmin() && validCustomerRestriction(uid, request.resource.data);
-      allow update: if isAdmin() &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'clearedAt', 'clearedBy']) &&
-        request.resource.data.get('active', true) == false &&
-        request.resource.data.get('clearedAt', null) == request.time &&
-        request.resource.data.get('clearedBy', '') == request.auth.uid;
+      allow update: if isAdmin() && (
+        validCustomerRestriction(uid, request.resource.data) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'clearedAt', 'clearedBy']) &&
+          request.resource.data.get('active', true) == false &&
+          request.resource.data.get('clearedAt', null) == request.time &&
+          request.resource.data.get('clearedBy', '') == request.auth.uid)
+      );
       allow delete: if false;
     }
 
