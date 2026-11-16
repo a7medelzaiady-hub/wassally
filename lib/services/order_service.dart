@@ -599,24 +599,15 @@ class OrderService {
       return list;
     }
 
-    // الأحدث [kMyOrdersLimit] طلب بس (محتاج فهرس userId + createdAt من firestore.indexes.json).
-    // لو الفهرس لسه ما اتنشرش بنرجع للاستعلام القديم بدل ما الصفحة تتكسر.
-    // ملاحظة: بنستخدم await for (مش yield*) عشان خطأ الاستعلام يتمسك هنا.
-    try {
-      await for (final snap
-          in _orders
-              .where('userId', isEqualTo: user.uid)
-              .orderBy('createdAt', descending: true)
-              .limit(kMyOrdersLimit)
-              .snapshots()) {
-        yield toList(snap);
-      }
-    } on FirebaseException catch (e) {
-      if (e.code != 'failed-precondition') rethrow;
-      await for (final snap
-          in _orders.where('userId', isEqualTo: user.uid).snapshots()) {
-        yield toList(snap);
-      }
+    // لا نرجع لاستعلام غير محدود إذا كان الفهرس ناقصًا؛ ده ممكن يقرأ تاريخ العميل بالكامل.
+    // الفهرس userId + createdAt موجود في firestore.indexes.json ويجب نشره مع التطبيق.
+    await for (final snap
+        in _orders
+            .where('userId', isEqualTo: user.uid)
+            .orderBy('createdAt', descending: true)
+            .limit(kMyOrdersLimit)
+            .snapshots()) {
+      yield toList(snap);
     }
   }
 
