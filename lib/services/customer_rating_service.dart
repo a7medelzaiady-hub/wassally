@@ -66,6 +66,24 @@ class CustomerRatingService {
           .limit(100)
           .snapshots();
 
+  static Future<void> warnCustomer({
+    required String customerId,
+    required String orderId,
+    required String detail,
+  }) async {
+    if (FirebaseAuth.instance.currentUser == null) {
+      throw StateError('سجّل دخول الإدارة.');
+    }
+    await FirebaseFirestore.instance.collection('notifications').add({
+      'userId': customerId,
+      'title': 'تنبيه بخصوص طلبك',
+      'body': 'وصلتنا ملاحظة بخصوص التعامل في أحد الطلبات: ${detail.trim()}. نرجو التأكد من صحة العنوان والتواجد عند التسليم. لو عندك اعتراض تواصل مع الإدارة.',
+      'orderId': orderId,
+      'read': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// تقييد مؤقت بقرار إداري بعد مراجعة الواقعة، وليس نتيجة آلية للنجوم.
   static Future<void> restrictCustomer({
     required String customerId,
