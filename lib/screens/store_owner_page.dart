@@ -21,6 +21,7 @@ import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
+import '../widgets/unanswered_orders_alert.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -86,6 +87,7 @@ class StoreOwnerPage extends StatelessWidget {
               subtitle: name.isEmpty ? 'حساب صاحب المحل' : 'أهلاً $name',
             ),
             _ShopStatusBar(storeId: storeId),
+            UnansweredOrdersAlert(storeId: storeId),
             Material(
               color: Colors.white,
               child: TabBar(
