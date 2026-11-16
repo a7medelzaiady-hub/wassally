@@ -53,7 +53,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
     }).toList();
     if (newlyOverdue.isEmpty) return;
     _alertedOrderIds.addAll(newlyOverdue.map((order) => order.id));
-    _playAlert();
+    unawaited(_playAlert());
   }
 
   Future<void> _playAlert() async {
