@@ -76,16 +76,10 @@ class WasallyApp extends StatelessWidget {
           GlobalCupertinoLocalizations.delegate,
         ],
         builder: (context, child) {
-          // خطوط أصغر شوية في التطبيق كله (بتحترم إعداد حجم الخط في الموبايل).
-          final media = MediaQuery.of(context);
-          return MediaQuery(
-            data: media.copyWith(
-              textScaler: TextScaler.linear(media.textScaler.scale(1) * 0.9),
-            ),
-            child: KeyedSubtree(
-              key: ValueKey(Brand.palette.id),
-              child: child ?? const SizedBox.shrink(),
-            ),
+          // نحترم إعدادات حجم الخط وإمكانية الوصول في الجهاز دون تصغير إجباري.
+          return KeyedSubtree(
+            key: ValueKey(Brand.palette.id),
+            child: child ?? const SizedBox.shrink(),
           );
         },
         home: const AuthGate(),
