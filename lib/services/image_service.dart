@@ -88,7 +88,11 @@ class ImageService {
     final uploadFolder = (signed['folder'] ?? '').toString();
     final allowedFormats = (signed['allowedFormats'] ?? '').toString();
     final signature = (signed['signature'] ?? '').toString();
-    if ([cloudName, apiKey, timestamp, uploadFolder, allowedFormats, signature]
+    final overwrite = signed['overwrite'] == false ? 'false' : '';
+    final uniqueFilename = signed['uniqueFilename'] == true ? 'true' : '';
+    final useFilename = signed['useFilename'] == false ? 'false' : '';
+    if ([cloudName, apiKey, timestamp, uploadFolder, allowedFormats, signature,
+      overwrite, uniqueFilename, useFilename]
         .any((value) => value.isEmpty)) {
       throw StateError('بيانات توقيع الصورة ناقصة.');
     }
@@ -99,6 +103,9 @@ class ImageService {
       ..fields['timestamp'] = timestamp
       ..fields['folder'] = uploadFolder
       ..fields['allowed_formats'] = allowedFormats
+      ..fields['overwrite'] = overwrite
+      ..fields['unique_filename'] = uniqueFilename
+      ..fields['use_filename'] = useFilename
       ..fields['signature'] = signature
       ..files.add(
         http.MultipartFile.fromBytes(
