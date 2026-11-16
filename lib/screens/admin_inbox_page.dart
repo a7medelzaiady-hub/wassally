@@ -89,9 +89,9 @@ class _RequestsTabState extends State<_RequestsTab> {
           .limit(_pageSize)
           .get();
       if (!mounted) return;
-      final known = {...firstPage.map((d) => d.id), ..._moreDocs.map((d) => d.id)};
+      final known = {...firstPage.map((d) => d.reference.path), ..._moreDocs.map((d) => d.reference.path)};
       setState(() {
-        _moreDocs.addAll(page.docs.where((d) => !known.contains(d.id)));
+        _moreDocs.addAll(page.docs.where((d) => !known.contains(d.reference.path)));
         _hasMore = page.docs.length == _pageSize;
         _loadingMore = false;
       });
@@ -482,7 +482,7 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
           .limit(_pageSize)
           .get();
       if (!mounted) return;
-      final known = {...firstPage.map((d) => d.id), ..._moreDocs.map((d) => d.id)};
+      final known = {...firstPage.map((d) => d.reference.path), ..._moreDocs.map((d) => d.reference.path)};
       setState(() {
         _moreDocs.addAll(page.docs.where((d) => !known.contains(d.id)));
         _hasMore = page.docs.length == _pageSize;
