@@ -30,15 +30,8 @@ android {
     defaultConfig {
         // اسم الحزمة بتاع التطبيق. لو غيّرته لازم تسجّل تطبيق أندرويد جديد في Firebase.
         applicationId = "com.wassally.app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        // جوجل بلاي بتشترط targetSdk 36 على التطبيقات الجديدة والتحديثات (من 31 أغسطس 2026).
         targetSdk = maxOf(flutter.targetSdkVersion, 36)
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -56,14 +49,11 @@ android {
 
     buildTypes {
         release {
-            // امنع إنشاء إصدار Release موقّع بمفتاح Debug بالخطأ.
-            // جهّز android/key.properties ومفتاح الإصدار قبل بناء APK/AAB للنشر.
-            if (!keystorePropertiesFile.exists()) {
-                throw GradleException(
-                    "Missing android/key.properties: release builds must use your private signing key."
-                )
+            // لا نُجبر Debug على امتلاك مفتاح Release.
+            // عند وجود المفتاح فقط، نربط Release به؛ وعند غيابه نمنع مهام إخراج Release أدناه.
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -76,4 +66,23 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// فحص مفتاح التوقيع عند تنفيذ مهام إخراج Release فقط، وليس أثناء تقييم إعدادات Gradle.
+tasks.configureEach {
+    val isReleaseArtifactTask =
+        name.endsWith("Release") &&
+            (name.startsWith("assemble") ||
+                name.startsWith("bundle") ||
+                name.startsWith("package"))
+
+    if (isReleaseArtifactTask) {
+        doFirst {
+            if (!keystorePropertiesFile.exists()) {
+                throw GradleException(
+                    "Missing android/key.properties: release APK/AAB builds require the existing private upload key."
+                )
+            }
+        }
+    }
 }
