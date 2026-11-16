@@ -53,6 +53,7 @@ describe("courier notification payload", () => {
     });
     expect(payload.message.notification.title).toContain("#ABCDE");
     expect(payload.message.notification.body).toContain("متجر تجريبي");
+    expect(payload.message.android.ttl).toBe("300s");
     expect(JSON.stringify(payload)).not.toContain("phone");
     expect(JSON.stringify(payload)).not.toContain("address");
   });
