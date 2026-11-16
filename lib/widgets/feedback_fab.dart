@@ -286,7 +286,8 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
     final kinds = [
       for (final k in FeedbackKind.values)
-        if (k != FeedbackKind.orderIssue || widget.allowOrderIssue) k,
+        if ((k != FeedbackKind.orderIssue || widget.allowOrderIssue) &&
+          (k != FeedbackKind.restrictionAppeal || widget.allowOrderIssue)) k,
     ];
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 18, 20, 20 + bottom),
