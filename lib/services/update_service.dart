@@ -8,17 +8,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import 'notification_service.dart';
 import 'play_update.dart';
+import 'worker_notify_service.dart';
 
 /// فحص وجود إصدار أحدث من التطبيق.
 ///
 /// بيقرا المستند `app_info/version` من Firestore، وحقوله:
 ///   latest_version : نص، مثال "1.0.2"
 ///   force_update   : true/false (true = مينفعش المستخدم يتخطى التحديث)
-///   apk_url        : (اختياري) رابط صفحة التطبيق على Google Play. أي رابط تاني (زي APK مباشر)
-///                    بيتجاهله التطبيق، لأن سياسة جوجل بلاي بتمنع التطبيق يحدّث نفسه
-///                    بأي طريقة غير متجر Google Play.
-///
-/// المستند بيتعمل ويتعدّل من Firebase Console بس (القواعد بتمنع الكتابة من التطبيق).
+///   apk_url        : (اختياري) رابط صفحة التطبيق على Google Play.
 class UpdateService {
   const UpdateService._();
 
@@ -31,6 +28,17 @@ class UpdateService {
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
+  /// استدعِ هذه الدالة من شاشة الأدمن لإرسال تنبيه تحديث لكل المستخدمين عبر Cloudflare Worker
+  static Future<void> notifyUsersAboutNewVersion({
+    required String latestVersion,
+    bool forceUpdate = false,
+  }) async {
+    await WorkerNotifyService.notifyAppVersionPublished(
+      latestVersion: latestVersion,
+      forceUpdate: forceUpdate,
+    );
+  }
+
   /// بنفكّر المستخدم بالتحديث: نافذة عند فتح التطبيق (لو مش مؤجّلة 24 ساعة)،
   /// وشريط تذكير ثابت أعلى الشاشة طول ما فيه تحديث، وبيتجدد كل ما التطبيق يرجع للواجهة.
   static Future<void> checkForUpdates(BuildContext context) async {
@@ -38,8 +46,6 @@ class UpdateService {
     if (_checked) return;
     _checked = true;
     final hasUpdate = await _fetch();
-    // التحديث من داخل التطبيق عبر Google Play: لو اتولّى التحديث منكملش بالنافذة اليدوية.
-    // الإجباري بيتحدد من app_info/version (force_update)، والباقي Play بيحدد وجود إصدار أحدث.
     if (await PlayUpdate.tryUpdate(force: hasUpdate && _force)) return;
     if (!hasUpdate) return;
     if (!context.mounted) return;
@@ -86,7 +92,6 @@ class UpdateService {
         info.packageName,
         (data['apk_url'] ?? '').toString(),
       );
-      // لو الإجبار مفعّل بس مفيش رابط صالح، منحبسش المستخدم في نافذة مالهاش مخرج.
       _force = data['force_update'] == true && _validUrl(url);
       _url = url;
       _available = latest.isNotEmpty && isNewer(info.version, latest);
@@ -161,7 +166,7 @@ class UpdateService {
       );
   }
 
-  /// رابط التحديث دايمًا صفحة التطبيق على Google Play (ممنوع تحميل APK من خارج المتجر).
+  /// رابط التحديث دايمًا صفحة التطبيق على Google Play.
   static String _playUrl(String packageName, String configured) {
     final uri = Uri.tryParse(configured.trim());
     if (uri != null &&
