@@ -126,13 +126,6 @@ class OrderStatusWriter {
     // أي رفض هنا يظهر للطبقة المستدعية؛ لا نحاول تنفيذ تحديث أضعف بدونه.
     await batch.commit();
 
-    if (cancellingBeforePickup && assignedCourierId.isNotEmpty) {
-      await _notify(
-        assignedCourierId,
-        'تم إلغاء الطلب',
-        'تم إلغاء الطلب قبل استلامه من المحل.',
-        normalizedOrderId,
-      );
-    }
+
   }
 }
