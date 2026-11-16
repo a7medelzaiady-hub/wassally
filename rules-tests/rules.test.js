@@ -1217,7 +1217,7 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
 
   const second = writeBatch(admin);
   second.set(doc(admin, 'courier_settlements/s2'), {
-    ...settlement, amount: 5, createdAt: serverTimestamp(),
+    ...settlement, amount: 5, amountMinor: 500, createdAt: serverTimestamp(),
   });
   second.update(doc(admin, 'courier_settlement_balances/cour1'), {
     settledAmountMinor: 1500,
