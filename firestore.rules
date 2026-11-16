@@ -574,7 +574,7 @@ service cloud.firestore {
           request.resource.data.get('status', '') == 'cancelled' &&
           resource.data.get('activeDeliveryIssueId', '') is string &&
           resource.data.get('activeDeliveryIssueId', '').size() > 0 &&
-          get(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'returned_to_store' &&
+          get(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'store_confirmed_return' &&
           k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
           !('activeDeliveryIssueId' in request.resource.data) &&
           request.resource.data.get('lastDeliveryIssueId', '') == resource.data.get('activeDeliveryIssueId', '') &&
@@ -850,7 +850,7 @@ service cloud.firestore {
              (order.get('status', '') == 'cancelled' &&
               order.get('lastDeliveryIssueId', '') is string &&
               order.get('lastDeliveryIssueId', '').size() > 0 &&
-              get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('status', '') == 'returned_to_store' &&
+              get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('status', '') == 'store_confirmed_return' &&
               get(/databases/$(database)/documents/delivery_issues/$(order.get('lastDeliveryIssueId', ''))).data.get('courierId', '') == request.auth.uid))) ||
          (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId) &&
             order.get('status', '') == 'delivered'));
@@ -898,47 +898,60 @@ service cloud.firestore {
     match /delivery_issues/{issueId} {
       allow get, list: if signedIn() &&
         (isAdmin() || resource.data.get('courierId', '') == request.auth.uid ||
-         resource.data.get('customerId', '') == request.auth.uid);
+         resource.data.get('customerId', '') == request.auth.uid ||
+         isStoreOwner(resource.data.get('storeId', '')));
       allow create: if signedIn() && isCourier() &&
         validDeliveryIssue(issueId, request.resource.data);
-      allow update: if (isAdmin() &&
-        resource.data.get('status', '') in ['open', 'in_review'] &&
+      allow update: if (
+        isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'adminDecision', 'updatedAt', 'updatedBy'
         ]) &&
-        request.resource.data.get('status', '') in ['in_review', 'retry', 'return_to_store'] &&
         request.resource.data.get('adminDecision', '') is string &&
         request.resource.data.get('adminDecision', '').size() <= 300 &&
         request.resource.data.get('updatedAt', null) == request.time &&
-        request.resource.data.get('updatedBy', '') == request.auth.uid)
-        || (
-          signedIn() &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
-          get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('courierId', '') == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
-          resource.data.get('status', '') == 'retry' &&
-          request.resource.data.get('status', '') == 'resolved' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'courierResumedAt', 'courierResumedBy'
-          ]) &&
-          request.resource.data.get('courierResumedAt', null) == request.time &&
-          request.resource.data.get('courierResumedBy', '') == request.auth.uid
-        )
-        || (
-          signedIn() &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
-          get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('courierId', '') == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
-          resource.data.get('status', '') == 'return_to_store' &&
-          request.resource.data.get('status', '') == 'returned_to_store' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'returnedAt', 'returnedBy'
-          ]) &&
-          request.resource.data.get('returnedAt', null) == request.time &&
-          request.resource.data.get('returnedBy', '') == request.auth.uid
-        );
+        request.resource.data.get('updatedBy', '') == request.auth.uid &&
+        ((resource.data.get('status', '') in ['open', 'in_review'] &&
+          request.resource.data.get('status', '') in ['in_review', 'retry', 'return_to_store']) ||
+         (resource.data.get('status', '') == 'returned_to_store' &&
+          request.resource.data.get('status', '') == 'store_confirmed_return'))
+      ) || (
+        signedIn() &&
+        resource.data.get('courierId', '') == request.auth.uid &&
+        exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('courierId', '') == request.auth.uid &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
+        resource.data.get('status', '') == 'retry' &&
+        request.resource.data.get('status', '') == 'resolved' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'courierResumedAt', 'courierResumedBy'
+        ]) &&
+        request.resource.data.get('courierResumedAt', null) == request.time &&
+        request.resource.data.get('courierResumedBy', '') == request.auth.uid
+      ) || (
+        signedIn() &&
+        resource.data.get('courierId', '') == request.auth.uid &&
+        exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('courierId', '') == request.auth.uid &&
+        get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
+        resource.data.get('status', '') == 'return_to_store' &&
+        request.resource.data.get('status', '') == 'returned_to_store' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'returnedAt', 'returnedBy'
+        ]) &&
+        request.resource.data.get('returnedAt', null) == request.time &&
+        request.resource.data.get('returnedBy', '') == request.auth.uid
+      ) || (
+        signedIn() &&
+        isStoreOwner(resource.data.get('storeId', '')) &&
+        resource.data.get('status', '') == 'returned_to_store' &&
+        request.resource.data.get('status', '') == 'store_confirmed_return' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'storeReceivedAt', 'storeReceivedBy'
+        ]) &&
+        request.resource.data.get('storeReceivedAt', null) == request.time &&
+        request.resource.data.get('storeReceivedBy', '') == request.auth.uid
+      );
       allow delete: if false;
     }
 
