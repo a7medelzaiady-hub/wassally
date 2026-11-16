@@ -59,8 +59,7 @@ service cloud.firestore {
     function isPublicStore(storeId) {
       let path = /databases/$(database)/documents/stores/$(storeId);
       return exists(path) &&
-        get(path).data.get('active', true) == true &&
-        get(path).data.get('approved', true) == true;
+        get(path).data.get('active', true) == true;
     }
 
     // أي صاحب محل نشط (للكتالوج المشترك app_info/catalog).
