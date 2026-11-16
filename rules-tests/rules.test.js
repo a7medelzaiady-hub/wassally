@@ -925,46 +925,112 @@ test('delivery stamp: الأدمن يختم باسم المندوب المعيّ
   await assertSucceeds(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 28 })));
 });
 
-test('role_requests: المستخدم يبعت طلبه هو فقط، والمدير يقبل، والمرفوض يعيد التقديم', async () => {
-  const req = (uid, over = {}) => ({
-    userId: uid, userEmail: 'a@x.com', type: 'courier', name: 'Ali', phone: '01012345678',
-    vehicle: 'موتوسيكل', status: 'pending', createdAt: serverTimestamp(), ...over,
+test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظهر إلا بعد اعتماد الإدارة', async () => {
+  const courierRequest = (uid, over = {}) => ({
+    userId: uid, userEmail: 'a@x.com', type: 'courier', name: 'Ali',
+    phone: '01012345678', vehicle: 'موتوسيكل', status: 'pending',
+    createdAt: serverTimestamp(), ...over,
   });
-  await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1')));
-  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust2_courier'), req('cust2')));
-  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier2'), req('cust1', { type: 'courier2' })));
-  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_store_owner'), req('cust1', { type: 'store_owner' }))); // من غير اسم محل
-  // طلب محل يتطلب صورة وأحد بدائل الإثبات: سجل أو رابط أو تليفون المحل. رقم صاحب المحل اختياري.
-  const storeReq = { ...req('cust3', { type: 'store_owner', storeName: 'متجر', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', registrationNumber: '123456' }) };
-  await assertSucceeds(setDoc(doc(as('cust3'), 'role_requests/cust3_store_owner'), storeReq));
-  const storePhoneReq = { ...req('cust5', { type: 'store_owner', storeName: 'متجر هاتف', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', storePhone: '01012345678' }) };
-  delete storePhoneReq.phone;
-  await assertSucceeds(setDoc(doc(as('cust5'), 'role_requests/cust5_store_owner'), storePhoneReq));
-  const noOwnerPhoneReq = { ...req('cust6', { type: 'store_owner', storeName: 'متجر بلا هاتف شخصي', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', registrationNumber: '123456' }) };
-  delete noOwnerPhoneReq.phone;
-  await assertSucceeds(setDoc(doc(as('cust6'), 'role_requests/cust6_store_owner'), noOwnerPhoneReq));
-  await assertFails(setDoc(doc(as('cust3'), 'role_requests/cust3_courier'), req('cust3')));
-  await assertFails(setDoc(doc(as('cust4'), 'role_requests/cust4_store_owner'), { ...req('cust4', { type: 'store_owner', storeName: 'متجر', storeCategory: 'بقالة', address: 'شارع رئيسي ١' }) }));
-  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1', { status: 'approved' })));
-  await assertFails(setDoc(doc(as('cust2'), 'role_requests/cust2_courier'), req('cust2', { phone: '123' })));
-  // قراءة
+  const storeDraft = (uid, id, name, storePhone = '') => ({
+    name, category: 'بقالة', address: 'شارع رئيسي ١', ownerUid: uid,
+    active: false, approved: false, time: '',
+    image: 'https://example.com/store.jpg',
+    imageUrl: 'https://example.com/store.jpg',
+    storePhone, productCount: 0,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  const storeRequest = (uid, id, name, extra = {}) => ({
+    userId: uid, userEmail: 'a@x.com', type: 'store_owner', name: 'صاحب المحل',
+    storeName: name, storeCategory: 'بقالة', address: 'شارع رئيسي ١',
+    storeImageUrl: 'https://example.com/store.jpg', storeId: id,
+    status: 'pending', createdAt: serverTimestamp(), ...extra,
+  });
+
+  await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), courierRequest('cust1')));
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust2_courier'), courierRequest('cust2')));
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier2'), courierRequest('cust1', { type: 'courier2' })));
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_store_owner'), courierRequest('cust1', { type: 'store_owner' })));
+
+  // إنشاء المسودة وطلب الانضمام في Batch واحدة، بدون اشتراط رقم صاحب المحل.
+  const db3 = as('cust3');
+  const b3 = db3.batch();
+  b3.set(doc(db3, 'stores/draft3'), storeDraft('cust3', 'draft3', 'متجر'));
+  b3.set(doc(db3, 'role_requests/cust3_store_owner'),
+    storeRequest('cust3', 'draft3', 'متجر', { registrationNumber: '123456' }));
+  await assertSucceeds(b3.commit());
+
+  // تليفون المحل بديل مقبول، حتى بدون رقم صاحب المحل.
+  const db5 = as('cust5');
+  const b5 = db5.batch();
+  b5.set(doc(db5, 'stores/draft5'), storeDraft('cust5', 'draft5', 'متجر هاتف', '01012345678'));
+  b5.set(doc(db5, 'role_requests/cust5_store_owner'),
+    storeRequest('cust5', 'draft5', 'متجر هاتف', { storePhone: '01012345678' }));
+  await assertSucceeds(b5.commit());
+
+  // السجل التجاري بديل مقبول أيضًا، ورقم صاحب المحل يظل اختياريًا.
+  const db6 = as('cust6');
+  const b6 = db6.batch();
+  b6.set(doc(db6, 'stores/draft6'), storeDraft('cust6', 'draft6', 'متجر بلا هاتف'));
+  b6.set(doc(db6, 'role_requests/cust6_store_owner'),
+    storeRequest('cust6', 'draft6', 'متجر بلا هاتف', { registrationNumber: '123456' }));
+  await assertSucceeds(b6.commit());
+
+  // لا يكفي رقم صاحب المحل وحده كإثبات نشاط، ولا يسمح بإنشاء مسودة منفصلة عن الطلب.
+  const db4 = as('cust4');
+  const b4 = db4.batch();
+  b4.set(doc(db4, 'stores/draft4'), storeDraft('cust4', 'draft4', 'متجر بلا إثبات'));
+  b4.set(doc(db4, 'role_requests/cust4_store_owner'),
+    storeRequest('cust4', 'draft4', 'متجر بلا إثبات', { phone: '01012345678' }));
+  await assertFails(b4.commit());
+
+  // المسودة والأصناف لا يقرأها إلا صاحبها أو المدير، وصاحبها يستطيع تجهيز الأصناف.
+  await assertSucceeds(getDoc(doc(as('cust3'), 'stores/draft3')));
+  await assertFails(getDoc(doc(as('cust2'), 'stores/draft3')));
+  await assertSucceeds(setDoc(doc(as('cust3'), 'stores/draft3/products/p1'), {
+    name: 'عيش', price: 10, image: '', available: true,
+  }));
+  await assertFails(getDoc(doc(as('cust2'), 'stores/draft3/products/p1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'stores/draft3')));
+  await assertFails(updateDoc(doc(as('cust3'), 'stores/draft3'), { active: true }));
+
+  await assertFails(setDoc(doc(as('cust3'), 'role_requests/cust3_courier'), courierRequest('cust3')));
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), courierRequest('cust1', { status: 'approved' })));
+  await assertFails(setDoc(doc(as('cust2'), 'role_requests/cust2_courier'), courierRequest('cust2', { phone: '123' })));
   await assertSucceeds(getDoc(doc(as('cust1'), 'role_requests/cust1_courier')));
   await assertFails(getDoc(doc(as('cust2'), 'role_requests/cust1_courier')));
   await assertSucceeds(getDocs(query(collection(as('cust1'), 'role_requests'), where('userId', '==', 'cust1'))));
   await assertFails(getDocs(collection(as('cust1'), 'role_requests')));
   await assertSucceeds(getDocs(collection(as('admin1'), 'role_requests')));
-  // المستخدم ما يقبلش نفسه، ولا المستخدم يعدّل وهو pending
+
+  // المستخدم لا يستطيع قبول نفسه أو تعديل طلبه وهو pending.
   await assertFails(updateDoc(doc(as('cust1'), 'role_requests/cust1_courier'), { status: 'approved' }));
-  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1')));
-  // المدير: قبول، وكتابة couriers
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), courierRequest('cust1')));
+
+  // الإدارة تعتمد المسودة وتربط حساب صاحب المحل في Batch واحدة.
+  const adminDb = as('admin1');
+  const approve = adminDb.batch();
+  approve.set(doc(adminDb, 'storeOwners/cust3'), {
+    name: 'صاحب المحل', storeId: 'draft3', active: true,
+  });
+  approve.update(doc(adminDb, 'stores/draft3'), { approved: true, active: true });
+  approve.update(doc(adminDb, 'role_requests/cust3_store_owner'), {
+    status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1',
+  });
+  await assertSucceeds(approve.commit());
+  await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3')));
+  await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3/products/p1')));
+  await assertSucceeds(getDoc(doc(as('cust3'), 'stores/draft3')));
+
+  // الإدارة تقبل المندوب وتكتب سجله؛ إعادة التقديم بعد الرفض فقط.
+  await assertSucceeds(setDoc(doc(as('admin1'), 'couriers/cust1'), {
+    name: 'Ali', phone: '01012345678', active: true,
+  }, { merge: true }));
   const rv = { status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1' };
   await assertFails(updateDoc(doc(as('admin1'), 'role_requests/cust1_courier'), { ...rv, name: 'hack' }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'role_requests/cust1_courier'), rv));
-  // لا يمكن للمستخدم تقديم طلب ثانٍ أثناء وجود طلب آخر معلق.
-  await assertSucceeds(setDoc(doc(as('admin1'), 'couriers/cust1'), { name: 'Ali', phone: '01012345678', active: true }, { merge: true }));
-  // إعادة التقديم بعد الرفض فقط
-  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'role_requests/cust1_courier'), { status: 'rejected' }));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1')));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'role_requests/cust1_courier'), { status: 'rejected' }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), courierRequest('cust1')));
 });
 
 test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، والمدير يقرأ الكل ويقفلها', async () => {
