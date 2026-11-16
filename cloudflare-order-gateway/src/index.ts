@@ -35,10 +35,10 @@ function corsHeaders(request: Request, env: Env): Headers {
   const headers = new Headers({ "Vary": "Origin" });
   const origin = request.headers.get("Origin");
   const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
-  if (origin && allowed.length && !allowed.includes(origin)) {
+  if (origin && !allowed.includes(origin)) {
     throw new HttpError(403, "Origin is not allowed.");
   }
-  if (origin && (!allowed.length || allowed.includes(origin))) {
+  if (origin && allowed.includes(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
     headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
     headers.set("Access-Control-Allow-Methods", "POST, PATCH, OPTIONS");
