@@ -602,6 +602,110 @@ test('courier lifecycle: لا يبدأ المندوب الرحلة قبل تجه
 const { query, collection, where, getDocs } = require('firebase/firestore');
 const setOrder = (patch) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), patch));
 
+const deliveryIssueData = (over = {}) => ({
+  orderId: 'o1',
+  courierId: 'cour1',
+  customerId: 'cust1',
+  storeId: store,
+  reason: 'no_answer',
+  note: 'وصلت واتصلت ولم يرد العميل',
+  contactAttempted: true,
+  status: 'open',
+  createdBy: 'cour1',
+  createdAt: serverTimestamp(),
+  ...over,
+});
+
+test('delivery issue: الوصول والبلاغ يتسجلان ذريًا ولا يمكن التسليم مع بلاغ مفتوح', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  const courier = as('cour1');
+  const orderRef = doc(courier, 'orders/o1');
+  await assertSucceeds(updateDoc(orderRef, { courierArrivedAt: serverTimestamp() }));
+  const batch = writeBatch(courier);
+  batch.set(doc(courier, 'delivery_issues/issue1'), deliveryIssueData());
+  batch.update(orderRef, { activeDeliveryIssueId: 'issue1' });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(doc(as('cust1'), 'delivery_issues/issue1')));
+  await assertFails(getDoc(doc(as('cust2'), 'delivery_issues/issue1')));
+  await assertFails(deliver(courier, 'courier', stamp()));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'delivery_issues/issue1')));
+});
+
+test('delivery issue: لا بلاغ قبل تسجيل الوصول أو دون محاولة تواصل أو من مندوب آخر', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await assertFails(setDoc(
+    doc(as('cour1'), 'delivery_issues/no-arrival'),
+    deliveryIssueData(),
+  ));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), { courierArrivedAt: new Date() }));
+  await assertFails(setDoc(
+    doc(as('cour1'), 'delivery_issues/no-contact'),
+    deliveryIssueData({ contactAttempted: false }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cour2'), 'delivery_issues/wrong-courier'),
+    deliveryIssueData({ courierId: 'cour2', createdBy: 'cour2' }),
+  ));
+});
+
+test('delivery issue: الإدارة تختار إعادة المحاولة ويستأنف المندوب بأمان', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const batch = writeBatch(courier);
+  batch.set(doc(courier, 'delivery_issues/retry1'), deliveryIssueData());
+  batch.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'retry1' });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'delivery_issues/retry1'), {
+    status: 'retry',
+    adminDecision: 'تم التواصل مع العميل ويمكن إعادة المحاولة',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'admin1',
+  }));
+  const resume = writeBatch(courier);
+  resume.update(doc(courier, 'delivery_issues/retry1'), {
+    status: 'resolved',
+    courierResumedAt: serverTimestamp(),
+    courierResumedBy: 'cour1',
+  });
+  resume.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: deleteField() });
+  await assertSucceeds(resume.commit());
+  await assertSucceeds(deliver(courier, 'courier', stamp()));
+});
+
+test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن تغلق الإدارة الطلب', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const batch = writeBatch(courier);
+  batch.set(doc(courier, 'delivery_issues/return1'), deliveryIssueData());
+  batch.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'return1' });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'delivery_issues/return1'), {
+    status: 'return_to_store',
+    adminDecision: 'أعد الطلب إلى المحل',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'admin1',
+  }));
+  await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/return1'), {
+    status: 'returned_to_store',
+    returnedAt: serverTimestamp(),
+    returnedBy: 'cour1',
+  }));
+  const close = writeBatch(as('admin1'));
+  close.update(doc(as('admin1'), 'orders/o1'), {
+    status: 'cancelled',
+    courierId: deleteField(),
+    courierName: deleteField(),
+    courierPhone: deleteField(),
+    courierAt: deleteField(),
+    activeDeliveryIssueId: deleteField(),
+  });
+  close.set(doc(as('admin1'), 'orders/o1/statusHistory/cancelled'), {
+    from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertSucceeds(close.commit());
+});
+
 test('admin cancellation: إلغاء طلب قيد التجهيز يزيل تعيين المندوب', async () => {
   await env.withSecurityRulesDisabled((c) =>
     updateDoc(doc(c.firestore(), 'orders/o1'), {
