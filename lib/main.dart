@@ -7,13 +7,16 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
+import 'services/error_guard.dart';
 import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/brand.dart';
 import 'theme/theme_controller.dart';
 
-Future<void> main() async {
+void main() => ErrorGuard.run(_bootstrap);
+
+Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   // على أندرويد Firebase بيقرا الإعدادات من android/app/google-services.json،
   // فمش محتاجين نحدّث appId يدويًا لما نسجّل تطبيق جديد.
