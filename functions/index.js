@@ -178,6 +178,17 @@ exports.onRoleRequestUpdated = onDocumentUpdated('role_requests/{requestId}', as
   await notify([after.userId], title, body, { type: 'role_request', roleRequestId: event.params.requestId });
 });
 
+/** إشعار كل المندوبين النشطين عند ظهور طلب جديد في قائمة الطلبات المتاحة. */
+exports.onCourierOrderAvailable = onDocumentCreated('courier_available_orders/{orderId}', async (event) => {
+  const order = event.data && event.data.data();
+  if (!order) return;
+  const couriers = await db.collection('couriers').where('active', '==', true).get();
+  const ids = couriers.docs.map((doc) => doc.id);
+  await notify(ids, 'طلب توصيل جديد متاح',
+    `${String(order.storeName || 'محل').slice(0, 80)} • افتح التطبيق لمراجعة الطلب والتقديم عليه`,
+    { type: 'available_order', orderId: event.params.orderId });
+});
+
 exports.onOrderCreated = onDocumentCreated('orders/{orderId}', async (event) => {
   const order = event.data && event.data.data();
   if (!order) return;
