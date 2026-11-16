@@ -47,6 +47,7 @@ class Store {
 
   /// رابط صورة المحل (من Firebase Storage). فاضي = بنعرض الأيقونة.
   final String imageUrl;
+  final String storePhone;
   final int colorHex;
   final double rating;
   final String time;
@@ -64,6 +65,7 @@ class Store {
     required this.time,
     required this.products,
     this.imageUrl = '',
+    this.storePhone = '',
     this.active = true,
     this.order = 0,
   });
@@ -97,6 +99,7 @@ class Store {
       iconKey: (m['icon'] ?? 'store').toString(),
       // الحقل الجديد imageUrl (لوحة الأدمن) مع الرجوع للقديم image.
       imageUrl: (m['imageUrl'] ?? m['image'] ?? '').toString(),
+      storePhone: (m['storePhone'] ?? '').toString(),
       colorHex: (m['color'] as num?)?.toInt() ?? 0xFFF75A07,
       rating: _avg(m),
       time: (m['time'] ?? '').toString(),
@@ -111,6 +114,7 @@ class Store {
     'category': category,
     'icon': iconKey,
     'image': imageUrl,
+    'storePhone': storePhone,
     'color': colorHex,
     'rating': rating,
     'time': time,
