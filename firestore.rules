@@ -594,8 +594,9 @@ service cloud.firestore {
           deliveryStampOk(resource.data.get('courierId', ''), k) &&
           stampRequired(k) &&
           (!('courierId' in k) ||
-            (validCourierForAssignment(request.resource.data.get('courierId', '')) &&
-             // يمنع بقاء نسخة قديمة من الطلب ظاهرة للمندوبين بعد التعيين.
+            (resource.data.get('courierId', '') == '' &&
+             validCourierForAssignment(request.resource.data.get('courierId', '')) &&
+             // يمنع إعادة تعيين مندوب فوق إسناد قائم أو بقاء نسخة قديمة في القائمة.
              !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId)))) &&
           adminMoveOk(k) &&
           historyGate(orderId, k)
