@@ -114,10 +114,16 @@ class RoleRequestService {
           'time': '',
           'image': (m['storeImageUrl'] ?? '').toString(),
           'imageUrl': (m['storeImageUrl'] ?? '').toString(),
+          if ((m['storePhone'] ?? '').toString().isNotEmpty)
+            'storePhone': (m['storePhone'] ?? '').toString(),
           'productCount': 0,
           'createdAt': FieldValue.serverTimestamp(),
         });
         storeId = storeRef.id;
+      } else if ((m['storePhone'] ?? '').toString().isNotEmpty) {
+        batch.update(db.collection('stores').doc(storeId), {
+          'storePhone': (m['storePhone'] ?? '').toString(),
+        });
       }
       batch.set(db.collection('storeOwners').doc(uid), {
         'name': (m['name'] ?? '').toString(),
