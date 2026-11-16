@@ -32,8 +32,8 @@ class CustomerRatingService {
     if (rating < 1 || rating > 5) {
       throw ArgumentError.value(rating, 'rating');
     }
-    if (!reasonLabels.containsKey(reason)) {
-      throw ArgumentError.value(reason, 'reason');
+    if (!reasonLabels.containsKey(reason) || (rating <= 3 && reason == 'positive')) {
+      throw ArgumentError.value(reason, 'reason', 'التقييم المنخفض يحتاج سببًا واضحًا.');
     }
 
     var note = comment.trim();
