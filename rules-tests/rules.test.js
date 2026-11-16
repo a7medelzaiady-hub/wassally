@@ -617,7 +617,7 @@ const deliveryIssueData = (over = {}) => ({
 });
 
 test('delivery issue: الوصول والبلاغ يتسجلان ذريًا ولا يمكن التسليم مع بلاغ مفتوح', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
   const courier = as('cour1');
   const orderRef = doc(courier, 'orders/o1');
   await assertSucceeds(updateDoc(orderRef, { courierArrivedAt: serverTimestamp() }));
@@ -834,7 +834,7 @@ test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اك
 });
 
 test('delivery stamp: الأدمن يختم باسم المندوب المعيّن، والمبلغ المعتمد هو المحصّل', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', verifiedTotal: 28 });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date(), verifiedTotal: 28 });
   await assertFails(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 40 })));
   await assertSucceeds(deliver(as('admin1'), 'admin', stamp({ collectedAmount: 28 })));
 });
