@@ -14,7 +14,7 @@ import 'live_alerts_service.dart';
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
 /// - بتسجل FCM registration token الحقيقي في users/{uid}.fcmTokens بعد الموافقة.
-/// - الإشعارات نفسها بتتبعت من Cloud Functions (فولدر functions).
+/// - الإشعارات نفسها بتتبعت من Cloudflare Worker مجانًا بدون الحاجة لباقة Blaze.
 /// - لما التطبيق يكون مفتوح بنعرض الإشعار كشريط في أسفل الشاشة.
 class NotificationService {
   const NotificationService._();
@@ -31,7 +31,7 @@ class NotificationService {
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  static DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
+  static DocumentReference> _userDoc(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid);
 
   static bool _isGranted(AuthorizationStatus status) =>
@@ -86,6 +86,9 @@ class NotificationService {
         _fcmToken = token;
         await _saveToken(user.uid, token);
       }
+      // الاشتراك في تنبيهات تحديث التطبيق القادمة من Cloudflare Worker
+      await messaging.subscribeToTopic('app_updates');
+
       _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) {
         _fcmToken = nextToken;
         final current = FirebaseAuth.instance.currentUser;
@@ -103,7 +106,8 @@ class NotificationService {
 
       final initialMessage = await messaging.getInitialMessage();
       if (initialMessage != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _openMessage(initialMessage));
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _openMessage(initialMessage));
       }
     } catch (e) {
       debugPrint('تعذر تسجيل جهاز الإشعارات: $e');
@@ -185,9 +189,12 @@ class NotificationService {
           duration: const Duration(seconds: 6),
           behavior: SnackBarBehavior.floating,
           action: (message.data['orderId'] ?? '').toString().isNotEmpty
-              ? SnackBarAction(label: 'عرض الطلب', onPressed: () => _openOrder(message))
+              ? SnackBarAction(
+                  label: 'عرض الطلب', onPressed: () => _openOrder(message))
               : (message.data['type'] == 'support_chat'
-                  ? SnackBarAction(label: 'فتح المحادثة', onPressed: () => _openMessage(message))
+                  ? SnackBarAction(
+                      label: 'فتح المحادثة',
+                      onPressed: () => _openMessage(message))
                   : null),
         ),
       );
