@@ -1024,7 +1024,8 @@ service cloud.firestore {
 
     function validRoleRequest(rid, d) {
       return d.keys().hasOnly(['userId', 'userEmail', 'type', 'name', 'phone', 'status',
-                               'createdAt', 'storeName', 'storeCategory', 'address', 'vehicle', 'notes']) &&
+                               'createdAt', 'storeName', 'storeCategory', 'address', 'vehicle', 'notes',
+                               'storeImageUrl', 'registrationNumber', 'proofUrl']) &&
         d.keys().hasAll(['userId', 'type', 'name', 'phone', 'status', 'createdAt']) &&
         d.userId == request.auth.uid &&
         d.type in ['store_owner', 'courier'] &&
@@ -1036,8 +1037,19 @@ service cloud.firestore {
         d.phone is string && d.phone.matches('^01[0125][0-9]{8}$') &&
         optStr(d, 'storeName', 100) && optStr(d, 'storeCategory', 60) && optStr(d, 'address', 300) &&
         optStr(d, 'vehicle', 60) && optStr(d, 'notes', 500) &&
+        optStr(d, 'storeImageUrl', 450) && optStr(d, 'registrationNumber', 30) &&
+        optStr(d, 'proofUrl', 450) &&
         (d.type != 'store_owner' ||
-          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && validStoreCategory(d.storeCategory) && 'address' in d && d.address.size() >= 5)) &&
+          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && validStoreCategory(d.storeCategory) &&
+           'address' in d && d.address.size() >= 5 &&
+           'storeImageUrl' in d && d.storeImageUrl.matches('https://.*') &&
+           (d.get('registrationNumber', '').size() >= 6 || d.get('proofUrl', '').matches('https://.*')))) &&
+        // طلب معلّق واحد فقط لكل مستخدم عبر نوعي الانضمام.
+        (d.type == 'store_owner'
+          ? (!exists(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')) ||
+             get(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')).data.status != 'pending')
+          : (!exists(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')) ||
+             get(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')).data.status != 'pending')) &&
         (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
     }
 
