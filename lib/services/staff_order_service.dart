@@ -692,17 +692,19 @@ class StaffOrderService {
 
     await db.runTransaction((tx) async {
       final balanceSnap = await tx.get(balanceRef);
-      final settled = balanceSnap.exists
-          ? ((balanceSnap.data()?['settledAmount'] as num?)?.toDouble() ?? 0)
-          : legacySettled;
-      final remaining = totalDue - settled;
-      if (amount > remaining + 0.005) {
+      final settledMinor = balanceSnap.exists
+          ? ((balanceSnap.data()?['settledAmountMinor'] as num?)?.toInt() ?? 0)
+          : legacySettledMinor;
+      final remainingMinor = totalDueMinor - settledMinor;
+      if (amountMinor > remainingMinor) {
+        final remainingText =
+            (remainingMinor.clamp(0, 1 << 62) / 100).toStringAsFixed(2);
         throw StateError(
           'المبلغ أكبر من المتبقي على المندوب '
-          '${remaining.clamp(0, double.infinity).toStringAsFixed(2)} جنيه. حدّث البيانات وحاول تاني.',
+          '$remainingText جنيه. حدّث البيانات وحاول تاني.',
         );
       }
-      final newSettled = double.parse((settled + amount).toStringAsFixed(2));
+      final newSettledMinor = settledMinor + amountMinor;
       tx.set(settlementRef, {
         'courierId': courierId,
         'courierName': cleanName,
