@@ -74,6 +74,7 @@ describe("Cloudinary upload signatures", () => {
     const params = {
       timestamp: "1794850000",
       folder: "stores/store_1",
+      public_id: "unique-image-id",
       allowed_formats: "jpg,jpeg,png,webp",
       overwrite: "false",
       unique_filename: "true",
@@ -83,6 +84,7 @@ describe("Cloudinary upload signatures", () => {
     const same = await cloudinarySignature({
       use_filename: "false",
       folder: "stores/store_1",
+      public_id: "unique-image-id",
       overwrite: "false",
       timestamp: "1794850000",
       unique_filename: "true",
