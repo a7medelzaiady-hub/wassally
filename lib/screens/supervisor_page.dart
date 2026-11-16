@@ -30,6 +30,7 @@ class SupervisorPage extends StatelessWidget {
               stream: FirebaseFirestore.instance
                   .collection('couriers')
                   .where('supervisorId', isEqualTo: uid)
+                  .limit(100)
                   .snapshots(),
               builder: (context, snap) {
                 if (snap.hasError) {
