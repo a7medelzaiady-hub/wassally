@@ -744,6 +744,67 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     }
   }
 
+  Future<void> _chooseStoreCourier() async {
+    if (_busy || widget.order.courierId.isNotEmpty) return;
+    final courier = await showModalBottomSheet<Courier>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: StreamBuilder<List<Courier>>(
+          stream: StaffOrderService.watchStoreCouriers(widget.order.storeId),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('تعذر تحميل مناديب المحل.'),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final couriers = snapshot.data!;
+            if (couriers.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('لا يوجد مندوب نشط مربوط بهذا المحل. اطلب من الإدارة ربط المندوب أولًا.'),
+              );
+            }
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
+                  child: Text('اختيار مندوب تابع للمحل', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                ),
+                for (final courier in couriers)
+                  ListTile(
+                    leading: const CircleAvatar(child: Icon(Icons.delivery_dining)),
+                    title: Text(courier.name),
+                    subtitle: Text(courier.phone.isEmpty ? 'مندوب مسجل في وصلي' : courier.phone),
+                    onTap: () => Navigator.of(sheetContext).pop(courier),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    if (courier == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.assignCourier(widget.order.id, courier);
+      messenger.showSnackBar(SnackBar(content: Text('تم تعيين ' + courier.name + ' كمندوب للمحل.')));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error is StateError ? error.message : 'تعذر تعيين المندوب.')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _markReady() async {
     if (_busy) return;
     final ok = await confirmDialog(
@@ -1088,10 +1149,23 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             const SizedBox(height: 10),
             Text(
               o.courierName.isEmpty
-                  ? 'جاري التجهيز. في انتظار مندوب يستلم الطلب.'
-                  : 'جاري التجهيز. المندوب: ${o.courierName}',
+                  ? (o.ready
+                      ? 'الطلب متاح لمندوب خارجي.'
+                      : 'جاري التجهيز. اختار مندوب المحل أو أتح الطلب لمندوب خارجي.')
+                  : 'المندوب: ${o.courierName}',
               style: text.bodySmall?.copyWith(color: kMuted),
             ),
+            if (o.courierId.isEmpty) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _chooseStoreCourier,
+                  icon: const Icon(Icons.storefront_outlined),
+                  label: const Text('اختيار مندوب تابع للمحل'),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             if (o.ready)
               Row(
