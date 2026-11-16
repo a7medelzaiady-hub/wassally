@@ -37,6 +37,10 @@ jobs:
     - name: Analyze project source
       run: flutter analyze --no-fatal-infos
 
-    # 6. تشغيل الاختبارات الآلية (اختياري)
+    # 6. تشغيل الاختبارات الآلية
     - name: Run tests
       run: flutter test
+
+    # 7. تحقق من Gradle وAndroid plugins دون الحاجة إلى مفتاح Release
+    - name: Build debug APK
+      run: flutter build apk --debug
