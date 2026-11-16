@@ -510,7 +510,8 @@ service cloud.firestore {
       // العميل: يعدّل طلبه أو يلغيه طالما لسه جديد (المحل ما قبلهوش).
       function canCustomerUpdate(k) {
         return (
-          (resource.data.get('status', '') in ['new', 'preparing'] &&
+          (!securityFlag('serverOrders') &&
+            resource.data.get('status', '') in ['new', 'preparing'] &&
             resource.data.get('courierId', '') == '' &&
             'editedAt' in k &&
             k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
