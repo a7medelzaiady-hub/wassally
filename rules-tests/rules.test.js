@@ -31,6 +31,7 @@ async function seed(extra = async () => {}) {
     const db = ctx.firestore();
     await setDoc(doc(db, 'admins/admin1'), { name: 'A' });
     await setDoc(doc(db, 'couriers/cour1'), { name: 'C', active: true });
+    await setDoc(doc(db, 'couriers/storecour1'), { name: 'Store C', active: true, storeId: store });
     await setDoc(doc(db, 'storeOwners/owner1'), { name: 'O', storeId: store, active: true });
     await setDoc(doc(db, 'storeOwners/owner2'), { name: 'O2', storeId: 'shop2', active: true });
     await setDoc(doc(db, 'stores/shop1'), { name: 'S', active: true, time: '20-30', order: 1, rating: 4 });
@@ -1211,6 +1212,43 @@ test('store owner: حذف المحل وفك ربط حسابه يتمان في Ba
   if (ownerLink.exists()) throw new Error('Owner link should be removed with the store.');
 });
 
+
+test('store owner can assign only an active courier linked to the same store', async () => {
+  await prepareOrderWithFeed();
+  const db = as('owner1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    courierId: 'storecour1', courierName: 'Store C', courierPhone: '',
+    courierAt: serverTimestamp(), deliveryMode: 'store',
+  });
+  b.delete(doc(db, 'courier_available_orders/o1'));
+  await assertSucceeds(b.commit());
+  assert.equal((await getDoc(doc(db, 'orders/o1'))).data().deliveryMode, 'store');
+});
+
+test('store owner cannot assign an external courier as store courier', async () => {
+  await prepareOrderWithFeed();
+  const db = as('owner1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '',
+    courierAt: serverTimestamp(), deliveryMode: 'store',
+  });
+  b.delete(doc(db, 'courier_available_orders/o1'));
+  await assertFails(b.commit());
+});
+
+test('linked store courier cannot claim an external order from the public feed', async () => {
+  await prepareOrderWithFeed();
+  const db = as('storecour1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    courierId: 'storecour1', courierName: 'Store C', courierPhone: '',
+    courierAt: serverTimestamp(), deliveryMode: 'external',
+  });
+  b.delete(doc(db, 'courier_available_orders/o1'));
+  await assertFails(b.commit());
+});
 
 test('courier assignment: التعيين الإداري يفشل لو الـ feed لم يُحذف في نفس العملية', async () => {
   await prepareOrderWithFeed();
