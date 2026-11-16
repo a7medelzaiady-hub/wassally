@@ -31,13 +31,19 @@ before(async () => {
   assert.equal(process.env.GCLOUD_PROJECT, PROJECT_ID,
     'The test project must be demo-wasally, never wasally-12259.');
 
-  const rules = await readFile(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
+  const rulesPath = process.env.RULES_FILE || path.join(__dirname, '..', 'firestore.rules');
+  const rules = await readFile(rulesPath, 'utf8');
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: { rules },
   });
 
+  await testEnv.clearFirestore();
   await testEnv.withSecurityRulesDisabled(async (context) => {
+    // Keep the suite deterministic even if the emulator previously held app settings.
+    await setDoc(doc(context.firestore(), 'app_info', 'security'), {
+      orderRateLimit: false,
+    });
     await setDoc(doc(context.firestore(), 'stores', STORE_ID), {
       name: 'متجر اختبار الضغط',
       active: true,
