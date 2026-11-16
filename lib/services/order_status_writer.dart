@@ -81,9 +81,23 @@ class OrderStatusWriter {
       throw ArgumentError('لا يمكن تمرير status داخل extra؛ استخدم to لتحديد الحالة.');
     }
 
+    final data = snapshot.data()!;
+    final assignedCourierId = (data['courierId'] ?? '').toString();
+    final cancellingBeforePickup = to == OrderStatus.cancelled &&
+        currentStatus == 'preparing' &&
+        actorRole == 'admin';
+
     final update = <String, dynamic>{
       ...extra,
       'status': to.key,
+      // عند إلغاء طلب في مرحلة التجهيز، نزيل الإسناد حتى لا يظل الطلب
+      // مرتبطًا بمندوب بعد إغلاقه. لا نسمح بهذا بعد بدء الطريق.
+      if (cancellingBeforePickup && assignedCourierId.isNotEmpty) ...{
+        'courierId': FieldValue.delete(),
+        'courierName': FieldValue.delete(),
+        'courierPhone': FieldValue.delete(),
+        'courierAt': FieldValue.delete(),
+      },
     };
 
     final batch = db.batch();
@@ -98,7 +112,6 @@ class OrderStatusWriter {
 
     final feedRef =
         db.collection('courier_available_orders').doc(normalizedOrderId);
-    final data = snapshot.data()!;
     if (to == OrderStatus.preparing &&
         (data['courierId'] ?? '').toString().isEmpty &&
         (actorRole == 'admin' || actorRole == 'storeOwner')) {
@@ -106,13 +119,20 @@ class OrderStatusWriter {
     }
     // طلب اتلغى وهو في القايمة: شيله. للمدير بس: القواعد مش بتسمح لصاحب المحل
     // بإلغاء طلب في «جاري التحضير» (الرفض متاح له وهو «جديد» بس)، والعميل ماله صلاحية حذف.
-    if (to == OrderStatus.cancelled &&
-        currentStatus == 'preparing' &&
-        actorRole == 'admin') {
+    if (cancellingBeforePickup) {
       batch.delete(feedRef);
     }
 
     // أي رفض هنا يظهر للطبقة المستدعية؛ لا نحاول تنفيذ تحديث أضعف بدونه.
     await batch.commit();
+
+    if (cancellingBeforePickup && assignedCourierId.isNotEmpty) {
+      await _notify(
+        assignedCourierId,
+        'تم إلغاء الطلب',
+        'تم إلغاء الطلب قبل استلامه من المحل.',
+        normalizedOrderId,
+      );
+    }
   }
 }
