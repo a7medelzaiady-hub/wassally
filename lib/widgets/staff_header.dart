@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../screens/admin_tools_page.dart';
 import '../screens/admin_couriers_board_page.dart';
+import '../screens/admin_operations_report_page.dart';
 import '../screens/admin_inbox_page.dart';
 import '../screens/admin_roles_page.dart';
 import '../screens/admin_store_owners_page.dart';
@@ -109,6 +110,14 @@ class StaffHeader extends StatelessWidget {
           icon: Icons.leaderboard_outlined,
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const AdminCouriersBoardPage()),
+          ),
+        ),
+      if (isAdmin)
+        _btn(
+          tooltip: 'تقرير التشغيل',
+          icon: Icons.assessment_outlined,
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AdminOperationsReportPage()),
           ),
         ),
       if (isAdmin)
