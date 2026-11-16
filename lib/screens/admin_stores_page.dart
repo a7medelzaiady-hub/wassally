@@ -169,7 +169,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       }
       await storeRef.update({
         'active': active,
-        'approved': active ? true : FieldValue.delete(),
+        if (active) 'approved': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
