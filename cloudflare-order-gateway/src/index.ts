@@ -603,6 +603,7 @@ export function courierTopicMessage(orderId: string, storeName: string) {
       },
       android: {
         priority: "HIGH",
+        ttl: "300s",
         notification: { sound: "default" },
       },
     },
