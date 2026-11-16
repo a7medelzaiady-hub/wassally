@@ -25,7 +25,6 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
-import 'offers_page.dart';
 import '../widgets/promo_banners.dart';
 import 'notifications_page.dart';
 import 'store_page.dart';
@@ -91,6 +90,7 @@ class _HomePageState extends State<HomePage>
 
   // المحلات بتتحمّل مرة واحدة (من الكاش لو الكتالوج ما اتغيرش) بدل stream دايم.
   Future<QuerySnapshot<Map<String, dynamic>>> _storesFuture = _loadStores();
+  Future<List<(_StoreItem, Map<String, dynamic>)>>? _offersFuture;
 
   static Future<QuerySnapshot<Map<String, dynamic>>> _loadStores() =>
       CatalogService.get(
@@ -141,6 +141,7 @@ class _HomePageState extends State<HomePage>
   void _retry() {
     setState(() {
       _storesFuture = _loadStores();
+      _offersFuture = null;
     });
   }
 
@@ -675,25 +676,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// زر العروض ظاهر دائمًا في الهيدر الرئيسي.
-  Widget _offersButton() {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const OffersPage()),
-        ),
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Icon(Icons.local_offer_outlined, color: Brand.ink, size: 21),
-        ),
-      ),
-    );
-  }
-
   /// أيقونة زخرفية غامقة شفافة في خلفية الهيدر.
   Widget _bgIcon(IconData icon, double size, double angle) => Transform.rotate(
     angle: angle,
@@ -772,9 +754,6 @@ class _HomePageState extends State<HomePage>
                       ),
                       const SizedBox(width: 10),
                       _bell(),
-                      const SizedBox(width: 8),
-                      _offersButton(),
-                      const SizedBox(width: 8),
                       _cartButton(),
                     ],
                   ),
@@ -888,37 +867,109 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
 
-  Widget _highlights(List<_StoreItem> all) {
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
+    List<_StoreItem> stores,
+  ) async {
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
-    final best = <(_StoreItem, Map<String, dynamic>)>[];
-    for (final s in all) {
-      if (s.data['active'] == false) continue;
-      for (final k in ['offerItems', 'bestItems']) {
-        final raw = s.data[k];
-        if (raw is! List) continue;
-        for (final e in raw) {
-          if (e is! Map) continue;
-          final m = Map<String, dynamic>.from(e);
-          if (k == 'offerItems') {
-            final ends = m['offerEndsAt'];
-            if (isOfferExpired(
-              ends is Timestamp ? ends.toDate() : null,
+    for (final store in stores) {
+      var hasCatalog = false;
+      try {
+        Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+            .collection('stores')
+            .doc(store.store.id)
+            .collection('products')
+            .limit(200);
+        DocumentSnapshot<Map<String, dynamic>>? cursor;
+        do {
+          if (cursor != null) {
+            query = FirebaseFirestore.instance
+                .collection('stores')
+                .doc(store.store.id)
+                .collection('products')
+                .limit(200)
+                .startAfterDocument(cursor);
+          }
+          final page = await query.get();
+          if (page.docs.isNotEmpty) hasCatalog = true;
+          for (final doc in page.docs) {
+            final item = doc.data();
+            final name = (item['name'] ?? '').toString().trim();
+            final price = (item['price'] as num?)?.toDouble() ?? 0;
+            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+            final text = (item['offerText'] ?? '').toString().trim();
+            final end = item['offerEndsAt'];
+            final expired = isOfferExpired(
+              end is Timestamp ? end.toDate() : null,
               DateTime.now(),
-            )) {
+            );
+            if (name.isEmpty ||
+                price <= 0 ||
+                expired ||
+                item['available'] == false ||
+                item['isAvailable'] == false ||
+                (!(old > price && old > 0) && text.isEmpty)) {
               continue;
             }
+            offers.add((store, item));
           }
-          (k == 'offerItems' ? offers : best).add((s, m));
+          cursor = page.docs.isEmpty ? null : page.docs.last;
+          if (page.docs.length < 200) break;
+        } while (cursor != null);
+      } catch (error) {
+        debugPrint('Home offers load failed for ${store.store.id}: $error');
+      }
+      // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
+      if (!hasCatalog) {
+        final raw = store.data['offerItems'];
+        if (raw is List) {
+          for (final value in raw) {
+            if (value is! Map) continue;
+            final item = Map<String, dynamic>.from(value);
+            final end = item['offerEndsAt'];
+            final price = (item['price'] as num?)?.toDouble() ?? 0;
+            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+            final text = (item['offerText'] ?? '').toString().trim();
+            if (price <= 0 ||
+                isOfferExpired(end is Timestamp ? end.toDate() : null, DateTime.now()) ||
+                (!(old > price && old > 0) && text.isEmpty)) {
+              continue;
+            }
+            offers.add((store, item));
+          }
         }
       }
     }
-    if (offers.isEmpty && best.isEmpty) return const SizedBox.shrink();
+    return offers;
+  }
+
+  Widget _highlights(
+    List<_StoreItem> all,
+    Future<List<(_StoreItem, Map<String, dynamic>)>> offersFuture,
+  ) {
+    final best = <(_StoreItem, Map<String, dynamic>)>[];
+    for (final s in all) {
+      if (s.data['active'] == false) continue;
+      final raw = s.data['bestItems'];
+      if (raw is! List) continue;
+      for (final entry in raw) {
+        if (entry is Map) {
+          best.add((s, Map<String, dynamic>.from(entry)));
+        }
+      }
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (offers.isNotEmpty) _hlRow('عروض', offers, offer: true),
+          FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
+            future: offersFuture,
+            builder: (context, snapshot) {
+              final offers = snapshot.data ?? const <(_StoreItem, Map<String, dynamic>)>[];
+              if (offers.isEmpty) return const SizedBox.shrink();
+              return _hlRow('عروض وخصومات', offers, offer: true);
+            },
+          ),
           if (best.isNotEmpty) _hlRow('الأكثر مبيعًا', best),
         ],
       ),
@@ -947,13 +998,7 @@ class _HomePageState extends State<HomePage>
                   ),
                 ),
               ),
-              if (offer)
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const OffersPage()),
-                  ),
-                  child: const Text('كل العروض'),
-                ),
+
             ],
           ),
         ),
@@ -1132,7 +1177,12 @@ class _HomePageState extends State<HomePage>
               ),
 
               if (!loading && !hasError)
-                SliverToBoxAdapter(child: _highlights(all)),
+                SliverToBoxAdapter(
+                  child: _highlights(
+                    all,
+                    _offersFuture ??= _loadCatalogOffers(all),
+                  ),
+                ),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -1144,13 +1194,6 @@ class _HomePageState extends State<HomePage>
                           'أقسامنا المختلفة',
                           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
-                      ),
-                      TextButton.icon(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const OffersPage()),
-                        ),
-                        icon: const Icon(Icons.local_offer_outlined, size: 18),
-                        label: const Text('العروض'),
                       ),
                       TextButton(
                         onPressed: _openDirectory,
