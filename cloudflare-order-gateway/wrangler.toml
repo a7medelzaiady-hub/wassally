@@ -1,4 +1,4 @@
-name = "wasally-order-gateway"
+name = "throbbing-water-4ef7"
 main = "src/index.ts"
 compatibility_date = "2026-11-16"
 
@@ -13,7 +13,7 @@ MAX_LINE_QTY = "50"
 # Set ALLOWED_ORIGINS as a comma-separated secret/variable for web clients.
 
 [env.staging]
-name = "wasally-order-gateway-staging"
+name = "throbbing-water-4ef7-staging"
 
 [env.staging.vars]
 DEFAULT_DELIVERY_FEE = "20"
