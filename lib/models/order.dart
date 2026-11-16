@@ -121,6 +121,9 @@ class AppOrder {
   /// وقت ما المندوب استلم الطلب (بيبدأ عدّاد المندوب منه).
   final DateTime? courierAt;
 
+  /// وقت استلام المندوب الفعلي للطلب من المحل.
+  final DateTime? pickedUpAt;
+
   /// وقت تسجيل وصول المندوب إلى عنوان العميل.
   final DateTime? courierArrivedAt;
 
@@ -166,6 +169,7 @@ class AppOrder {
     this.deliveredBy = '',
     this.deliveredAt,
     this.courierAt,
+    this.pickedUpAt,
     this.courierArrivedAt,
     this.activeDeliveryIssueId = '',
     this.collectedAmount = 0,
@@ -213,6 +217,7 @@ class AppOrder {
       deliveredBy: deliveredBy,
       deliveredAt: deliveredAt,
       courierAt: courierAt,
+      pickedUpAt: pickedUpAt,
       courierArrivedAt: courierArrivedAt,
       activeDeliveryIssueId: activeDeliveryIssueId,
       collectedAmount: collectedAmount,
@@ -278,6 +283,9 @@ class AppOrder {
           : null,
       courierAt: m['courierAt'] is Timestamp
           ? (m['courierAt'] as Timestamp).toDate()
+          : null,
+      pickedUpAt: m['pickedUpAt'] is Timestamp
+          ? (m['pickedUpAt'] as Timestamp).toDate()
           : null,
       courierArrivedAt: m['courierArrivedAt'] is Timestamp
           ? (m['courierArrivedAt'] as Timestamp).toDate()
