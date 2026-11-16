@@ -73,7 +73,7 @@ class OrderGateway {
       final message = (body['error'] ?? '').toString().trim();
       throw StateError(message.isNotEmpty
           ? message
-          : 'لم يؤكد الخادم حذف الحساب (' + result.statusCode.toString() + ').');
+          : 'لم يؤكد الخادم حذف الحساب (${result.statusCode}).');
     }
   }
 
