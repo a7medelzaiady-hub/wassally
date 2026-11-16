@@ -82,21 +82,37 @@ class OrderStatusWriter {
     }
 
     final data = snapshot.data()!;
+    final activeIssueId = (data['activeDeliveryIssueId'] ?? '').toString();
     final cancellingBeforePickup = to == OrderStatus.cancelled &&
         currentStatus == 'preparing' &&
         actorRole == 'admin';
+    final attemptingCancelAfterPickup = to == OrderStatus.cancelled &&
+        currentStatus == 'on_the_way' &&
+        actorRole == 'admin';
+    var cancellingAfterReturn = false;
+    if (attemptingCancelAfterPickup) {
+      if (activeIssueId.isEmpty) {
+        throw StateError('لا يمكن إلغاء طلب خرج للتوصيل قبل توثيق رجوعه للمحل.');
+      }
+      final issue = await db.collection('delivery_issues').doc(activeIssueId).get();
+      if (issue.data()?['status'] != 'returned_to_store') {
+        throw StateError('لازم المندوب يؤكد رجوع الطلب للمحل قبل إغلاقه.');
+      }
+      cancellingAfterReturn = true;
+    }
 
     final update = <String, dynamic>{
       ...extra,
       'status': to.key,
-      // عند إلغاء طلب في مرحلة التجهيز، نزيل الإسناد حتى لا يظل الطلب
-      // مرتبطًا بمندوب بعد إغلاقه. لا نسمح بهذا بعد بدء الطريق.
-      if (cancellingBeforePickup) ...{
+      // إزالة إسناد المندوب عند إلغاء الطلب قبل الاستلام أو بعد رجوعه للمحل.
+      if (cancellingBeforePickup || cancellingAfterReturn) ...{
         'courierId': FieldValue.delete(),
         'courierName': FieldValue.delete(),
         'courierPhone': FieldValue.delete(),
         'courierAt': FieldValue.delete(),
       },
+      if (cancellingAfterReturn)
+        'activeDeliveryIssueId': FieldValue.delete(),
     };
 
     final batch = db.batch();
