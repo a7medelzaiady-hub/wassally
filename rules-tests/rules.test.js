@@ -927,6 +927,18 @@ test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، 
   });
   await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c1'), c()));
   await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c2'), c({ kind: 'order_issue', orderId: 'o1' })));
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c8'), c({ kind: 'restriction_appeal', orderId: 'o1' })));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'customer_restrictions/cust1'), {
+    customerId: 'cust1', active: true, reason: 'مراجعة واقعة موثقة',
+    sourceOrderId: 'o1', createdAt: serverTimestamp(), createdBy: 'admin1',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c9'), c({
+    kind: 'restriction_appeal', orderId: 'o1',
+  })));
+  await assertFails(setDoc(doc(as('cust2'), 'complaints/c10'), c({
+    userId: 'cust2', kind: 'restriction_appeal', orderId: 'o1',
+  })));
   await assertFails(setDoc(doc(as('cust2'), 'complaints/c3'), c({ kind: 'order_issue', orderId: 'o1', userId: 'cust2' }))); // طلب مش بتاعه
   await assertFails(setDoc(doc(as('cust1'), 'complaints/c4'), c({ kind: 'order_issue' }))); // من غير طلب
   await assertFails(setDoc(doc(as('cust1'), 'complaints/c5'), c({ userId: 'cust2' })));
