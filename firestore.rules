@@ -543,7 +543,9 @@ service cloud.firestore {
           request.resource.data.get('courierPhone', '') is string &&
           request.resource.data.get('courierPhone', '').size() <= 20 &&
           request.resource.data.get('courierAt', null) == request.time &&
-          validCourierForAssignment(request.resource.data.get('courierId', ''))
+          validCourierForAssignment(request.resource.data.get('courierId', '')) &&
+          // التعيين وإزالة الطلب من القائمة العامة لازم يكونا ذريين.
+          !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
         );
       }
 
@@ -560,7 +562,9 @@ service cloud.firestore {
           resource.data.get('status', '') == 'preparing' &&
           resource.data.get('courierId', '') != '' &&
           k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
-          !('courierId' in request.resource.data)
+          !('courierId' in request.resource.data) &&
+          // إعادة إتاحة الطلب لا تتم إلا مع إعادة بناء الـ feed المطابق في نفس العملية.
+          feedMatchesOrder(orderId, request.resource.data)
         ) || (
           // إلغاء إداري أثناء التجهيز: إغلاق الطلب وإزالة إسناد المندوب في نفس التحديث.
           resource.data.get('status', '') == 'preparing' &&
@@ -590,7 +594,9 @@ service cloud.firestore {
           deliveryStampOk(resource.data.get('courierId', ''), k) &&
           stampRequired(k) &&
           (!('courierId' in k) ||
-            validCourierForAssignment(request.resource.data.get('courierId', ''))) &&
+            (validCourierForAssignment(request.resource.data.get('courierId', '')) &&
+             // يمنع بقاء نسخة قديمة من الطلب ظاهرة للمندوبين بعد التعيين.
+             !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId)))) &&
           adminMoveOk(k) &&
           historyGate(orderId, k)
         );
