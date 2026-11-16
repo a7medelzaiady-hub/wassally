@@ -786,6 +786,63 @@ class _CustomerReviewCard extends StatefulWidget {
 class _CustomerReviewCardState extends State<_CustomerReviewCard> {
   bool _busy = false;
 
+  Future<void> _moderate(String reviewId, {required bool exclude}) async {
+    final controller = TextEditingController(
+      text: exclude ? 'تمت مراجعة التقييم واستبعاده من الاعتداد به.' : 'تمت مراجعة الاعتراض وإعادة التقييم.',
+    );
+    final note = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text(exclude ? 'استبعاد التقييم؟' : 'إعادة التقييم؟'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 300,
+            decoration: const InputDecoration(
+              labelText: 'سبب قرار الإدارة',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 5) {
+                  Navigator.pop(ctx, controller.text.trim());
+                }
+              },
+              child: const Text('حفظ القرار'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (note == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.moderateReview(
+        reviewId: widget.doc.id,
+        note: note,
+        exclude: exclude,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر حفظ قرار المراجعة: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _warn(String customerId, String orderId, String detail) async {
     final ok = await confirmDialog(
       context,
@@ -919,6 +976,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         ] ??
         'سبب غير محدد';
     final comment = (data['comment'] ?? '').toString();
+    final moderationStatus = (data['moderationStatus'] ?? '').toString();
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -954,7 +1012,31 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
           ],
           const SizedBox(height: 4),
           Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
-          const Divider(height: 18),
+          if (moderationStatus == 'excluded') ...[
+            const SizedBox(height: 8),
+            const Text(
+              'هذا التقييم مستبعد من الاعتداد به بعد مراجعة الإدارة.',
+              style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w800),
+            ),
+            Text(
+              'قرار الإدارة: ${data['adminNote'] ?? ''}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            TextButton(
+              onPressed: _busy ? null : () => _moderate(widget.doc.id, exclude: false),
+              child: const Text('إعادة التقييم للاعتداد به'),
+            ),
+          ] else ...[
+            const Divider(height: 18),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: _busy ? null : () => _moderate(widget.doc.id, exclude: true),
+                icon: const Icon(Icons.visibility_off_outlined),
+                label: const Text('استبعاد التقييم بعد المراجعة'),
+              ),
+            ),
+          ],
           if (widget.isRestricted)
             Row(
               children: [
