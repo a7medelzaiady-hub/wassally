@@ -51,8 +51,10 @@ class _OffersPageState extends State<OffersPage> {
   // صفحة العروض تتجاوز كاش الكتالوج عمدًا؛ لازم تعرض أحدث العروض عند فتحها.
   Future<List<_Offer>> _load() async {
     final snap = await CatalogService.get(
-      FirebaseFirestore.instance.collection('stores'),
-      'stores',
+      FirebaseFirestore.instance
+          .collection('stores')
+          .where('active', isEqualTo: true),
+      'stores_active',
       cacheable: false,
     );
     final storeDocs = snap.docs.where((d) => d.data()['active'] != false);
