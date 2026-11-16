@@ -281,7 +281,7 @@ service cloud.firestore {
     }
 
     function userKeys() {
-      return ['name', 'phone', 'address', 'lat', 'lng', 'fcmTokens', 'fcmToken'];
+      return ['name', 'phone', 'address', 'lat', 'lng', 'fcmTokens', 'fcmToken', 'fcmInstallationIds'];
     }
 
     function validUserFields(d) {
@@ -291,7 +291,8 @@ service cloud.firestore {
         (!('lat' in d) || d.lat is number) &&
         (!('lng' in d) || d.lng is number) &&
         (!('fcmToken' in d) || (d.fcmToken is string && d.fcmToken.size() <= 4096)) &&
-        (!('fcmTokens' in d) || (d.fcmTokens is list && d.fcmTokens.size() <= 20));
+        (!('fcmTokens' in d) || (d.fcmTokens is list && d.fcmTokens.size() <= 20)) &&
+        (!('fcmInstallationIds' in d) || (d.fcmInstallationIds is list && d.fcmInstallationIds.size() <= 20));
     }
 
     // صنف يكتبه صاحب المحل: حقول معروفة بس وبأنواع صحيحة.
