@@ -27,17 +27,6 @@ class UpdateService {
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
-  /// استدعِ هذه الدالة من شاشة الأدمن لإرسال تنبيه تحديث لكل المستخدمين عبر Cloudflare Worker
-  static Future<void> notifyUsersAboutNewVersion({
-    required String latestVersion,
-    bool forceUpdate = false,
-  }) async {
-    await WorkerNotifyService.notifyAppVersionPublished(
-      latestVersion: latestVersion,
-      forceUpdate: forceUpdate,
-    );
-  }
-
   /// بنفكّر المستخدم بالتحديث: نافذة عند فتح التطبيق (لو مش مؤجّلة 24 ساعة)،
   /// وشريط تذكير ثابت أعلى الشاشة طول ما فيه تحديث، وبيتجدد كل ما التطبيق يرجع للواجهة.
   static Future<void> checkForUpdates(BuildContext context) async {
