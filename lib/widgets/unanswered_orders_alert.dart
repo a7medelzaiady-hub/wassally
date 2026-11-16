@@ -60,13 +60,17 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
           return const SizedBox.shrink();
         }
         final docs = snapshot.data!.docs.where((doc) {
-          final createdAt = doc.data()['createdAt'];
-          return createdAt is Timestamp &&
-              _now.difference(createdAt.toDate()) >= const Duration(minutes: 5);
+          final data = doc.data();
+          final unavailable = data['unavailableItems'];
+          if (unavailable is List && unavailable.isNotEmpty) return false;
+          final lastActivity = data['editedAt'] ?? data['createdAt'];
+          return lastActivity is Timestamp &&
+              _now.difference(lastActivity.toDate()) >= const Duration(minutes: 5);
         }).toList();
         if (docs.isEmpty) return const SizedBox.shrink();
-        final firstCreatedAt = docs.first.data()['createdAt'] as Timestamp;
-        final oldest = _now.difference(firstCreatedAt.toDate()).inMinutes;
+        final firstData = docs.first.data();
+        final firstActivity = (firstData['editedAt'] ?? firstData['createdAt']) as Timestamp;
+        final oldest = _now.difference(firstActivity.toDate()).inMinutes;
         final count = docs.length;
         final countLabel = count == 100 ? '100+' : '$count';
         return Container(
