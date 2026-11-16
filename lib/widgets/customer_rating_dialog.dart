@@ -51,7 +51,7 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: reason,
+                  initialValue: reason,
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: 'سبب التقييم',
