@@ -192,9 +192,10 @@ service cloud.firestore {
     // مفيش حد صغير للأصناف: الحد الأقصى 100 صنف، ومفيش قراءات لكل صنف.
     function customerNotRestricted(uid) {
       let p = /databases/$(database)/documents/customer_restrictions/$(uid);
-      return !exists(p) ||
-        get(p).data.get('active', false) != true ||
-        get(p).data.get('expiresAt', request.time) <= request.time;
+      let restriction = get(p).data;
+      return restriction == null ||
+        restriction.get('active', false) != true ||
+        restriction.get('expiresAt', request.time) <= request.time;
     }
 
     function validNewOrder(d) {
@@ -821,11 +822,13 @@ service cloud.firestore {
 
     // تقييم العميل من المندوب أو صاحب المحل: سجل داخلي لا يراه العميل.
     function validCustomerReview(rid, d) {
+      let order = get(/databases/$(database)/documents/orders/$(d.orderId)).data;
       return d.keys().hasOnly(['orderId', 'customerId', 'reviewerId', 'reviewerRole',
                                'storeId', 'rating', 'reason', 'comment', 'createdAt']) &&
         d.keys().hasAll(['orderId', 'customerId', 'reviewerId', 'reviewerRole',
                          'storeId', 'rating', 'reason', 'comment', 'createdAt']) &&
         d.orderId is string && d.orderId.size() > 0 &&
+        order != null &&
         rid == d.orderId + '_' + d.reviewerRole &&
         d.customerId is string && d.reviewerId == request.auth.uid &&
         d.reviewerRole in ['courier', 'store_owner'] &&
@@ -836,17 +839,17 @@ service cloud.firestore {
         (d.rating > 3 || d.reason != 'positive') &&
         d.comment is string && d.comment.size() <= 300 &&
         d.createdAt == request.time &&
-        exists(/databases/$(database)/documents/orders/$(d.orderId)) &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('userId', '') == d.customerId &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('status', '') == 'delivered' &&
+        order.get('userId', '') == d.customerId &&
+        order.get('storeId', '') == d.storeId &&
+        order.get('status', '') == 'delivered' &&
         ((d.reviewerRole == 'courier' && isCourier() &&
-            get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierId', '') == request.auth.uid &&
-            get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('deliveredBy', '') == request.auth.uid) ||
+            order.get('courierId', '') == request.auth.uid &&
+            order.get('deliveredBy', '') == request.auth.uid) ||
          (d.reviewerRole == 'store_owner' && isStoreOwner(d.storeId)));
     }
 
     function validCustomerRestriction(uid, d) {
+      let sourceOrder = get(/databases/$(database)/documents/orders/$(d.sourceOrderId)).data;
       return d.keys().hasOnly(['customerId', 'active', 'reason', 'sourceOrderId',
                                'createdAt', 'createdBy', 'expiresAt']) &&
         d.keys().hasAll(['customerId', 'active', 'reason', 'sourceOrderId',
@@ -856,11 +859,11 @@ service cloud.firestore {
         d.sourceOrderId is string && d.sourceOrderId.size() > 0 &&
         d.createdAt == request.time && d.createdBy == request.auth.uid &&
         d.expiresAt is timestamp && d.expiresAt > request.time &&
-        exists(/databases/$(database)/documents/orders/$(d.sourceOrderId)) &&
-        get(/databases/$(database)/documents/orders/$(d.sourceOrderId)).data.get('userId', '') == uid;
+        sourceOrder != null && sourceOrder.get('userId', '') == uid;
     }
 
     function validDeliveryIssue(issueId, d) {
+      let order = get(/databases/$(database)/documents/orders/$(d.orderId)).data;
       return d.keys().hasOnly(['orderId', 'courierId', 'customerId', 'storeId',
                                'reason', 'note', 'contactAttempted', 'status',
                                'createdBy', 'createdAt']) &&
@@ -874,12 +877,13 @@ service cloud.firestore {
         d.note is string && d.note.size() <= 300 &&
         d.contactAttempted == true && d.status == 'open' &&
         d.createdBy == request.auth.uid && d.createdAt == request.time &&
-        exists(/databases/$(database)/documents/orders/$(d.orderId)) &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('status', '') == 'on_the_way' &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierId', '') == request.auth.uid &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierArrivedAt', null) is timestamp &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('userId', '') == d.customerId &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId;
+        order != null &&
+        order.get('status', '') == 'on_the_way' &&
+        order.get('courierId', '') == request.auth.uid &&
+        order.get('pickedUpAt', null) is timestamp &&
+        order.get('courierArrivedAt', null) is timestamp &&
+        order.get('userId', '') == d.customerId &&
+        order.get('storeId', '') == d.storeId;
     }
 
     match /delivery_issues/{issueId} {
