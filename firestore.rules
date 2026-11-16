@@ -1204,6 +1204,8 @@ service cloud.firestore {
         request.resource.data.amount > 0 && request.resource.data.amount <= 1000000 &&
         request.resource.data.amountMinor is int &&
         request.resource.data.amountMinor > 0 && request.resource.data.amountMinor <= 100000000 &&
+        request.resource.data.amountMinor >= request.resource.data.amount * 100 - 0.0001 &&
+        request.resource.data.amountMinor <= request.resource.data.amount * 100 + 0.0001 &&
         request.resource.data.get('note', '') is string &&
         request.resource.data.get('note', '').size() <= 200 &&
         request.resource.data.createdBy == request.auth.uid &&
