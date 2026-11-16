@@ -817,6 +817,12 @@ const deliver = (db, role, patch) => {
   return b.commit();
 };
 
+test('delivery: لا يمكن تسجيل التسليم قبل تسجيل الوصول للعميل', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await assertFails(deliver(as('cour1'), 'courier', stamp()));
+  await assertFails(deliver(as('admin1'), 'admin', stamp()));
+});
+
 test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
   await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' }));
