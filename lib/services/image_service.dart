@@ -8,7 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'navigation.dart';
 import 'order_gateway.dart';
 
-/// رفع الصور على Cloudinary بتوقيع قصير العمر يصدره Order Gateway بعد التحقق من المستخدم والصلاحية.
+/// رفع الصور عبر Order Gateway؛ الخادم يتحقق من المستخدم والصلاحية والحجم وبصمة الملف قبل Cloudinary.
 ///
 /// لو true: الرفع من المعرض شغال.
 /// لو false: بيظهر للمستخدم نافذة يلصق فيها رابط الصورة (https) بدل الرفع.
@@ -18,7 +18,7 @@ final bool kImageUploadEnabled = true;
 class ImageService {
   const ImageService._();
 
-  /// المجلدات المسموحة؛ التوقيع يربط المستخدم بالمحل على الخادم.
+  /// المجلدات المسموحة؛ الخادم يربط المستخدم بالمحل ويتحقق من صلاحية الرفع.
   static const Set<String> _allowedFolders = {'stores', 'products', 'banners'};
 
   /// بيفتح معرض الصور في الموبايل، وبعد ما تختار صورة بيرفعها على Cloudinary
@@ -92,7 +92,8 @@ class ImageService {
 
     final result = jsonDecode(uploadResponse.body);
     final url = result is Map ? result['url'] as String? : null;
-    if (url == null || !isValidImageUrl(url)) {
+    if (url == null || !isValidImageUrl(url) ||
+        !Uri.parse(url).host.endsWith('cloudinary.com')) {
       throw StateError('خدمة الصور لم ترجع رابطًا آمنًا صالحًا.');
     }
     return url;
