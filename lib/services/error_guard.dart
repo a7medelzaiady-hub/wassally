@@ -16,7 +16,7 @@ class ErrorGuard {
   /// آخر أخطاء متسجّلة (للتشخيص فقط، محدودة العدد).
   static final List<String> recent = <String>[];
 
-  static void _log(String where, Object error, StackTrace? stack) {
+  static void _log(String where, Object error, StackTrace? stack, {bool fatal = false}) {
     final line = '[$where] $error';
     recent.add(line);
     if (recent.length > 20) recent.removeAt(0);
@@ -27,7 +27,7 @@ class ErrorGuard {
          defaultTargetPlatform == TargetPlatform.iOS ||
          defaultTargetPlatform == TargetPlatform.macOS);
     if (supported && Firebase.apps.isNotEmpty) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: false)
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: fatal)
           .catchError((_) {});
     }
   }
@@ -39,7 +39,7 @@ class ErrorGuard {
         _install();
         await body();
       },
-      (error, stack) => _log('zone', error, stack),
+      (error, stack) => _log('zone', error, stack, fatal: true),
     );
   }
 
@@ -48,13 +48,14 @@ class ErrorGuard {
     FlutterError.onError = (details) {
       _log('flutter', details.exception, details.stack);
       // في التطوير نخلّي Flutter يعرض الخطأ زي العادة.
-      if (kDebugMode) defaultOnError?.call(details);
+      defaultOnError?.call(details);
     };
 
     // أخطاء async/native اللي مفيش حد ماسكها: نعتبرها اتعالجت عشان التطبيق ما يقفلش.
     PlatformDispatcher.instance.onError = (error, stack) {
-      _log('platform', error, stack);
-      return true;
+      _log('platform', error, stack, fatal: true);
+      // لا نعلن أن العطل عولج؛ اترك Flutter/النظام يتعامل مع الخطأ غير المعالج.
+      return false;
     };
 
     // في الإنتاج: كارت صغير هادي بدل الشاشة الحمراء لو ودجت معيّنة فشلت في الرسم.
