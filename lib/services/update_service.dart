@@ -99,20 +99,6 @@ class UpdateService {
     }
   }
 
-  /// يفتح صفحة التطبيق الرسمية على Google Play عند الضغط على إشعار التحديث.
-  static Future<void> openStoreFromNotification() async {
-    try {
-      final info = await PackageInfo.fromPlatform();
-      final url = _playUrl(info.packageName, '');
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('تعذر فتح Google Play: $e');
-      NotificationService.messengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('تعذر فتح Google Play')),
-      );
-    }
-  }
-
   static Future<bool> _isSnoozed() async {
     try {
       final prefs = await SharedPreferences.getInstance();
