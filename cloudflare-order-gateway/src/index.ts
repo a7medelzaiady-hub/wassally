@@ -136,7 +136,6 @@ async function googleAccessToken(env: Env): Promise<string> {
   })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
-    .setSubject(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
     .setAudience("https://oauth2.googleapis.com/token")
     .setIssuedAt(now)
     .setExpirationTime(now + 3600)
