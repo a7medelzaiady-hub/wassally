@@ -1285,6 +1285,20 @@ test('serverOrders: عند تفعيل البوابة الموثوقة تُرفض
   }));
 });
 
+test('serverOrders: يمنع تعديل أصناف الطلب مباشرة من العميل بعد تفعيل البوابة', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'app_info/security'), { serverOrders: true });
+  });
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), {
+    items: [{ name: 'p', price: 1, qty: 2, productId: 'p1' }],
+    subtotal: 2,
+    total: 22,
+    notes: '',
+    customerName: 'Ali',
+    editedAt: serverTimestamp(),
+  }));
+});
+
 test('courier settlements: الإيصال ورصيد المندوب لازم يتسجلوا ذريًا وبنفس المبلغ', async () => {
   const admin = as('admin1');
   const settlement = {
