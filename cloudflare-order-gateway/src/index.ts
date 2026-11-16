@@ -391,6 +391,10 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   }
   const total = money(subtotal + deliveryFee - discount);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
+  const expectedTotal = Number(input.expectedTotal);
+  if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
+    throw new HttpError(409, "إجمالي الطلب اتغير. راجع السلة قبل تأكيد الطلب.");
+  }
 
   const order: JsonMap = {
     userId: uid,
@@ -513,13 +517,17 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
       const previousPercent = Number(order.discount) / Number(order.subtotal) * 100;
       discount = calculateDiscount(subtotal, Math.min(previousPercent, percent));
     } else {
-      promoCode = "";
+      throw new HttpError(409, "الكوبون لم يعد صالحًا. راجع الخصم قبل تعديل الطلب.");
     }
   } else {
     promoCode = "";
   }
   const total = money(subtotal + deliveryFee - discount);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
+  const expectedTotal = Number(input.expectedTotal);
+  if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
+    throw new HttpError(409, "إجمالي الطلب اتغير. راجع الأصناف والخصم قبل التعديل.");
+  }
 
   const updatedOrder: JsonMap = {
     ...order,
