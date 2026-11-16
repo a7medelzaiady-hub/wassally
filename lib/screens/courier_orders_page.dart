@@ -634,6 +634,34 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     }
   }
 
+  Future<void> _handCashToStore() async {
+    if (_busy) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'تسليم النقدية للمحل',
+      message: 'هل سلّمت قيمة الطلب للمحل بالفعل؟',
+      confirmLabel: 'تأكيد تسليم النقدية',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.recordCashHandedToStore(widget.order.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تسليم النقدية.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _recordArrival() async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -1045,6 +1073,25 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
             ],
           ),
+          if (o.status == OrderStatus.onTheWay &&
+              o.deliveryMode == 'external' &&
+              o.customerConfirmedAt != null) ...[
+            const SizedBox(height: 12),
+            if (o.cashHandedToStoreAt == null)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _handCashToStore,
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('سلّمت النقدية للمحل'),
+                ),
+              )
+            else
+              const Text(
+                'تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+          ],
           if (o.status == OrderStatus.onTheWay) ...[
             const SizedBox(height: 12),
             if (o.activeDeliveryIssueId.isNotEmpty)
