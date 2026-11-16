@@ -610,9 +610,33 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
 
   Future<void> _rateCustomer() async {
     if (_busy || widget.order.userId.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    var alreadyRated = false;
+    try {
+      alreadyRated = await CustomerRatingService.hasRated(
+        orderId: widget.order.id,
+        reviewerRole: 'store_owner',
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر التحقق من التقييم السابق: $error')),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (alreadyRated) {
+      setState(() => _customerRated = true);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تقييم تعامل العميل على هذا الطلب من قبل.')),
+      );
+      return;
+    }
+
     final input = await showCustomerRatingDialog(context);
     if (input == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await CustomerRatingService.rate(
