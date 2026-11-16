@@ -504,14 +504,17 @@ test('admin: يضيف صاحب محل ويقرأ القائمة، ويظل يت�
   await assertSucceeds(setDoc(doc(db, 'stores/shop1/products/pa'), { name: 'x', price: 5, anything: 1 }));
 });
 
-test('courierAfterPrep: المندوب لا يبدأ قبل التجهيز عند تفعيل المفتاح فقط', async () => {
-  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), { courierId: 'cour1' }));
-  // المفتاح مقفول: السلوك القديم (يبدأ من new)
-  await assertSucceeds(changeStatus(as('cour1'), 'o1', 'new', 'on_the_way', 'courier'));
-  await seed(async (db) => { await updateDoc(doc(db, 'orders/o1'), { courierId: 'cour1' }); });
-  await flag('courierAfterPrep');
+test('courier lifecycle: لا يبدأ المندوب الرحلة قبل تجهيز المحل وتأكيد الجاهزية', async () => {
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), { courierId: 'cour1' }));
+  // لا يمكن تخطي قبول المحل والتجهيز.
   await assertFails(changeStatus(as('cour1'), 'o1', 'new', 'on_the_way', 'courier'));
-  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'preparing' }));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'preparing' }));
+  // حتى بعد التجهيز، لا يبدأ قبل ready=true.
+  await assertFails(changeStatus(as('cour1'), 'o1', 'preparing', 'on_the_way', 'courier'));
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), { ready: true }));
   await assertSucceeds(changeStatus(as('cour1'), 'o1', 'preparing', 'on_the_way', 'courier'));
 });
 
@@ -520,6 +523,28 @@ const { query, collection, where, getDocs } = require('firebase/firestore');
 const setOrder = (patch) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), patch));
 const stamp = (over = {}) => ({
   status: 'delivered', deliveredBy: 'cour1', deliveredAt: serverTimestamp(), collectedAmount: 40, courierEarning: 20, ...over,
+});
+
+test('couriers: السجل القديم بلا active يظل نشطًا، وactive=false يمنع الوصول', async () => {
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    await setDoc(doc(db, 'couriers/legacy'), { name: 'Legacy' });
+    await setDoc(doc(db, 'couriers/disabled'), { name: 'Disabled', active: false });
+    await updateDoc(doc(db, 'orders/o1'), { status: 'preparing' });
+    await setDoc(doc(db, 'courier_available_orders/o1'), {
+      storeId: store, storeName: 'S', area: '', items: [], subtotal: 20,
+      deliveryFee: 20, discount: 0, total: 40, status: 'preparing', createdAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('legacy'), 'courier_available_orders/o1')));
+  await assertFails(getDoc(doc(as('disabled'), 'courier_available_orders/o1')));
+  const legacy = as('legacy');
+  const claim = writeBatch(legacy);
+  claim.update(doc(legacy, 'orders/o1'), {
+    courierId: 'legacy', courierName: 'Legacy', courierPhone: '', courierAt: serverTimestamp(),
+  });
+  claim.delete(doc(legacy, 'courier_available_orders/o1'));
+  await assertSucceeds(claim.commit());
 });
 
 test('applicants: المندوب يقدّم على طلب جاهز فقط ولا يتعيّن بنفسه، والمدير يختار', async () => {
@@ -570,8 +595,9 @@ const deliver = (db, role, patch) => {
   return b.commit();
 };
 
-test('delivery stamp: المندوب يختم تسليمه بأرقام الطلب الصحيحة فقط', async () => {
+test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' }));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ courierEarning: 99 })));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 5 })));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ deliveredBy: 'cour2' })));
@@ -579,10 +605,8 @@ test('delivery stamp: المندوب يختم تسليمه بأرقام الطل
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
 });
 
-test('delivery stamp: stampDeliveries يفرض الختم، والمندوب ما يختمش طلب مش بتاعه', async () => {
+test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اكتماله', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1' });
-  await flag('stampDeliveries');
-  await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' })); // تسليم من غير ختم
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
   await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { courierEarning: 500 }));
 });
