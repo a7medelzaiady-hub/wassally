@@ -205,6 +205,10 @@ function firestoreDocumentsUrl(env: Env): string {
   return `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 }
 
+function firestoreDocumentName(env: Env, path: string): string {
+  return `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
 async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Promise<void> {
   if (!writes.length) return;
   for (let offset = 0; offset < writes.length; offset += 400) {
@@ -236,13 +240,13 @@ async function queryAccountDocuments(
   for (;;) {
     const structuredQuery: any = {
       from: [{ collectionId, ...(allDescendants ? { allDescendants: true } : {}) }],
-      where: {
+      ...(fieldPath ? { where: {
         fieldFilter: {
           field: { fieldPath },
           op: "EQUAL",
           value: { stringValue: uid },
         },
-      },
+      } } : {}),
       orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }],
       limit: 200,
       ...(cursor ? { startAt: { values: [{ referenceValue: cursor }], before: false } } : {}),
@@ -283,8 +287,11 @@ async function mutateAccountQuery(
     const patch = transform(doc);
     if (patch === null) return { delete: doc.name };
     const fieldPaths = Object.keys(patch);
+    const values = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== null),
+    );
     return {
-      update: { name: doc.name, fields: encodeFields(patch) },
+      update: { name: doc.name, fields: encodeFields(values) },
       updateMask: { fieldPaths },
     };
   });
@@ -313,7 +320,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
       updateMask: { fieldPaths: ["customerName", "notes", "userId", "userDeleted", "userName", "userEmail", "phone", "address"] },
     });
     const orderPath = order.name.split("/documents/")[1];
-    customerWrites.push({ delete: `${firestoreDocumentsUrl(env)}/${orderPath}/private/contact` });
+    customerWrites.push({ delete: firestoreDocumentName(env, `${orderPath}/private/contact`) });
   }
   await commitFirestoreWrites(env, token, customerWrites);
 
@@ -358,7 +365,10 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
     courierId: "deleted", comment: "", courierDeleted: true,
   }));
   await mutateAccountQuery(env, token, "customer_reviews", "reviewerId", uid, () => ({
-    reviewerId: "deleted", customerId: "deleted", comment: "", userDeleted: true,
+    reviewerId: "deleted", comment: "", userDeleted: true,
+  }));
+  await mutateAccountQuery(env, token, "customer_reviews", "customerId", uid, () => ({
+    customerId: "deleted", comment: "", customerDeleted: true,
   }));
   await mutateAccountQuery(env, token, "courier_settlements", "courierId", uid, () => ({
     courierId: "deleted", courierName: "مندوب محذوف", note: "", courierDeleted: true,
@@ -366,20 +376,20 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
 
   // Delete support messages before their parent document (Firestore has no cascade delete).
   const chatPath = `support_chats/${encodeURIComponent(uid)}`;
-  const chatMessages = await queryAccountDocuments(env, token, "messages", "__name__", uid, chatPath);
+  const chatMessages = await queryAccountDocuments(env, token, "messages", "", uid, chatPath);
   await commitFirestoreWrites(env, token, chatMessages.map((doc) => ({ delete: doc.name })));
-  await commitFirestoreWrites(env, token, [{ delete: `${firestoreDocumentsUrl(env)}/${chatPath}` }]);
+  await commitFirestoreWrites(env, token, [{ delete: firestoreDocumentName(env, chatPath) }]);
 
   // Remove role/profile documents.
   await commitFirestoreWrites(env, token, [
     "admins", "couriers", "storeOwners", "supervisors",
     "customer_restrictions", "orderLimits", "first_orders",
   ].map((collection) => ({
-    delete: `${firestoreDocumentsUrl(env)}/${collection}/${encodeURIComponent(uid)}`,
+    delete: firestoreDocumentName(env, `${collection}/${encodeURIComponent(uid)}`),
   })));
 
   if (ownedStoreId) {
-    const remainingOwners = await fetch(`${firestoreDocumentsUrl(env)}/storeOwners:runQuery`, {
+    const remainingOwners = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({
@@ -417,8 +427,8 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   await mutateAccountQuery(env, token, "couriers", "supervisorId", uid, () => ({ supervisorId: null }));
   await mutateAccountQuery(env, token, "account_deletions", "userId", uid, () => null);
   await commitFirestoreWrites(env, token, [
-    { delete: `${firestoreDocumentsUrl(env)}/account_deletions/${encodeURIComponent(uid)}` },
-    { delete: `${firestoreDocumentsUrl(env)}/users/${encodeURIComponent(uid)}` },
+    { delete: firestoreDocumentName(env, `account_deletions/${encodeURIComponent(uid)}`) },
+    { delete: firestoreDocumentName(env, `users/${encodeURIComponent(uid)}`) },
   ]);
 }
 
