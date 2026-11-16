@@ -1021,6 +1021,21 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3/products/p1')));
   await assertSucceeds(getDoc(doc(as('cust3'), 'stores/draft3')));
 
+  // اعتماد محل غير مكتمل لا ينشره؛ لا يستطيع صاحبه فتحه بنفسه، والإدارة تفعّله بعد استكماله.
+  const approve6 = adminDb.batch();
+  approve6.set(doc(adminDb, 'storeOwners/cust6'), {
+    name: 'صاحب المحل', storeId: 'draft6', active: true,
+  });
+  approve6.update(doc(adminDb, 'stores/draft6'), { approved: true, active: false });
+  approve6.update(doc(adminDb, 'role_requests/cust6_store_owner'), {
+    status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1',
+  });
+  await assertSucceeds(approve6.commit());
+  await assertFails(getDoc(doc(as('cust2'), 'stores/draft6')));
+  await assertFails(updateDoc(doc(as('cust6'), 'stores/draft6'), { active: true }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'stores/draft6'), { active: true }));
+  await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft6')));
+
   // الإدارة تقبل المندوب وتكتب سجله؛ إعادة التقديم بعد الرفض فقط.
   await assertSucceeds(setDoc(doc(as('admin1'), 'couriers/cust1'), {
     name: 'Ali', phone: '01012345678', active: true,
