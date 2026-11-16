@@ -163,11 +163,10 @@ class AuthService {
       throw StateError('تعذر تأكيد هويتك. سجّل الدخول من جديد وحاول مرة أخرى.');
     }
 
-    // Remove the device token while the user is still authenticated.
-    await NotificationService.dispose();
     // Worker removes Firestore records first and deletes Firebase Auth last.
-    // On any failure the account remains available so the user can retry.
+    // On any failure the account remains available and app listeners stay active.
     await OrderGateway.deleteAccount(idToken: idToken);
+    await NotificationService.dispose();
     cart.clear();
     shellTab.value = 0;
     await FirebaseAuth.instance.signOut();
