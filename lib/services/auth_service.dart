@@ -142,7 +142,7 @@ class AuthService {
   }
 
   /// حذف الحساب نهائيًا. بيطلب تأكيد الهوية بجوجل الأول (شرط من Firebase).
-  /// بعد الحذف، دالة السيرفر (onUserDeleted) بتشيل البيانات الشخصية من الطلبات القديمة.
+  /// تنظيف البيانات المرتبطة بالحساب يعتمد على onUserDeleted إن كانت منشورة؛ لا نعتبر حذف البيانات مكتملًا من حذف Auth وحده.
   static Future<void> deleteAccount([BuildContext? context]) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
