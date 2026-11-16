@@ -72,6 +72,7 @@ function orderBatch(context, uid, orderId) {
     phone: '01012345678',
     address: 'شارع الاختبار، كفر الشيخ',
   });
+  batch.set(doc(db, 'orderLimits', uid), { lastAt: serverTimestamp() });
   return batch.commit();
 }
 

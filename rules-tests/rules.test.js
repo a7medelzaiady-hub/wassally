@@ -56,6 +56,56 @@ test('orders: إنشاء عادي ينجح (الأسعار غير مفعّلة)'
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/new1'), baseOrder('cust1')));
 });
 
+test('orderLimits: العميل يكتب مستنده هو بس بوقت السيرفر، ومفيش قراءة ولا حذف', async () => {
+  const db = as('cust1');
+  await assertSucceeds(setDoc(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db, 'orderLimits/cust2'), { lastAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db, 'orderLimits/cust1'), { lastAt: new Date() }));
+  await assertFails(setDoc(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp(), x: 1 }));
+  await assertFails(getDoc(doc(db, 'orderLimits/cust1')));
+  await assertFails(deleteDoc(doc(db, 'orderLimits/cust1')));
+});
+
+test('orderRateLimit: مقفول افتراضيًا، ومفعّل يفرض فاصل 20 ثانية بين طلبين', async () => {
+  const placeOrder = (db, id, withLimit = true) => {
+    const b = writeBatch(db);
+    b.set(doc(db, `orders/${id}`), baseOrder('cust1'));
+    if (withLimit) b.set(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp() });
+    return b.commit();
+  };
+  const cust = as('cust1');
+
+  // المفتاح مقفول: الطلب بدون مستند الحد ينجح (توافق مع النسخ القديمة).
+  await assertSucceeds(placeOrder(cust, 'rl0', false));
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/security'), { orderRateLimit: true });
+  });
+
+  // مفعّل: لازم يكتب مستند الحد مع الطلب.
+  await assertFails(placeOrder(cust, 'rl1', false));
+  await assertSucceeds(placeOrder(cust, 'rl1'));
+  // طلب تاني فورًا يُرفض.
+  await assertFails(placeOrder(cust, 'rl2'));
+
+  // بعد انتهاء الفاصل (آخر طلب أقدم من 20 ثانية) ينجح.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'orderLimits/cust1'), { lastAt: new Date(Date.now() - 60_000) });
+  });
+  await assertSucceeds(placeOrder(cust, 'rl3'));
+
+  // عميل تاني مستقل ما يتأثرش، وما ينفعش يكتب مستند الحد باسم غيره.
+  const other = as('cust2');
+  const b = writeBatch(other);
+  b.set(doc(other, 'orders/rl4'), baseOrder('cust2'));
+  b.set(doc(other, 'orderLimits/cust2'), { lastAt: serverTimestamp() });
+  await assertSucceeds(b.commit());
+  const evil = writeBatch(other);
+  evil.set(doc(other, 'orders/rl5'), baseOrder('cust2'));
+  evil.set(doc(other, 'orderLimits/cust1'), { lastAt: serverTimestamp() });
+  await assertFails(evil.commit());
+});
+
 // المراجعة على أسعار الكتالوج بتتم عند الأدمن (verifiedTotal)، والقواعد بتتأكد من اتساق الأرقام بس:
 // total = subtotal + deliveryFee - discount.
 test('إجمالي الطلب: غير المتطابق حسابيًا يُرفض، والمتطابق ينجح', async () => {

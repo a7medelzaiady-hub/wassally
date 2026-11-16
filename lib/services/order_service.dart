@@ -299,6 +299,11 @@ class OrderService {
     final ref = _orders.doc(orderId);
     final batch = FirebaseFirestore.instance.batch()..set(ref, data);
     batch.set(OrderContactService.ref(ref.id), contactData);
+    // آخر وقت طلب للعميل: القواعد بتستخدمه للفاصل بين الطلبات (مفتاح orderRateLimit).
+    batch.set(
+      FirebaseFirestore.instance.collection('orderLimits').doc(user.uid),
+      {'lastAt': FieldValue.serverTimestamp()},
+    );
 
     try {
       await batch.commit();

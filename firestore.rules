@@ -65,6 +65,8 @@ service cloud.firestore {
     //   enforcePrices: true ← كل صنف في الطلب لازم يحمل productId وسعره يطابق الكتالوج (حتى 8 أصناف)
     //   courierAfterPrep: true ← المندوب ما يقدرش يبدأ التوصيل إلا بعد ما المحل يجهّز الطلب (preparing)
     //   courierAfterReady: true ← المندوب ما يقدرش يبدأ التوصيل إلا بعد ما المحل/الأدمن يضغط «جاهز للاستلام» (ready)
+    //   orderRateLimit: true ← فاصل 20 ثانية بين طلبين من نفس العميل (من السيرفر). التطبيق بيكتب
+    //                          orderLimits/{uid} مع كل طلب؛ فعّله بعد ما كل العملاء يحدّثوا التطبيق.
     //   stampDeliveries: true ← التسليم لازم يتسجّل معاه deliveredBy/deliveredAt/collectedAmount/courierEarning
     //                          (إحصائيات المندوب والمدير). فعّله بعد ما كل المناديب يحدّثوا التطبيق.
     // فعّلهم بعد ما كل العملاء يحدّثوا التطبيق (راجع SECURITY_CHECKLIST.md).
@@ -171,6 +173,17 @@ service cloud.firestore {
       return d.storeId is string && d.storeId.size() > 0 &&
         exists(/databases/$(database)/documents/stores/$(d.storeId)) &&
         get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true;
+    }
+
+    // فاصل بين طلبين من نفس العميل (يتفعّل بمفتاح orderRateLimit). التطبيق بيكتب orderLimits/{uid}.lastAt
+    // في نفس الـ batch مع الطلب، والقاعدة بتتأكد إن آخر طلب أقدم من 20 ثانية.
+    function orderRateOk(uid) {
+      return !securityFlag('orderRateLimit') || (
+        existsAfter(/databases/$(database)/documents/orderLimits/$(uid)) &&
+        getAfter(/databases/$(database)/documents/orderLimits/$(uid)).data.get('lastAt', null) == request.time &&
+        (!exists(/databases/$(database)/documents/orderLimits/$(uid)) ||
+          get(/databases/$(database)/documents/orderLimits/$(uid)).data.lastAt <=
+            request.time - duration.value(20, 's')));
     }
 
     // ───────────── إنشاء الطلب (نسخة مبسّطة) ─────────────
@@ -541,7 +554,7 @@ service cloud.firestore {
       );
 
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
-      allow create: if signedIn() && validNewOrder(request.resource.data);
+      allow create: if signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
 
       allow update: if signedIn() && evalOrderUpdate();
 
@@ -655,6 +668,14 @@ service cloud.firestore {
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
           request.resource.data.version is number);
+    }
+
+    // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.
+    match /orderLimits/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['lastAt']) &&
+        request.resource.data.lastAt == request.time;
+      allow read, delete: if false;
     }
 
     // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
