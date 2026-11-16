@@ -1,14 +1,14 @@
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import 'navigation.dart';
+import 'order_gateway.dart';
 
-/// رفع الصور على Cloudinary باستخدام unsigned presets (من غير سيرفر ولا Blaze).
-/// فيه 3 presets في Cloudinary، كل واحد له Asset folder ثابت:
-///   stores_unsigned / products_unsigned / banners_unsigned
+/// رفع الصور على Cloudinary بتوقيع قصير العمر يصدره Order Gateway بعد التحقق من المستخدم والصلاحية.
 ///
 /// لو true: الرفع من المعرض شغال.
 /// لو false: بيظهر للمستخدم نافذة يلصق فيها رابط الصورة (https) بدل الرفع.
@@ -20,14 +20,13 @@ class ImageService {
 
   static const String _cloudName = 'g3n5pdfz';
 
-  /// المجلدات المسموحة (كل واحد ليه preset اسمه `<folder>_unsigned`).
+  /// المجلدات المسموحة؛ التوقيع يربط المستخدم بالمحل على الخادم.
   static const Set<String> _allowedFolders = {'stores', 'products', 'banners'};
 
   /// بيفتح معرض الصور في الموبايل، وبعد ما تختار صورة بيرفعها على Cloudinary
   /// في المجلد [folder] (stores / products / banners) وبيرجّع رابط الصورة (https).
   ///
-  /// [storeId] متساب في التوقيع عشان الشاشات اللي بتستدعيه متتأثرش،
-  /// بس مش مستخدم دلوقتي لأن مفيش توقيع من السيرفر.
+  /// صاحب المحل لا يستطيع رفع صور خارج المحل المرتبط بحسابه؛ البانرات للإدارة فقط.
   ///
   /// بيرجّع null لو المستخدم لغى الاختيار. ولو الرفع فشل بيرمي استثناء
   /// (عشان الشاشة تعرض رسالة الخطأ بدل ما يفشل في صمت).
@@ -52,16 +51,62 @@ class ImageService {
       throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
     }
 
-    final uri = Uri.parse(
-      'https://api.cloudinary.com/v1_1/$_cloudName/image/upload',
-    );
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw StateError('سجّل الدخول قبل رفع الصورة.');
+    if (!OrderGateway.isConfigured) {
+      throw StateError('خدمة رفع الصور الآمنة غير مهيأة في إصدار التطبيق.');
+    }
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول مرة أخرى.');
+    }
+
+    final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+    final signResponse = await http.post(
+      Uri.parse('$root/v1/uploads/sign'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: jsonEncode({'folder': folder, 'storeId': storeId ?? ''}),
+    ).timeout(const Duration(seconds: 20));
+    if (signResponse.statusCode != 200) {
+      String message = 'تعذر تأمين رفع الصورة (\${signResponse.statusCode}).';
+      try {
+        final data = jsonDecode(signResponse.body);
+        if (data is Map && data['error'] is String) message = data['error'] as String;
+      } catch (_) {}
+      throw StateError(message);
+    }
+
+    final signed = jsonDecode(signResponse.body);
+    if (signed is! Map) throw StateError('استجابة توقيع الصورة غير صحيحة.');
+    final cloudName = (signed['cloudName'] ?? '').toString();
+    final apiKey = (signed['apiKey'] ?? '').toString();
+    final timestamp = (signed['timestamp'] ?? '').toString();
+    final uploadFolder = (signed['folder'] ?? '').toString();
+    final allowedFormats = (signed['allowedFormats'] ?? '').toString();
+    final signature = (signed['signature'] ?? '').toString();
+    if ([cloudName, apiKey, timestamp, uploadFolder, allowedFormats, signature]
+        .any((value) => value.isEmpty)) {
+      throw StateError('بيانات توقيع الصورة ناقصة.');
+    }
+
+    final uri = Uri.https('api.cloudinary.com', '/v1_1/$cloudName/image/upload');
     final request = http.MultipartRequest('POST', uri)
-      ..fields['upload_preset'] = '${folder}_unsigned'
+      ..fields['api_key'] = apiKey
+      ..fields['timestamp'] = timestamp
+      ..fields['folder'] = uploadFolder
+      ..fields['allowed_formats'] = allowedFormats
+      ..fields['signature'] = signature
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
           bytes,
-          filename: '${DateTime.now().millisecondsSinceEpoch}.jpg',
+          filename: picked.name.isEmpty
+              ? '\${DateTime.now().millisecondsSinceEpoch}.jpg'
+              : picked.name,
         ),
       );
 
@@ -69,10 +114,11 @@ class ImageService {
       await request.send().timeout(const Duration(seconds: 60)),
     );
     if (response.statusCode != 200) {
-      throw StateError('Upload failed: ${response.statusCode}');
+      throw StateError('فشل رفع الصورة (\${response.statusCode}).');
     }
-    final url = (jsonDecode(response.body) as Map)['secure_url'] as String?;
-    if (url == null || url.isEmpty) throw StateError('No URL returned');
+    final result = jsonDecode(response.body);
+    final url = result is Map ? result['secure_url'] as String? : null;
+    if (url == null || url.isEmpty) throw StateError('لم يرجع Cloudinary رابط الصورة.');
     return url;
   }
 }
