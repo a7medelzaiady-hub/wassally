@@ -59,7 +59,7 @@ npm test
 - أضيفت خدمة مستقلة في `cloudflare-order-gateway/` للتحقق من أسعار كل صنف من كتالوج Firestore وحساب الخصم ورسوم التوصيل والإجمالي على الخادم.
 - السعر المرسل من Flutter لا يُعتمد؛ يستخدم فقط لاكتشاف تغيّر السعر منذ عرض السلة.
 - الطلب وبيانات التواصل الخاصة و`orderLimits` تُكتب في Firestore Commit ذري واحد.
-- قواعد Firestore تقرأ `app_info/security.serverOrders`: عند تفعيله تمنع إنشاء الطلب وكتابة `orderLimits` من تطبيق العميل مباشرة.
+- قواعد Firestore تقرأ `app_info/security.serverOrders`: عند تفعيله تمنع إنشاء الطلب وتعديل أصنافه وكتابة `orderLimits` مباشرة من تطبيق العميل؛ التعديل يمر عبر Worker ويحدّث قائمة المندوبين ذريًا.
 - تطبيق Flutter يستخدم البوابة عند تمرير `WASALLY_ORDER_GATEWAY_URL` كـ dart-define. عدم ضبط العنوان يبقي وضع التوافق القديم حتى التحويل.
 - **لم يتم إنشاء حساب Cloudflare أو حساب الخدمة أو إضافة Secrets أو نشر Worker أو تفعيل `serverOrders`.** لا تعتبر حماية الأسعار فعالة في الإنتاج حتى تكتمل خطوات `cloudflare-order-gateway/README.md`.
 - يلزم أولًا إعداد بيئة Firebase اختبار منفصلة، واختبار Worker عليها، وتشغيل اختبارات Worker وFirestore Rules وFlutter بنجاح، ثم نشر التطبيق والقواعد على الإنتاج بالترتيب الموثق.
