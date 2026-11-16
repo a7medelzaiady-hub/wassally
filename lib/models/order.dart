@@ -92,6 +92,7 @@ class AppOrder {
   final double total;
   final OrderStatus status;
   final DateTime? createdAt;
+  final DateTime? editedAt;
   final String address;
   final String phone;
   final String notes;
@@ -155,6 +156,7 @@ class AppOrder {
     required this.total,
     required this.status,
     required this.createdAt,
+    this.editedAt,
     required this.address,
     required this.phone,
     required this.notes,
@@ -204,6 +206,7 @@ class AppOrder {
       total: total,
       status: status,
       createdAt: createdAt,
+      editedAt: editedAt,
       address: c.address.isNotEmpty ? c.address : address,
       phone: c.phone.isNotEmpty ? c.phone : phone,
       notes: notes,
@@ -260,6 +263,7 @@ class AppOrder {
       }
     }
     final created = m['createdAt'];
+    final edited = m['editedAt'];
     return AppOrder(
       id: id,
       storeName: (m['storeName'] ?? '').toString(),
@@ -269,6 +273,7 @@ class AppOrder {
       total: (m['total'] as num?)?.toDouble() ?? 0,
       status: OrderStatus.parse(m['status']?.toString()),
       createdAt: created is Timestamp ? created.toDate() : null,
+      editedAt: edited is Timestamp ? edited.toDate() : null,
       address: (m['address'] ?? '').toString(),
       phone: (m['phone'] ?? '').toString(),
       notes: (m['notes'] ?? '').toString(),
