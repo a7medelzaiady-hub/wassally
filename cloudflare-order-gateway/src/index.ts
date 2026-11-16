@@ -427,7 +427,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     {
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/orderLimits/${uid}`,
-        fields: {},
+        fields: encodeFields({ lastAt: new Date() }),
       },
       updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
       currentDocument: limitDoc?.updateTime
