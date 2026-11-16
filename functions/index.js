@@ -114,7 +114,7 @@ async function notify(uids, title, body, data = {}) {
         .doc(e.uid)
         .update({
           fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token),
-          fcmToken: e.token,
+          fcmToken: admin.firestore.FieldValue.delete(),
         })
         .catch(() => {}),
     ),
