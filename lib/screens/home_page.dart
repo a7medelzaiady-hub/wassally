@@ -77,6 +77,8 @@ class _HomePageState extends State<HomePage>
 
   // الإشعارات.
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _courierStatusSubscription;
 
   // الجرس: أنيميشن الهز + الصوت.
   late final AnimationController _bellCtrl = AnimationController(
@@ -133,6 +135,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
     super.dispose();
@@ -414,14 +417,49 @@ class _HomePageState extends State<HomePage>
       } else {
         await fm.subscribeToTopic('all');
       }
-      if (isCourier) {
-        await fm.subscribeToTopic('couriers');
-      } else {
-        await fm.unsubscribeFromTopic('couriers');
-      }
+      await _syncCourierTopic(uid, isCourier);
     } catch (e) {
       debugPrint('Topic sync error: $e');
     }
+  }
+
+  /// إشعارات الطلبات الجديدة للمندوبين النشطين فقط.
+  /// غياب active في السجلات القديمة يظل نشطًا، والقيمة false أو null توقف الاشتراك.
+  Future<void> _syncCourierTopic(String uid, bool isCourier) async {
+    await _courierStatusSubscription?.cancel();
+    _courierStatusSubscription = null;
+    final messaging = FirebaseMessaging.instance;
+    if (!isCourier) {
+      await messaging.unsubscribeFromTopic('couriers');
+      return;
+    }
+
+    var lastSubscribedState = false;
+    _courierStatusSubscription = FirebaseFirestore.instance
+        .collection('couriers')
+        .doc(uid)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        final data = snapshot.data();
+        final active = snapshot.exists &&
+            (data == null ||
+                !data.containsKey('active') ||
+                data['active'] == true);
+        if (active == lastSubscribedState) return;
+        lastSubscribedState = active;
+        if (active) {
+          unawaited(messaging.subscribeToTopic('couriers'));
+        } else {
+          unawaited(messaging.unsubscribeFromTopic('couriers'));
+        }
+      },
+      onError: (Object error) {
+        debugPrint('Courier notification status error: $error');
+        lastSubscribedState = false;
+        unawaited(messaging.unsubscribeFromTopic('couriers'));
+      },
+    );
   }
 
   Future<void> _initNotifications() async {
