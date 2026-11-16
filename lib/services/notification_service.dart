@@ -24,8 +24,9 @@ class NotificationService {
 
   static StreamSubscription<RemoteMessage>? _foreground;
   static StreamSubscription<RemoteMessage>? _opened;
-  static StreamSubscription<String>? _refresh;
-  static String? _token;
+  static StreamSubscription<String>? _registered;
+  static StreamSubscription<String>? _unregistered;
+  static String? _installationId;
 
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -79,22 +80,27 @@ class NotificationService {
     if (!_supported || user == null) return;
     try {
       final messaging = FirebaseMessaging.instance;
-      final token = await messaging.getToken();
-      if (token != null) {
-        _token = token;
-        await _saveToken(user.uid, token);
-      }
-
-      await _refresh?.cancel();
-      _refresh = messaging.onTokenRefresh.listen((newToken) {
-        _token = newToken;
+      await _registered?.cancel();
+      await _unregistered?.cancel();
+      _registered = messaging.onRegistered.listen((fid) {
+        _installationId = fid;
         final current = FirebaseAuth.instance.currentUser;
         if (current != null) {
-          _saveToken(current.uid, newToken).catchError((e) {
-            debugPrint('تعذر تحديث توكن الإشعارات: $e');
+          _saveInstallationId(current.uid, fid).catchError((e) {
+            debugPrint('تعذر حفظ معرّف تثبيت الإشعارات: $e');
           });
         }
       });
+      _unregistered = messaging.onUnregistered.listen((fid) {
+        if (_installationId == fid) _installationId = null;
+        final current = FirebaseAuth.instance.currentUser;
+        if (current != null) {
+          _removeInstallationId(current.uid, fid).catchError((e) {
+            debugPrint('تعذر حذف معرّف تثبيت الإشعارات: $e');
+          });
+        }
+      });
+      await messaging.register();
 
       await _foreground?.cancel();
       await _opened?.cancel();
@@ -117,30 +123,36 @@ class NotificationService {
     await LiveAlerts.stop();
     await _foreground?.cancel();
     await _opened?.cancel();
-    await _refresh?.cancel();
+    await _registered?.cancel();
+    await _unregistered?.cancel();
     _foreground = null;
     _opened = null;
-    _refresh = null;
+    _registered = null;
+    _unregistered = null;
     if (!_supported) return;
 
     final user = FirebaseAuth.instance.currentUser;
-    final token = _token;
-    _token = null;
+    final fid = _installationId;
+    _installationId = null;
     try {
-      if (user != null && token != null) {
-        await _userDoc(user.uid).set({
-          'fcmTokens': FieldValue.arrayRemove([token]),
-        }, SetOptions(merge: true));
+      if (user != null && fid != null) {
+        await _removeInstallationId(user.uid, fid);
       }
-      await FirebaseMessaging.instance.deleteToken();
+      await FirebaseMessaging.instance.unregister();
     } catch (e) {
       debugPrint('تعذر إلغاء تسجيل الإشعارات: $e');
     }
   }
 
-  static Future<void> _saveToken(String uid, String token) {
+  static Future<void> _saveInstallationId(String uid, String fid) {
     return _userDoc(uid).set({
-      'fcmTokens': FieldValue.arrayUnion([token]),
+      'fcmInstallationIds': FieldValue.arrayUnion([fid]),
+    }, SetOptions(merge: true));
+  }
+
+  static Future<void> _removeInstallationId(String uid, String fid) {
+    return _userDoc(uid).set({
+      'fcmInstallationIds': FieldValue.arrayRemove([fid]),
     }, SetOptions(merge: true));
   }
 
