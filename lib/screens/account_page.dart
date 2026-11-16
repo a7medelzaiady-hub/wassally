@@ -262,6 +262,30 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
+  Future<void> _showRoleLinkedDialog(List<String> roles) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('حسابك مرتبط بدور'),
+          content: Text(
+            'حسابك عليه دور (${roles.join('، ')}). الإدارة لازم تشيله الأول '
+            'عشان تتأكد إن مفيش طلبات شغالة أو فلوس معلّقة. سجّلنا طلبك، '
+            'وبعد ما الإدارة تشيل الدور تقدر تحذف حسابك.',
+            style: const TextStyle(height: 1.6),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('تمام'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteAccount() async {
     try {
       if (await AuthService.hasActiveOrders()) {
@@ -271,6 +295,13 @@ class _AccountPageState extends State<AccountPage> {
             content: Text('عندك طلب شغال لسه. استنى لحد ما يوصل أو يتلغي وبعدين احذف حسابك.'),
           ),
         );
+        return;
+      }
+      final roles = await AuthService.linkedRoles();
+      if (roles.isNotEmpty) {
+        await AuthService.requestRoleRemoval(roles);
+        if (!mounted) return;
+        await _showRoleLinkedDialog(roles);
         return;
       }
     } catch (_) {
@@ -317,6 +348,9 @@ class _AccountPageState extends State<AccountPage> {
           ),
         ),
       );
+    } on RoleLinkedException catch (e) {
+      if (!mounted) return;
+      await _showRoleLinkedDialog(e.roles);
     } on ActiveOrdersException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -157,6 +157,46 @@ class AuthService {
     return snap.docs.isNotEmpty;
   }
 
+  static const _roleDocs = {
+    'admins': 'مدير',
+    'couriers': 'مندوب توصيل',
+    'storeOwners': 'صاحب محل',
+    'supervisors': 'مشرف',
+  };
+
+  /// الأدوار المربوطة بالحساب (مستندات admins/couriers/storeOwners/supervisors).
+  /// الحساب اللي عليه دور مينفعش يتحذف قبل ما الإدارة تشيل الدور (تسويات وطلبات شغالة).
+  /// لو القراءة فشلت بيرمي الاستثناء (الحذف ما يكملش على تخمين).
+  static Future<List<String>> linkedRoles() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const [];
+    final db = FirebaseFirestore.instance;
+    final found = <String>[];
+    for (final e in _roleDocs.entries) {
+      final snap = await db.collection(e.key).doc(user.uid).get();
+      if (snap.exists) found.add(e.value);
+    }
+    return found;
+  }
+
+  /// بيسجّل طلب إزالة الدور في account_deletions (الأدمن بيقراه). مرة واحدة لكل حساب.
+  static Future<void> requestRoleRemoval(List<String> roles) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('account_deletions')
+          .doc('role_${user.uid}')
+          .set({
+        'userId': user.uid,
+        'reason': 'طلب حذف حساب مرتبط بدور: ${roles.join('، ')}',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {
+      // لو الطلب اتسجّل قبل كده، القاعدة بترفض التكرار وده مقبول.
+    }
+  }
+
   /// حذف الحساب نهائيًا. بيطلب تأكيد الهوية بجوجل الأول (شرط من Firebase).
   /// على خطة Spark مفيش Cloud Functions، فالتطبيق نفسه بينضّف بيانات المستخدم قبل ما
   /// يحذف الحساب (انظر [_eraseUserData]). لو الحساب ليه أدوار (مندوب/صاحب محل/مشرف/مدير)
@@ -166,6 +206,8 @@ class AuthService {
     if (user == null) return;
 
     if (await hasActiveOrders()) throw const ActiveOrdersException();
+    final roles = await linkedRoles();
+    if (roles.isNotEmpty) throw RoleLinkedException(roles);
 
     final provider = GoogleAuthProvider();
     if (kIsWeb) {
@@ -264,4 +306,12 @@ class ActiveOrdersException implements Exception {
   const ActiveOrdersException();
   @override
   String toString() => 'ActiveOrdersException';
+}
+
+/// بيترمي لما الحساب عليه دور (مندوب/صاحب محل/مشرف/مدير) والإدارة لسه ما شالتوش.
+class RoleLinkedException implements Exception {
+  const RoleLinkedException(this.roles);
+  final List<String> roles;
+  @override
+  String toString() => 'RoleLinkedException($roles)';
 }

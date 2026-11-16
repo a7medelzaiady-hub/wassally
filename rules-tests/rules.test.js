@@ -1486,3 +1486,10 @@ test('حذف الحساب: صاحب محادثة الدعم يحذف رسائل�
   await assertSucceeds(deleteDoc(doc(as('cust1'), 'support_chats/cust1/messages/m1')));
   await assertSucceeds(deleteDoc(doc(as('cust1'), 'support_chats/cust1')));
 });
+
+test('حذف الحساب: طلب إزالة الدور يتسجّل مرة واحدة لصاحبه فقط', async () => {
+  const data = { userId: 'cust1', reason: 'طلب حذف حساب مرتبط بدور: مندوب توصيل', createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as('cust1'), 'account_deletions/role_cust1'), data));
+  await assertFails(setDoc(doc(as('cust1'), 'account_deletions/role_cust1'), data));
+  await assertFails(setDoc(doc(as('cust2'), 'account_deletions/role_cust1b'), data));
+});
