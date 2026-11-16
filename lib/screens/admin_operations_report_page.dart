@@ -265,6 +265,10 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                 _section('المتابعة والمطابقة', [
                   _metric('بلاغات تسليم تحتاج متابعة', '${r.openDeliveryIssues}', Icons.report_problem_outlined),
                   const SizedBox(height: 8),
+                  _metric('مرتجعات بانتظار تأكيد المحل', '${r.returnsAwaitingStore}', Icons.inventory_2_outlined),
+                  const SizedBox(height: 8),
+                  _metric('مرتجعات مؤكدة وتنتظر إغلاق الطلب', '${r.returnsConfirmed}', Icons.assignment_turned_in_outlined),
+                  const SizedBox(height: 8),
                   _metric('شكاوى لم تُغلق', '${r.openComplaints}', Icons.support_agent_outlined),
                   const SizedBox(height: 8),
                   _metric('صافي النقدية المطلوب توريده إجمالًا', outstandingText, Icons.account_balance_outlined),
