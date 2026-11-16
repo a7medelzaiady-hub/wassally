@@ -160,6 +160,15 @@ service cloud.firestore {
         get(/databases/$(database)/documents/couriers/$(courierId)).data.get('active', true) == true;
     }
 
+    // نوع المندوب مصدره ملفه الإداري، وليس اختيارًا حرًا من التطبيق.
+    function validCourierForOrder(courierId, storeId, deliveryMode) {
+      return validCourierForAssignment(courierId) &&
+        ((deliveryMode == 'store' &&
+          get(/databases/$(database)/documents/couriers/$(courierId)).data.get('storeId', '') == storeId) ||
+         (deliveryMode == 'external' &&
+          get(/databases/$(database)/documents/couriers/$(courierId)).data.get('storeId', '') == ''));
+    }
+
     // ───────────── التحقق من بيانات الطلب الجديد ─────────────
     // الحد الأقصى لأصناف الطلب (100) لازم يطابق kMaxOrderLines في lib/services/order_service.dart.
     // مهم: القواعد بتتأكد إن الأرقام متسقة مع بعض (الإجمالي = مجموع الأسطر + التوصيل)
@@ -535,8 +544,10 @@ service cloud.firestore {
         return (
           resource.data.get('status', '') == 'preparing' &&
           resource.data.get('courierId', '') == '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
           request.resource.data.get('courierId', '') == request.auth.uid &&
+          request.resource.data.get('deliveryMode', '') == 'external' &&
+          validCourierForOrder(request.auth.uid, resource.data.get('storeId', ''), 'external') &&
           request.resource.data.get('courierName', '') is string &&
           request.resource.data.get('courierName', '').size() >= 1 &&
           request.resource.data.get('courierName', '').size() <= 80 &&
@@ -620,14 +631,15 @@ service cloud.firestore {
         ) || (
           resource.data.get('status', '') == 'preparing' &&
           resource.data.get('courierId', '') == '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
+          request.resource.data.get('deliveryMode', '') == 'store' &&
           request.resource.data.get('courierName', '') is string &&
           request.resource.data.get('courierName', '').size() >= 1 &&
           request.resource.data.get('courierName', '').size() <= 80 &&
           request.resource.data.get('courierPhone', '') is string &&
           request.resource.data.get('courierPhone', '').size() <= 20 &&
           request.resource.data.get('courierAt', null) == request.time &&
-          validCourierForAssignment(request.resource.data.get('courierId', '')) &&
+          validCourierForOrder(request.resource.data.get('courierId', ''), resource.data.get('storeId', ''), 'store') &&
           // التعيين وإزالة الطلب من القائمة العامة لازم يكونا ذريين.
           !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
         );
@@ -645,16 +657,18 @@ service cloud.firestore {
         ) || (
           resource.data.get('status', '') == 'preparing' &&
           resource.data.get('courierId', '') != '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
           !('courierId' in request.resource.data) &&
+          !('deliveryMode' in request.resource.data) &&
           // إعادة إتاحة الطلب لا تتم إلا مع إعادة بناء الـ feed المطابق في نفس العملية.
           feedMatchesOrder(orderId, request.resource.data)
         ) || (
           // إلغاء إداري أثناء التجهيز: إغلاق الطلب وإزالة إسناد المندوب في نفس التحديث.
           resource.data.get('status', '') == 'preparing' &&
           request.resource.data.get('status', '') == 'cancelled' &&
-          k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
           !('courierId' in request.resource.data) &&
+          !('deliveryMode' in request.resource.data) &&
           historyGate(orderId, k)
         ) || (
           // إغلاق طلب في الطريق لا يسمح به إلا بعد توثيق رجوعه فعليًا للمحل.
@@ -669,7 +683,7 @@ service cloud.firestore {
           historyGate(orderId, k)
         ) || (
           k.hasOnly(['status', 'pickedUpAt', 'courierId', 'courierName',
-                     'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
+                     'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
                      'deliveredBy', 'deliveredAt', 'collectedAmount',
                      'courierEarning', 'finalDeliveryFee']) &&
           validFinalFee(k) &&
@@ -679,7 +693,7 @@ service cloud.firestore {
           stampRequired(k) &&
           (!('courierId' in k) ||
             (resource.data.get('courierId', '') == '' &&
-             validCourierForAssignment(request.resource.data.get('courierId', '')) &&
+             validCourierForOrder(request.resource.data.get('courierId', ''), resource.data.get('storeId', ''), request.resource.data.get('deliveryMode', '')) &&
              // يمنع إعادة تعيين مندوب فوق إسناد قائم أو بقاء نسخة قديمة في القائمة.
              !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId)))) &&
           adminMoveOk(k) &&
@@ -1272,6 +1286,8 @@ service cloud.firestore {
     match /couriers/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
+      // صاحب المحل لا يقرأ إلا ملفات مندوبيه عبر استعلام storeId مطابق لمحله.
+      allow list: if signedIn() && isStoreOwner(resource.data.get('storeId', ''));
       // المدير بيضيف المناديب ويعدّلهم ويوقفهم من التطبيق.
       allow create, update, delete: if isAdmin();
       // المشرف يشوف المناديب المربوطين بيه ويوقفهم/يفعّلهم بس.
