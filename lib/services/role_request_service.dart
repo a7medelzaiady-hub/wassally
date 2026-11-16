@@ -51,7 +51,16 @@ class RoleRequestService {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل دخول الأول.');
-    await _col.doc('${user.uid}_${type.key}').set({
+    final db = FirebaseFirestore.instance;
+    final requestRef = _col.doc('${user.uid}_${type.key}');
+    final requestSnapshot = await requestRef.get();
+    final previous = requestSnapshot.data();
+    final previousStatus = (previous?['status'] ?? '').toString();
+    if (previousStatus == 'pending' || previousStatus == 'approved') {
+      throw StateError('عندك طلب انضمام قائم بالفعل.');
+    }
+
+    final requestData = <String, dynamic>{
       'userId': user.uid,
       'userEmail': user.email ?? '',
       'type': type.key,
@@ -71,7 +80,52 @@ class RoleRequestService {
       if (notes.trim().isNotEmpty) 'notes': notes.trim(),
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (type == JoinType.storeOwner) {
+      var storeId = (previous?['storeId'] ?? '').toString();
+      DocumentReference<Map<String, dynamic>> storeRef = storeId.isEmpty
+          ? db.collection('stores').doc()
+          : db.collection('stores').doc(storeId);
+      DocumentSnapshot<Map<String, dynamic>>? previousStore;
+      if (storeId.isNotEmpty) {
+        previousStore = await storeRef.get();
+        if (!previousStore.exists ||
+            previousStore.data()?['ownerUid'] != user.uid) {
+          storeRef = db.collection('stores').doc();
+          previousStore = null;
+        }
+      }
+      storeId = storeRef.id;
+      requestData['storeId'] = storeId;
+
+      final batch = db.batch();
+      final storeData = <String, dynamic>{
+        'name': storeName.trim(),
+        'category': storeCategory.trim(),
+        'address': address.trim(),
+        'ownerUid': user.uid,
+        'active': false,
+        'approved': false,
+        'time': '',
+        'image': storeImageUrl.trim(),
+        'imageUrl': storeImageUrl.trim(),
+        'storePhone': storePhone.trim(),
+        'productCount': (previousStore?.data()?['productCount'] as num?)?.toInt() ?? 0,
+        if (previousStore == null) 'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (previousStore?.exists == true) {
+        batch.update(storeRef, storeData);
+      } else {
+        batch.set(storeRef, storeData);
+      }
+      batch.set(requestRef, requestData);
+      await batch.commit();
+      return;
+    }
+
+    await requestRef.set(requestData);
   }
 
   /// طلبات الانضمام المعلقة للأدمن.
@@ -93,6 +147,7 @@ class RoleRequestService {
     if (uid.isEmpty || type == null) throw StateError('طلب غير صالح.');
     final db = FirebaseFirestore.instance;
     final batch = db.batch();
+
     if (type == JoinType.courier) {
       batch.set(db.collection('couriers').doc(uid), {
         'name': (m['name'] ?? '').toString(),
@@ -100,30 +155,54 @@ class RoleRequestService {
         'active': true,
       }, SetOptions(merge: true));
     } else {
-      final newName = (newStoreName ?? '').trim();
-      if ((storeId == null || storeId.isEmpty) && newName.isEmpty) {
-        throw StateError('اكتب اسم المحل أو اختار محل موجود.');
-      }
-      if (storeId == null || storeId.isEmpty) {
-        final storeRef = db.collection('stores').doc();
-        batch.set(storeRef, {
-          'name': newName,
-          'category': (m['storeCategory'] ?? 'أخرى').toString(),
-          // يظل مخفيًا حتى استكمال بياناته ومراجعته؛ لا قبول تلقائي.
-          'active': false,
-          'time': '',
-          'image': (m['storeImageUrl'] ?? '').toString(),
-          'imageUrl': (m['storeImageUrl'] ?? '').toString(),
-          if ((m['storePhone'] ?? '').toString().isNotEmpty)
+      final draftId = (m['storeId'] ?? '').toString();
+      if (draftId.isNotEmpty) {
+        final storeRef = db.collection('stores').doc(draftId);
+        final storeSnapshot = await storeRef.get();
+        if (!storeSnapshot.exists ||
+            storeSnapshot.data()?['ownerUid'] != uid) {
+          throw StateError('مسودة المحل غير موجودة أو لا تخص صاحب الطلب.');
+        }
+        final products = await storeRef.collection('products').count().get();
+        final storeData = storeSnapshot.data() ?? {};
+        final imageUrl = (storeData['imageUrl'] ?? storeData['image'] ?? '').toString();
+        final readyToPublish = (products.count ?? 0) >= 5 &&
+            imageUrl.startsWith('https://');
+        batch.update(storeRef, {
+          'approved': true,
+          'active': readyToPublish,
+          'approvedAt': FieldValue.serverTimestamp(),
+          'approvedBy': admin,
+        });
+        storeId = draftId;
+      } else {
+        final newName = (newStoreName ?? '').trim();
+        if ((storeId == null || storeId.isEmpty) && newName.isEmpty) {
+          throw StateError('اكتب اسم المحل أو اختار محل موجود.');
+        }
+        if (storeId == null || storeId.isEmpty) {
+          final storeRef = db.collection('stores').doc();
+          batch.set(storeRef, {
+            'name': newName,
+            'category': (m['storeCategory'] ?? 'أخرى').toString(),
+            'active': false,
+            'approved': true,
+            'time': '',
+            'image': (m['storeImageUrl'] ?? '').toString(),
+            'imageUrl': (m['storeImageUrl'] ?? '').toString(),
             'storePhone': (m['storePhone'] ?? '').toString(),
-          'productCount': 0,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        storeId = storeRef.id;
-      } else if ((m['storePhone'] ?? '').toString().isNotEmpty) {
-        batch.update(db.collection('stores').doc(storeId), {
-          'storePhone': (m['storePhone'] ?? '').toString(),
-        });
+            'productCount': 0,
+            'createdAt': FieldValue.serverTimestamp(),
+            'approvedAt': FieldValue.serverTimestamp(),
+            'approvedBy': admin,
+          });
+          storeId = storeRef.id;
+        } else if ((m['storePhone'] ?? '').toString().isNotEmpty) {
+          batch.update(db.collection('stores').doc(storeId), {
+            'storePhone': (m['storePhone'] ?? '').toString(),
+            'approved': true,
+          });
+        }
       }
       batch.set(db.collection('storeOwners').doc(uid), {
         'name': (m['name'] ?? '').toString(),
@@ -133,6 +212,7 @@ class RoleRequestService {
         'active': true,
       });
     }
+
     batch.update(req.reference, {
       'status': 'approved',
       'reviewedAt': FieldValue.serverTimestamp(),
