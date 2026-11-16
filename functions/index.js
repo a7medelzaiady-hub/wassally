@@ -154,6 +154,30 @@ exports.syncCourierAvailableOrder = onDocumentWritten('orders/{orderId}', async 
   });
 });
 
+
+/** إشعار المتقدم عند اعتماد/رفض طلب الانضمام، مع سجل ثابت يمنع تكرار الإرسال. */
+exports.onRoleRequestUpdated = onDocumentUpdated('role_requests/{requestId}', async (event) => {
+  const before = event.data && event.data.before.data();
+  const after = event.data && event.data.after.data();
+  if (!before || !after || before.status === after.status ||
+      !['approved', 'rejected'].includes(after.status) || !after.userId) return;
+  const title = after.status === 'approved' ? 'تم قبول طلب الانضمام' : 'تم رفض طلب الانضمام';
+  const body = after.status === 'approved'
+    ? 'تم قبول طلبك. افتح التطبيق لمتابعة الخطوات التالية.'
+    : 'سبب الرفض: ' + String(after.adminNote || 'يرجى التواصل مع الإدارة').slice(0, 250);
+  const notificationId = `role_${event.params.requestId}_${after.status}`;
+  const ref = db.collection('notifications').doc(notificationId);
+  try {
+    await ref.create({ userId: after.userId, title, body, type: 'role_request',
+      roleRequestId: event.params.requestId, read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp() });
+  } catch (e) {
+    if (e.code === 6 || e.code === 'already-exists') return;
+    throw e;
+  }
+  await notify([after.userId], title, body, { type: 'role_request', roleRequestId: event.params.requestId });
+});
+
 exports.onOrderCreated = onDocumentCreated('orders/{orderId}', async (event) => {
   const order = event.data && event.data.data();
   if (!order) return;
