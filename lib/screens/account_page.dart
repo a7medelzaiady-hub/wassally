@@ -303,10 +303,13 @@ class _AccountPageState extends State<AccountPage> {
           ),
         ),
       );
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
+      final message = error.toString().replaceFirst('Bad state: ', '').trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر حذف الحساب. جرّب تاني.')),
+        SnackBar(
+          content: Text(message.isEmpty ? 'تعذر حذف الحساب. جرّب تاني.' : message),
+        ),
       );
     }
   }
