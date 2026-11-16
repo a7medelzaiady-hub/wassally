@@ -393,6 +393,13 @@ test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب ا�
 test('delivery lifecycle: المندوب الخارجي يسلم النقدية والمحل وحده يغلق الطلب', async () => {
   await seedOnWay('external');
   await reportDelivery('cour1');
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
+    verifiedTotal: 35,
+    verifiedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
+    finalDeliveryFee: 15,
+  }));
   await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), {
     customerConfirmedAt: serverTimestamp(),
   }));
