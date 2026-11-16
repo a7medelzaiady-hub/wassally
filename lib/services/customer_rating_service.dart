@@ -22,14 +22,24 @@ class CustomerRatingService {
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('سجّل دخول الأول.');
-    final result = await FirebaseFirestore.instance
-        .collection('customer_reviews')
-        .where('reviewerId', isEqualTo: uid)
-        .where('orderId', isEqualTo: orderId)
-        .where('reviewerRole', isEqualTo: reviewerRole)
-        .limit(1)
-        .get();
-    return result.docs.isNotEmpty;
+    try {
+      final result = await FirebaseFirestore.instance
+          .collection('customer_reviews')
+          .where('reviewerId', isEqualTo: uid)
+          .where('orderId', isEqualTo: orderId)
+          .where('reviewerRole', isEqualTo: reviewerRole)
+          .limit(1)
+          .get();
+      return result.docs.isNotEmpty;
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        throw StateError(
+          'قواعد Firestore المنشورة لا تسمح بالتحقق من التقييم السابق. '
+          'يلزم نشر ملف firestore.rules الموجود على main لمشروع wasally-12259.',
+        );
+      }
+      rethrow;
+    }
   }
 
   static Future<void> rate({
