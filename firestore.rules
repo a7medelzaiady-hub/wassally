@@ -1191,10 +1191,10 @@ service cloud.firestore {
     match /courier_settlements/{sid} {
       allow create: if isAdmin() &&
         request.resource.data.keys().hasOnly([
-          'courierId', 'courierName', 'amount', 'note', 'createdBy', 'createdAt'
+          'courierId', 'courierName', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt'
         ]) &&
         request.resource.data.keys().hasAll([
-          'courierId', 'courierName', 'amount', 'note', 'createdBy', 'createdAt'
+          'courierId', 'courierName', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt'
         ]) &&
         request.resource.data.courierId is string &&
         request.resource.data.courierId.size() > 0 &&
@@ -1202,6 +1202,8 @@ service cloud.firestore {
         request.resource.data.courierName.size() <= 80 &&
         request.resource.data.amount is number &&
         request.resource.data.amount > 0 && request.resource.data.amount <= 1000000 &&
+        request.resource.data.amountMinor is int &&
+        request.resource.data.amountMinor > 0 && request.resource.data.amountMinor <= 100000000 &&
         request.resource.data.get('note', '') is string &&
         request.resource.data.get('note', '').size() <= 200 &&
         request.resource.data.createdBy == request.auth.uid &&
@@ -1209,8 +1211,8 @@ service cloud.firestore {
         existsAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)) &&
         getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('courierId', '') == request.resource.data.courierId &&
         getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('lastSettlementId', '') == sid &&
-        getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('settledAmount', 0) is number &&
-        getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('settledAmount', 0) >= request.resource.data.amount;
+        getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('settledAmountMinor', 0) is int &&
+        getAfter(/databases/$(database)/documents/courier_settlement_balances/$(request.resource.data.courierId)).data.get('settledAmountMinor', 0) >= request.resource.data.amountMinor;
       allow read: if signedIn() && (isAdmin() ||
         (isCourier() && resource.data.courierId == request.auth.uid));
       allow update, delete: if false;
@@ -1221,14 +1223,14 @@ service cloud.firestore {
       allow list: if false;
       allow create: if isAdmin() &&
         request.resource.data.keys().hasOnly([
-          'courierId', 'settledAmount', 'lastSettlementId', 'updatedAt'
+          'courierId', 'settledAmountMinor', 'lastSettlementId', 'updatedAt'
         ]) &&
         request.resource.data.keys().hasAll([
-          'courierId', 'settledAmount', 'lastSettlementId', 'updatedAt'
+          'courierId', 'settledAmountMinor', 'lastSettlementId', 'updatedAt'
         ]) &&
         request.resource.data.courierId == courierId &&
-        request.resource.data.settledAmount is number &&
-        request.resource.data.settledAmount > 0 &&
+        request.resource.data.settledAmountMinor is int &&
+        request.resource.data.settledAmountMinor > 0 &&
         request.resource.data.lastSettlementId is string &&
         request.resource.data.lastSettlementId.size() > 0 &&
         request.resource.data.updatedAt == request.time &&
@@ -1236,14 +1238,14 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('courierId', '') == courierId &&
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('createdBy', '') == request.auth.uid &&
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('createdAt', null) == request.time &&
-        getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('amount', 0) <= request.resource.data.settledAmount;
+        getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('amountMinor', 0) <= request.resource.data.settledAmountMinor;
       allow update: if isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'settledAmount', 'lastSettlementId', 'updatedAt'
+          'settledAmountMinor', 'lastSettlementId', 'updatedAt'
         ]) &&
         request.resource.data.courierId == courierId &&
-        request.resource.data.settledAmount is number &&
-        request.resource.data.settledAmount > resource.data.get('settledAmount', 0) &&
+        request.resource.data.settledAmountMinor is int &&
+        request.resource.data.settledAmountMinor > resource.data.get('settledAmountMinor', 0) &&
         request.resource.data.lastSettlementId is string &&
         request.resource.data.lastSettlementId.size() > 0 &&
         request.resource.data.updatedAt == request.time &&
@@ -1251,8 +1253,8 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('courierId', '') == courierId &&
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('createdBy', '') == request.auth.uid &&
         getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('createdAt', null) == request.time &&
-        request.resource.data.settledAmount - resource.data.get('settledAmount', 0) ==
-          getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('amount', 0);
+        request.resource.data.settledAmountMinor - resource.data.get('settledAmountMinor', 0) ==
+          getAfter(/databases/$(database)/documents/courier_settlements/$(request.resource.data.lastSettlementId)).data.get('amountMinor', 0);
       allow delete: if false;
     }
 
