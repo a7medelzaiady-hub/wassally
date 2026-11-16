@@ -22,6 +22,9 @@ import 'notification_service.dart';
 class LiveAlerts {
   const LiveAlerts._();
 
+  static bool _observerAdded = false;
+  static bool _paused = false;
+
   /// معرّف المحادثة المفتوحة حاليًا في SupportChatPage (عشان ما ننبّهش على اللي قدام عينه).
   static String? openChatUid;
 
@@ -54,16 +57,51 @@ class LiveAlerts {
     _admin = isAdmin;
     _storeId = storeId;
     _courier = isCourier;
+    _ensureLifecycleObserver();
+    if (!_paused) _attachSubscriptions();
+  }
 
-    _watchMyChat(user.uid);
-    _watchMyComplaints(user.uid);
-    if (isAdmin) {
+  static void _ensureLifecycleObserver() {
+    if (_observerAdded) return;
+    WidgetsBinding.instance.addObserver(_LiveAlertsLifecycleObserver());
+    _observerAdded = true;
+  }
+
+  static void _attachSubscriptions() {
+    final uid = _uid;
+    if (uid.isEmpty || _subs.isNotEmpty || _paused) return;
+    _watchMyChat(uid);
+    _watchMyComplaints(uid);
+    if (_admin) {
       _watchAdminChats();
-      _watchAdminComplaints(user.uid);
+      _watchAdminComplaints(uid);
     }
     // لا نكرر مستمع الطلبات: شاشة صاحب المحل نفسها تراقب طلبات محله،
     // وشاشة المندوب تراقب قائمة المتاح. تكرار نفس الاستعلام هنا يضاعف القراءات.
-    if (isCourier) _watchMyReadyOrders(user.uid);
+    if (_courier) _watchMyReadyOrders(uid);
+  }
+
+  static Future<void> _pauseSubscriptions() async {
+    if (_paused) return;
+    _paused = true;
+    final subscriptions = List<StreamSubscription<dynamic>>.from(_subs);
+    _subs.clear();
+    await Future.wait(subscriptions.map((subscription) => subscription.cancel()));
+  }
+
+  static void _resumeSubscriptions() {
+    if (!_paused || _uid.isEmpty || FirebaseAuth.instance.currentUser == null) return;
+    _paused = false;
+    _attachSubscriptions();
+  }
+
+  static void _onLifecycleChanged(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _pauseSubscriptions();
+    } else if (state == AppLifecycleState.resumed) {
+      _resumeSubscriptions();
+    }
   }
 
   static Future<void> stop() async {
@@ -75,6 +113,7 @@ class LiveAlerts {
     _admin = false;
     _storeId = '';
     _courier = false;
+    _paused = false;
     openChatUid = null;
   }
 
@@ -322,5 +361,13 @@ class LiveAlerts {
     } catch (_) {
       // الصوت اختياري: لو الملف مش متضمّن في assets التنبيه المرئي كفاية.
     }
+  }
+}
+
+
+class _LiveAlertsLifecycleObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    LiveAlerts._onLifecycleChanged(state);
   }
 }
