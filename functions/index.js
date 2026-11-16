@@ -68,12 +68,13 @@ async function devicesOf(uids) {
       const snap = await db.collection('users').doc(uid).get();
       if (!snap.exists) return;
       const data = snap.data();
-      for (const fid of Array.isArray(data.fcmInstallationIds) ? data.fcmInstallationIds : []) {
-        if (typeof fid === 'string' && fid) out.push({ uid, fid });
-      }
-      // دعم الأجهزة التي لم تُحدّث التطبيق بعد.
-      for (const token of Array.isArray(data.fcmTokens) ? data.fcmTokens : []) {
-        if (typeof token === 'string' && token) out.push({ uid, token });
+      // FCM HTTP v1 requires an FCM registration token, not a Firebase Installation ID.
+      const tokens = [
+        ...(Array.isArray(data.fcmTokens) ? data.fcmTokens : []),
+        ...(typeof data.fcmToken === 'string' ? [data.fcmToken] : []),
+      ];
+      for (const token of tokens) {
+        if (typeof token === 'string' && token.length > 0) out.push({ uid, token });
       }
     }),
   );
@@ -89,8 +90,7 @@ async function notify(uids, title, body, data = {}) {
   if (entries.length === 0) return;
 
   const res = await admin.messaging().sendEach(entries.map((entry) => ({
-    // FCM يقبل FID داخل token أثناء فترة الترحيل؛ الحقل fid هو المسار الموصى به بعد الترقية إلى Admin SDK 14.1+.
-    token: entry.fid || entry.token,
+    token: entry.token,
     notification: { title, body },
     data,
     android: { priority: 'high', notification: { sound: 'default' } },
@@ -112,9 +112,10 @@ async function notify(uids, title, body, data = {}) {
       db
         .collection('users')
         .doc(e.uid)
-        .update(e.fid
-          ? { fcmInstallationIds: admin.firestore.FieldValue.arrayRemove(e.fid) }
-          : { fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token) })
+        .update({
+          fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token),
+          fcmToken: e.token,
+        })
         .catch(() => {}),
     ),
   );
@@ -181,6 +182,93 @@ exports.onRoleRequestUpdated = onDocumentUpdated('role_requests/{requestId}', as
     throw e;
   }
   await notify([after.userId], title, body, { type: 'role_request', roleRequestId: event.params.requestId });
+});
+
+/** إشعار رسائل الدعم للطرف الآخر؛ نص الرسالة لا يوضع داخل push payload. */
+exports.onSupportMessageCreated = onDocumentCreated(
+  'support_chats/{uid}/messages/{messageId}',
+  async (event) => {
+    const message = event.data && event.data.data();
+    if (!message || !['user', 'admin'].includes(message.senderRole)) return;
+    const uid = event.params.uid;
+    const messageId = event.params.messageId;
+    const chatRef = db.collection('support_chats').doc(uid);
+    const chatSnap = await chatRef.get();
+    const chat = chatSnap.exists ? chatSnap.data() : {};
+    const preview = String(message.text || '').slice(0, 100);
+    const fromUser = message.senderRole === 'user';
+    const recipients = fromUser ? await adminUids() : [uid];
+    const title = fromUser
+      ? 'رسالة دعم جديدة'
+      : 'رد جديد من إدارة وصّلي';
+    const body = fromUser
+      ? String(chat.userName || 'مستخدم') + ' أرسل رسالة جديدة'
+      : 'الإدارة ردّت على رسالتك';
+    const data = { type: 'support_chat', chatUid: uid, messageId };
+    const targets = [...new Set(recipients.filter(Boolean))];
+    await Promise.all(targets.map(async (recipientUid) => {
+      const notificationId = 'support_' + uid + '_' + messageId + '_' + recipientUid;
+      await db.collection('notifications').doc(notificationId).create({
+        userId: recipientUid,
+        title,
+        body,
+        type: 'support_chat',
+        chatUid: uid,
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }).catch((e) => {
+        if (e.code !== 6 && e.code !== 'already-exists') throw e;
+      });
+    }));
+    await notify(targets, title, body, data);
+  },
+);
+
+/** إرسال تنبيه تحديث مرة واحدة عند نشر إصدار جديد في app_info/version. */
+exports.onAppVersionPublished = onDocumentWritten('app_info/version', async (event) => {
+  const before = event.data && event.data.before.exists
+    ? event.data.before.data()
+    : {};
+  const after = event.data && event.data.after.exists
+    ? event.data.after.data()
+    : null;
+  if (!after) return;
+  const latest = String(after.latest_version || '').trim();
+  const previous = String((before && before.latest_version) || '').trim();
+  if (!latest || latest === previous) return;
+
+  const notificationId = latest.replace(/[^A-Za-z0-9._-]/g, '_');
+  const logRef = db.collection('app_update_push_log').doc(notificationId);
+  try {
+    await logRef.create({
+      latestVersion: latest,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      status: 'sending',
+    });
+  } catch (e) {
+    if (e.code === 6 || e.code === 'already-exists') return;
+    throw e;
+  }
+
+  try {
+    await admin.messaging().send({
+      topic: 'app_updates',
+      notification: {
+        title: 'تحديث جديد متوفر من وصّلي',
+        body: 'فيه إصدار جديد. افتح التطبيق وحدّثه من Google Play.',
+      },
+      data: {
+        type: 'app_update',
+        latestVersion: latest,
+        forceUpdate: after.force_update === true ? 'true' : 'false',
+      },
+      android: { priority: 'high', notification: { sound: 'default' } },
+    });
+    await logRef.update({ status: 'sent', sentAt: admin.firestore.FieldValue.serverTimestamp() });
+  } catch (e) {
+    await logRef.delete().catch(() => {});
+    throw e;
+  }
 });
 
 /** إشعار كل المندوبين النشطين عند ظهور طلب جديد في قائمة الطلبات المتاحة. */
