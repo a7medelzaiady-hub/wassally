@@ -88,16 +88,6 @@ class RoleService {
     }
   }
 
-  static Future<DocumentSnapshot<Map<String, dynamic>>?> _safeGet(
-    DocumentReference<Map<String, dynamic>> ref,
-  ) async {
-    try {
-      return await ref.get();
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// تحديد دور المستخدم الحالي من Firestore وFirebase Auth.
   static Future<RoleInfo> load() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -108,12 +98,25 @@ class RoleService {
 
     final db = FirebaseFirestore.instance;
 
+    // لو أي قراءة فشلت (شبكة ضعيفة) النتيجة «عميل» تبقى غير مؤكدة: ما نقلّلش دور محفوظ بسببها.
+    var lookupFailed = false;
+    Future<DocumentSnapshot<Map<String, dynamic>>?> safeRead(
+      DocumentReference<Map<String, dynamic>> ref,
+    ) async {
+      try {
+        return await ref.get();
+      } catch (_) {
+        lookupFailed = true;
+        return null;
+      }
+    }
+
     // قراءة الأدوار بالتوازي.
-    final courierF = _safeGet(db.collection('couriers').doc(user.uid));
+    final courierF = safeRead(db.collection('couriers').doc(user.uid));
 
-    final ownerF = _safeGet(db.collection('storeOwners').doc(user.uid));
+    final ownerF = safeRead(db.collection('storeOwners').doc(user.uid));
 
-    final supF = _safeGet(db.collection('supervisors').doc(user.uid));
+    final supF = safeRead(db.collection('supervisors').doc(user.uid));
 
     // فحص الأدمن.
     var adminChecked = false;
@@ -200,9 +203,11 @@ class RoleService {
 
     final info = RoleInfo(primary, name, isOwner ? storeId : '', roles);
 
-    // لا نحفظ العميل إذا لم ينجح التحقق من الأدمن.
-    return (adminChecked || primary != AppRole.customer)
-        ? _remember(user.uid, info)
-        : info;
+    // نتيجة «عميل» غير مؤكدة (فشل تحقق الأدمن أو قراءة دور): نرجّع آخر دور محفوظ
+    // لو موجود بدل ما المندوب/المدير يتحوّل لشاشة العميل بسبب نت ضعيف، ومن غير ما نحفظها.
+    if (primary == AppRole.customer && (!adminChecked || lookupFailed)) {
+      return cachedFor(user.uid) ?? await loadSaved(user.uid) ?? info;
+    }
+    return _remember(user.uid, info);
   }
 }
