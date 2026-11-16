@@ -44,6 +44,9 @@ class RoleRequestService {
     String address = '',
     String vehicle = '',
     String notes = '',
+    String storeImageUrl = '',
+    String registrationNumber = '',
+    String proofUrl = '',
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل دخول الأول.');
@@ -56,6 +59,11 @@ class RoleRequestService {
       if (type == JoinType.storeOwner) 'storeName': storeName.trim(),
       if (type == JoinType.storeOwner) 'storeCategory': storeCategory.trim(),
       if (type == JoinType.storeOwner) 'address': address.trim(),
+      if (type == JoinType.storeOwner) 'storeImageUrl': storeImageUrl.trim(),
+      if (type == JoinType.storeOwner && registrationNumber.trim().isNotEmpty)
+        'registrationNumber': registrationNumber.trim(),
+      if (type == JoinType.storeOwner && proofUrl.trim().isNotEmpty)
+        'proofUrl': proofUrl.trim(),
       if (type == JoinType.courier) 'vehicle': vehicle.trim(),
       if (notes.trim().isNotEmpty) 'notes': notes.trim(),
       'status': 'pending',
@@ -98,10 +106,11 @@ class RoleRequestService {
         batch.set(storeRef, {
           'name': newName,
           'category': (m['storeCategory'] ?? 'أخرى').toString(),
-          'active': true,
+          // يظل مخفيًا حتى استكمال بياناته ومراجعته؛ لا قبول تلقائي.
+          'active': false,
           'time': '',
-          'image': '',
-          'imageUrl': '',
+          'image': (m['storeImageUrl'] ?? '').toString(),
+          'imageUrl': (m['storeImageUrl'] ?? '').toString(),
           'productCount': 0,
           'createdAt': FieldValue.serverTimestamp(),
         });
