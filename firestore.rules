@@ -513,6 +513,13 @@ service cloud.firestore {
           k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt']) &&
           !('courierId' in request.resource.data)
         ) || (
+          // إلغاء إداري أثناء التجهيز: إغلاق الطلب وإزالة إسناد المندوب في نفس التحديث.
+          resource.data.get('status', '') == 'preparing' &&
+          request.resource.data.get('status', '') == 'cancelled' &&
+          k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt']) &&
+          !('courierId' in request.resource.data) &&
+          historyGate(orderId, k)
+        ) || (
           k.hasOnly(['status', 'courierId', 'courierName',
                      'courierPhone', 'courierAt', 'verifiedTotal', 'verifiedAt',
                      'deliveredBy', 'deliveredAt', 'collectedAmount',
