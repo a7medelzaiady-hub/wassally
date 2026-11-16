@@ -540,6 +540,74 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     }
   }
 
+  Future<void> _confirmStoreReturn(String issueId) async {
+    if (_busy) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'تأكيد استلام المرتجع',
+      message: 'هل استلم المحل الطلب المرتجع فعليًا من المندوب؟',
+      confirmLabel: 'تأكيد الاستلام',
+    );
+    if (!ok || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.confirmStoreReceivedReturn(
+        orderId: widget.order.id,
+        issueId: issueId,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تأكيد استلام المحل للمرتجع.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر تأكيد الاستلام: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _returnedIssuePanel(AppOrder order) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: StaffOrderService.watchDeliveryIssue(order.activeDeliveryIssueId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Text('يوجد بلاغ تعذر تسليم مرتبط بهذا الطلب.');
+        }
+        final status = (snapshot.data!.data()?['status'] ?? '').toString();
+        if (status == 'returned_to_store') {
+          return SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: _busy
+                  ? null
+                  : () => _confirmStoreReturn(order.activeDeliveryIssueId),
+              icon: const Icon(Icons.inventory_2_outlined),
+              label: const Text('استلمت المرتجع من المندوب'),
+            ),
+          );
+        }
+        if (status == 'store_confirmed_return') {
+          return const Text(
+            'تم تأكيد استلام المحل للمرتجع، والإدارة تقدر تغلق الطلب.',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          );
+        }
+        if (status == 'return_to_store') {
+          return const Text(
+            'الإدارة طلبت من المندوب إرجاع الطلب للمحل.',
+            style: TextStyle(fontSize: 12),
+          );
+        }
+        return const Text(
+          'يوجد بلاغ تعذر تسليم، والإدارة تراجعه حاليًا.',
+          style: TextStyle(fontSize: 12),
+        );
+      },
+    );
+  }
+
   Future<void> _rateCustomer() async {
     if (_busy || widget.order.userId.isEmpty) return;
     final input = await showCustomerRatingDialog(context);
@@ -796,6 +864,10 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                   label: const Text('الطلب جاهز للاستلام'),
                 ),
               ),
+          ],
+          if (o.activeDeliveryIssueId.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _returnedIssuePanel(o),
           ],
           if (o.status == OrderStatus.delivered && o.userId.isNotEmpty) ...[
             const SizedBox(height: 12),
