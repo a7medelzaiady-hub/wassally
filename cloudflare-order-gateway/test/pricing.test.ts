@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, effectiveCatalogPrice } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, effectiveCatalogPrice, firstName } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
@@ -55,5 +55,16 @@ describe("courier notification payload", () => {
     expect(payload.message.notification.body).toContain("متجر تجريبي");
     expect(JSON.stringify(payload)).not.toContain("phone");
     expect(JSON.stringify(payload)).not.toContain("address");
+  });
+});
+
+
+describe("customer name normalization", () => {
+  it("uses the first whitespace-separated name consistently", () => {
+    expect(firstName("  Ahmed   Mohamed  ")).toBe("Ahmed");
+    expect(firstName("أحمد محمد")).toBe("أحمد");
+    expect(firstName("Single")).toBe("Single");
+    expect(firstName("   ")).toBe("");
+    expect(firstName(null)).toBe("");
   });
 });
