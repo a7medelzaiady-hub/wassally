@@ -140,8 +140,15 @@ Widget _shell({required Widget header, required Widget child}) {
 // ───────────────────────── الصفحة ─────────────────────────
 
 /// صفحة الإشعارات: كروت ملونة حسب حالة الطلب، مع شريط تتبع وحركات.
-class NotificationsPage extends StatelessWidget {
+class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
+
+  @override
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<NotificationsPage> {
+  int _limit = 100;
 
   Future<void> _markAllRead(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
@@ -201,14 +208,6 @@ class NotificationsPage extends StatelessWidget {
                 }
 
                 final docs = [...snap.data!.docs];
-                docs.sort((a, b) {
-                  final at = a.data()['createdAt'];
-                  final bt = b.data()['createdAt'];
-                  final am = at is Timestamp ? at.millisecondsSinceEpoch : 0;
-                  final bm = bt is Timestamp ? bt.millisecondsSinceEpoch : 0;
-                  return bm.compareTo(am);
-                });
-
                 final unread = docs
                     .where((d) => d.data()['read'] != true)
                     .length;
