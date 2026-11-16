@@ -24,6 +24,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _address = TextEditingController();
+  final _addressFocus = FocusNode();
+  String _savedAddress = '';
   final _notes = TextEditingController();
   final _courierNotes = TextEditingController();
   final _promo = TextEditingController();
@@ -74,6 +76,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     setState(() {
       if (profile.name.isNotEmpty) _name.text = profile.name;
       if (_phone.text.isEmpty) _phone.text = profile.phone;
+      _savedAddress = profile.address.trim();
       if (_address.text.isEmpty) _address.text = profile.address;
     });
   }
@@ -83,18 +86,107 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _name.dispose();
     _phone.dispose();
     _address.dispose();
+    _addressFocus.dispose();
     _notes.dispose();
     _courierNotes.dispose();
     _promo.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    if (!(_form.currentState?.validate() ?? false)) return;
-    setState(() => _submitting = true);
+  /// تأكيد العنوان قبل الإرسال (زي تطبيقات التوصيل): لو العميل مش في العنوان ده يغيّره.
+  Future<bool> _confirmAddress() async {
+    final address = _address.text.trim();
+    final differs = _savedAddress.isNotEmpty && _savedAddress != address;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Text(
+            'هنوصّل الطلب فين؟',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.location_on, color: kPrimary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      address,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (cart.area.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text('المنطقة: ${cart.area}'),
+              ],
+              if (differs) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'ده مختلف عن عنوانك المحفوظ.',
+                  style: TextStyle(color: kMuted, fontSize: 12),
+                ),
+              ],
+              const SizedBox(height: 12),
+              const Text(
+                'إنت موجود في العنوان ده؟ لو لأ، غيّره قبل ما نبعت الطلب عشان المندوب يوصلك صح.',
+                style: TextStyle(height: 1.5),
+              ),
+            ],
+          ),
+          actionsAlignment: MainAxisAlignment.spaceBetween,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('غيّر العنوان'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('أيوه، ابعت الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) return true;
+    if (mounted) {
+      _addressFocus.requestFocus();
+    }
+    return false;
+  }
 
-    final navigator = Navigator.of(context);
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (!(_form.currentState?.validate() ?? false)) return;
+
     final messenger = ScaffoldMessenger.of(context);
+    final wait = await OrderService.cooldownRemaining();
+    if (!mounted) return;
+    if (wait > Duration.zero) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (!await _confirmAddress() || !mounted) return;
+
+    setState(() => _submitting = true);
+    final navigator = Navigator.of(context);
 
     try {
       await OrderService.placeOrder(
@@ -215,6 +307,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _address,
+                    focusNode: _addressFocus,
                     inputFormatters: [LengthLimitingTextInputFormatter(300)],
                     minLines: 2,
                     maxLines: 3,

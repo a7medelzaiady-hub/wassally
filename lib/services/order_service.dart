@@ -59,7 +59,7 @@ class OrderService {
     final active = _activePlaceOrder;
     if (active != null) return active;
 
-    final pending = _placeOrder(
+    final pending = _guardedPlaceOrder(
       cart: cart,
       name: name,
       phone: phone,
@@ -71,6 +71,71 @@ class OrderService {
     return pending.whenComplete(() {
       if (identical(_activePlaceOrder, pending)) _activePlaceOrder = null;
     });
+  }
+
+  /// أقل فاصل بين طلبين من نفس العميل (حماية من الضغط المتكرر والطلبات الآلية).
+  static const Duration kOrderCooldown = Duration(seconds: 30);
+
+  static String _lastOrderKey(String uid) => 'last_order_at_$uid';
+
+  /// الوقت المتبقي قبل ما العميل يقدر يبعت طلب جديد (Duration.zero لو مفيش انتظار).
+  static Future<Duration> cooldownRemaining() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return Duration.zero;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ms = prefs.getInt(_lastOrderKey(uid));
+      if (ms == null) return Duration.zero;
+      final since = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(ms),
+      );
+      // ساعة الجهاز اتغيّرت للخلف: ما نحبسش العميل.
+      if (since.isNegative) return Duration.zero;
+      final left = kOrderCooldown - since;
+      return left.isNegative ? Duration.zero : left;
+    } catch (_) {
+      return Duration.zero;
+    }
+  }
+
+  static Future<void> _markOrderPlaced() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _lastOrderKey(uid),
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {
+      // التسجيل اختياري: فشله ما يمنعش الطلب.
+    }
+  }
+
+  static Future<String> _guardedPlaceOrder({
+    required CartModel cart,
+    required String name,
+    required String phone,
+    required String address,
+    String notes = '',
+    String courierNotes = '',
+  }) async {
+    final wait = await cooldownRemaining();
+    if (wait > Duration.zero) {
+      throw OrderLimitException(
+        'لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.',
+      );
+    }
+    final id = await _placeOrder(
+      cart: cart,
+      name: name,
+      phone: phone,
+      address: address,
+      notes: notes,
+      courierNotes: courierNotes,
+    );
+    await _markOrderPlaced();
+    return id;
   }
 
   /// بصمة ثابتة لا تحتفظ ببيانات التواصل نفسها داخل SharedPreferences.
