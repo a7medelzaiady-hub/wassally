@@ -969,6 +969,10 @@ export async function cloudinarySignature(
     byte.toString(16).padStart(2, "0")).join("");
 }
 
+export function isUploadSizeAllowed(size: number): boolean {
+  return Number.isInteger(size) && size > 0 && size <= 5 * 1024 * 1024;
+}
+
 export function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return { format: "jpg", mime: "image/jpeg" };
@@ -993,6 +997,10 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
     throw new HttpError(503, "خدمة رفع الصور الآمنة غير مهيأة على الخادم.");
   }
 
+  const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
+  if (declaredLength > 5 * 1024 * 1024 + 64 * 1024) {
+    throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
+  }
   let input: FormData;
   try {
     input = await request.formData();
@@ -1003,7 +1011,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   const storeId = String(input.get("storeId") ?? "").trim();
   const file = input.get("file");
   if (!(file instanceof File)) throw new HttpError(400, "اختار صورة صحيحة قبل الرفع.");
-  if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+  if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
   if (!["stores", "products", "banners"].includes(folder)) {
