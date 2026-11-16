@@ -353,6 +353,84 @@ test('couriers: عميل لا يزوّد الإحصائية بدون تقييم'
   await assertFails(updateDoc(doc(as('cust1'), 'couriers/cour1'), { ratingSum: 50, ratingCount: 10, lastReviewId: 'fake' }));
 });
 
+const customerReview = (role, reviewerId, over = {}) => ({
+  orderId: 'o1',
+  customerId: 'cust1',
+  reviewerId,
+  reviewerRole: role,
+  storeId: store,
+  rating: 2,
+  reason: 'unavailable',
+  comment: 'لم يرد عند الوصول',
+  createdAt: serverTimestamp(),
+  ...over,
+});
+
+test('customer reviews: المندوب وصاحب المحل يقيّمان العميل بعد التسليم مرة واحدة', async () => {
+  await setOrder({ status: 'delivered', courierId: 'cour1', deliveredBy: 'cour1' });
+  await assertSucceeds(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1'),
+  ));
+  await assertFails(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1'),
+  ));
+  await assertSucceeds(setDoc(
+    doc(as('owner1'), 'customer_reviews/o1_store_owner'),
+    customerReview('store_owner', 'owner1', { reason: 'positive', rating: 5 }),
+  ));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'customer_reviews/o1_courier')));
+  await assertFails(getDoc(doc(as('cust1'), 'customer_reviews/o1_courier')));
+});
+
+test('customer reviews: يمنع التقييم المزور أو قبل التسليم أو من طرف غير مشارك', async () => {
+  await assertFails(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1'),
+  ));
+  await setOrder({ status: 'delivered', courierId: 'cour1', deliveredBy: 'cour1' });
+  await assertFails(setDoc(
+    doc(as('cust1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cust1'),
+  ));
+  await assertFails(setDoc(
+    doc(as('cour2'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour2'),
+  ));
+  await assertFails(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1', { rating: 6 }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1', { reason: 'invented' }),
+  ));
+});
+
+test('customer restrictions: الإدارة فقط تفرض تقييدًا مؤقتًا، والقواعد تمنع الطلب حتى رفعه', async () => {
+  const restriction = {
+    customerId: 'cust1',
+    active: true,
+    reason: 'تكرار رفض الاستلام بعد تأكيد الطلب',
+    sourceOrderId: 'o1',
+    createdAt: serverTimestamp(),
+    createdBy: 'admin1',
+    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+  };
+  await assertFails(setDoc(doc(as('cust1'), 'customer_restrictions/cust1'), restriction));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'customer_restrictions/cust1'), restriction));
+  await assertFails(setDoc(doc(as('cust1'), 'orders/restricted-order'), baseOrder('cust1')));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'customer_restrictions/cust1')));
+  await assertFails(getDoc(doc(as('cust2'), 'customer_restrictions/cust1')));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'customer_restrictions/cust1'), {
+    active: false,
+    clearedAt: serverTimestamp(),
+    clearedBy: 'admin1',
+  }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/after-lift'), baseOrder('cust1')));
+});
+
 // ───────────── المرحلة 4: صاحب المحل ─────────────
 test('owner: يقرأ طلبات محله فقط (بالاستعلام والقراءة المباشرة)', async () => {
   await env.withSecurityRulesDisabled((c) =>
