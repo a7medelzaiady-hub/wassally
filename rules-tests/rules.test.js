@@ -1138,3 +1138,93 @@ test('courier unassignment: لا يُفك الإسناد إلا مع إعادة 
   assert.equal((await getDoc(doc(admin, 'orders/o1'))).data().courierId ?? '', '');
   assert.equal((await getDoc(doc(admin, 'courier_available_orders/o1'))).exists(), true);
 });
+
+
+test('courier settlements: الإيصال ورصيد المندوب لازم يتسجلوا ذريًا وبنفس المبلغ', async () => {
+  const admin = as('admin1');
+  const settlement = {
+    courierId: 'cour1',
+    courierName: 'C',
+    amount: 10,
+    note: 'توريد نقدية',
+    createdBy: 'admin1',
+    createdAt: serverTimestamp(),
+  };
+  const balance = {
+    courierId: 'cour1',
+    settledAmount: 10,
+    lastSettlementId: 's1',
+    updatedAt: serverTimestamp(),
+  };
+
+  const receiptOnly = writeBatch(admin);
+  receiptOnly.set(doc(admin, 'courier_settlements/s1'), settlement);
+  await assertFails(receiptOnly.commit());
+
+  const balanceOnly = writeBatch(admin);
+  balanceOnly.set(doc(admin, 'courier_settlement_balances/cour1'), balance);
+  await assertFails(balanceOnly.commit());
+
+  const first = writeBatch(admin);
+  first.set(doc(admin, 'courier_settlements/s1'), settlement);
+  first.set(doc(admin, 'courier_settlement_balances/cour1'), balance);
+  await assertSucceeds(first.commit());
+
+  const wrongAmount = writeBatch(admin);
+  wrongAmount.set(doc(admin, 'courier_settlements/s2'), {
+    ...settlement, amount: 5, createdAt: serverTimestamp(),
+  });
+  wrongAmount.update(doc(admin, 'courier_settlement_balances/cour1'), {
+    settledAmount: 16,
+    lastSettlementId: 's2',
+    updatedAt: serverTimestamp(),
+  });
+  await assertFails(wrongAmount.commit());
+
+  const second = writeBatch(admin);
+  second.set(doc(admin, 'courier_settlements/s2'), {
+    ...settlement, amount: 5, createdAt: serverTimestamp(),
+  });
+  second.update(doc(admin, 'courier_settlement_balances/cour1'), {
+    settledAmount: 15,
+    lastSettlementId: 's2',
+    updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(second.commit());
+
+  await assertSucceeds(getDoc(doc(as('cour1'), 'courier_settlements/s1')));
+  await assertFails(getDoc(doc(as('cust1'), 'courier_settlements/s1')));
+  await assertFails(getDoc(doc(as('cour1'), 'courier_settlement_balances/cour1')));
+  await assertSucceeds(getDoc(doc(admin, 'courier_settlement_balances/cour1')));
+});
+
+test('courier settlements: لا يقبل مبلغًا غير صالح أو إيصالًا دون رصيد مطابق', async () => {
+  const admin = as('admin1');
+  const invalid = writeBatch(admin);
+  invalid.set(doc(admin, 'courier_settlements/bad'), {
+    courierId: 'cour1',
+    courierName: 'C',
+    amount: 0,
+    note: '',
+    createdBy: 'admin1',
+    createdAt: serverTimestamp(),
+  });
+  await assertFails(invalid.commit());
+
+  const mismatched = writeBatch(admin);
+  mismatched.set(doc(admin, 'courier_settlements/mismatch'), {
+    courierId: 'cour1',
+    courierName: 'C',
+    amount: 12,
+    note: '',
+    createdBy: 'admin1',
+    createdAt: serverTimestamp(),
+  });
+  mismatched.set(doc(admin, 'courier_settlement_balances/cour1'), {
+    courierId: 'cour1',
+    settledAmount: 11,
+    lastSettlementId: 'mismatch',
+    updatedAt: serverTimestamp(),
+  });
+  await assertFails(mismatched.commit());
+});
