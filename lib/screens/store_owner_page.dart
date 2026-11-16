@@ -79,42 +79,62 @@ class StoreOwnerPage extends StatelessWidget {
     if (pendingApproval) {
       return _PendingStoreSetup(storeId: storeId, name: name);
     }
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        floatingActionButton: const FeedbackFab(),
-        body: Column(
-          children: [
-            StaffHeader(
-              title: 'لوحة المحل',
-              subtitle: name.isEmpty ? 'حساب صاحب المحل' : 'أهلاً $name',
+    return StreamBuilder<List<AppOrder>>(
+      stream: StaffOrderService.watchForStore(storeId, limit: 100),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: EmptyState(
+              icon: Icons.lock_outline,
+              title: 'تعذر تحميل الطلبات',
+              message: _why(snapshot.error!),
             ),
-            _ShopStatusBar(storeId: storeId),
-            UnansweredOrdersAlert(storeId: storeId),
-            Material(
-              color: Colors.white,
-              child: TabBar(
-                labelColor: kPrimary,
-                indicatorColor: kPrimary,
-                tabs: [
-                  Tab(text: 'الطلبات'),
-                  Tab(text: 'الأصناف والعروض'),
-                  Tab(text: 'الطلبات الخاصة'),
-                ],
-              ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return Scaffold(
+            body: Center(child: CircularProgressIndicator(color: kPrimary)),
+          );
+        }
+        final orders = snapshot.data!;
+        return DefaultTabController(
+          length: 3,
+          child: Scaffold(
+            floatingActionButton: const FeedbackFab(),
+            body: Column(
+              children: [
+                StaffHeader(
+                  title: 'لوحة المحل',
+                  subtitle: name.isEmpty ? 'حساب صاحب المحل' : 'أهلاً $name',
+                ),
+                _ShopStatusBar(storeId: storeId),
+                UnansweredOrdersAlert(orders: orders),
+                Material(
+                  color: Colors.white,
+                  child: TabBar(
+                    labelColor: kPrimary,
+                    indicatorColor: kPrimary,
+                    tabs: [
+                      Tab(text: 'الطلبات'),
+                      Tab(text: 'الأصناف والعروض'),
+                      Tab(text: 'الطلبات الخاصة'),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _OwnerOrdersTab(storeId: storeId, orders: orders),
+                      _OwnerProductsTab(storeId: storeId),
+                      _OwnerSpecialRequestsTab(storeId: storeId),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _OwnerOrdersTab(storeId: storeId),
-                  _OwnerProductsTab(storeId: storeId),
-                  _OwnerSpecialRequestsTab(storeId: storeId),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -599,16 +619,14 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
 
 class _OwnerOrdersTab extends StatefulWidget {
   final String storeId;
-  const _OwnerOrdersTab({required this.storeId});
+  final List<AppOrder> orders;
+  const _OwnerOrdersTab({required this.storeId, required this.orders});
 
   @override
   State<_OwnerOrdersTab> createState() => _OwnerOrdersTabState();
 }
 
 class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
-  late final Stream<List<AppOrder>> _orders = StaffOrderService.watchForStore(
-    widget.storeId,
-  );
   bool _showCurrent = true;
 
   bool _isCurrent(AppOrder o) =>
@@ -616,63 +634,48 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<AppOrder>>(
-      stream: _orders,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const EmptyState(
-            icon: Icons.lock_outline,
-            title: 'تعذر تحميل الطلبات',
-            message: 'اتأكد إن حسابك مربوط بالمحل وإن القواعد والفهرس منشورين.',
-          );
-        }
-        if (!snapshot.hasData) {
-          return Center(child: CircularProgressIndicator(color: kPrimary));
-        }
-        final all = snapshot.data!;
-        final current = all.where(_isCurrent).toList();
-        final past = all.where((o) => !_isCurrent(o)).toList();
-        final shown = _showCurrent ? current : past;
+    final all = widget.orders;
+    final current = all.where(_isCurrent).toList();
+    final past = all.where((o) => !_isCurrent(o)).toList();
+    final shown = _showCurrent ? current : past;
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: SegmentedButton<bool>(
-                segments: [
-                  ButtonSegment(
-                    value: true,
-                    label: Text('الحالية (${current.length})'),
-                  ),
-                  ButtonSegment(
-                    value: false,
-                    label: Text('السابقة (${past.length})'),
-                  ),
-                ],
-                selected: {_showCurrent},
-                onSelectionChanged: (v) =>
-                    setState(() => _showCurrent = v.first),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: true,
+                label: Text('الحالية (${current.length})'),
               ),
-            ),
-            Expanded(
-              child: shown.isEmpty
-                  ? EmptyState(
-                      icon: Icons.receipt_long_outlined,
-                      title: _showCurrent
-                          ? 'مفيش طلبات حالية'
-                          : 'مفيش طلبات سابقة',
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: shown.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, i) =>
-                          _OwnerOrderCard(order: shown[i]),
-                    ),
-            ),
-          ],
-        );
-      },
+              ButtonSegment(
+                value: false,
+                label: Text('السابقة (${past.length})'),
+              ),
+            ],
+            selected: {_showCurrent},
+            onSelectionChanged: (v) =>
+                setState(() => _showCurrent = v.first),
+          ),
+        ),
+        Expanded(
+          child: shown.isEmpty
+              ? EmptyState(
+                  icon: Icons.receipt_long_outlined,
+                  title: _showCurrent
+                      ? 'مفيش طلبات حالية'
+                      : 'مفيش طلبات سابقة',
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: shown.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) =>
+                      _OwnerOrderCard(order: shown[i]),
+                ),
+        ),
+      ],
     );
   }
 }
