@@ -26,6 +26,15 @@ describe("trusted catalog pricing", () => {
     expect(effectiveCatalogPrice(expired, now)).toBe(15);
   });
 
+  it("ignores malformed string oldPrice values", () => {
+    const now = Date.UTC(2026, 10, 16);
+    expect(effectiveCatalogPrice({
+      price: 12,
+      oldPrice: "15",
+      offerEndsAt: new Date(now - 1),
+    }, now)).toBe(12);
+  });
+
   it("rejects invalid catalog prices", () => {
     expect(() => effectiveCatalogPrice({ price: 0 })).toThrow();
     expect(() => effectiveCatalogPrice({ price: 20001 })).toThrow();
