@@ -97,33 +97,37 @@ class _OffersPageState extends State<OffersPage> {
       ));
       }
 
-      // الملخص السريع والعناصر القديمة للتوافق مع النسخ السابقة.
-      final highlights = data['offerItems'];
-      if (highlights is List) {
-        for (final entry in highlights) {
-          if (entry is Map) add(Map<String, dynamic>.from(entry));
-        }
-      }
-      final legacy = data['products'];
-      if (legacy is List) {
-        for (final entry in legacy) {
-          if (entry is Map) add(Map<String, dynamic>.from(entry));
-        }
-      }
-
-      // المصدر الأساسي للعروض هو كتالوج المحل نفسه، وليس ملخصًا محدودًا
-      // قد يفشل تحديثه أو لا يحتوي إلا على أول مجموعة من الأصناف.
+      // المصدر الأساسي للعروض هو كتالوج المحل نفسه.
+      var loadedCatalog = false;
       try {
         final products = await doc.reference
             .collection('products')
             .orderBy('name')
             .limit(500)
             .get(const GetOptions(source: Source.server));
+        loadedCatalog = true;
         for (final product in products.docs) {
           add(product.data(), id: product.id);
         }
       } catch (error) {
         debugPrint('Offers products load failed for ${doc.id}: $error');
+      }
+
+      // نستخدم الملخص والبيانات القديمة كبديل عند تعذر قراءة الكتالوج فقط؛
+      // لا نسمح لملخص قديم بإظهار عرض تم إلغاؤه أو انتهى بالفعل.
+      if (!loadedCatalog) {
+        final highlights = data['offerItems'];
+        if (highlights is List) {
+          for (final entry in highlights) {
+            if (entry is Map) add(Map<String, dynamic>.from(entry));
+          }
+        }
+        final legacy = data['products'];
+        if (legacy is List) {
+          for (final entry in legacy) {
+            if (entry is Map) add(Map<String, dynamic>.from(entry));
+          }
+        }
       }
       return result;
     }));
