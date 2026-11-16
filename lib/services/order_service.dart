@@ -11,6 +11,7 @@ import '../models/store.dart';
 import '../models/user_profile.dart';
 import 'cart_model.dart';
 import 'order_contact_service.dart';
+import 'order_gateway.dart';
 import 'order_status_writer.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
@@ -322,41 +323,67 @@ class OrderService {
           'fee=${data['deliveryFee']} total=${data['total']}');
     }
     final ref = _orders.doc(orderId);
-    final batch = FirebaseFirestore.instance.batch()..set(ref, data);
-    batch.set(OrderContactService.ref(ref.id), contactData);
-    // آخر وقت طلب للعميل: القواعد بتستخدمه للفاصل بين الطلبات (مفتاح orderRateLimit).
-    batch.set(
-      FirebaseFirestore.instance.collection('orderLimits').doc(user.uid),
-      {'lastAt': FieldValue.serverTimestamp()},
-    );
-
-    try {
-      await batch.commit();
-    } on FirebaseException catch (e) {
-      // قد يكون السيرفر حفظ الـ Batch ثم انقطع الرد. نتحقق من نفس المستند
-      // قبل إعادة المحاولة، حتى لا ننشئ طلبًا ثانيًا للشراء نفسه.
-      var alreadyCreated = false;
-      try {
-        final existing = await ref.get();
-        alreadyCreated = existing.exists &&
-            existing.data()?['userId'] == user.uid &&
-            existing.data()?['storeId'] == store.id &&
-            existing.data()?['total'] == cart.total;
-      } catch (_) {
-        // عند تعذر التحقق نحتفظ بالمفتاح ليُعاد استخدامه في المحاولة التالية.
+    if (OrderGateway.isConfigured) {
+      final idToken = await user.getIdToken();
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول وحاول تاني.');
       }
+      await OrderGateway.submit(
+        idToken: idToken,
+        payload: {
+          'orderId': orderId,
+          'storeId': store.id,
+          'customerName': _firstName(name),
+          'notes': notes,
+          'area': cart.area,
+          if (cart.discount > 0) 'promoCode': cart.promoCode,
+          'items': cart.items.entries
+              .map((e) => {
+                    if (e.key.id.isNotEmpty) 'productId': e.key.id,
+                    if (e.key.id.isEmpty) 'name': e.key.name,
+                    'qty': e.value,
+                  })
+              .toList(),
+          'contact': contactData,
+        },
+      );
+    } else {
+      // وضع التوافق القديم يظل متاحًا حتى نشر Worker وتفعيل serverOrders.
+      final batch = FirebaseFirestore.instance.batch()..set(ref, data);
+      batch.set(OrderContactService.ref(ref.id), contactData);
+      batch.set(
+        FirebaseFirestore.instance.collection('orderLimits').doc(user.uid),
+        {'lastAt': FieldValue.serverTimestamp()},
+      );
 
-      if (alreadyCreated) {
-        if (kDebugMode) debugPrint('ORDER RETRY CONFIRMED [${e.code}]');
-      } else {
-        if (kDebugMode) debugPrint('ORDER ERROR [${e.code}]');
-        if (e.code == 'permission-denied') {
-          throw StateError('تعذر إرسال الطلب (${e.code}). حاول مرة تانية أو تواصل مع الدعم.');
+      try {
+        await batch.commit();
+      } on FirebaseException catch (e) {
+        // قد يكون السيرفر حفظ الـ Batch ثم انقطع الرد. نتحقق من نفس المستند
+        // قبل إعادة المحاولة، حتى لا ننشئ طلبًا ثانيًا للشراء نفسه.
+        var alreadyCreated = false;
+        try {
+          final existing = await ref.get();
+          alreadyCreated = existing.exists &&
+              existing.data()?['userId'] == user.uid &&
+              existing.data()?['storeId'] == store.id &&
+              existing.data()?['total'] == cart.total;
+        } catch (_) {
+          // عند تعذر التحقق نحتفظ بالمفتاح ليُعاد استخدامه في المحاولة التالية.
         }
-        if (e.code == 'unavailable') {
-          throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+
+        if (alreadyCreated) {
+          if (kDebugMode) debugPrint('ORDER RETRY CONFIRMED [${e.code}]');
+        } else {
+          if (kDebugMode) debugPrint('ORDER ERROR [${e.code}]');
+          if (e.code == 'permission-denied') {
+            throw StateError('تعذر إرسال الطلب (${e.code}). حاول مرة تانية أو تواصل مع الدعم.');
+          }
+          if (e.code == 'unavailable') {
+            throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+          }
+          throw StateError('تعذر إرسال الطلب (${e.code}).');
         }
-        throw StateError('تعذر إرسال الطلب (${e.code}).');
       }
     }
 
