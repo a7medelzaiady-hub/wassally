@@ -1210,11 +1210,12 @@ service cloud.firestore {
            (d.get('registrationNumber', '').size() >= 6 ||
             d.get('proofUrl', '').matches('https://.*') ||
             d.get('storePhone', '').matches('^[0-9]{8,11}$'))) &&
-        (d.type == 'store_owner'
-          ? (!exists(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')) ||
-             get(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')).data.status != 'pending')
-          : (!exists(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')) ||
-             get(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')).data.status != 'pending')) &&
+        (d.type != 'store_owner' ||
+          !exists(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')) ||
+          get(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')).data.status != 'pending') &&
+        (d.type == 'store_owner' ||
+          !exists(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')) ||
+          get(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')).data.status != 'pending') &&
         (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
     }
 
