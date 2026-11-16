@@ -138,15 +138,13 @@ test('statusHistory: لا تعديل ولا حذف', async () => {
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1/statusHistory/preparing'), { from: 'x' }));
 });
 
-test('strictOrders: تغيير حالة بلا سجل يُرفض، ورجوع للخلف يُرفض', async () => {
-  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'app_info/security'), { strictOrders: true }));
+test('order lifecycle: تغيير الحالة بلا سجل يُرفض والرجوع للخلف يُرفض افتراضيًا', async () => {
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { status: 'preparing' }));
   await assertSucceeds(changeStatus(as('admin1'), 'o1', 'new', 'on_the_way', 'admin'));
   await assertFails(changeStatus(as('admin1'), 'o1', 'on_the_way', 'new', 'admin'));
 });
 
-test('strictOrders: اعتماد الإجمالي بدون تغيير الحالة ما زال شغّال', async () => {
-  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'app_info/security'), { strictOrders: true }));
+test('order lifecycle: اعتماد الإجمالي دون تغيير الحالة يظل مسموحًا', async () => {
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { status: 'new', verifiedTotal: 30, verifiedAt: serverTimestamp() }));
 });
 
@@ -429,8 +427,7 @@ test('owner: سجل الحالة بدور owner لعميل أو لمحل تان�
   await assertFails(changeStatus(as('owner2'), 'o1', 'new', 'preparing', 'owner'));
 });
 
-test('owner: strictOrders يطلب سجل، ومحل موقوف (active=false) يفقد الصلاحية', async () => {
-  await flag('strictOrders');
+test('owner: سجل الحالة إلزامي ومحل موقوف (active=false) يفقد الصلاحية', async () => {
   await assertFails(updateDoc(doc(as('owner1'), 'orders/o1'), { status: 'preparing' }));
   await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'storeOwners/owner1'), { active: false }));
   await assertFails(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
