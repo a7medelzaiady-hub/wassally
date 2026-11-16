@@ -936,6 +936,13 @@ test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، 
   await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c9'), c({
     kind: 'restriction_appeal', orderId: 'o1',
   })));
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c11'), c({
+    kind: 'restriction_appeal', orderId: 'another-order',
+  })));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'complaints/c9')));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/c9'), {
+    status: 'in_progress', adminNote: 'تم استلام الاعتراض وجارٍ مراجعته.',
+  }));
   await assertFails(setDoc(doc(as('cust2'), 'complaints/c10'), c({
     userId: 'cust2', kind: 'restriction_appeal', orderId: 'o1',
   })));
