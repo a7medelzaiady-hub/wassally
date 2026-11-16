@@ -152,8 +152,24 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
   Future<void> _toggle(String id, bool active) async {
     try {
-      await _stores.doc(id).update({
+      final storeRef = _stores.doc(id);
+      if (active) {
+        final store = await storeRef.get();
+        final data = store.data() ?? {};
+        if (data['approved'] == false) {
+          _say('لازم تعتمد طلب المحل الأول من طلبات الانضمام.');
+          return;
+        }
+        final image = (data['imageUrl'] ?? data['image'] ?? '').toString();
+        final count = await storeRef.collection('products').count().get();
+        if (image.isEmpty || (count.count ?? 0) < 5) {
+          _say('لازم صورة واضحة و5 أصناف على الأقل قبل تفعيل المحل.');
+          return;
+        }
+      }
+      await storeRef.update({
         'active': active,
+        'approved': active ? true : FieldValue.delete(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
