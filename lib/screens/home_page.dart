@@ -1121,13 +1121,12 @@ class _HomePageState extends State<HomePage>
                           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'العروض والخصومات',
+                      TextButton.icon(
                         onPressed: () => Navigator.of(context).push(
                           MaterialPageRoute(builder: (_) => const OffersPage()),
                         ),
-                        icon: const Icon(Icons.local_offer_outlined),
-                        color: Brand.green,
+                        icon: const Icon(Icons.local_offer_outlined, size: 18),
+                        label: const Text('العروض'),
                       ),
                       TextButton(
                         onPressed: _openDirectory,
