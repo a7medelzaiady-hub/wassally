@@ -1078,3 +1078,63 @@ test('store owner: حذف المحل وفك ربط حسابه يتمان في Ba
   const ownerLink = await assertSucceeds(getDoc(doc(db, 'storeOwners/owner1')));
   if (ownerLink.exists()) throw new Error('Owner link should be removed with the store.');
 });
+
+
+test('courier assignment: التعيين الإداري يفشل لو الـ feed لم يُحذف في نفس العملية', async () => {
+  await prepareOrderWithFeed();
+  const db = as('admin1');
+  const partial = writeBatch(db);
+  partial.update(doc(db, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
+    courierAt: serverTimestamp(),
+  });
+  await assertFails(partial.commit());
+  assert.equal((await getDoc(doc(db, 'orders/o1'))).data().courierId ?? '', '');
+  assert.equal((await getDoc(doc(db, 'courier_available_orders/o1'))).exists(), true);
+
+  const atomic = writeBatch(db);
+  atomic.update(doc(db, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
+    courierAt: serverTimestamp(),
+  });
+  atomic.delete(doc(db, 'courier_available_orders/o1'));
+  await assertSucceeds(atomic.commit());
+  assert.equal((await getDoc(doc(db, 'orders/o1'))).data().courierId, 'cour1');
+  assert.equal((await getDoc(doc(db, 'courier_available_orders/o1'))).exists(), false);
+});
+
+test('courier unassignment: لا يُفك الإسناد إلا مع إعادة feed مطابق في نفس العملية', async () => {
+  await prepareOrderWithFeed();
+  const admin = as('admin1');
+  const assign = writeBatch(admin);
+  assign.update(doc(admin, 'orders/o1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
+    courierAt: serverTimestamp(),
+  });
+  assign.delete(doc(admin, 'courier_available_orders/o1'));
+  await assertSucceeds(assign.commit());
+
+  const partial = writeBatch(admin);
+  partial.update(doc(admin, 'orders/o1'), {
+    courierId: deleteField(), courierName: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(),
+  });
+  await assertFails(partial.commit());
+  assert.equal((await getDoc(doc(admin, 'orders/o1'))).data().courierId, 'cour1');
+
+  const order = (await getDoc(doc(admin, 'orders/o1'))).data();
+  const atomic = writeBatch(admin);
+  atomic.update(doc(admin, 'orders/o1'), {
+    courierId: deleteField(), courierName: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(),
+  });
+  atomic.set(doc(admin, 'courier_available_orders/o1'), {
+    storeId: order.storeId, storeName: order.storeName, area: order.area ?? '',
+    items: order.items, subtotal: order.subtotal, deliveryFee: order.deliveryFee,
+    finalDeliveryFee: order.finalDeliveryFee, discount: order.discount ?? 0,
+    total: order.total, status: 'preparing', createdAt: order.createdAt,
+  });
+  await assertSucceeds(atomic.commit());
+  assert.equal((await getDoc(doc(admin, 'orders/o1'))).data().courierId ?? '', '');
+  assert.equal((await getDoc(doc(admin, 'courier_available_orders/o1'))).exists(), true);
+});
