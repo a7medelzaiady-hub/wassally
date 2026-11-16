@@ -589,7 +589,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       message: delivering
           ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.payable)} من العميل؟'
           : 'هتبدأ توصيل الطلب؟',
-      confirmLabel: delivering ? 'تم التسليم' : 'ابدأ التوصيل',
+      confirmLabel: delivering ? 'إبلاغ العميل بالتسليم' : 'ابدأ التوصيل',
     );
     if (!ok || !mounted) return;
 
@@ -597,7 +597,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     setState(() => _busy = true);
     try {
       if (delivering) {
-        await StaffOrderService.markDelivered(widget.order);
+        await StaffOrderService.reportCustomerDelivery(widget.order);
       } else {
         await StaffOrderService.setStatus(
           widget.order.id,
@@ -1060,7 +1060,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               )
             else ...[
               const Text(
-                'تم تسجيل وصولك للعميل. تواصل معه، ثم أكد التسليم أو سجّل تعذر التسليم.',
+                'تم تسجيل وصولك للعميل. تواصل معه، ثم أبلغ عن التسليم أو سجّل تعذر التسليم.',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -1070,7 +1070,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     child: FilledButton(
                       onPressed: _busy ? null : _advance,
                       style: FilledButton.styleFrom(shape: const StadiumBorder()),
-                      child: const Text('تم التسليم'),
+                      child: const Text('تم التسليم للعميل'),
                     ),
                   ),
                   const SizedBox(width: 8),
