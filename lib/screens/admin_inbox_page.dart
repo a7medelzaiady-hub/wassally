@@ -1037,7 +1037,12 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
               ),
             ),
           ],
-          if (widget.isRestricted)
+          if (moderationStatus == 'excluded')
+            const Text(
+              'لا يتم اتخاذ إجراء تجاه العميل اعتمادًا على تقييم مستبعد.',
+              style: TextStyle(fontSize: 11.5, color: Colors.black54),
+            )
+          else if (widget.isRestricted)
             Row(
               children: [
                 const Expanded(
