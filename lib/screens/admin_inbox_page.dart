@@ -737,11 +737,35 @@ class _CustomerRatingsTab extends StatelessWidget {
             message: 'تقييمات المندوبين وأصحاب المحلات ستظهر هنا بعد اكتمال الطلبات.',
           );
         }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (_, index) => _CustomerReviewCard(doc: docs[index]),
+        // مستمع واحد للتقييدات النشطة بدل قراءة مستند تقييد منفصل لكل تقييم.
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('customer_restrictions')
+              .where('active', isEqualTo: true)
+              .limit(100)
+              .snapshots(),
+          builder: (context, restrictionsSnap) {
+            final restricted = <String>{};
+            for (final d in restrictionsSnap.data?.docs ?? const []) {
+              final expiry = d.data()['expiresAt'];
+              if (expiry is Timestamp && expiry.toDate().isAfter(DateTime.now())) {
+                restricted.add(d.id);
+              }
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: docs.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (_, index) {
+                final doc = docs[index];
+                final customerId = (doc.data()['customerId'] ?? '').toString();
+                return _CustomerReviewCard(
+                  doc: doc,
+                  isRestricted: restricted.contains(customerId),
+                );
+              },
+            );
+          },
         );
       },
     );
@@ -750,7 +774,8 @@ class _CustomerRatingsTab extends StatelessWidget {
 
 class _CustomerReviewCard extends StatefulWidget {
   final _Doc doc;
-  const _CustomerReviewCard({required this.doc});
+  final bool isRestricted;
+  const _CustomerReviewCard({required this.doc, required this.isRestricted});
 
   @override
   State<_CustomerReviewCard> createState() => _CustomerReviewCardState();
@@ -897,51 +922,37 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
           const SizedBox(height: 4),
           Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
           const Divider(height: 18),
-          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('customer_restrictions')
-                .doc(customerId)
-                .snapshots(),
-            builder: (context, restrictionSnap) {
-              final restriction = restrictionSnap.data?.data();
-              final expiry = restriction?['expiresAt'];
-              final active = restriction?['active'] == true &&
-                  expiry is Timestamp &&
-                  expiry.toDate().isAfter(DateTime.now());
-              if (active) {
-                return Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'العميل عليه تقييد مؤقت',
-                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _busy ? null : () => _lift(customerId),
-                      child: const Text('رفع التقييد'),
-                    ),
-                  ],
-                );
-              }
-              if (rating > 2 || customerId.isEmpty || orderId.isEmpty) {
-                return const Text(
-                  'لا يوجد إجراء تلقائي. التقييمات المنخفضة فقط تُعرض للمراجعة.',
-                  style: TextStyle(fontSize: 11.5, color: Colors.black54),
-                );
-              }
-              return Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: FilledButton.tonalIcon(
-                  onPressed: _busy
-                      ? null
-                      : () => _restrict(customerId, orderId, reason),
-                  icon: const Icon(Icons.gpp_maybe_outlined),
-                  label: const Text('مراجعة وتقييد 3 أيام'),
+          if (widget.isRestricted)
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'العميل عليه تقييد مؤقت',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                  ),
                 ),
-              );
-            },
-          ),
+                TextButton(
+                  onPressed: _busy ? null : () => _lift(customerId),
+                  child: const Text('رفع التقييد'),
+                ),
+              ],
+            )
+          else if (rating <= 2 && customerId.isNotEmpty && orderId.isNotEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FilledButton.tonalIcon(
+                onPressed: _busy
+                    ? null
+                    : () => _restrict(customerId, orderId, reason),
+                icon: const Icon(Icons.gpp_maybe_outlined),
+                label: const Text('مراجعة وتقييد 3 أيام'),
+              ),
+            )
+          else
+            const Text(
+              'لا يوجد إجراء تلقائي. التقييمات المنخفضة فقط تُعرض للمراجعة.',
+              style: TextStyle(fontSize: 11.5, color: Colors.black54),
+            ),
           if (_busy)
             const Padding(
               padding: EdgeInsets.only(top: 8),
