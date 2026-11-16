@@ -786,6 +786,37 @@ class _CustomerReviewCard extends StatefulWidget {
 class _CustomerReviewCardState extends State<_CustomerReviewCard> {
   bool _busy = false;
 
+  Future<void> _warn(String customerId, String orderId, String detail) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'إرسال تنبيه للعميل؟',
+      message: 'سيصل للعميل تنبيه لتحسين الالتزام بالتواصل والعنوان والاستلام.',
+      confirmLabel: 'إرسال التنبيه',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.warnCustomer(
+        customerId: customerId,
+        orderId: orderId,
+        detail: detail,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم إرسال التنبيه للعميل.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر إرسال التنبيه: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _restrict(String customerId, String orderId, String detail) async {
     final controller = TextEditingController(
       text: 'مراجعة تقييم منخفض: $detail',
@@ -940,15 +971,26 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
               ],
             )
           else if (rating <= 2 && customerId.isNotEmpty && orderId.isNotEmpty)
-            Align(
-              alignment: AlignmentDirectional.centerEnd,
-              child: FilledButton.tonalIcon(
-                onPressed: _busy
-                    ? null
-                    : () => _restrict(customerId, orderId, reason),
-                icon: const Icon(Icons.gpp_maybe_outlined),
-                label: const Text('مراجعة وتقييد 3 أيام'),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () => _warn(customerId, orderId, reason),
+                  icon: const Icon(Icons.notifications_active_outlined),
+                  label: const Text('إرسال تحذير'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _busy
+                      ? null
+                      : () => _restrict(customerId, orderId, reason),
+                  icon: const Icon(Icons.gpp_maybe_outlined),
+                  label: const Text('تقييد 3 أيام'),
+                ),
+              ],
             )
           else
             const Text(
