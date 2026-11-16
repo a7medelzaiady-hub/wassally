@@ -49,7 +49,7 @@ enum OrderStatus {
       case OrderStatus.preparing:
         return OrderStatus.onTheWay;
       case OrderStatus.onTheWay:
-        return null;
+        return OrderStatus.delivered;
       case OrderStatus.delivered:
       case OrderStatus.cancelled:
         return null;
