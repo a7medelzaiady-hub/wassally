@@ -182,6 +182,17 @@ class _OffersPageState extends State<OffersPage> {
     );
   }
 
+  Widget _pageHeader() {
+    return InnerHeader(
+      title: 'عروض وخصومات',
+      trailing: IconButton(
+        tooltip: 'الرئيسية',
+        onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+        icon: const Icon(Icons.home_rounded, color: Colors.white),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Directionality(
@@ -194,7 +205,7 @@ class _OffersPageState extends State<OffersPage> {
             if (snap.hasError) {
               return Column(
                 children: [
-                  const BrandHeader(title: 'عروض وخصومات'),
+                  const _pageHeader(),
                   Expanded(
                     child: EmptyState(
                       icon: Icons.cloud_off,
@@ -208,9 +219,9 @@ class _OffersPageState extends State<OffersPage> {
               );
             }
             if (!snap.hasData) {
-              return const Column(
+              return Column(
                 children: [
-                  BrandHeader(title: 'عروض وخصومات'),
+                  _pageHeader(),
                   Expanded(child: Center(child: CircularProgressIndicator())),
                 ],
               );
@@ -224,12 +235,7 @@ class _OffersPageState extends State<OffersPage> {
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
                 slivers: [
-                  const SliverToBoxAdapter(
-                    child: BrandHeader(
-                      title: 'عروض وخصومات',
-                      subtitle: 'وفّر أكتر مع أفضل عروض المحلات',
-                    ),
-                  ),
+                  SliverToBoxAdapter(child: _pageHeader()),
                   if (items.isEmpty)
                     SliverFillRemaining(
                       hasScrollBody: false,
