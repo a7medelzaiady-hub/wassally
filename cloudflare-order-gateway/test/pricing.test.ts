@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, firstName, isRecentAuthTime } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, firstName, isRecentAuthTime } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
@@ -71,6 +71,14 @@ describe("customer name normalization", () => {
 
 
 describe("server-side image content validation", () => {
+  it("enforces the five-megabyte upload boundary", () => {
+    expect(isUploadSizeAllowed(1)).toBe(true);
+    expect(isUploadSizeAllowed(5 * 1024 * 1024)).toBe(true);
+    expect(isUploadSizeAllowed(5 * 1024 * 1024 + 1)).toBe(false);
+    expect(isUploadSizeAllowed(0)).toBe(false);
+    expect(isUploadSizeAllowed(Number.NaN)).toBe(false);
+  });
+
   it("accepts JPEG, PNG, and WEBP signatures", () => {
     expect(detectImageContent(new Uint8Array([0xff, 0xd8, 0xff, 0x00]))).toEqual({
       format: "jpg",
