@@ -213,10 +213,23 @@ class _RequestCardState extends State<_RequestCard> {
     String? storeId;
     String? newStoreName;
     if (isStore) {
-      final picked = await _pickStore();
-      if (picked == null) return;
-      storeId = picked.id;
-      newStoreName = picked.name;
+      final draftId = (widget.doc.data()['storeId'] ?? '').toString();
+      if (draftId.isNotEmpty) {
+        final ok = await confirmDialog(
+          context,
+          title: 'قبول المحل',
+          message:
+              'هيتم اعتماد المحل. هيظهر للعملاء تلقائيًا فقط لو فيه صورة و5 أصناف على الأقل؛ غير كده هيفضل مخفي لحد ما الإدارة تفعّله.',
+          confirmLabel: 'اعتماد المحل',
+        );
+        if (!ok) return;
+        storeId = draftId;
+      } else {
+        final picked = await _pickStore();
+        if (picked == null) return;
+        storeId = picked.id;
+        newStoreName = picked.name;
+      }
     } else {
       final ok = await confirmDialog(
         context,
