@@ -64,16 +64,57 @@ void main() {
       expect(r.issues.single.missing, isTrue);
     });
 
-    test('أصناف النظام الجديد (extraProducts) بتتحسب', () {
+    test('أصناف النظام الجديد تطابق بمعرّف مستند الكتالوج', () {
       final store = Store.fromMap('s2', {'name': 'محل'}); // من غير مصفوفة أصناف
-      final o = _order([const OrderLine('عصير', 12, 2)], 34);
+      final o = _order([const OrderLine('عصير', 12, 2, 'juice-1')], 34);
       final r = checkOrderPrices(
         o,
         store,
-        extraProducts: const [Product('عصير', 12)],
+        extraProducts: const [Product('عصير', 12, '', 'juice-1')],
       );
       expect(r.status, PriceCheckStatus.match);
       expect(r.expectedTotal, 34);
+    });
+
+    test('المعرف يلتقط السعر المعدّل حتى لو فيه صنف آخر بنفس الاسم وسعر العميل', () {
+      final store = Store.fromMap('s2', {'name': 'محل'});
+      final o = _order([const OrderLine('عصير', 5, 2, 'juice-real')], 20);
+      final r = checkOrderPrices(
+        o,
+        store,
+        extraProducts: const [
+          Product('عصير', 12, '', 'juice-real'),
+          Product('عصير', 5, '', 'juice-other'),
+        ],
+      );
+      expect(r.status, PriceCheckStatus.mismatch);
+      expect(r.expectedTotal, 34);
+      expect(r.issues.single.catalogPrice, 12);
+    });
+
+    test('الاسم المكرر بدون معرف لا يسمح باختيار السعر المطابق للعميل', () {
+      final store = Store.fromMap('s2', {'name': 'محل'});
+      final o = _order([const OrderLine('عصير', 5, 2)], 20);
+      final r = checkOrderPrices(
+        o,
+        store,
+        extraProducts: const [
+          Product('عصير', 12, '', 'juice-real'),
+          Product('عصير', 5, '', 'juice-other'),
+        ],
+      );
+      expect(r.status, PriceCheckStatus.unknown);
+    });
+
+    test('معرف كتالوج غير موجود لا يرجع للمطابقة بالاسم', () {
+      final store = Store.fromMap('s2', {'name': 'محل'});
+      final o = _order([const OrderLine('عصير', 5, 2, 'forged-id')], 20);
+      final r = checkOrderPrices(
+        o,
+        store,
+        extraProducts: const [Product('عصير', 5, '', 'juice-real')],
+      );
+      expect(r.status, PriceCheckStatus.unknown);
     });
 
     test('محل مش موجود = unknown', () {
