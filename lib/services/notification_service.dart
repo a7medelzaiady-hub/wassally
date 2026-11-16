@@ -127,6 +127,15 @@ class NotificationService {
     _tokenRefresh = null;
     if (!_supported) return;
 
+    // منع بقاء الجهاز مشتركًا في إشعارات الحساب السابق بعد تسجيل الخروج.
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.unsubscribeFromTopic('couriers');
+      await messaging.unsubscribeFromTopic('all');
+    } catch (e) {
+      debugPrint('تعذر إلغاء اشتراكات الإشعارات: $e');
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     final token = _fcmToken;
     _fcmToken = null;
