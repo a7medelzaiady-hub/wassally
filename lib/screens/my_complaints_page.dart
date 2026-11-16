@@ -20,6 +20,7 @@ class MyComplaintsPage extends StatelessWidget {
   static String _kind(String k) => switch (k) {
     'suggestion' => 'اقتراح',
     'order_issue' => 'مشكلة في طلب',
+    'restriction_appeal' => 'اعتراض على تقييد',
     _ => 'شكوى',
   };
 
