@@ -289,7 +289,7 @@ class OrderService {
               'name': e.key.name,
               'price': e.key.price,
               'qty': e.value,
-              // معرّف الصنف (لو من الكتالوج الجديد). مطلوب لما enforcePrices يتفعّل.
+              // معرّف الصنف من الكتالوج؛ البوابة الموثوقة تستخدمه لجلب السعر الحالي.
               if (e.key.id.isNotEmpty) 'productId': e.key.id,
             },
           )
