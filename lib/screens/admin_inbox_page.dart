@@ -433,7 +433,7 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      // المراجعة مستمرة أولًا بأول؛ لا نخفي أي تقديم بسبب حد ثابت.
+      // نحمّل أحدث التقديمات على دفعات حتى لا يفتح المدير Stream غير محدود.
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
           .orderBy('createdAt', descending: true)
