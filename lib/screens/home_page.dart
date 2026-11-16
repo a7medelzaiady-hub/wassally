@@ -1076,6 +1076,7 @@ class _HomePageState extends State<HomePage>
                                   )
                                 : Image.network(
                                     thumb(img, w: 300),
+                                    cacheWidth: 300,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, _, _) => Container(
                                       decoration: BoxDecoration(
@@ -1384,6 +1385,7 @@ class _CategoryTile extends StatelessWidget {
                     ? _emojiBox()
                     : Image.network(
                         thumb(imageUrl, w: 200),
+                        cacheWidth: 200,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => _emojiBox(),
                       ),
