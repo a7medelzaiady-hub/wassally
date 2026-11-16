@@ -274,7 +274,7 @@ class _OfferCard extends StatelessWidget {
           transform: Matrix4.identity()
             ..setEntry(3, 2, 0.0015)
             ..rotateX((1 - value) * 0.07)
-            ..translate(0.0, (1 - value) * 22),
+            ..translateByDouble(0.0, (1 - value) * 22, 0.0, 1.0),
           child: Transform.scale(scale: 0.96 + value * 0.04, child: child),
         ),
       ),
