@@ -18,7 +18,7 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stream =
-      FirebaseFirestore.instance.collection('couriers').snapshots();
+      FirebaseFirestore.instance.collection('couriers').limit(200).snapshots();
   bool _busy = false;
 
   CollectionReference<Map<String, dynamic>> get _col =>
