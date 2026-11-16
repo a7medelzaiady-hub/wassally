@@ -396,10 +396,8 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
     const remainingOwnerDocs = await queryAccountDocuments(
       env, token, "storeOwners", "storeId", ownedStoreId,
     );
-    const activeOwner = rows.some((row) => {
-      if (!row.document) return false;
-      return decodeFields(row.document.fields ?? {}).active !== false;
-    });
+    const activeOwner = remainingOwnerDocs.some((doc) =>
+      decodeFields(doc.fields ?? {}).active !== false);
     if (!activeOwner) {
       const store = await getDocument(env, `stores/${encodeURIComponent(ownedStoreId)}`, token);
       if (store) await commitFirestoreWrites(env, token, [{
