@@ -28,7 +28,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
   }
 
   Future<QuerySnapshot<Map<String, dynamic>>> _load() => CatalogService.get(
-    FirebaseFirestore.instance.collection('stores'),
+    FirebaseFirestore.instance.collection('stores').where('active', isEqualTo: true),
     'stores',
   );
 
