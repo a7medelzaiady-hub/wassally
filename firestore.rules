@@ -357,7 +357,8 @@ service cloud.firestore {
         getAfter(requestPath).data.get('storeName', '') == d.name &&
         getAfter(requestPath).data.get('storeCategory', '') == d.category &&
         getAfter(requestPath).data.get('address', '') == d.address &&
-        getAfter(requestPath).data.get('storeImageUrl', '') == d.imageUrl;
+        getAfter(requestPath).data.get('storeImageUrl', '') == d.imageUrl &&
+        getAfter(requestPath).data.get('storePhone', '') == d.get('storePhone', '');
     }
 
     match /stores/{storeId} {
@@ -1135,7 +1136,8 @@ service cloud.firestore {
            getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('name', '') == d.get('storeName', '') &&
            getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('category', '') == d.get('storeCategory', '') &&
            getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('address', '') == d.get('address', '') &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('imageUrl', '') == d.get('storeImageUrl', ''))) &&
+           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('imageUrl', '') == d.get('storeImageUrl', '') &&
+           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('storePhone', '') == d.get('storePhone', ''))) &&
         (d.type != 'store_owner' ||
           ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && validStoreCategory(d.storeCategory) &&
            'address' in d && d.address.size() >= 5 &&
