@@ -89,7 +89,8 @@ async function notify(uids, title, body, data = {}) {
   if (entries.length === 0) return;
 
   const res = await admin.messaging().sendEach(entries.map((entry) => ({
-    ...(entry.fid ? { fid: entry.fid } : { token: entry.token }),
+    // Admin SDK 13.x لا يعرّف حقل fid بعد؛ FCM يقبل FID في token أثناء فترة الترحيل.
+    token: entry.fid || entry.token,
     notification: { title, body },
     data,
     android: { priority: 'high', notification: { sound: 'default' } },
