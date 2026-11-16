@@ -1062,7 +1062,7 @@ service cloud.firestore {
                                'orderId', 'appRole', 'status', 'createdAt']) &&
         d.keys().hasAll(['userId', 'kind', 'message', 'status', 'createdAt']) &&
         d.userId == request.auth.uid &&
-        d.kind in ['complaint', 'suggestion', 'order_issue'] &&
+        d.kind in ['complaint', 'suggestion', 'order_issue', 'restriction_appeal'] &&
         d.status == 'open' &&
         d.createdAt == request.time &&
         d.message is string && d.message.size() >= 5 && d.message.size() <= 1000 &&
@@ -1071,7 +1071,11 @@ service cloud.firestore {
         optStr(d, 'orderId', 60) &&
         (d.kind != 'order_issue' || (
           'orderId' in d && d.orderId.size() > 0 &&
-          get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid));
+          get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid)) &&
+        (d.kind != 'restriction_appeal' || (
+          'orderId' in d && d.orderId.size() > 0 &&
+          exists(/databases/$(database)/documents/customer_restrictions/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/customer_restrictions/$(request.auth.uid)).data.get('sourceOrderId', '') == d.orderId));
     }
 
     match /complaints/{cid} {
