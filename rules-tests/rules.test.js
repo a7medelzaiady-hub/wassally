@@ -986,6 +986,9 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   // المسودة والأصناف لا يقرأها إلا صاحبها أو المدير، وصاحبها يستطيع تجهيز الأصناف.
   await assertSucceeds(getDoc(doc(as('cust3'), 'stores/draft3')));
   await assertFails(getDoc(doc(as('cust2'), 'stores/draft3')));
+  // استعلام الدليل العام ينجح بشرط active=true ولا يكشف المسودات.
+  await assertSucceeds(getDocs(query(collection(as('cust2'), 'stores'), where('active', '==', true))));
+  await assertFails(getDocs(query(collection(as('cust2'), 'stores'), where('active', '==', false))));
   await assertSucceeds(setDoc(doc(as('cust3'), 'stores/draft3/products/p1'), {
     name: 'عيش', price: 10, image: '', available: true,
   }));
