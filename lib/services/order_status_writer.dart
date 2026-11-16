@@ -117,6 +117,7 @@ class OrderStatusWriter {
         'courierName': FieldValue.delete(),
         'courierPhone': FieldValue.delete(),
         'courierAt': FieldValue.delete(),
+        'deliveryMode': FieldValue.delete(),
       },
       if (cancellingAfterReturn) ...{
         'lastDeliveryIssueId': activeIssueId,
