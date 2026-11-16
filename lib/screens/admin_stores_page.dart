@@ -162,7 +162,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
         }
         final image = (data['imageUrl'] ?? data['image'] ?? '').toString();
         final count = await storeRef.collection('products').count().get();
-        if (image.isEmpty || (count.count ?? 0) < 5) {
+        if (!image.startsWith('https://') || (count.count ?? 0) < 5) {
           _say('لازم صورة واضحة و5 أصناف على الأقل قبل تفعيل المحل.');
           return;
         }
