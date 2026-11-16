@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, effectiveCatalogPrice, firstName } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, effectiveCatalogPrice, firstName, isRecentAuthTime } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
@@ -97,5 +97,18 @@ describe("Cloudinary upload signatures", () => {
     expect(first).toMatch(/^[a-f0-9]{40}$/);
     expect(same).toBe(first);
     expect(otherFolder).not.toBe(first);
+  });
+});
+
+
+describe("account deletion authentication freshness", () => {
+  it("accepts only authentication performed within the last five minutes", () => {
+    const now = 1_800_000_000;
+    expect(isRecentAuthTime(now, now)).toBe(true);
+    expect(isRecentAuthTime(now - 300, now)).toBe(true);
+    expect(isRecentAuthTime(now - 301, now)).toBe(false);
+    expect(isRecentAuthTime(now + 61, now)).toBe(false);
+    expect(isRecentAuthTime(Number.NaN, now)).toBe(false);
+    expect(isRecentAuthTime(0, now)).toBe(false);
   });
 });
