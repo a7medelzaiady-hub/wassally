@@ -77,7 +77,7 @@ class CustomerRatingService {
     if (admin == null) throw StateError('سجّل دخول الإدارة.');
     final note = reason.trim();
     if (note.length < 5) throw ArgumentError('سبب التقييد قصير.');
-    final days = durationDays.clamp(1, 7);
+    final days = durationDays.clamp(1, 7).toInt();
     final db = FirebaseFirestore.instance;
     await db.collection('customer_restrictions').doc(customerId).set({
       'customerId': customerId,
