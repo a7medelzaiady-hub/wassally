@@ -739,6 +739,20 @@ class _CustomerRatingsTab extends StatelessWidget {
             message: 'تقييمات المندوبين وأصحاب المحلات ستظهر هنا بعد اكتمال الطلبات.',
           );
         }
+        // لا نسمح بتقييد العميل بسبب تقييم واحد أو بسبب تقييمين لنفس الطلب.
+        // نعدّ الطلبات المختلفة ذات التقييم <= 2، بعد استبعاد ما راجعته الإدارة.
+        // العد هنا محافظ ومبني على آخر 100 مراجعة المعروضة.
+        final lowRatingOrdersByCustomer = <String, Set<String>>{};
+        for (final review in docs) {
+          final data = review.data();
+          final customerId = (data['customerId'] ?? '').toString();
+          final orderId = (data['orderId'] ?? '').toString();
+          final rating = (data['rating'] as num?)?.toInt() ?? 0;
+          final excluded = data['moderationStatus'] == 'excluded';
+          if (!excluded && rating <= 2 && customerId.isNotEmpty && orderId.isNotEmpty) {
+            lowRatingOrdersByCustomer.putIfAbsent(customerId, () => <String>{}).add(orderId);
+          }
+        }
         // مستمع واحد للتقييدات النشطة بدل قراءة مستند تقييد منفصل لكل تقييم.
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
@@ -764,6 +778,7 @@ class _CustomerRatingsTab extends StatelessWidget {
                 return _CustomerReviewCard(
                   doc: doc,
                   isRestricted: restricted.contains(customerId),
+                  lowRatingOrderCount: lowRatingOrdersByCustomer[customerId]?.length ?? 0,
                 );
               },
             );
@@ -777,7 +792,12 @@ class _CustomerRatingsTab extends StatelessWidget {
 class _CustomerReviewCard extends StatefulWidget {
   final _Doc doc;
   final bool isRestricted;
-  const _CustomerReviewCard({required this.doc, required this.isRestricted});
+  final int lowRatingOrderCount;
+  const _CustomerReviewCard({
+    required this.doc,
+    required this.isRestricted,
+    required this.lowRatingOrderCount,
+  });
 
   @override
   State<_CustomerReviewCard> createState() => _CustomerReviewCardState();
@@ -875,8 +895,10 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
   }
 
   Future<void> _restrict(String customerId, String orderId, String detail) async {
+    // حاجز واجهة إضافي: لا تقييد بسبب تقييم منفرد أو تقييمات مرتبطة بطلب واحد.
+    if (widget.lowRatingOrderCount < 2) return;
     final controller = TextEditingController(
-      text: 'مراجعة تقييم منخفض: $detail',
+      text: 'مراجعة وقائع متكررة في طلبات مختلفة: $detail',
     );
     final reason = await showDialog<String>(
       context: context,
@@ -884,15 +906,26 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: const Text('سبب التقييد المؤقت'),
-          content: TextField(
-            controller: controller,
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 300,
-            decoration: const InputDecoration(
-              hintText: 'اكتب الواقعة التي راجعتها الإدارة',
-              border: OutlineInputBorder(),
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'تم رصد تقييمات منخفضة في ${widget.lowRatingOrderCount} طلبات مختلفة ضمن آخر 100 مراجعة. '
+                'راجع تفاصيل كل واقعة وتأكد من عدم وجود خطأ أو اعتراض قبل فرض أي تقييد.',
+                style: const TextStyle(fontSize: 12.5),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: controller,
+                minLines: 2,
+                maxLines: 4,
+                maxLength: 300,
+                decoration: const InputDecoration(
+                  hintText: 'اكتب الوقائع التي راجعتها الإدارة وسبب القرار',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1070,14 +1103,20 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
                   icon: const Icon(Icons.notifications_active_outlined),
                   label: const Text('إرسال تحذير'),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: _busy
-                      ? null
-                      : () => _restrict(customerId, orderId, reason),
-                  icon: const Icon(Icons.gpp_maybe_outlined),
-                  label: const Text('تقييد 3 أيام'),
-                ),
+                if (widget.lowRatingOrderCount >= 2)
+                  FilledButton.tonalIcon(
+                    onPressed: _busy
+                        ? null
+                        : () => _restrict(customerId, orderId, reason),
+                    icon: const Icon(Icons.gpp_maybe_outlined),
+                    label: const Text('مراجعة التقييد لمدة 3 أيام'),
+                  ),
               ],
+            )
+          else if (rating <= 2 && widget.lowRatingOrderCount < 2)
+            const Text(
+              'يُتاح التنبيه والمراجعة فقط حاليًا. لا يُفرض تقييد بسبب تقييم منخفض واحد؛ يلزم تكرار الوقائع في طلبات مختلفة ومراجعتها يدويًا.',
+              style: TextStyle(fontSize: 11.5, color: Colors.black54),
             )
           else
             const Text(
