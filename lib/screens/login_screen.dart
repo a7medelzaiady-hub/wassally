@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(width: 10),
                       const Text(
-                        'وصّلي',
+                        'وصلي',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 20,

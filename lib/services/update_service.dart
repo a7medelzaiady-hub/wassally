@@ -145,7 +145,7 @@ class UpdateService {
           backgroundColor: kPrimarySoft,
           leading: Icon(Icons.system_update, color: kPrimary),
           content: const Text(
-            'فيه تحديث جديد لوصّلي. افتح Google Play وحدّث التطبيق عشان تستفيد بكل المميزات.',
+            'فيه تحديث جديد لوصلي. افتح Google Play وحدّث التطبيق عشان تستفيد بكل المميزات.',
           ),
           actions: [
             TextButton(
@@ -221,7 +221,7 @@ class UpdateService {
             content: Text(
               force
                   ? 'لازم تحدّث التطبيق عشان تكمّل استخدامه.'
-                  : 'فيه إصدار جديد من وصّلي فيه تحسينات ومميزات جديدة.',
+                  : 'فيه إصدار جديد من وصلي فيه تحسينات ومميزات جديدة.',
             ),
             actions: [
               if (!force)

@@ -505,7 +505,7 @@ class OrderService {
     }
   }
 
-  /// إخفاء الطلب من سجل العميل فقط مع الاحتفاظ بالسجل التجاري لدى وصّلي.
+  /// إخفاء الطلب من سجل العميل فقط مع الاحتفاظ بالسجل التجاري لدى وصلي.
   static Future<void> hideFromCustomer(String id) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل الدخول أولاً.');

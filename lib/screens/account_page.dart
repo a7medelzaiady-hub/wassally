@@ -328,7 +328,7 @@ class _AccountPageState extends State<AccountPage> {
     final text = Theme.of(context).textTheme;
     final user = FirebaseAuth.instance.currentUser;
     final name = (user?.displayName ?? '').isEmpty
-        ? 'مستخدم وصّلي'
+        ? 'مستخدم وصلي'
         : user!.displayName!;
 
     return Column(
