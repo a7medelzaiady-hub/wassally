@@ -28,6 +28,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   final _store = TextEditingController();
   String? _storeCategory;
   final _address = TextEditingController();
+  final _storePhone = TextEditingController();
   final _storeImageUrl = TextEditingController();
   final _registrationNumber = TextEditingController();
   final _proofUrl = TextEditingController();
@@ -37,7 +38,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _store, _address, _storeImageUrl, _registrationNumber, _proofUrl, _vehicle, _notes]) {
+    for (final c in [_name, _phone, _store, _address, _storePhone, _storeImageUrl, _registrationNumber, _proofUrl, _vehicle, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -55,9 +56,9 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   Future<void> _send() async {
     if (!(_form.currentState?.validate() ?? false)) return;
     if (widget.type == JoinType.storeOwner &&
-        _registrationNumber.text.trim().isEmpty && _proofUrl.text.trim().isEmpty) {
+        _registrationNumber.text.trim().isEmpty && _proofUrl.text.trim().isEmpty && _digits(_storePhone.text).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أدخل رقم السجل التجاري أو رابط إثبات النشاط.')),
+        const SnackBar(content: Text('أدخل رقم السجل التجاري أو رابط إثبات النشاط أو تليفون المحل.')),
       );
       return;
     }
@@ -69,6 +70,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         type: widget.type,
         name: _name.text,
         phone: _digits(_phone.text),
+        storePhone: _digits(_storePhone.text),
         storeName: _store.text,
         storeCategory: _storeCategory ?? '',
         address: _address.text,
@@ -125,12 +127,16 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
               keyboardType: TextInputType.phone,
               textDirection: TextDirection.ltr,
               decoration: const InputDecoration(
-                labelText: 'رقم الموبايل',
+                labelText: isStore ? 'رقم موبايل صاحب المحل (اختياري)' : 'رقم الموبايل',
                 prefixIcon: Icon(Icons.phone_outlined),
               ),
-              validator: (v) => isValidEgyptianMobile(_digits(v ?? ''))
-                  ? null
-                  : 'اكتب رقم موبايل مصري صحيح (11 رقم)',
+              validator: (v) {
+                final value = _digits(v ?? '');
+                if (isStore && value.isEmpty) return null;
+                return isValidEgyptianMobile(value)
+                    ? null
+                    : 'اكتب رقم موبايل مصري صحيح (11 رقم)';
+              },
             ),
             const SizedBox(height: 12),
             if (isStore) ...[
@@ -145,7 +151,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _storeCategory,
+                initialValue: _storeCategory,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'نوع نشاط المحل',
@@ -180,6 +186,146 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 validator: (v) => (v ?? '').trim().length < 5
                     ? 'اكتب العنوان بالتفصيل'
                     : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _storePhone,
+                keyboardType: TextInputType.phone,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رقم تليفون المحل (اختياري - بديل إثبات النشاط)',
+                  prefixIcon: Icon(Icons.store_mall_directory_outlined),
+                ),
+                validator: (v) {
+                  final value = _digits(v ?? '');
+                  return value.isEmpty || RegExp(r'^[0-9]{8,11}
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط صورة واجهة/المحل (مطلوب)',
+                  prefixIcon: Icon(Icons.photo_outlined),
+                ),
+                validator: (v) => isValidImageUrl(v ?? '')
+                    ? null
+                    : 'أدخل رابط صورة صحيح يبدأ بـ https://',
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _registrationNumber,
+                decoration: const InputDecoration(
+                  labelText: 'رقم السجل التجاري (اختياري)',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                validator: (v) {
+                  final value = (v ?? '').trim();
+                  return value.isEmpty || RegExp(r'^[A-Za-z0-9\\-/]{6,30}
+            ] else
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (v) =>
+                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
+              ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(value)
+                      ? null
+                      : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _proofUrl,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط إثبات النشاط (اختياري)',
+                  prefixIcon: Icon(Icons.verified_outlined),
+                ),
+                validator: (v) => (v ?? '').trim().isEmpty || isValidImageUrl(v ?? '')
+                    ? null
+                    : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
+              ),
+              const SizedBox(height: 6),
+              Text('يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
+                  style: TextStyle(color: kMuted, fontSize: 12)),
+            ] else
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (v) =>
+                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
+              ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(value)
+                      ? null
+                      : 'اكتب رقم تليفون صحيح من 8 إلى 11 رقمًا';
+                },
               ),
               const SizedBox(height: 12),
               TextFormField(
