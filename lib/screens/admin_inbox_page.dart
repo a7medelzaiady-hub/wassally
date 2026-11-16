@@ -1524,6 +1524,7 @@ class _ComplaintsTab extends StatelessWidget {
   static String _kindLabel(String k) => switch (k) {
     'suggestion' => 'اقتراح',
     'order_issue' => 'مشكلة في طلب',
+    'restriction_appeal' => 'اعتراض على تقييد',
     _ => 'شكوى',
   };
 }
