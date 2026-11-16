@@ -210,26 +210,60 @@ class StaffOrderService {
     }
   }
 
-  /// المندوب بيسلّم: الحالة + ختم التسليم في نفس العملية.
-  static Future<void> markDelivered(AppOrder order) async {
+  /// المندوب يسجل بلاغ التسليم فقط؛ العميل هو من يؤكد الاستلام.
+  static Future<void> reportCustomerDelivery(AppOrder order) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) throw StateError('سجّل دخول الأول.');
     if (order.courierId != uid) throw StateError('الطلب مش متعيّن ليك.');
-    if (order.status != OrderStatus.onTheWay) {
-      throw StateError('لا يمكن تأكيد التسليم قبل بدء التوصيل.');
+    if (order.status != OrderStatus.onTheWay ||
+        order.courierArrivedAt == null ||
+        order.activeDeliveryIssueId.isNotEmpty ||
+        order.customerDeliveryReportedAt != null) {
+      throw StateError('لا يمكن تسجيل التسليم في الحالة الحالية.');
     }
-    if (order.courierArrivedAt == null) {
-      throw StateError('سجّل وصولك لعنوان العميل قبل تأكيد التسليم.');
+    await _orders.doc(order.id).update({
+      'customerDeliveryReportedAt': FieldValue.serverTimestamp(),
+      'customerDeliveryReportedBy': uid,
+    });
+  }
+
+  /// المندوب الخارجي يسجل تسليم النقدية للمحل بعد تأكيد العميل.
+  static Future<void> recordCashHandedToStore(String orderId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final ref = _orders.doc(orderId);
+    final snap = await ref.get();
+    final data = snap.data();
+    if (data == null ||
+        data['status'] != 'on_the_way' ||
+        data['deliveryMode'] != 'external' ||
+        data['courierId'] != uid ||
+        data['customerConfirmedAt'] is! Timestamp ||
+        data['cashHandedToStoreAt'] is Timestamp) {
+      throw StateError('لا يمكن تسجيل تسليم النقدية في الحالة الحالية.');
     }
-    if (order.activeDeliveryIssueId.isNotEmpty) {
-      throw StateError('لا يمكن تأكيد التسليم قبل حل بلاغ تعذر التسليم.');
+    await ref.update({
+      'cashHandedToStoreAt': FieldValue.serverTimestamp(),
+      'cashHandedToStoreBy': uid,
+    });
+  }
+
+  /// صاحب المحل يؤكد استلام النقدية، وبذلك يُغلق الطلب الخارجي.
+  static Future<void> confirmCashReceived(AppOrder order) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    if (order.deliveryMode != 'external' ||
+        order.status != OrderStatus.onTheWay ||
+        order.customerConfirmedAt == null ||
+        order.cashHandedToStoreAt == null) {
+      throw StateError('الطلب لم يستوفِ مراحل التسليم النقدي.');
     }
     await setStatus(
       order.id,
       OrderStatus.delivered,
       from: order.status,
-      actorRole: 'courier',
-      deliveryStamp: deliveryStampFor(order, uid),
+      actorRole: 'storeOwner',
+      deliveryStamp: deliveryStampFor(order, order.courierId),
     );
   }
 
