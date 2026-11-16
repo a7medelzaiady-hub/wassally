@@ -665,6 +665,21 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
 
+export async function cloudinarySignature(
+  params: Record<string, string>,
+  secret: string,
+): Promise<string> {
+  const canonical = Object.keys(params).sort()
+    .map((key) => `${key}=${params[key]}`)
+    .join("&");
+  const digest = await crypto.subtle.digest(
+    "SHA-1",
+    new TextEncoder().encode(canonical + secret),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function signCloudinaryUpload(request: Request, env: Env): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
@@ -703,9 +718,14 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
     : `${folder}/${isApplicant ? requestedStoreId : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const allowedFormats = "jpg,jpeg,png,webp";
-  const params = `allowed_formats=${allowedFormats}&folder=${uploadFolder}&overwrite=false&timestamp=${timestamp}&unique_filename=true&use_filename=false`;
-  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(params + env.CLOUDINARY_API_SECRET));
-  const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const signature = await cloudinarySignature({
+    allowed_formats: allowedFormats,
+    folder: uploadFolder,
+    overwrite: "false",
+    timestamp: String(timestamp),
+    unique_filename: "true",
+    use_filename: "false",
+  }, env.CLOUDINARY_API_SECRET);
   return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, allowedFormats, overwrite: false, uniqueFilename: true, useFilename: false, signature });
 }
 
