@@ -214,20 +214,26 @@ class OrderService {
 
     // فحص واجهة مبكر لشرح سبب التقييد؛ قواعد Firestore تظل الحماية النهائية
     // وتمنع الطلب حتى لو استخدم العميل إصدارًا قديمًا من التطبيق.
-    final restriction = await FirebaseFirestore.instance
-        .collection('customer_restrictions')
-        .doc(user.uid)
-        .get();
-    final restrictionData = restriction.data();
-    final expiresAt = restrictionData?['expiresAt'];
-    if (restrictionData?['active'] == true &&
-        expiresAt is Timestamp &&
-        expiresAt.toDate().isAfter(DateTime.now())) {
-      final until = expiresAt.toDate();
-      throw StateError(
-        'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
-        '${until.day}/${until.month}/${until.year}. تواصل مع الإدارة لو محتاج مراجعة.',
-      );
+    try {
+      final restriction = await FirebaseFirestore.instance
+          .collection('customer_restrictions')
+          .doc(user.uid)
+          .get();
+      final restrictionData = restriction.data();
+      final expiresAt = restrictionData?['expiresAt'];
+      if (restrictionData?['active'] == true &&
+          expiresAt is Timestamp &&
+          expiresAt.toDate().isAfter(DateTime.now())) {
+        final until = expiresAt.toDate();
+        throw StateError(
+          'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
+          '${until.day}/${until.month}/${until.year}. تواصل مع الإدارة لو محتاج مراجعة.',
+        );
+      }
+    } on FirebaseException catch (error) {
+      // قبل نشر القواعد الجديدة قد لا تسمح القواعد الحالية بقراءة هذا المسار.
+      // نترك قرار السماح النهائي لقواعد إنشاء الطلب المنشورة.
+      if (error.code != 'permission-denied') rethrow;
     }
 
     // نتحقق من المحل من Firestore وقت إرسال الطلب، ولا نعتمد على بيانات السلة
