@@ -1118,13 +1118,14 @@ service cloud.firestore {
         d.name is string && d.name.size() >= 2 && d.name.size() <= 80 &&
         optStr(d, 'phone', 11) &&
         optStr(d, 'storeId', 128) &&
-        (d.get('phone', '') == '' || d.phone.matches('^01[0125][0-9]{8}
+        (d.get('phone', '') == '' || d.phone.matches('^01[0125][0-9]{8}$')) &&
         (d.type != 'courier' ||
           (d.get('phone', '') is string && d.phone.matches('^01[0125][0-9]{8}$'))) &&
-        optStr(d, 'storeName', 100) && optStr(d, 'storeCategory', 60) && optStr(d, 'address', 300) &&
-        optStr(d, 'vehicle', 60) && optStr(d, 'notes', 500) &&
-        optStr(d, 'storeImageUrl', 450) && optStr(d, 'registrationNumber', 30) &&
-        optStr(d, 'proofUrl', 450) && optStr(d, 'storePhone', 20) &&
+        optStr(d, 'storeName', 100) && optStr(d, 'storeCategory', 60) &&
+        optStr(d, 'address', 300) && optStr(d, 'vehicle', 60) &&
+        optStr(d, 'notes', 500) && optStr(d, 'storeImageUrl', 450) &&
+        optStr(d, 'registrationNumber', 30) && optStr(d, 'proofUrl', 450) &&
+        optStr(d, 'storePhone', 20) &&
         (d.get('storePhone', '') == '' || d.storePhone.matches('^[0-9]{8,11}$')) &&
         (d.type != 'courier' || !('storeId' in d)) &&
         (d.type != 'store_owner' ||
@@ -1139,13 +1140,13 @@ service cloud.firestore {
            getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('imageUrl', '') == d.get('storeImageUrl', '') &&
            getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('storePhone', '') == d.get('storePhone', ''))) &&
         (d.type != 'store_owner' ||
-          ('storeName' in d && d.storeName.size() >= 2 && 'storeCategory' in d && validStoreCategory(d.storeCategory) &&
+          ('storeName' in d && d.storeName.size() >= 2 &&
+           'storeCategory' in d && validStoreCategory(d.storeCategory) &&
            'address' in d && d.address.size() >= 5 &&
            'storeImageUrl' in d && d.storeImageUrl.matches('https://.*') &&
            (d.get('registrationNumber', '').size() >= 6 ||
             d.get('proofUrl', '').matches('https://.*') ||
-            d.get('storePhone', '').matches('^[0-9]{8,11}$')))) &&
-        // طلب معلّق واحد فقط لكل مستخدم عبر نوعي الانضمام.
+            d.get('storePhone', '').matches('^[0-9]{8,11}$'))) &&
         (d.type == 'store_owner'
           ? (!exists(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')) ||
              get(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')).data.status != 'pending')
