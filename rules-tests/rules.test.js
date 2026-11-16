@@ -932,9 +932,15 @@ test('role_requests: المستخدم يبعت طلبه هو فقط، والمد
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust2_courier'), req('cust2')));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier2'), req('cust1', { type: 'courier2' })));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_store_owner'), req('cust1', { type: 'store_owner' }))); // من غير اسم محل
-  // طلب محل يتطلب صورة ورقم سجل أو إثبات، والحد طلب معلّق واحد لكل مستخدم.
+  // طلب محل يتطلب صورة وأحد بدائل الإثبات: سجل أو رابط أو تليفون المحل. رقم صاحب المحل اختياري.
   const storeReq = { ...req('cust3', { type: 'store_owner', storeName: 'متجر', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', registrationNumber: '123456' }) };
   await assertSucceeds(setDoc(doc(as('cust3'), 'role_requests/cust3_store_owner'), storeReq));
+  const storePhoneReq = { ...req('cust5', { type: 'store_owner', storeName: 'متجر هاتف', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', storePhone: '01012345678' }) };
+  delete storePhoneReq.phone;
+  await assertSucceeds(setDoc(doc(as('cust5'), 'role_requests/cust5_store_owner'), storePhoneReq));
+  const noOwnerPhoneReq = { ...req('cust6', { type: 'store_owner', storeName: 'متجر بلا هاتف شخصي', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', registrationNumber: '123456' }) };
+  delete noOwnerPhoneReq.phone;
+  await assertSucceeds(setDoc(doc(as('cust6'), 'role_requests/cust6_store_owner'), noOwnerPhoneReq));
   await assertFails(setDoc(doc(as('cust3'), 'role_requests/cust3_courier'), req('cust3')));
   await assertFails(setDoc(doc(as('cust4'), 'role_requests/cust4_store_owner'), { ...req('cust4', { type: 'store_owner', storeName: 'متجر', storeCategory: 'بقالة', address: 'شارع رئيسي ١' }) }));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1', { status: 'approved' })));
