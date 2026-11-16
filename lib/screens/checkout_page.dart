@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,7 +7,6 @@ import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
 import '../services/user_service.dart';
-import '../services/worker_notify_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -199,17 +197,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
         courierNotes: _courierNotes.text.trim(),
       );
 
-      // إرسال الإشعارات عبر Cloudflare Worker المجاني
-      try {
-        await WorkerNotifyService.notifyOrderCreated(
-          orderId: orderId ?? 'new',
-          userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-          storeId: cart.storeId ?? '',
-          customerName: _name.text.trim(),
-          storeName: cart.storeName ?? 'المحل',
-          total: cart.total,
-        );
-      } catch (_) {}
 
       navigator.popUntil((route) => route.isFirst);
       shellTab.value = 2;
