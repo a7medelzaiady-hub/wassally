@@ -1242,6 +1242,50 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
   await assertSucceeds(getDoc(doc(admin, 'courier_settlement_balances/cour1')));
 });
 
+test('courier settlements: التوريدان المتزامنان لا يضاعفان الرصيد', async () => {
+  const admin = as('admin1');
+  const initial = writeBatch(admin);
+  initial.set(doc(admin, 'courier_settlements/base'), {
+    courierId: 'cour1', courierName: 'C', amount: 10, amountMinor: 1000,
+    note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+  });
+  initial.set(doc(admin, 'courier_settlement_balances/cour1'), {
+    courierId: 'cour1', settledAmountMinor: 1000,
+    lastSettlementId: 'base', updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(initial.commit());
+
+  const makeAttempt = (id) => {
+    const batch = writeBatch(admin);
+    batch.set(doc(admin, `courier_settlements/${id}`), {
+      courierId: 'cour1', courierName: 'C', amount: 5, amountMinor: 500,
+      note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+    });
+    batch.update(doc(admin, 'courier_settlement_balances/cour1'), {
+      settledAmountMinor: 1500,
+      lastSettlementId: id,
+      updatedAt: serverTimestamp(),
+    });
+    return batch.commit();
+  };
+
+  const results = await Promise.allSettled([
+    makeAttempt('parallel-a'),
+    makeAttempt('parallel-b'),
+  ]);
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+  const { collection, getDocs, query, where } = require('firebase/firestore');
+  const receipts = await assertSucceeds(getDocs(query(
+    collection(admin, 'courier_settlements'),
+    where('courierId', '==', 'cour1'),
+  )));
+  assert.equal(receipts.size, 2);
+  assert.equal(
+    (await getDoc(doc(admin, 'courier_settlement_balances/cour1'))).data().settledAmountMinor,
+    1500,
+  );
+});
+
 test('courier settlements: لا يقبل مبلغًا غير صالح أو إيصالًا دون رصيد مطابق', async () => {
   const admin = as('admin1');
   const invalid = writeBatch(admin);
