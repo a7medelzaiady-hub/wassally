@@ -40,8 +40,9 @@ class ImageService {
 
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1280, // تصغير الصورة قبل الرفع لتوفير الحجم والسرعة
-      imageQuality: 80,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 80, // ضغط محلي قبل الرفع لتقليل استهلاك البيانات والمساحة
     );
     if (picked == null) return null;
 
