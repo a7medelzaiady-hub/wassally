@@ -403,6 +403,8 @@ class _HomePageState extends State<HomePage>
           roles.contains(AppRole.storeOwner) ||
           roles.contains(AppRole.supervisor);
       final fm = FirebaseMessaging.instance;
+      // تحديثات التطبيق تصل لكل الأدوار، بما فيها الإدارة وأصحاب المحلات.
+      await fm.subscribeToTopic('app_updates');
       if (isStaff) {
         await fm.unsubscribeFromTopic('all');
       } else {
