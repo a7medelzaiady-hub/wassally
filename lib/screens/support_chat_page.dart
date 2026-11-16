@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/chat_service.dart';
 import '../services/live_alerts_service.dart';
+import '../services/worker_notify_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
@@ -63,6 +64,16 @@ class _SupportChatPageState extends State<SupportChatPage> {
         await ChatService.sendAsUser(t);
       }
       _ctrl.clear();
+
+      // إرسال الإشعار الفوري عبر Cloudflare Worker بدون الحاجة لـ Cloud Functions
+      final userName = FirebaseAuth.instance.currentUser?.displayName ?? '';
+      final msgId = DateTime.now().millisecondsSinceEpoch.toString();
+      WorkerNotifyService.notifySupportMessage(
+        chatUid: _chatUid,
+        messageId: msgId,
+        senderRole: _asAdmin ? 'admin' : 'user',
+        userName: userName,
+      );
     } on FirebaseException catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('تعذر الإرسال (${e.code}). جرّب تاني.')),
