@@ -1228,6 +1228,16 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
 
   await assertSucceeds(getDoc(doc(as('cour1'), 'courier_settlements/s1')));
   await assertFails(getDoc(doc(as('cust1'), 'courier_settlements/s1')));
+  const { collection, getDocs, query, where } = require('firebase/firestore');
+  const ownReceipts = query(
+    collection(as('cour1'), 'courier_settlements'),
+    where('courierId', '==', 'cour1'),
+  );
+  await assertSucceeds(getDocs(ownReceipts));
+  await assertFails(getDocs(collection(as('cour1'), 'courier_settlements')));
+  await assertFails(setDoc(doc(as('cour1'), 'courier_settlements/forged'), {
+    ...settlement, createdAt: serverTimestamp(),
+  }));
   await assertFails(getDoc(doc(as('cour1'), 'courier_settlement_balances/cour1')));
   await assertSucceeds(getDoc(doc(admin, 'courier_settlement_balances/cour1')));
 });
