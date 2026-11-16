@@ -111,8 +111,8 @@ service cloud.firestore {
 
     // لو stampDeliveries شغّال: أي تسليم من المندوب لازم يجي مع الختم.
     function stampRequired(k) {
-      return !securityFlag('stampDeliveries') ||
-        request.resource.data.get('status', '') != 'delivered' ||
+      // ختم التسليم المالي إلزامي دائمًا؛ لا نعتمد على flag يمكن أن يكون غير مفعّل.
+      return request.resource.data.get('status', '') != 'delivered' ||
         k.hasAll(stampKeys());
     }
 
@@ -120,9 +120,9 @@ service cloud.firestore {
       return {'new': 0, 'preparing': 1, 'on_the_way': 2, 'delivered': 3, 'cancelled': 9}[st];
     }
 
-    // المدير: ما يغيّرش حالة نهائية، ويتحرك للأمام أو يلغي بس.
+    // كل انتقال إداري للأمام فقط، ولا يمكن إعادة فتح طلب نهائي حتى لو لم يوجد flag.
     function adminMoveOk(k) {
-      return !('status' in k) || !securityFlag('strictOrders') || (
+      return !('status' in k) || (
         !(resource.data.get('status', '') in ['delivered', 'cancelled']) &&
         (request.resource.data.get('status', '') == 'cancelled' ||
          statusRank(request.resource.data.get('status', '')) > statusRank(resource.data.get('status', ''))));
@@ -456,9 +456,7 @@ service cloud.firestore {
           stampRequired(k) &&
           ((resource.data.get('status', '') == 'preparing' &&
               request.resource.data.get('status', '') == 'on_the_way' &&
-              (!securityFlag('courierAfterReady') || resource.data.get('ready', false) == true)) ||
-           (resource.data.get('status', '') == 'new' && !securityFlag('courierAfterPrep') &&
-              request.resource.data.get('status', '') == 'on_the_way') ||
+              resource.data.get('ready', false) == true) ||
            (resource.data.get('status', '') == 'on_the_way' &&
               request.resource.data.get('status', '') == 'delivered')) &&
           historyGate(orderId, k)
