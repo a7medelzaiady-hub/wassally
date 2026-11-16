@@ -306,6 +306,109 @@ test('claim/edit race: التعديل أولًا يحدّث feed ثم الاست
 });
 
 
+async function seedOnWay(deliveryMode = 'external') {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const courierId = deliveryMode === 'store' ? 'storecour1' : 'cour1';
+    await updateDoc(doc(db, 'orders/o1'), {
+      status: 'on_the_way',
+      courierId,
+      courierName: 'C',
+      courierAt: new Date(),
+      pickedUpAt: new Date(),
+      courierArrivedAt: new Date(),
+      deliveryMode,
+      ready: true,
+    });
+  });
+}
+
+async function reportDelivery(courierId = 'cour1') {
+  await assertSucceeds(updateDoc(doc(as(courierId), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(),
+    customerDeliveryReportedBy: courierId,
+  }));
+}
+
+test('delivery lifecycle: المندوب يبلغ بالتسليم ولا يستطيع إغلاق الطلب مباشرة', async () => {
+  await seedOnWay('external');
+  const courier = as('cour1');
+  await assertFails(updateDoc(doc(courier, 'orders/o1'), {
+    status: 'delivered',
+    deliveredBy: 'cour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  }));
+  await reportDelivery();
+  const afterReport = (await getDoc(doc(as('cust1'), 'orders/o1'))).data();
+  assert.equal(afterReport.status, 'on_the_way');
+  assert.equal(afterReport.customerDeliveryReportedBy, 'cour1');
+  await assertFails(updateDoc(doc(courier, 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(),
+    customerDeliveryReportedBy: 'cour1',
+  }));
+});
+
+test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب المحل', async () => {
+  await seedOnWay('store');
+  await reportDelivery('storecour1');
+  const db = as('cust1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    status: 'delivered',
+    customerConfirmedAt: serverTimestamp(),
+    deliveredBy: 'storecour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  });
+  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'cust1',
+    actorRole: 'customer', at: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+  const order = (await getDoc(doc(db, 'orders/o1'))).data();
+  assert.equal(order.status, 'delivered');
+  assert.equal(order.deliveredBy, 'storecour1');
+});
+
+test('delivery lifecycle: المندوب الخارجي يسلم النقدية والمحل وحده يغلق الطلب', async () => {
+  await seedOnWay('external');
+  await reportDelivery('cour1');
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), {
+    customerConfirmedAt: serverTimestamp(),
+  }));
+  const courier = as('cour1');
+  await assertSucceeds(updateDoc(doc(courier, 'orders/o1'), {
+    cashHandedToStoreAt: serverTimestamp(),
+    cashHandedToStoreBy: 'cour1',
+  }));
+  await assertFails(updateDoc(doc(courier, 'orders/o1'), {
+    status: 'delivered',
+    deliveredBy: 'cour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  }));
+  const owner = as('owner1');
+  const b = writeBatch(owner);
+  b.update(doc(owner, 'orders/o1'), {
+    status: 'delivered',
+    deliveredBy: 'cour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  });
+  b.set(doc(owner, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'owner1',
+    actorRole: 'storeOwner', at: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+  const order = (await getDoc(doc(owner, 'orders/o1'))).data();
+  assert.equal(order.status, 'delivered');
+});
+
 test('customer: تعديل الطلب وبيانات التواصل يُرفض بعد تعيين المندوب', async () => {
   await assertSucceeds(changeStatus(as('owner1'), 'o1', 'new', 'preparing', 'owner'));
   await env.withSecurityRulesDisabled((c) =>
