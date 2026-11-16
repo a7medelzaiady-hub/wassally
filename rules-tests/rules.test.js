@@ -333,6 +333,9 @@ async function reportDelivery(courierId = 'cour1') {
 test('delivery lifecycle: المندوب يبلغ بالتسليم ولا يستطيع إغلاق الطلب مباشرة', async () => {
   await seedOnWay('external');
   const courier = as('cour1');
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), {
+    customerConfirmedAt: serverTimestamp(),
+  }));
   await assertFails(updateDoc(doc(courier, 'orders/o1'), {
     status: 'delivered',
     deliveredBy: 'cour1',
@@ -340,6 +343,20 @@ test('delivery lifecycle: المندوب يبلغ بالتسليم ولا يست
     collectedAmount: 40,
     courierEarning: 20,
   }));
+  const admin = as('admin1');
+  const adminClose = writeBatch(admin);
+  adminClose.update(doc(admin, 'orders/o1'), {
+    status: 'delivered',
+    deliveredBy: 'cour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  });
+  adminClose.set(doc(admin, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'admin1',
+    actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertFails(adminClose.commit());
   await reportDelivery();
   const afterReport = (await getDoc(doc(as('cust1'), 'orders/o1'))).data();
   assert.equal(afterReport.status, 'on_the_way');
@@ -379,6 +396,20 @@ test('delivery lifecycle: المندوب الخارجي يسلم النقدية 
   await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), {
     customerConfirmedAt: serverTimestamp(),
   }));
+  const owner = as('owner1');
+  const earlyClose = writeBatch(owner);
+  earlyClose.update(doc(owner, 'orders/o1'), {
+    status: 'delivered',
+    deliveredBy: 'cour1',
+    deliveredAt: serverTimestamp(),
+    collectedAmount: 40,
+    courierEarning: 20,
+  });
+  earlyClose.set(doc(owner, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'owner1',
+    actorRole: 'storeOwner', at: serverTimestamp(),
+  });
+  await assertFails(earlyClose.commit());
   const courier = as('cour1');
   await assertSucceeds(updateDoc(doc(courier, 'orders/o1'), {
     cashHandedToStoreAt: serverTimestamp(),
