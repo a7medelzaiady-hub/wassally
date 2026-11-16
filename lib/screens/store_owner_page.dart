@@ -897,6 +897,34 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     );
   }
 
+  Future<void> _confirmCashReceived() async {
+    if (_busy) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'تأكيد استلام النقدية',
+      message: 'أكدت استلام قيمة الطلب من المندوب الخارجي؟ بعد التأكيد سيتم إغلاق الطلب.',
+      confirmLabel: 'تأكيد الاستلام وإغلاق الطلب',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.confirmCashReceived(widget.order);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تأكيد استلام النقدية وإغلاق الطلب.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تأكيد استلام النقدية.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _rateCustomer() async {
     if (_busy || widget.order.userId.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -1194,6 +1222,25 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
           if (o.activeDeliveryIssueId.isNotEmpty) ...[
             const SizedBox(height: 12),
             _returnedIssuePanel(o),
+          ],
+          if (o.status == OrderStatus.onTheWay && o.deliveryMode == 'external' &&
+              o.customerConfirmedAt != null && o.cashHandedToStoreAt != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _confirmCashReceived,
+                icon: const Icon(Icons.payments_outlined),
+                label: const Text('تأكيد استلام النقدية من المندوب'),
+              ),
+            ),
+          ] else if (o.status == OrderStatus.onTheWay &&
+              o.deliveryMode == 'external' && o.customerConfirmedAt != null) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'العميل أكد الاستلام. في انتظار المندوب لتسليم النقدية للمحل.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
           ],
           if (o.status == OrderStatus.delivered && o.userId.isNotEmpty) ...[
             const SizedBox(height: 12),
