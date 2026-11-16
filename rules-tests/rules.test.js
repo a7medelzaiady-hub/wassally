@@ -932,6 +932,10 @@ test('role_requests: المستخدم يبعت طلبه هو فقط، والمد
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust2_courier'), req('cust2')));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier2'), req('cust1', { type: 'courier2' })));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_store_owner'), req('cust1', { type: 'store_owner' }))); // من غير اسم محل
+  // طلب محل يتطلب صورة ورقم سجل أو إثبات، والحد طلب معلّق واحد لكل مستخدم.
+  const storeReq = { ...req('cust1', { type: 'store_owner', storeName: 'متجر', storeCategory: 'بقالة', address: 'شارع رئيسي ١', storeImageUrl: 'https://example.com/store.jpg', registrationNumber: '123456' }) };
+  await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_store_owner'), storeReq));
+  await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1')));
   await assertFails(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), req('cust1', { status: 'approved' })));
   await assertFails(setDoc(doc(as('cust2'), 'role_requests/cust2_courier'), req('cust2', { phone: '123' })));
   // قراءة
@@ -947,6 +951,7 @@ test('role_requests: المستخدم يبعت طلبه هو فقط، والمد
   const rv = { status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1' };
   await assertFails(updateDoc(doc(as('admin1'), 'role_requests/cust1_courier'), { ...rv, name: 'hack' }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'role_requests/cust1_courier'), rv));
+  // لا يمكن للمستخدم تقديم طلب ثانٍ أثناء وجود طلب آخر معلق.
   await assertSucceeds(setDoc(doc(as('admin1'), 'couriers/cust1'), { name: 'Ali', phone: '01012345678', active: true }, { merge: true }));
   // إعادة التقديم بعد الرفض فقط
   await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'role_requests/cust1_courier'), { status: 'rejected' }));
