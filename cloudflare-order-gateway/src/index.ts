@@ -969,18 +969,50 @@ export async function cloudinarySignature(
     byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function signCloudinaryUpload(request: Request, env: Env): Promise<Response> {
+function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { format: "jpg", mime: "image/jpeg" };
+  }
+  if (bytes.length >= 8 &&
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+      bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a &&
+      bytes[6] === 0x1a && bytes[7] === 0x0a) {
+    return { format: "png", mime: "image/png" };
+  }
+  if (bytes.length >= 12 &&
+      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") {
+    return { format: "webp", mime: "image/webp" };
+  }
+  return null;
+}
+
+async function uploadCloudinaryImage(request: Request, env: Env): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
-    throw new HttpError(503, "خدمة رفع الصور الموقّع غير مهيأة على الخادم.");
+    throw new HttpError(503, "خدمة رفع الصور الآمنة غير مهيأة على الخادم.");
   }
-  let input: any;
-  try { input = await request.json(); } catch { throw new HttpError(400, "بيانات رفع الصورة غير مفهومة."); }
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "صيغة بيانات رفع الصورة غير صحيحة.");
-  const folder = String(input.folder ?? "");
-  const storeId = String(input.storeId ?? "").trim();
-  if (!["stores", "products", "banners"].includes(folder)) throw new HttpError(400, "مجلد الصور غير مسموح.");
-  if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) throw new HttpError(400, "معرّف المحل غير صالح.");
+
+  let input: FormData;
+  try {
+    input = await request.formData();
+  } catch {
+    throw new HttpError(400, "ملف الصورة غير مفهوم.");
+  }
+  const folder = String(input.get("folder") ?? "");
+  const storeId = String(input.get("storeId") ?? "").trim();
+  const file = input.get("file");
+  if (!(file instanceof File)) throw new HttpError(400, "اختار صورة صحيحة قبل الرفع.");
+  if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+    throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
+  }
+  if (!["stores", "products", "banners"].includes(folder)) {
+    throw new HttpError(400, "مجلد الصور غير مسموح.");
+  }
+  if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
+    throw new HttpError(400, "معرّف المحل غير صالح.");
+  }
+
   const token = await googleAccessToken(env);
   const [adminDoc, ownerDoc, roleRequestDoc] = await Promise.all([
     getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
@@ -1004,22 +1036,48 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
   if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner) || isApplicant)) {
     throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
   }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const detected = detectImageContent(bytes);
+  if (!detected) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
   const uploadFolder = folder === "banners" || isAdmin
     ? folder
     : `${folder}/${isApplicant ? (requestedStoreId || "applications/" + uid) : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
-  const allowedFormats = "jpg,jpeg,png,webp";
   const publicId = crypto.randomUUID();
-  const signature = await cloudinarySignature({
-    allowed_formats: allowedFormats,
+  const signedParams = {
+    allowed_formats: "jpg,jpeg,png,webp",
     folder: uploadFolder,
     overwrite: "false",
     public_id: publicId,
     timestamp: String(timestamp),
     unique_filename: "true",
     use_filename: "false",
-  }, env.CLOUDINARY_API_SECRET);
-  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, publicId, allowedFormats, overwrite: false, uniqueFilename: true, useFilename: false, signature });
+  };
+  const signature = await cloudinarySignature(signedParams, env.CLOUDINARY_API_SECRET);
+  const upload = new FormData();
+  upload.append("file", new Blob([bytes], { type: detected.mime }), `${publicId}.${detected.format}`);
+  upload.append("api_key", env.CLOUDINARY_API_KEY);
+  for (const [key, value] of Object.entries(signedParams)) upload.append(key, value);
+  upload.append("signature", signature);
+
+  const uploaded = await fetch(
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: "POST", body: upload },
+  );
+  if (!uploaded.ok) {
+    const detail = (await uploaded.text()).slice(0, 300);
+    console.error("Cloudinary upload failed", uploaded.status, detail);
+    throw new HttpError(502, "تعذر رفع الصورة إلى خدمة الصور. حاول مرة أخرى.");
+  }
+  const result = await uploaded.json() as { secure_url?: string };
+  const secureUrl = typeof result.secure_url === "string" ? result.secure_url : "";
+  let parsedUrl: URL;
+  try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
+  if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname.endsWith("cloudinary.com")) {
+    throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
+  }
+  return response({ url: secureUrl });
 }
 
 export default {
@@ -1047,14 +1105,14 @@ export default {
         return response({ error: e.message }, e.status, headers);
       }
     }
-    if (request.method === "POST" && url.pathname === "/v1/uploads/sign") {
+    if (request.method === "POST" && url.pathname === "/v1/uploads") {
       try {
-        const result = await signCloudinaryUpload(request, env);
+        const result = await uploadCloudinaryImage(request, env);
         const mergedHeaders = new Headers(result.headers);
         headers.forEach((value, key) => mergedHeaders.set(key, value));
         return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
       } catch (error) {
-        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر تجهيز رفع الصورة.");
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر رفع الصورة.");
         return response({ error: e.message }, e.status, headers);
       }
     }
