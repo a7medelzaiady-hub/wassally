@@ -959,7 +959,17 @@ service cloud.firestore {
       allow get, list: if signedIn() &&
         (isAdmin() || resource.data.get('reviewerId', '') == request.auth.uid);
       allow create: if signedIn() && validCustomerReview(rid, request.resource.data);
-      allow update, delete: if false;
+      // لا نغيّر التقييم الأصلي؛ الإدارة فقط تستطيع استبعاده بعد مراجعة موثقة.
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'moderationStatus', 'adminNote', 'moderatedAt', 'moderatedBy'
+        ]) &&
+        request.resource.data.get('moderationStatus', '') in ['excluded', 'restored'] &&
+        request.resource.data.get('adminNote', '') is string &&
+        request.resource.data.get('adminNote', '').size() <= 300 &&
+        request.resource.data.get('moderatedAt', null) == request.time &&
+        request.resource.data.get('moderatedBy', '') == request.auth.uid;
+      allow delete: if false;
     }
 
     // التقييد مؤقت وبقرار إداري فقط؛ التقييم المنخفض وحده لا يفرضه تلقائيًا.
