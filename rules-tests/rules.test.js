@@ -1146,13 +1146,14 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
     courierId: 'cour1',
     courierName: 'C',
     amount: 10,
+    amountMinor: 1000,
     note: 'توريد نقدية',
     createdBy: 'admin1',
     createdAt: serverTimestamp(),
   };
   const balance = {
     courierId: 'cour1',
-    settledAmount: 10,
+    settledAmountMinor: 1000,
     lastSettlementId: 's1',
     updatedAt: serverTimestamp(),
   };
@@ -1172,10 +1173,10 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
 
   const wrongAmount = writeBatch(admin);
   wrongAmount.set(doc(admin, 'courier_settlements/s2'), {
-    ...settlement, amount: 5, createdAt: serverTimestamp(),
+    ...settlement, amount: 5, amountMinor: 500, createdAt: serverTimestamp(),
   });
   wrongAmount.update(doc(admin, 'courier_settlement_balances/cour1'), {
-    settledAmount: 16,
+    settledAmountMinor: 1600,
     lastSettlementId: 's2',
     updatedAt: serverTimestamp(),
   });
@@ -1186,7 +1187,7 @@ test('courier settlements: الإيصال ورصيد المندوب لازم ي�
     ...settlement, amount: 5, createdAt: serverTimestamp(),
   });
   second.update(doc(admin, 'courier_settlement_balances/cour1'), {
-    settledAmount: 15,
+    settledAmountMinor: 1500,
     lastSettlementId: 's2',
     updatedAt: serverTimestamp(),
   });
@@ -1205,6 +1206,7 @@ test('courier settlements: لا يقبل مبلغًا غير صالح أو إي�
     courierId: 'cour1',
     courierName: 'C',
     amount: 0,
+    amountMinor: 0,
     note: '',
     createdBy: 'admin1',
     createdAt: serverTimestamp(),
@@ -1216,13 +1218,14 @@ test('courier settlements: لا يقبل مبلغًا غير صالح أو إي�
     courierId: 'cour1',
     courierName: 'C',
     amount: 12,
+    amountMinor: 1200,
     note: '',
     createdBy: 'admin1',
     createdAt: serverTimestamp(),
   });
   mismatched.set(doc(admin, 'courier_settlement_balances/cour1'), {
     courierId: 'cour1',
-    settledAmount: 11,
+    settledAmountMinor: 1100,
     lastSettlementId: 'mismatch',
     updatedAt: serverTimestamp(),
   });
