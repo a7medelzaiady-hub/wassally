@@ -125,7 +125,7 @@ service cloud.firestore {
           k.hasAll(stampKeys()));
     }
 
-    // لو strictOrders شغّال: تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch).
+    // تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch) دائمًا.
     function historyGate(orderId, k) {
       // سجل الحالة إلزامي دائمًا عند تغيير status، وليس مرتبطًا بمفتاح تشغيل اختياري.
       return !('status' in k) ||
