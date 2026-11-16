@@ -36,7 +36,8 @@ class MyComplaintsPage extends StatelessWidget {
               stream: FirebaseFirestore.instance
                   .collection('complaints')
                   .where('userId', isEqualTo: uid)
-                  .limit(50)
+                  .orderBy('createdAt', descending: true)
+                   .limit(50)
                   .snapshots(),
               builder: (context, snap) {
                 if (snap.hasError) {
