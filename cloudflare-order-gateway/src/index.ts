@@ -678,15 +678,29 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
   if (!["stores", "products", "banners"].includes(folder)) throw new HttpError(400, "مجلد الصور غير مسموح.");
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) throw new HttpError(400, "معرّف المحل غير صالح.");
   const token = await googleAccessToken(env);
-  const [adminDoc, ownerDoc] = await Promise.all([
+  const [adminDoc, ownerDoc, roleRequestDoc] = await Promise.all([
     getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
     getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
+    getDocument(env, `role_requests/${encodeURIComponent(uid + "_store_owner")}`, token),
   ]);
   const isAdmin = adminDoc !== null;
   const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
   const isOwner = ownerDoc !== null && owner.active !== false && owner.storeId === storeId;
-  if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner))) throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
-  const uploadFolder = folder === "banners" || isAdmin ? folder : `${folder}/${storeId}`;
+  const roleRequest = roleRequestDoc ? decodeFields(roleRequestDoc.fields ?? {}) : {};
+  const requestedStoreId = typeof roleRequest.storeId === "string" ? roleRequest.storeId : "";
+  const applicantStoreDoc = folder === "stores" && requestedStoreId &&
+    ["pending", "rejected"].includes(String(roleRequest.status))
+      ? await getDocument(env, `stores/${encodeURIComponent(requestedStoreId)}`, token)
+      : null;
+  const applicantStore = applicantStoreDoc ? decodeFields(applicantStoreDoc.fields ?? {}) : {};
+  const isApplicant = applicantStoreDoc !== null && applicantStore.ownerUid === uid &&
+    (storeId === "" || storeId === requestedStoreId);
+  if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner) || isApplicant)) {
+    throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
+  }
+  const uploadFolder = folder === "banners" || isAdmin
+    ? folder
+    : `${folder}/${isApplicant ? requestedStoreId : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const allowedFormats = "jpg,jpeg,png,webp";
   const params = `allowed_formats=${allowedFormats}&folder=${uploadFolder}&timestamp=${timestamp}`;
