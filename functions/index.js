@@ -184,15 +184,9 @@ exports.onRoleRequestUpdated = onDocumentUpdated('role_requests/{requestId}', as
 });
 
 /** إشعار كل المندوبين النشطين عند ظهور طلب جديد في قائمة الطلبات المتاحة. */
-exports.onCourierOrderAvailable = onDocumentCreated('courier_available_orders/{orderId}', async (event) => {
-  const order = event.data && event.data.data();
-  if (!order) return;
-  const couriers = await db.collection('couriers').where('active', '==', true).get();
-  const ids = couriers.docs.map((doc) => doc.id);
-  await notify(ids, 'طلب توصيل جديد متاح',
-    `${String(order.storeName || 'محل').slice(0, 80)} • افتح التطبيق لمراجعة الطلب والتقديم عليه`,
-    { type: 'available_order', orderId: event.params.orderId });
-});
+// إرسال تنبيه المندوبين انتقل إلى Order Gateway بعد حفظ الطلب لتجنب الاعتماد
+// على Cloud Functions في مسار الإشعار. نُبقي هذا trigger بلا إرسال لتوافق النشر المرحلي.
+exports.onCourierOrderAvailable = onDocumentCreated('courier_available_orders/{orderId}', async () => {});
 
 exports.onOrderCreated = onDocumentCreated('orders/{orderId}', async (event) => {
   const order = event.data && event.data.data();
