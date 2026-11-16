@@ -1026,7 +1026,8 @@ class _DeliveryIssuesTab extends StatelessWidget {
     'in_review': 'قيد المراجعة',
     'retry': 'إعادة محاولة معتمدة',
     'return_to_store': 'مطلوب إرجاعه للمحل',
-    'returned_to_store': 'تم الإرجاع للمحل',
+    'returned_to_store': 'بانتظار تأكيد المحل',
+    'store_confirmed_return': 'المحل أكد استلام المرتجع',
     'resolved': 'تم الحل',
   };
 
@@ -1085,12 +1086,14 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
       'in_review' => 'الإدارة بدأت مراجعة تعذر التسليم.',
       'retry' => 'الإدارة وافقت على إعادة محاولة التسليم بعد التواصل مع العميل.',
       'return_to_store' => 'الإدارة طلبت إعادة الطلب إلى المحل.',
+      'store_confirmed_return' => 'الإدارة اعتمدت استلام المحل للمرتجع بعد المراجعة.',
       _ => 'تم تحديث البلاغ.',
     };
     final labels = {
       'in_review': 'بدء المراجعة',
       'retry': 'إعادة المحاولة',
       'return_to_store': 'إرجاع للمحل',
+      'store_confirmed_return': 'اعتماد استلام المحل',
     };
     final ok = await confirmDialog(
       context,
@@ -1187,7 +1190,20 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
           ] else if (status == 'returned_to_store') ...[
             const SizedBox(height: 8),
             const Text(
-              'المندوب أكد رجوع الطلب. افتح الطلب في لوحة الإدارة لإغلاقه بعد مراجعة الحالة.',
+              'المندوب أكد رجوع الطلب. انتظر تأكيد صاحب المحل لاستلام المرتجع.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: OutlinedButton(
+                onPressed: _busy ? null : () => _decide('store_confirmed_return'),
+                child: const Text('اعتماد استلام المحل إداريًا'),
+              ),
+            ),
+          ] else if (status == 'store_confirmed_return') ...[
+            const SizedBox(height: 8),
+            const Text(
+              'تم تأكيد استلام المحل للمرتجع. يمكنك الآن إغلاق الطلب من لوحة الإدارة.',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
             ),
           ],
