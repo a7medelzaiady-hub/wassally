@@ -15,6 +15,23 @@ class CustomerRatingService {
     'other': 'سبب آخر',
   };
 
+  /// فحص وجود تقييم سابق عند ضغط المستخدم فقط، دون قراءة تقييمات كل الطلبات.
+  static Future<bool> hasRated({
+    required String orderId,
+    required String reviewerRole,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final result = await FirebaseFirestore.instance
+        .collection('customer_reviews')
+        .where('reviewerId', isEqualTo: uid)
+        .where('orderId', isEqualTo: orderId)
+        .where('reviewerRole', isEqualTo: reviewerRole)
+        .limit(1)
+        .get();
+    return result.docs.isNotEmpty;
+  }
+
   static Future<void> rate({
     required String orderId,
     required String customerId,
