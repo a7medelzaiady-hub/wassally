@@ -640,6 +640,7 @@ class StaffOrderService {
     final orderRef = _orders.doc(orderId);
     final courierRef = db.collection('couriers').doc(courier.id);
     final feedRef = db.collection('courier_available_orders').doc(orderId);
+    var assignedName = 'مندوب';
     await db.runTransaction((tx) async {
       final orderSnap = await tx.get(orderRef);
       final courierSnap = await tx.get(courierRef);
@@ -657,13 +658,20 @@ class StaffOrderService {
       if (courierData.containsKey('active') && courierData['active'] != true) {
         throw StateError('المندوب غير نشط.');
       }
+      // نستخدم أحدث بيانات المندوب من المستند الذي قرأته الـ Transaction،
+      // وليس نسخة قديمة محفوظة في شاشة الاختيار.
+      assignedName = (courierData['name'] ?? 'مندوب').toString().trim();
+      if (assignedName.isEmpty) assignedName = 'مندوب';
+      if (assignedName.length > 80) assignedName = assignedName.substring(0, 80);
+      var assignedPhone = (courierData['phone'] ?? '').toString().trim();
+      if (assignedPhone.length > 20) assignedPhone = '';
       tx.update(orderRef, {
         'courierId': courier.id,
-        'courierName': courier.name,
-        'courierPhone': courier.phone,
+        'courierName': assignedName,
+        'courierPhone': assignedPhone,
         'courierAt': FieldValue.serverTimestamp(),
       });
-      // الطلب اتعيّن: شيله من قايمة المناديب المتاحة.
+      // الطلب اتعيّن: شيله من قايمة المناديب المتاحة في نفس الـ Transaction.
       tx.delete(feedRef);
     });
 
@@ -671,7 +679,7 @@ class StaffOrderService {
       final snap = await orderRef.get();
       await _notify(courier.id, 'طلب جديد ليك', 'تم تكليفك بطلب جديد.', orderId);
       await _notify(snap.data()?['userId']?.toString(), 'تم تعيين مندوب',
-          '${courier.name} هيتولى توصيل طلبك.', orderId);
+          '$assignedName هيتولى توصيل طلبك.', orderId);
     } catch (e) { debugPrint('Assign notify error: $e'); }
   }
 
