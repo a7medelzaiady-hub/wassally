@@ -95,11 +95,11 @@ class _OffersPageState extends State<OffersPage> {
           oldPrice: hasDiscount ? old : 0,
           text: text,
         ));
-        }
+      }
 
       // المصدر الأساسي للعروض هو كتالوج المحل نفسه. نقرأ على صفحات
       // حتى لا تختفي العروض الموجودة بعد أول 200 أو 500 صنف.
-      var loadedCatalog = false;
+      var catalogHasDocuments = false;
       try {
         Query<Map<String, dynamic>> query =
             doc.reference.collection('products').limit(200);
@@ -113,7 +113,7 @@ class _OffersPageState extends State<OffersPage> {
           }
           final products =
               await query.get(const GetOptions(source: Source.server));
-          loadedCatalog = true;
+          if (products.docs.isNotEmpty) catalogHasDocuments = true;
           for (final product in products.docs) {
             add(product.data(), id: product.id);
           }
@@ -126,7 +126,7 @@ class _OffersPageState extends State<OffersPage> {
 
       // نستخدم الملخص والبيانات القديمة كبديل عند تعذر قراءة الكتالوج فقط؛
       // لا نسمح لملخص قديم بإظهار عرض تم إلغاؤه أو انتهى بالفعل.
-      if (!loadedCatalog) {
+      if (!catalogHasDocuments) {
         final highlights = data['offerItems'];
         if (highlights is List) {
           for (final entry in highlights) {
