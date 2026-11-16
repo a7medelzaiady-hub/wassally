@@ -720,15 +720,17 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
     : `${folder}/${isApplicant ? (requestedStoreId || "applications/" + uid) : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const allowedFormats = "jpg,jpeg,png,webp";
+  const publicId = crypto.randomUUID();
   const signature = await cloudinarySignature({
     allowed_formats: allowedFormats,
     folder: uploadFolder,
     overwrite: "false",
+    public_id: publicId,
     timestamp: String(timestamp),
     unique_filename: "true",
     use_filename: "false",
   }, env.CLOUDINARY_API_SECRET);
-  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, allowedFormats, overwrite: false, uniqueFilename: true, useFilename: false, signature });
+  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, publicId, allowedFormats, overwrite: false, uniqueFilename: true, useFilename: false, signature });
 }
 
 export default {
