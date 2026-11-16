@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/chat_service.dart';
+import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/role_request_service.dart';
 import '../services/staff_order_service.dart';
@@ -20,7 +21,7 @@ class AdminInboxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
@@ -32,6 +33,7 @@ class AdminInboxPage extends StatelessWidget {
               Tab(text: 'تقديمات المناديب'),
               Tab(text: 'المحادثات'),
               Tab(text: 'الشكاوى والاقتراحات'),
+              Tab(text: 'تقييم العملاء'),
             ],
           ),
         ),
@@ -41,6 +43,7 @@ class AdminInboxPage extends StatelessWidget {
             _ApplicantsTab(),
             _ChatsTab(),
             _ComplaintsTab(),
+            _CustomerRatingsTab(),
           ],
         ),
       ),
@@ -704,6 +707,250 @@ class _ChatsTab extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _CustomerRatingsTab extends StatelessWidget {
+  const _CustomerRatingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: CustomerRatingService.watchAllReviews(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return EmptyState(
+            icon: Icons.lock_outline,
+            title: 'تعذر تحميل تقييمات العملاء',
+            message: _errText(snap.error),
+          );
+        }
+        if (!snap.hasData) {
+          return Center(child: CircularProgressIndicator(color: kPrimary));
+        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return const EmptyState(
+            icon: Icons.star_outline_rounded,
+            title: 'لا توجد تقييمات للعملاء حتى الآن',
+            message: 'تقييمات المندوبين وأصحاب المحلات ستظهر هنا بعد اكتمال الطلبات.',
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (_, index) => _CustomerReviewCard(doc: docs[index]),
+        );
+      },
+    );
+  }
+}
+
+class _CustomerReviewCard extends StatefulWidget {
+  final _Doc doc;
+  const _CustomerReviewCard({required this.doc});
+
+  @override
+  State<_CustomerReviewCard> createState() => _CustomerReviewCardState();
+}
+
+class _CustomerReviewCardState extends State<_CustomerReviewCard> {
+  bool _busy = false;
+
+  Future<void> _restrict(String customerId, String orderId, String detail) async {
+    final controller = TextEditingController(
+      text: 'مراجعة تقييم منخفض: $detail',
+    );
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('سبب التقييد المؤقت'),
+          content: TextField(
+            controller: controller,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 300,
+            decoration: const InputDecoration(
+              hintText: 'اكتب الواقعة التي راجعتها الإدارة',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().length >= 5) {
+                  Navigator.pop(ctx, controller.text.trim());
+                }
+              },
+              child: const Text('تقييد 3 أيام'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.restrictCustomer(
+        customerId: customerId,
+        sourceOrderId: orderId,
+        reason: reason,
+        durationDays: 3,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم فرض تقييد مؤقت بعد مراجعة الإدارة.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر فرض التقييد: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _lift(String customerId) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'رفع التقييد؟',
+      message: 'السماح للعميل بإنشاء الطلبات مرة أخرى.',
+      confirmLabel: 'رفع التقييد',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.liftRestriction(customerId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم رفع التقييد.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر رفع التقييد: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.doc.data();
+    final customerId = (data['customerId'] ?? '').toString();
+    final orderId = (data['orderId'] ?? '').toString();
+    final rating = (data['rating'] as num?)?.toInt() ?? 0;
+    final role = data['reviewerRole'] == 'courier' ? 'المندوب' : 'صاحب المحل';
+    final reason = CustomerRatingService.reasonLabels[
+          (data['reason'] ?? '').toString()
+        ] ??
+        'سبب غير محدد';
+    final comment = (data['comment'] ?? '').toString();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'تقييم العميل: $rating / 5',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                ),
+              ),
+              Chip(
+                label: Text(role),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          Text('العميل: $customerId', style: const TextStyle(fontSize: 12)),
+          Text('الطلب: $orderId', style: const TextStyle(fontSize: 12)),
+          const SizedBox(height: 6),
+          Text('السبب: $reason'),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('ملاحظة: $comment'),
+          ],
+          const SizedBox(height: 4),
+          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
+          const Divider(height: 18),
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: customerId.isEmpty
+                ? const Stream.empty()
+                : FirebaseFirestore.instance
+                    .collection('customer_restrictions')
+                    .doc(customerId)
+                    .snapshots(),
+            builder: (context, restrictionSnap) {
+              final restriction = restrictionSnap.data?.data();
+              final expiry = restriction?['expiresAt'];
+              final active = restriction?['active'] == true &&
+                  expiry is Timestamp &&
+                  expiry.toDate().isAfter(DateTime.now());
+              if (active) {
+                return Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'العميل عليه تقييد مؤقت',
+                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _busy ? null : () => _lift(customerId),
+                      child: const Text('رفع التقييد'),
+                    ),
+                  ],
+                );
+              }
+              if (rating > 2 || customerId.isEmpty || orderId.isEmpty) {
+                return const Text(
+                  'لا يوجد إجراء تلقائي. التقييمات المنخفضة فقط تُعرض للمراجعة.',
+                  style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                );
+              }
+              return Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy
+                      ? null
+                      : () => _restrict(customerId, orderId, reason),
+                  icon: const Icon(Icons.gpp_maybe_outlined),
+                  label: const Text('مراجعة وتقييد 3 أيام'),
+                ),
+              );
+            },
+          ),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: LinearProgressIndicator(),
+            ),
+        ],
+      ),
     );
   }
 }
