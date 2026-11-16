@@ -59,6 +59,23 @@ class CustomerRatingService {
     }
   }
 
+  static Future<void> moderateReview({
+    required String reviewId,
+    required String note,
+    required bool exclude,
+  }) async {
+    final admin = FirebaseAuth.instance.currentUser;
+    if (admin == null) throw StateError('سجّل دخول الإدارة.');
+    final clean = note.trim();
+    if (clean.length < 5) throw ArgumentError('اكتب سبب المراجعة.');
+    await FirebaseFirestore.instance.collection('customer_reviews').doc(reviewId).update({
+      'moderationStatus': exclude ? 'excluded' : 'restored',
+      'adminNote': clean.length > 300 ? clean.substring(0, 300) : clean,
+      'moderatedAt': FieldValue.serverTimestamp(),
+      'moderatedBy': admin.uid,
+    });
+  }
+
   static Stream<QuerySnapshot<Map<String, dynamic>>> watchAllReviews() =>
       FirebaseFirestore.instance
           .collection('customer_reviews')
