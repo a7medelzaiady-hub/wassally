@@ -54,7 +54,8 @@ class OrderGateway {
             })
             ..body = '{}')
           .timeout(const Duration(seconds: 90));
-      result = await http.Response.fromStream(streamed);
+      result = await http.Response.fromStream(streamed)
+          .timeout(const Duration(seconds: 90));
     } catch (_) {
       throw StateError('تعذر الاتصال بخدمة حذف الحساب. لم يتم تأكيد الحذف؛ حاول مرة أخرى.');
     } finally {
@@ -72,9 +73,10 @@ class OrderGateway {
       final message = (body['error'] ?? '').toString().trim();
       throw StateError(message.isNotEmpty
           ? message
-          : 'لم يؤكد الخادم حذف الحساب (\${result.statusCode}).');
+          : 'لم يؤكد الخادم حذف الحساب (' + result.statusCode.toString() + ').');
     }
   }
+
   static Future<void> _send({
     required String idToken,
     required String method,
