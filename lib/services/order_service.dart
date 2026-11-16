@@ -227,7 +227,7 @@ class OrderService {
         final until = expiresAt.toDate();
         throw StateError(
           'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
-          '${until.day}/${until.month}/${until.year}. تواصل مع الإدارة لو محتاج مراجعة.',
+          '${until.day}/${until.month}/${until.year}. لو شايف إن القرار محتاج مراجعة، افتح زر الشكاوى واختر «اعتراض على تقييد».',
         );
       }
     } on FirebaseException catch (error) {
