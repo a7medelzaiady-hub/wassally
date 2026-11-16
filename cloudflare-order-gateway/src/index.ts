@@ -1,0 +1,454 @@
+import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+
+interface Env {
+  FIREBASE_PROJECT_ID: string;
+  FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
+  FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
+  ALLOWED_ORIGINS?: string;
+  DEFAULT_DELIVERY_FEE?: string;
+  MAX_ORDER_LINES?: string;
+  MAX_LINE_QTY?: string;
+}
+
+type JsonMap = Record<string, unknown>;
+type FirestoreDoc = { name: string; fields?: Record<string, unknown>; updateTime?: string };
+
+class HttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+const firebaseKeys = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
+);
+let cachedAccessToken: { token: string; expiresAt: number } | undefined;
+
+function response(body: unknown, status = 200, headers: HeadersInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", ...headers },
+  });
+}
+
+function corsHeaders(request: Request, env: Env): Headers {
+  const headers = new Headers({ "Vary": "Origin" });
+  const origin = request.headers.get("Origin");
+  const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+  if (origin && allowed.length && !allowed.includes(origin)) {
+    throw new HttpError(403, "Origin is not allowed.");
+  }
+  if (origin && (!allowed.length || allowed.includes(origin))) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    headers.set("Access-Control-Max-Age", "600");
+  }
+  return headers;
+}
+
+function decodeValue(value: any): any {
+  if ("nullValue" in value) return null;
+  if ("stringValue" in value) return value.stringValue;
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return Number(value.doubleValue);
+  if ("timestampValue" in value) return new Date(value.timestampValue);
+  if ("arrayValue" in value) return (value.arrayValue.values ?? []).map(decodeValue);
+  if ("mapValue" in value) return decodeFields(value.mapValue.fields ?? {});
+  return null;
+}
+
+function decodeFields(fields: Record<string, any>): JsonMap {
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, decodeValue(value)]));
+}
+
+function encodeValue(value: any): any {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") return Number.isInteger(value)
+    ? { integerValue: String(value) }
+    : { doubleValue: value };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(encodeValue) } };
+  if (typeof value === "object") return { mapValue: { fields: encodeFields(value) } };
+  throw new Error("Unsupported Firestore value.");
+}
+
+function encodeFields(fields: JsonMap): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, encodeValue(value)]));
+}
+
+function money(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export function calculateDiscount(subtotal: number, percent: number): number {
+  if (!Number.isFinite(subtotal) || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
+    return 0;
+  }
+  return Math.floor(subtotal * percent + 1e-8) / 100;
+}
+
+export function effectiveCatalogPrice(product: JsonMap, now = Date.now()): number {
+  const base = Number(product.price);
+  const oldPrice = Number(product.oldPrice ?? 0);
+  if (!Number.isFinite(base) || base <= 0 || base > 20000) {
+    throw new HttpError(409, "يوجد صنف بسعر غير صالح في الكتالوج.");
+  }
+  const expiry = product.offerEndsAt instanceof Date ? product.offerEndsAt.getTime() : null;
+  if (expiry !== null && expiry <= now && oldPrice > base) return money(oldPrice);
+  return money(base);
+}
+
+async function verifyCustomer(request: Request, env: Env): Promise<string> {
+  const auth = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  try {
+    const { payload } = await jwtVerify(token, firebaseKeys, {
+      audience: env.FIREBASE_PROJECT_ID,
+      issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
+    });
+    if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128) {
+      throw new Error("Missing subject");
+    }
+    return payload.sub;
+  } catch {
+    throw new HttpError(401, "رمز تسجيل الدخول غير صالح أو منتهي.");
+  }
+}
+
+async function googleAccessToken(env: Env): Promise<string> {
+  if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 60_000) {
+    return cachedAccessToken.token;
+  }
+  const privateKey = env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, "\n");
+  const key = await importPKCS8(privateKey, "RS256");
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await new SignJWT({
+    scope: "https://www.googleapis.com/auth/datastore",
+  })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
+    .setSubject(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(key);
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  if (!tokenResponse.ok) throw new HttpError(503, "تعذر الاتصال بخدمة قاعدة البيانات.");
+  const data = await tokenResponse.json() as { access_token?: string; expires_in?: number };
+  if (!data.access_token) throw new HttpError(503, "تعذر الحصول على صلاحية قاعدة البيانات.");
+  cachedAccessToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
+  };
+  return data.access_token;
+}
+
+function documentPath(projectId: string, path: string): string {
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+}
+
+async function getDocument(env: Env, path: string, token: string): Promise<FirestoreDoc | null> {
+  const result = await fetch(documentPath(env.FIREBASE_PROJECT_ID, path), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (result.status === 404) return null;
+  if (!result.ok) throw new HttpError(503, "تعذر قراءة بيانات الطلب من قاعدة البيانات.");
+  return await result.json() as FirestoreDoc;
+}
+
+async function batchGetDocuments(env: Env, paths: string[], token: string): Promise<Map<string, JsonMap>> {
+  if (!paths.length) return new Map();
+  const result = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:batchGet`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ documents: paths.map((path) =>
+        `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`) }),
+    },
+  );
+  if (!result.ok) throw new HttpError(503, "تعذر تحميل كتالوج الأصناف.");
+  const text = await result.text();
+  const docs = new Map<string, JsonMap>();
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    const item = JSON.parse(line) as { found?: FirestoreDoc };
+    if (item.found?.name) {
+      const path = item.found.name.split("/documents/")[1];
+      docs.set(path, decodeFields(item.found.fields ?? {}));
+    }
+  }
+  return docs;
+}
+
+function productFromLegacy(store: JsonMap, name: string): JsonMap {
+  const list = Array.isArray(store.products) ? store.products as JsonMap[] : [];
+  const normalized = name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const matches = list.filter((item) =>
+    String(item.name ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase() === normalized);
+  if (matches.length !== 1) {
+    throw new HttpError(409, matches.length
+      ? "يوجد أكثر من صنف بنفس الاسم في الكتالوج القديم؛ يلزم ترحيل الأصناف."
+      : "الصنف لم يعد موجودًا في كتالوج المحل.");
+  }
+  return matches[0];
+}
+
+function validateContact(contact: any): JsonMap {
+  if (!contact || typeof contact !== "object") throw new HttpError(400, "بيانات التواصل غير مكتملة.");
+  const userName = String(contact.userName ?? "").trim();
+  const phone = String(contact.phone ?? "").trim();
+  const address = String(contact.address ?? "").trim();
+  const courierNotes = String(contact.courierNotes ?? "").trim();
+  if (userName.length < 1 || userName.length > 80 ||
+      !/^01[0125][0-9]{8}$/.test(phone) ||
+      address.length < 5 || address.length > 300 ||
+      courierNotes.length > 300) {
+    throw new HttpError(400, "راجع الاسم ورقم الهاتف والعنوان.");
+  }
+  return { userName, phone, address, ...(courierNotes ? { courierNotes } : {}) };
+}
+
+async function createOrder(request: Request, env: Env): Promise<Response> {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
+      !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
+  }
+  const uid = await verifyCustomer(request, env);
+  let input: any;
+  try {
+    input = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات الطلب غير مفهومة.");
+  }
+
+  const orderId = String(input.orderId ?? "");
+  const storeId = String(input.storeId ?? "").trim();
+  const lines = Array.isArray(input.items) ? input.items : [];
+  const area = String(input.area ?? "").trim();
+  const promoCode = String(input.promoCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const customerName = String(input.customerName ?? "").trim().split(/\s+/)[0] ?? "";
+  const notes = String(input.notes ?? "").trim();
+  const contact = validateContact(input.contact);
+
+  if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  if (!storeId || storeId.length > 100 || customerName.length < 1 ||
+      customerName.length > 30 || notes.length > 500 ||
+      lines.length < 1 || lines.length > Number(env.MAX_ORDER_LINES ?? 100)) {
+    throw new HttpError(400, "بيانات الطلب خارج الحدود المسموحة.");
+  }
+
+  const token = await googleAccessToken(env);
+  const orderPath = `orders/${orderId}`;
+  const existing = await getDocument(env, orderPath, token);
+  if (existing) {
+    const old = decodeFields(existing.fields ?? {});
+    if (old.userId === uid) return response({ orderId, reused: true });
+    throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
+  }
+
+  const [storeDoc, restrictionDoc, limitDoc, areasDoc] = await Promise.all([
+    getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
+    getDocument(env, `customer_restrictions/${uid}`, token),
+    getDocument(env, `orderLimits/${uid}`, token),
+    getDocument(env, "app_info/delivery_areas", token),
+  ]);
+  if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
+  const store = decodeFields(storeDoc.fields ?? {});
+  if (store.active !== true) throw new HttpError(409, "المحل مغلق حاليًا.");
+  const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
+  if (restriction.active === true &&
+      restriction.expiresAt instanceof Date &&
+      restriction.expiresAt.getTime() > Date.now()) {
+    throw new HttpError(403, "حسابك مقيّد مؤقتًا. راجع زر الشكاوى للاعتراض.");
+  }
+  const previousLimit = limitDoc ? decodeFields(limitDoc.fields ?? {}) : {};
+  const lastAt = previousLimit.lastAt instanceof Date ? previousLimit.lastAt.getTime() : 0;
+  if (lastAt && Date.now() - lastAt < 20_000) {
+    throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.");
+  }
+
+  const areaList = areasDoc ? (decodeFields(areasDoc.fields ?? {}).areas as JsonMap[] ?? []) : [];
+  let deliveryFee = Number(env.DEFAULT_DELIVERY_FEE ?? 20);
+  let orderArea = "";
+  if (areaList.length) {
+    const selected = areaList.find((entry) => String(entry.name ?? "").trim() === area);
+    if (!selected) throw new HttpError(400, "اختار منطقة توصيل صالحة.");
+    deliveryFee = Number(selected.fee);
+    orderArea = area;
+  } else if (area) {
+    throw new HttpError(400, "قائمة مناطق التوصيل غير مفعّلة؛ أعد تحميل صفحة الدفع.");
+  }
+  if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 500) {
+    throw new HttpError(409, "رسوم التوصيل غير مضبوطة في إعدادات الإدارة.");
+  }
+
+  const productIds = [...new Set(lines.map((line: any) => String(line?.productId ?? "").trim()).filter(Boolean))];
+  if (productIds.some((id) => id.includes("/") || id.length > 150)) {
+    throw new HttpError(400, "معرّف صنف غير صالح.");
+  }
+  const productPaths = productIds.map((id) => `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(id)}`);
+  const productDocs = await batchGetDocuments(env, productPaths, token);
+
+  const seen = new Set<string>();
+  const items: JsonMap[] = [];
+  let subtotal = 0;
+  for (const line of lines) {
+    const qty = Number(line?.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
+      throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
+    }
+    const productId = String(line?.productId ?? "").trim();
+    let product: JsonMap;
+    let resolvedId = productId;
+    if (productId) {
+      const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
+      const found = productDocs.get(path);
+      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.");
+      product = found;
+    } else {
+      const name = String(line?.name ?? "").trim();
+      if (!name || name.length > 120) throw new HttpError(400, "صنف قديم بدون اسم صالح.");
+      product = productFromLegacy(store, name);
+      resolvedId = "";
+    }
+    if (product.available === false || product.isAvailable === false) {
+      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
+    }
+    const name = String(product.name ?? "").trim();
+    if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
+    const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
+    if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
+    seen.add(identity);
+    const price = effectiveCatalogPrice(product);
+    subtotal = money(subtotal + price * qty);
+    items.push({ name, price, qty, ...(resolvedId ? { productId: resolvedId } : {}) });
+  }
+  if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
+    throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
+  }
+
+  let discount = 0;
+  let normalizedPromo = "";
+  if (promoCode) {
+    const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
+    const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
+    const percent = Number(promo.percent ?? 0);
+    if (promo.active !== true || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
+      throw new HttpError(409, "الكوبون لم يعد صالحًا.");
+    }
+    discount = calculateDiscount(subtotal, percent);
+    if (discount > 0 && discount < subtotal) normalizedPromo = promoCode;
+    else discount = 0;
+  }
+  const total = money(subtotal + deliveryFee - discount);
+  if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
+
+  const order: JsonMap = {
+    userId: uid,
+    customerName,
+    notes,
+    storeId,
+    storeName: String(store.name ?? "").trim(),
+    items,
+    subtotal,
+    deliveryFee,
+    total,
+    paymentMethod: "cash",
+    status: "new",
+    ...(orderArea ? { area: orderArea } : {}),
+    ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
+  };
+  if (!order.storeName || order.storeName.length > 100) {
+    throw new HttpError(409, "بيانات المحل غير مكتملة.");
+  }
+
+  const writes = [
+    {
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}`,
+        fields: encodeFields(order),
+      },
+      updateTransforms: [{ fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    },
+    {
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}/private/contact`,
+        fields: encodeFields(contact),
+      },
+      currentDocument: { exists: false },
+    },
+    {
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/orderLimits/${uid}`,
+        fields: {},
+      },
+      updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: limitDoc?.updateTime
+        ? { updateTime: limitDoc.updateTime }
+        : { exists: false },
+    },
+  ];
+  const committed = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes }),
+    },
+  );
+  if (committed.status === 409 || committed.status === 400) {
+    throw new HttpError(409, "تم تغيير الطلب بالتزامن. راجع طلباتك قبل إعادة المحاولة.");
+  }
+  if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
+  return response({ orderId, subtotal, deliveryFee, discount, total, items });
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    let headers: Headers;
+    try {
+      headers = corsHeaders(request, env);
+    } catch (error) {
+      const e = error instanceof HttpError ? error : new HttpError(403, "Origin is not allowed.");
+      return response({ error: e.message }, e.status);
+    }
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") {
+      return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
+    }
+    if (request.method !== "POST" || url.pathname !== "/v1/orders") {
+      return response({ error: "Not found." }, 404, headers);
+    }
+    try {
+      return await createOrder(request, env).then(async (result) => {
+        const body = await result.text();
+        return new Response(body, {
+          status: result.status,
+          headers: { ...Object.fromEntries(result.headers), ...Object.fromEntries(headers) },
+        });
+      });
+    } catch (error) {
+      const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
+      return response({ error: e.message }, e.status, headers);
+    }
+  },
+};
