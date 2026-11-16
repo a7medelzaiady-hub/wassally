@@ -109,6 +109,8 @@ class OrderStatusWriter {
     final update = <String, dynamic>{
       ...extra,
       'status': to.key,
+      if (to == OrderStatus.onTheWay)
+        'pickedUpAt': FieldValue.serverTimestamp(),
       // إزالة إسناد المندوب عند إلغاء الطلب قبل الاستلام أو بعد رجوعه للمحل.
       if (cancellingBeforePickup || cancellingAfterReturn) ...{
         'courierId': FieldValue.delete(),
