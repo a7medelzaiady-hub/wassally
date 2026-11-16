@@ -293,7 +293,10 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                         .length;
                     final current = mine.where(_isCurrent).toList();
                     final completed = mine
-                        .where((o) => o.status == OrderStatus.delivered)
+                        .where((o) =>
+                            o.status == OrderStatus.delivered ||
+                            (o.status == OrderStatus.cancelled &&
+                                o.lastDeliveryIssueId.isNotEmpty))
                         .toList();
                     final List<AppOrder> shown = switch (_tab) {
                       _Tab.available => available,
@@ -535,7 +538,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   @override
   void initState() {
     super.initState();
-    if (widget.order.status != OrderStatus.delivered) _loadContact();
+    if (widget.order.status != OrderStatus.delivered &&
+        widget.order.status != OrderStatus.cancelled) {
+      _loadContact();
+    }
   }
 
   @override
@@ -545,7 +551,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         oldWidget.order.status != widget.order.status) {
       _contact = null;
       _contactFailed = false;
-      if (widget.order.status != OrderStatus.delivered) _loadContact();
+      if (widget.order.status != OrderStatus.delivered &&
+          widget.order.status != OrderStatus.cancelled) {
+        _loadContact();
+      }
     }
   }
 
@@ -1111,7 +1120,9 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               ),
             ),
           ],
-          if (o.status == OrderStatus.delivered && o.userId.isNotEmpty) ...[
+          if ((o.status == OrderStatus.delivered ||
+                  (o.status == OrderStatus.cancelled && o.lastDeliveryIssueId.isNotEmpty)) &&
+              o.userId.isNotEmpty) ...[
             const SizedBox(height: 12),
             if (_customerRated)
               const Text(
