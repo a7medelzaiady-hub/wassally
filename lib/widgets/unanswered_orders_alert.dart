@@ -19,13 +19,15 @@ class UnansweredOrdersAlert extends StatefulWidget {
 class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
   Timer? _clock;
   late Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
+  late DateTime _now;
 
   @override
   void initState() {
     super.initState();
+    _now = DateTime.now();
     _stream = _watch();
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _stream = _watch());
+      if (mounted) setState(() => _now = DateTime.now());
     });
   }
 
@@ -37,11 +39,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
     if (storeId != null && storeId.isNotEmpty) {
       query = query.where('storeId', isEqualTo: storeId);
     }
-    final cutoff = Timestamp.fromDate(
-      DateTime.now().subtract(const Duration(minutes: 5)),
-    );
     return query
-        .where('createdAt', isLessThanOrEqualTo: cutoff)
         .orderBy('createdAt')
         .limit(100)
         .snapshots();
@@ -61,11 +59,14 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
         if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return const SizedBox.shrink();
         }
-        final docs = snapshot.data!.docs;
-        final createdAt = docs.first.data()['createdAt'];
-        final oldest = createdAt is Timestamp
-            ? DateTime.now().difference(createdAt.toDate()).inMinutes
-            : 5;
+        final docs = snapshot.data!.docs.where((doc) {
+          final createdAt = doc.data()['createdAt'];
+          return createdAt is Timestamp &&
+              _now.difference(createdAt.toDate()) >= const Duration(minutes: 5);
+        }).toList();
+        if (docs.isEmpty) return const SizedBox.shrink();
+        final firstCreatedAt = docs.first.data()['createdAt'] as Timestamp;
+        final oldest = _now.difference(firstCreatedAt.toDate()).inMinutes;
         final count = docs.length;
         return Container(
           width: double.infinity,
