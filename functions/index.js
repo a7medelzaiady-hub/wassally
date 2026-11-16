@@ -6,7 +6,7 @@
  * - تكليف مندوب بطلب    ← المندوب
  * - طلب اتلغى / اتسلّم  ← المديرين (والمندوب في حالة الإلغاء)
  *
- * معرّفات تثبيت FCM متخزنة في users/{uid}.fcmInstallationIds، مع دعم مؤقت للتوكنات القديمة.
+ * رموز FCM الفعلية متخزنة في users/{uid}.fcmTokens.
  */
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -196,7 +196,6 @@ exports.onSupportMessageCreated = onDocumentCreated(
     const chatRef = db.collection('support_chats').doc(uid);
     const chatSnap = await chatRef.get();
     const chat = chatSnap.exists ? chatSnap.data() : {};
-    const preview = String(message.text || '').slice(0, 100);
     const fromUser = message.senderRole === 'user';
     const recipients = fromUser ? await adminUids() : [uid];
     const title = fromUser
