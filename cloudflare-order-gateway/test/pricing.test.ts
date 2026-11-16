@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, effectiveCatalogPrice, firstName } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, effectiveCatalogPrice, firstName } from "../src/index";
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
@@ -66,5 +66,34 @@ describe("customer name normalization", () => {
     expect(firstName("Single")).toBe("Single");
     expect(firstName("   ")).toBe("");
     expect(firstName(null)).toBe("");
+  });
+});
+
+describe("Cloudinary upload signatures", () => {
+  it("signs a canonical sorted parameter set and changes when the folder changes", async () => {
+    const params = {
+      timestamp: "1794850000",
+      folder: "stores/store_1",
+      allowed_formats: "jpg,jpeg,png,webp",
+      overwrite: "false",
+      unique_filename: "true",
+      use_filename: "false",
+    };
+    const first = await cloudinarySignature(params, "test-secret");
+    const same = await cloudinarySignature({
+      use_filename: "false",
+      folder: "stores/store_1",
+      overwrite: "false",
+      timestamp: "1794850000",
+      unique_filename: "true",
+      allowed_formats: "jpg,jpeg,png,webp",
+    }, "test-secret");
+    const otherFolder = await cloudinarySignature(
+      { ...params, folder: "stores/store_2" },
+      "test-secret",
+    );
+    expect(first).toMatch(/^[a-f0-9]{40}$/);
+    expect(same).toBe(first);
+    expect(otherFolder).not.toBe(first);
   });
 });
