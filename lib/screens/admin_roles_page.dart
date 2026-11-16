@@ -185,9 +185,14 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
                       child: ListTile(
                         title: Text((d.data()['name'] ?? 'مندوب').toString()),
                         subtitle: Text(
-                          (d.data()['phone'] ?? '').toString().isEmpty
-                              ? d.id
-                              : '${d.data()['phone']}',
+                          [
+                            if ((d.data()['phone'] ?? '').toString().isNotEmpty)
+                              d.data()['phone'].toString(),
+                            (d.data()['storeId'] ?? '').toString().isEmpty
+                                ? 'مندوب خارجي'
+                                : 'تابع للمحل: ${d.data()['storeId']}',
+                            d.id,
+                          ].join(' • '),
                         ),
                         leading: Switch(
                           value: (d.data()['active'] as bool?) ?? true,
