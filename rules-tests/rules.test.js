@@ -1272,6 +1272,19 @@ test('courier unassignment: لا يُفك الإسناد إلا مع إعادة 
 });
 
 
+test('serverOrders: عند تفعيل البوابة الموثوقة تُرفض كتابة الطلب وحدّ الطلب مباشرة من التطبيق', async () => {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'app_info/security'), { serverOrders: true });
+  });
+  await assertFails(setDoc(doc(as('cust1'), 'orders/gateway-required'), {
+    ...baseOrder('cust1'),
+    createdAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(as('cust1'), 'orderLimits/cust1'), {
+    lastAt: serverTimestamp(),
+  }));
+});
+
 test('courier settlements: الإيصال ورصيد المندوب لازم يتسجلوا ذريًا وبنفس المبلغ', async () => {
   const admin = as('admin1');
   const settlement = {
