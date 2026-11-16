@@ -5,12 +5,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
 import '../screens/support_chat_page.dart';
 import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
-import 'update_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -150,10 +151,28 @@ class NotificationService {
     }, SetOptions(merge: true));
   }
 
+  static Future<void> _openAppStore() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final uri = Uri.https(
+        'play.google.com',
+        '/store/apps/details',
+        {'id': info.packageName},
+      );
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) throw StateError('Google Play could not be opened');
+    } catch (e) {
+      debugPrint('تعذر فتح Google Play: $e');
+      messengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('تعذر فتح Google Play')),
+      );
+    }
+  }
+
   static void _openMessage(RemoteMessage message) {
     final type = (message.data['type'] ?? '').toString();
     if (type == 'app_update') {
-      unawaited(UpdateService.openStoreFromNotification());
+      unawaited(_openAppStore());
       return;
     }
     if (type == 'support_chat') {
