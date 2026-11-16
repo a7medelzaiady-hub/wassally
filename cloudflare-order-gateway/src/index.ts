@@ -598,14 +598,17 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
     }
-    const editMatch = url.pathname.match(/^\\/v1\\/orders\\/([^/]+)$/);
+    const editPrefix = "/v1/orders/";
+    const rawEditId = url.pathname.startsWith(editPrefix)
+      ? url.pathname.slice(editPrefix.length)
+      : "";
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
-    const isEdit = request.method === "PATCH" && editMatch !== null;
+    const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
     if (!isCreate && !isEdit) return response({ error: "Not found." }, 404, headers);
     try {
       const result = isCreate
         ? await createOrder(request, env)
-        : await updateOrder(request, env, decodeURIComponent(editMatch![1]));
+        : await updateOrder(request, env, decodeURIComponent(rawEditId));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
       return new Response(await result.text(), {
