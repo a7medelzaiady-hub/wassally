@@ -708,14 +708,15 @@ async function signCloudinaryUpload(request: Request, env: Env): Promise<Respons
       ? await getDocument(env, `stores/${encodeURIComponent(requestedStoreId)}`, token)
       : null;
   const applicantStore = applicantStoreDoc ? decodeFields(applicantStoreDoc.fields ?? {}) : {};
-  const isApplicant = applicantStoreDoc !== null && applicantStore.ownerUid === uid &&
-    (storeId === "" || storeId === requestedStoreId);
+  const isApplicant = (applicantStoreDoc !== null && applicantStore.ownerUid === uid &&
+    (storeId === "" || storeId === requestedStoreId)) ||
+    (folder === "stores" && storeId === "" && !requestedStoreId);
   if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner) || isApplicant)) {
     throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
   }
   const uploadFolder = folder === "banners" || isAdmin
     ? folder
-    : `${folder}/${isApplicant ? requestedStoreId : storeId}`;
+    : `${folder}/${isApplicant ? (requestedStoreId || "applications/" + uid) : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const allowedFormats = "jpg,jpeg,png,webp";
   const signature = await cloudinarySignature({
