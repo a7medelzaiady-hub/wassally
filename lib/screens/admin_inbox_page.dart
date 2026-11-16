@@ -59,8 +59,15 @@ String _errText(Object? e) => e is FirebaseException
 
 String _date(dynamic ts) => ts is Timestamp ? formatDateTime(ts.toDate()) : '';
 
-class _RequestsTab extends StatelessWidget {
+class _RequestsTab extends StatefulWidget {
   const _RequestsTab();
+
+  @override
+  State<_RequestsTab> createState() => _RequestsTabState();
+}
+
+class _RequestsTabState extends State<_RequestsTab> {
+  int _limit = 100;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +76,7 @@ class _RequestsTab extends StatelessWidget {
       stream: FirebaseFirestore.instance
           .collection('role_requests')
           .where('status', isEqualTo: 'pending')
+          .limit(_limit)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -96,9 +104,14 @@ class _RequestsTab extends StatelessWidget {
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
+          itemCount: docs.length + (docs.length >= _limit ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (_, i) => _RequestCard(doc: docs[i]),
+          itemBuilder: (_, i) => i == docs.length
+              ? TextButton(
+                  onPressed: () => setState(() => _limit += 100),
+                  child: const Text('تحميل المزيد من الطلبات'),
+                )
+              : _RequestCard(doc: docs[i]),
         );
       },
     );
@@ -407,8 +420,15 @@ class _RequestCardState extends State<_RequestCard> {
 }
 
 /// كل تقديمات المناديب على الطلبات اللي لسه من غير مندوب. المدير يختار ويعيّن من هنا.
-class _ApplicantsTab extends StatelessWidget {
+class _ApplicantsTab extends StatefulWidget {
   const _ApplicantsTab();
+
+  @override
+  State<_ApplicantsTab> createState() => _ApplicantsTabState();
+}
+
+class _ApplicantsTabState extends State<_ApplicantsTab> {
+  int _limit = 100;
 
   @override
   Widget build(BuildContext context) {
@@ -416,6 +436,7 @@ class _ApplicantsTab extends StatelessWidget {
       // المراجعة مستمرة أولًا بأول؛ لا نخفي أي تقديم بسبب حد ثابت.
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
+          .limit(_limit)
           .snapshots(),
       builder: (context, snap) {
         if (snap.hasError) {
@@ -444,9 +465,14 @@ class _ApplicantsTab extends StatelessWidget {
         }
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
+          itemCount: docs.length + (docs.length >= _limit ? 1 : 0),
           separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (_, i) => _ApplicantCard(doc: docs[i]),
+          itemBuilder: (_, i) => i == docs.length
+              ? TextButton(
+                  onPressed: () => setState(() => _limit += 100),
+                  child: const Text('تحميل المزيد من التقديمات'),
+                )
+              : _ApplicantCard(doc: docs[i]),
         );
       },
     );
