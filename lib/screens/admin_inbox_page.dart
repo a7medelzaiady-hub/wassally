@@ -248,7 +248,7 @@ class _RequestCardState extends State<_RequestCard> {
         storeId: storeId,
         newStoreName: newStoreName,
       ),
-      'تم القبول. المستخدم يقفل التطبيق ويفتحه تاني.',
+      'تم القبول وتحديث صلاحيات المستخدم.',
     );
   }
 
