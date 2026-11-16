@@ -84,7 +84,7 @@ class _OffersPageState extends State<OffersPage> {
           return;
         }
   
-        final key = '${store.id}/${name.toLowerCase()}';
+        final key = '${store.id}/${id.isNotEmpty ? id : name.toLowerCase()}';
         if (!seen.add(key)) return;
         result.add(_Offer(
           store: store,
