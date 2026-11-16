@@ -206,9 +206,20 @@ class StaffOrderService {
   }
 
   /// المندوب بيسلّم: الحالة + ختم التسليم في نفس العملية.
-  static Future<void> markDelivered(AppOrder order) {
+  static Future<void> markDelivered(AppOrder order) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    return setStatus(
+    if (uid.isEmpty) throw StateError('سجّل دخول الأول.');
+    if (order.courierId != uid) throw StateError('الطلب مش متعيّن ليك.');
+    if (order.status != OrderStatus.onTheWay) {
+      throw StateError('لا يمكن تأكيد التسليم قبل بدء التوصيل.');
+    }
+    if (order.courierArrivedAt == null) {
+      throw StateError('سجّل وصولك لعنوان العميل قبل تأكيد التسليم.');
+    }
+    if (order.activeDeliveryIssueId.isNotEmpty) {
+      throw StateError('لا يمكن تأكيد التسليم قبل حل بلاغ تعذر التسليم.');
+    }
+    await setStatus(
       order.id,
       OrderStatus.delivered,
       from: order.status,
