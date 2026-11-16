@@ -1284,7 +1284,8 @@ service cloud.firestore {
     // المناديب: المدير يقرأ الكل (عشان التعيين)، والمندوب يقرأ مستنده هو.
     // الإضافة والتعديل من الـ Console فقط.
     match /couriers/{uid} {
-      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin() ||
+        isStoreOwner(resource.data.get('storeId', '')));
       allow list: if isAdmin();
       // صاحب المحل لا يقرأ إلا ملفات مندوبيه عبر استعلام storeId مطابق لمحله.
       allow list: if signedIn() && isStoreOwner(resource.data.get('storeId', ''));
