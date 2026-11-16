@@ -297,6 +297,7 @@ class OrderService {
       'subtotal': cart.subtotal,
       'deliveryFee': cart.effectiveFee,
       if (cart.area.isNotEmpty) 'area': cart.area,
+          'expectedDeliveryFee': cart.effectiveFee,
       if (cart.discount > 0) 'promoCode': cart.promoCode.trim().toUpperCase(),
       if (cart.discount > 0) 'discount': cart.discount,
       'total': cart.total,
