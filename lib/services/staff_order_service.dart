@@ -633,6 +633,96 @@ class StaffOrderService {
     }
   }
 
+  /// يسجل توريد المندوب بأمان ويمنع تجاوز صافي المبلغ المستحق.
+  ///
+  /// إجمالي المستحق = النقدية المحصلة - عمولة المندوب من الطلبات المسلّمة.
+  /// نقرأ إجمالي الطلبات والتوريدات القديمة قبل المعاملة؛ أي تسليم متزامن جديد
+  /// يزيد المستحق فقط، لذلك قد نطلب إعادة المحاولة لكنه لا يسمح بتوريد زائد.
+  /// مستند الرصيد يُحدّث داخل Transaction لتسلسل عمليات التوريد المتزامنة.
+  static Future<void> recordCourierSettlement({
+    required String courierId,
+    required String courierName,
+    required double amount,
+    String note = '',
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الإدارة.');
+    if (courierId.trim().isEmpty ||
+        !amount.isFinite ||
+        amount <= 0 ||
+        amount > 1000000 ||
+        (amount * 100 - (amount * 100).round()).abs() > 0.000001) {
+      throw ArgumentError('بيانات التوريد أو المبلغ غير صالح.');
+    }
+    final cleanNote = note.trim();
+    if (cleanNote.length > 200) {
+      throw ArgumentError('الملاحظة أطول من المسموح.');
+    }
+
+    final db = FirebaseFirestore.instance;
+    final delivered = db.collection('orders')
+        .where('deliveredBy', isEqualTo: courierId)
+        .where('status', isEqualTo: OrderStatus.delivered.key);
+    final totals = await delivered
+        .aggregate(sum('collectedAmount'), sum('courierEarning'))
+        .get();
+    final collected =
+        (totals.getSum('collectedAmount') as num?)?.toDouble() ?? 0;
+    final earnings =
+        (totals.getSum('courierEarning') as num?)?.toDouble() ?? 0;
+    final totalDue = (collected - earnings).clamp(0, double.infinity).toDouble();
+
+    final settlements = db.collection('courier_settlements');
+    final previous = await settlements
+        .where('courierId', isEqualTo: courierId)
+        .aggregate(sum('amount'))
+        .get();
+    final legacySettled =
+        (previous.getSum('amount') as num?)?.toDouble() ?? 0;
+
+    final balanceRef =
+        db.collection('courier_settlement_balances').doc(courierId);
+    final settlementRef = settlements.doc();
+    final trimmedName = courierName.trim();
+    final cleanName = trimmedName.isEmpty
+        ? 'مندوب'
+        : trimmedName.substring(0, trimmedName.length.clamp(0, 80).toInt());
+
+    await db.runTransaction((tx) async {
+      final balanceSnap = await tx.get(balanceRef);
+      final settled = balanceSnap.exists
+          ? ((balanceSnap.data()?['settledAmount'] as num?)?.toDouble() ?? 0)
+          : legacySettled;
+      final remaining = totalDue - settled;
+      if (amount > remaining + 0.005) {
+        throw StateError(
+          'المبلغ أكبر من المتبقي على المندوب '
+          '${remaining.clamp(0, double.infinity).toStringAsFixed(2)} جنيه. حدّث البيانات وحاول تاني.',
+        );
+      }
+      final newSettled = double.parse((settled + amount).toStringAsFixed(2));
+      tx.set(settlementRef, {
+        'courierId': courierId,
+        'courierName': cleanName,
+        'amount': amount,
+        'note': cleanNote,
+        'createdBy': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      final balanceData = {
+        'courierId': courierId,
+        'settledAmount': newSettled,
+        'lastSettlementId': settlementRef.id,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (balanceSnap.exists) {
+        tx.update(balanceRef, balanceData);
+      } else {
+        tx.set(balanceRef, balanceData);
+      }
+    });
+  }
+
   static Future<void> assignCourier(String orderId, Courier courier) async {
     final db = FirebaseFirestore.instance;
     final uid = FirebaseAuth.instance.currentUser?.uid;
