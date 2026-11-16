@@ -36,7 +36,11 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
                     for (var star = 1; star <= 5; star++)
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        onPressed: () => setDialogState(() => rating = star),
+                        onPressed: () => setDialogState(() {
+                          rating = star;
+                          if (star <= 3 && reason == 'positive') reason = 'other';
+                          if (star >= 4 && reason == 'other') reason = 'positive';
+                        }),
                         icon: Icon(
                           star <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
                           color: star <= rating ? Colors.amber : Colors.grey,
