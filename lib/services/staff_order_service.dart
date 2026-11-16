@@ -670,7 +670,7 @@ class StaffOrderService {
         (totals.getSum('collectedAmount') as num?)?.toDouble() ?? 0;
     final earnings =
         (totals.getSum('courierEarning') as num?)?.toDouble() ?? 0;
-    final totalDue = (collected - earnings).clamp(0, double.infinity).toDouble();
+    final totalDueMinor = ((collected - earnings) * 100).round().clamp(0, 1 << 62).toInt();
 
     final settlements = db.collection('courier_settlements');
     final previous = await settlements
@@ -679,6 +679,8 @@ class StaffOrderService {
         .get();
     final legacySettled =
         (previous.getSum('amount') as num?)?.toDouble() ?? 0;
+    final legacySettledMinor = (legacySettled * 100).round();
+    final amountMinor = (amount * 100).round();
 
     final balanceRef =
         db.collection('courier_settlement_balances').doc(courierId);
@@ -705,13 +707,14 @@ class StaffOrderService {
         'courierId': courierId,
         'courierName': cleanName,
         'amount': amount,
+        'amountMinor': amountMinor,
         'note': cleanNote,
         'createdBy': uid,
         'createdAt': FieldValue.serverTimestamp(),
       });
       final balanceData = {
         'courierId': courierId,
-        'settledAmount': newSettled,
+        'settledAmountMinor': newSettledMinor,
         'lastSettlementId': settlementRef.id,
         'updatedAt': FieldValue.serverTimestamp(),
       };
