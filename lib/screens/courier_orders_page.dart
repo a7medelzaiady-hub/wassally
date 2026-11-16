@@ -1092,7 +1092,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
           ],
-          if (o.status == OrderStatus.onTheWay) ...[
+          if (o.status == OrderStatus.onTheWay && o.customerConfirmedAt == null) ...[
             const SizedBox(height: 12),
             if (o.activeDeliveryIssueId.isNotEmpty)
               _activeDeliveryIssuePanel(o)
