@@ -15,6 +15,8 @@
 - يجب أن يشترك تطبيق المندوب في topic `couriers` بعد التحقق من دوره، ويظل هذا الاشتراك وسيلة توصيل فقط وليس صلاحية لقبول الطلب.
 - تنشئ الطلب وبيانات التواصل الخاصة وسجل حد الطلبات في Firestore Commit واحد، مع شروط تمنع التكرار وسباق الطلبات.
 - تعدّل أصناف الطلب من خلال `PATCH /v1/orders/{orderId}`، وتعيد التحقق من الكتالوج وتحدّث قائمة المندوبين في Commit واحد عند حالة `preparing`.
+- تصدر توقيع Cloudinary قصير العمر عبر `POST /v1/uploads/sign` بعد التحقق من Firebase ID token ودور المدير أو ملكية المحل. البانرات للإدارة فقط، وصاحب المحل لا يرفع إلا داخل مجلده، والمتقدم لملكية محل لا يرفع إلا لصالح طلبه المعلّق/المرفوض.
+- لا تُرسل أسرار Cloudinary إلى التطبيق، ولا تستخدم unsigned presets في المسار الجديد.
 
 ## الإعداد الآمن
 
@@ -34,7 +36,10 @@
    npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL
    npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
    npx wrangler secret put ALLOWED_ORIGINS
+   npx wrangler secret put CLOUDINARY_API_KEY
+   npx wrangler secret put CLOUDINARY_API_SECRET
    ```
+   `CLOUDINARY_CLOUD_NAME` مضبوط كمتغير غير سري في `wrangler.toml`. لا تضع API Secret في المستودع.
    قيمة `ALLOWED_ORIGINS` قائمة origins مفصولة بفواصل لنسخة الويب. تطبيقات الهاتف لا ترسل Origin عادةً.
 **بيئة الاختبار أولًا:** أنشئ مشروع Firebase منفصلًا للاختبار، وحساب خدمة مخصصًا له. خزّن أسراره على Worker الاختبار باستخدام `--env staging` ثم انشر:
 ```bash
@@ -42,6 +47,8 @@ npx wrangler secret put FIREBASE_PROJECT_ID --env staging
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL --env staging
 npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY --env staging
 npx wrangler secret put ALLOWED_ORIGINS --env staging
+npx wrangler secret put CLOUDINARY_API_KEY --env staging
+npx wrangler secret put CLOUDINARY_API_SECRET --env staging
 npx wrangler deploy --env staging
 ```
 لا تستخدم بيانات الإنتاج في بيئة الاختبار. بعد اجتياز الاختبارات، كرر إعداد الأسرار دون `--env staging` لنشر Worker الإنتاج.
@@ -56,9 +63,9 @@ npx wrangler deploy --env staging
 
 ابنِ التطبيق بعنوان Worker. التعديلات على الطلبات تستخدم نفس العنوان تلقائيًا عبر `PATCH`: 
 ```bash
-flutter build apk --release --dart-define=WASALLY_ORDER_GATEWAY_URL=https://YOUR-WORKER.workers.dev
+flutter build apk --release --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
 ```
-لا يوجد مفتاح سري داخل تطبيق Flutter؛ المصادقة تتم برمز Firebase للمستخدم.
+لا يوجد مفتاح سري داخل تطبيق Flutter؛ المصادقة تتم برمز Firebase للمستخدم. رفع الصور لن يعمل عبر النسخة الجديدة إلا بعد نشر Worker بعد إضافة مسار التوقيع وضبط أسرار Cloudinary.
 
 ## تفعيل الحماية على Firestore
 
