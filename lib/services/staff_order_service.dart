@@ -30,7 +30,8 @@ class Courier {
   final String id;
   final String name;
   final String phone;
-  const Courier({required this.id, required this.name, this.phone = ''});
+  final String storeId;
+  const Courier({required this.id, required this.name, this.phone = '', this.storeId = ''});
 }
 
 /// عمليات المدير والمندوب على الطلبات. الصلاحيات الحقيقية في firestore.rules.
@@ -180,6 +181,9 @@ class StaffOrderService {
     if (c == null || c['active'] == false) {
       throw StateError('حساب المندوب غير موجود أو غير نشط.');
     }
+    if ((c['storeId'] ?? '').toString().trim().isNotEmpty) {
+      throw StateError('مندوب المحل لا يستلم طلبات خارجية من القائمة العامة.');
+    }
     var name = (c['name'] ?? user.displayName ?? 'مندوب').toString().trim();
     var phone = (c['phone'] ?? '').toString().trim();
     if (name.isEmpty) name = 'مندوب';
@@ -192,6 +196,7 @@ class StaffOrderService {
       'courierName': name,
       'courierPhone': phone,
       'courierAt': FieldValue.serverTimestamp(),
+      'deliveryMode': 'external',
     });
     batch.delete(db.collection('courier_available_orders').doc(order.id));
     await batch.commit(); // permission-denied = حد سبقك أو الطلب اتغيّر
@@ -285,12 +290,32 @@ class StaffOrderService {
             id: d.id,
             name: (m['name'] ?? 'مندوب').toString(),
             phone: (m['phone'] ?? '').toString(),
+            storeId: (m['storeId'] ?? '').toString(),
           ),
         );
       }
       list.sort((a, b) => a.name.compareTo(b.name));
       return list;
     });
+  }
+
+  /// مناديب المحل النشطين المرتبطين بمحل واحد؛ الاستعلام لا يعمل إلا عند فتح اختيار المندوب.
+  static Stream<List<Courier>> watchStoreCouriers(String storeId, {int limit = 100}) {
+    return FirebaseFirestore.instance
+        .collection('couriers')
+        .where('storeId', isEqualTo: storeId)
+        .where('active', isEqualTo: true)
+        .limit(limit.clamp(1, 100).toInt())
+        .snapshots()
+        .map((snap) => snap.docs.map((d) {
+          final m = d.data();
+          return Courier(
+            id: d.id,
+            name: (m['name'] ?? 'مندوب').toString(),
+            phone: (m['phone'] ?? '').toString(),
+            storeId: (m['storeId'] ?? '').toString(),
+          );
+        }).toList()..sort((a, b) => a.name.compareTo(b.name)));
   }
 
   /// بيغيّر الحالة. لو [verifiedTotal] اتبعت، بيعتمد الإجمالي في نفس العملية
@@ -756,6 +781,11 @@ class StaffOrderService {
       }
       // نستخدم أحدث بيانات المندوب من المستند الذي قرأته الـ Transaction،
       // وليس نسخة قديمة محفوظة في شاشة الاختيار.
+      final courierStoreId = (courierData['storeId'] ?? '').toString().trim();
+      if (courierStoreId.isNotEmpty && courierStoreId != (order['storeId'] ?? '').toString()) {
+        throw StateError('مندوب المحل لا يمكن تعيينه إلا لطلبات محله.');
+      }
+      final deliveryMode = courierStoreId.isNotEmpty ? 'store' : 'external';
       assignedName = (courierData['name'] ?? 'مندوب').toString().trim();
       if (assignedName.isEmpty) assignedName = 'مندوب';
       if (assignedName.length > 80) assignedName = assignedName.substring(0, 80);
@@ -766,6 +796,7 @@ class StaffOrderService {
         'courierName': assignedName,
         'courierPhone': assignedPhone,
         'courierAt': FieldValue.serverTimestamp(),
+        'deliveryMode': deliveryMode,
       });
       // الطلب اتعيّن: شيله من قايمة المناديب المتاحة في نفس الـ Transaction.
       tx.delete(feedRef);
@@ -795,6 +826,7 @@ class StaffOrderService {
         'courierName': FieldValue.delete(),
         'courierPhone': FieldValue.delete(),
         'courierAt': FieldValue.delete(),
+        'deliveryMode': FieldValue.delete(),
       });
       // رجّع الطلب للقايمة عشان باقي المناديب يشوفوه.
       tx.set(db.collection('courier_available_orders').doc(orderId),
