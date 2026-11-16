@@ -443,12 +443,12 @@ export default {
       return response({ error: "Not found." }, 404, headers);
     }
     try {
-      return await createOrder(request, env).then(async (result) => {
-        const body = await result.text();
-        return new Response(body, {
-          status: result.status,
-          headers: { ...Object.fromEntries(result.headers), ...Object.fromEntries(headers) },
-        });
+      const result = await createOrder(request, env);
+      const mergedHeaders = new Headers(result.headers);
+      headers.forEach((value, key) => mergedHeaders.set(key, value));
+      return new Response(await result.text(), {
+        status: result.status,
+        headers: mergedHeaders,
       });
     } catch (error) {
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
