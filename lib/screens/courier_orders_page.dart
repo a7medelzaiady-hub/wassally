@@ -625,6 +625,235 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     }
   }
 
+  Future<void> _recordArrival() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.recordCourierArrival(widget.order.id);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تسجيل وصولك للعنوان. حاول التواصل مع العميل.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل الوصول.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _reportDeliveryIssue() async {
+    if (_busy || widget.order.courierArrivedAt == null) return;
+    const reasons = {
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'لا يملك قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    final note = TextEditingController();
+    var reason = 'no_answer';
+    var contactAttempted = false;
+    final result = await showDialog<({String reason, String note})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('تعذر تسليم الطلب'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: reason,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'سبب تعذر التسليم',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: [
+                      for (final entry in reasons.entries)
+                        DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setDialogState(() => reason = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: note,
+                    minLines: 2,
+                    maxLines: 4,
+                    maxLength: 300,
+                    decoration: const InputDecoration(
+                      labelText: 'تفاصيل مختصرة (اختياري)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: contactAttempted,
+                    onChanged: (value) => setDialogState(
+                      () => contactAttempted = value == true,
+                    ),
+                    title: const Text('حاولت الاتصال أو مراسلة العميل'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                  const Text(
+                    'الطلب سيظل في عهدتك وفي حالة «في الطريق» حتى تراجع الإدارة البلاغ وتحدد إعادة المحاولة أو الإرجاع.',
+                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: contactAttempted
+                    ? () => Navigator.pop(
+                          dialogContext,
+                          (reason: reason, note: note.text.trim()),
+                        )
+                    : null,
+                child: const Text('إرسال البلاغ'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    note.dispose();
+    if (result == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.reportDeliveryIssue(
+        widget.order,
+        reason: result.reason,
+        note: result.note,
+        contactAttempted: true,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم إرسال البلاغ للإدارة. انتظر القرار قبل إكمال التسليم.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error is StateError ? error.message : 'تعذر إرسال بلاغ التسليم.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _activeDeliveryIssuePanel(AppOrder order) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: StaffOrderService.watchDeliveryIssue(order.activeDeliveryIssueId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Text('تعذر تحميل قرار الإدارة بشأن البلاغ.');
+        }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Text('بلاغ تعذر التسليم قيد المراجعة.');
+        }
+        final data = snapshot.data!.data() ?? const <String, dynamic>{};
+        final status = (data['status'] ?? 'open').toString();
+        final decision = (data['adminDecision'] ?? '').toString();
+        if (status == 'retry') {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(decision.isEmpty ? 'الإدارة وافقت على إعادة المحاولة.' : decision),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        try {
+                          await StaffOrderService.resumeDeliveryAfterIssue(
+                            orderId: order.id,
+                            issueId: order.activeDeliveryIssueId,
+                          );
+                        } catch (error) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('تعذر استئناف التوصيل: $error')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+                icon: const Icon(Icons.replay),
+                label: const Text('استأنف التوصيل'),
+              ),
+            ],
+          );
+        }
+        if (status == 'return_to_store') {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(decision.isEmpty ? 'الإدارة طلبت إرجاع الطلب للمحل.' : decision),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        final ok = await confirmDialog(
+                          context,
+                          title: 'تأكيد إرجاع الطلب',
+                          message: 'هل رجعت الطلب للمحل وسلمته لمسؤول المحل؟',
+                          confirmLabel: 'تم الإرجاع',
+                        );
+                        if (!ok || !mounted) return;
+                        setState(() => _busy = true);
+                        try {
+                          await StaffOrderService.confirmDeliveryReturnedToStore(
+                            orderId: order.id,
+                            issueId: order.activeDeliveryIssueId,
+                          );
+                        } catch (error) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('تعذر تسجيل الإرجاع: $error')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+                icon: const Icon(Icons.storefront_outlined),
+                label: const Text('أكدت إرجاع الطلب للمحل'),
+              ),
+            ],
+          );
+        }
+        if (status == 'returned_to_store') {
+          return const Text(
+            'تم تسجيل رجوع الطلب للمحل. الإدارة ستغلق الطلب بعد المراجعة.',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          );
+        }
+        return const Text(
+          'بلاغ تعذر التسليم قيد مراجعة الإدارة. لا تؤكد التسليم ولا تترك الطلب.',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        );
+      },
+    );
+  }
+
   Future<void> _openMap() async {
     final messenger = ScaffoldMessenger.of(context);
     final ok = await openInMaps(_o.address);
@@ -785,7 +1014,46 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
             ],
           ),
-          if (next == OrderStatus.onTheWay &&
+          if (o.status == OrderStatus.onTheWay) ...[
+            const SizedBox(height: 12),
+            if (o.activeDeliveryIssueId.isNotEmpty)
+              _activeDeliveryIssuePanel(o)
+            else if (o.courierArrivedAt == null)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _recordArrival,
+                  icon: const Icon(Icons.location_on_outlined),
+                  label: const Text('وصلت إلى عنوان العميل'),
+                ),
+              )
+            else ...[
+              const Text(
+                'تم تسجيل وصولك للعميل. تواصل معه، ثم أكد التسليم أو سجّل تعذر التسليم.',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _busy ? null : _advance,
+                      style: FilledButton.styleFrom(shape: const StadiumBorder()),
+                      child: const Text('تم التسليم'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _reportDeliveryIssue,
+                      icon: const Icon(Icons.report_problem_outlined),
+                      label: const Text('تعذر التسليم'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ] else if (next == OrderStatus.onTheWay &&
               kCourierWaitsForReady &&
               !o.ready &&
               !o.status.courierMustWait) ...[
@@ -798,7 +1066,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
-                'المحل لسه بيجهّز الطلب. زر الاستلام هيظهر أول ما المحل يأكّد إنه جاهز.',
+                'المحل لسه بيجهّز الطلب. زر بدء التوصيل هيظهر أول ما المحل يأكّد إنه جاهز.',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
@@ -812,7 +1080,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
-                'استنى المحل يجهّز الطلب، وبعدها زر الاستلام هيظهر.',
+                'استنى المحل يجهّز الطلب، وبعدها زر بدء التوصيل هيظهر.',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
@@ -839,11 +1107,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                           color: Colors.white,
                         ),
                       )
-                    : Text(
-                        next == OrderStatus.delivered
-                            ? 'تم التسليم'
-                            : 'استلمت من المحل، في الطريق',
-                      ),
+                    : const Text('استلمت من المحل، في الطريق'),
               ),
             ),
           ],
