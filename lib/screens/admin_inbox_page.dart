@@ -436,6 +436,7 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
       // المراجعة مستمرة أولًا بأول؛ لا نخفي أي تقديم بسبب حد ثابت.
       stream: FirebaseFirestore.instance
           .collectionGroup('applicants')
+          .orderBy('createdAt', descending: true)
           .limit(_limit)
           .snapshots(),
       builder: (context, snap) {
