@@ -1223,6 +1223,15 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             const SizedBox(height: 12),
             _returnedIssuePanel(o),
           ],
+          if (o.status == OrderStatus.onTheWay &&
+              o.customerDeliveryReportedAt != null &&
+              o.customerConfirmedAt == null) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'المندوب أبلغ بتسليم الطلب، وفي انتظار تأكيد العميل للاستلام.',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ],
           if (o.status == OrderStatus.onTheWay && o.deliveryMode == 'external' &&
               o.customerConfirmedAt != null && o.cashHandedToStoreAt != null) ...[
             const SizedBox(height: 12),
