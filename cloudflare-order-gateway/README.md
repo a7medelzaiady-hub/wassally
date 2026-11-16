@@ -18,16 +18,17 @@
 
 ## الإعداد الآمن
 
-1. أنشئ حساب خدمة مخصصًا في Google Cloud داخل مشروع Firebase نفسه، وامنحه أقل صلاحية لازمة: **Cloud Datastore User** (`roles/datastore.user`) مع صلاحية إرسال FCM المطلوبة (`cloudmessaging.messages.create`) أو دور Firebase Cloud Messaging API Admin المناسب بأقل نطاق متاح. لا تستخدم Owner أو Editor.
-2. أنشئ مفتاح JSON للحساب، واحتفظ به خارج المستودع.
-3. من مجلد الخدمة نفّذ:
+1. أنشئ حساب خدمة مخصصًا في Google Cloud داخل مشروع Firebase نفسه. امنحه **Cloud Datastore User** (`roles/datastore.user`) لعمليات Firestore، وأضف صلاحية `cloudmessaging.messages.create` عبر Custom IAM Role محدود. كبديل أسهل لكنه أوسع، استخدم **Firebase Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`). لا تستخدم Owner أو Editor.
+2. فعّل Firebase Cloud Messaging HTTP v1 API في المشروع (`fcm.googleapis.com`).
+3. أنشئ مفتاح JSON للحساب، واحتفظ به خارج المستودع.
+4. من مجلد الخدمة نفّذ:
    ```bash
    npm install
    npm run typecheck
    npm test
    npx wrangler login
    ```
-4. خزّن القيم كـ Cloudflare Secrets (لا تضعها في `wrangler.toml` أو GitHub):
+5. خزّن القيم كـ Cloudflare Secrets (لا تضعها في `wrangler.toml` أو GitHub):
    ```bash
    npx wrangler secret put FIREBASE_PROJECT_ID
    npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL
@@ -45,11 +46,11 @@ npx wrangler deploy --env staging
 ```
 لا تستخدم بيانات الإنتاج في بيئة الاختبار. بعد اجتياز الاختبارات، كرر إعداد الأسرار دون `--env staging` لنشر Worker الإنتاج.
 
-5. انشر Worker بعد اجتياز الاختبارات:
+6. انشر Worker بعد اجتياز الاختبارات:
    ```bash
    npm run deploy
    ```
-6. اختبر `GET /health`، ثم أنشئ طلبًا تجريبيًا بحساب اختبار وتحقق من السعر والمستندين العام والخاص وحدّ الطلبات.
+7. اختبر `GET /health`، ثم أنشئ طلبًا تجريبيًا بحساب اختبار وتحقق من السعر والمستندين العام والخاص وحدّ الطلبات.
 
 ## ربط تطبيق Flutter
 
