@@ -8,6 +8,9 @@ interface Env {
   DEFAULT_DELIVERY_FEE?: string;
   MAX_ORDER_LINES?: string;
   MAX_LINE_QTY?: string;
+  CLOUDINARY_CLOUD_NAME?: string;
+  CLOUDINARY_API_KEY?: string;
+  CLOUDINARY_API_SECRET?: string;
 }
 
 type JsonMap = Record<string, unknown>;
@@ -662,6 +665,36 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
 
+async function signCloudinaryUpload(request: Request, env: Env): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+    throw new HttpError(503, "خدمة رفع الصور الموقّع غير مهيأة على الخادم.");
+  }
+  let input: any;
+  try { input = await request.json(); } catch { throw new HttpError(400, "بيانات رفع الصورة غير مفهومة."); }
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new HttpError(400, "صيغة بيانات رفع الصورة غير صحيحة.");
+  const folder = String(input.folder ?? "");
+  const storeId = String(input.storeId ?? "").trim();
+  if (!["stores", "products", "banners"].includes(folder)) throw new HttpError(400, "مجلد الصور غير مسموح.");
+  if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) throw new HttpError(400, "معرّف المحل غير صالح.");
+  const token = await googleAccessToken(env);
+  const [adminDoc, ownerDoc] = await Promise.all([
+    getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
+    getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
+  ]);
+  const isAdmin = adminDoc !== null;
+  const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+  const isOwner = ownerDoc !== null && owner.active !== false && owner.storeId === storeId;
+  if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner))) throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
+  const uploadFolder = folder === "banners" || isAdmin ? folder : `${folder}/${storeId}`;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const allowedFormats = "jpg,jpeg,png,webp";
+  const params = `allowed_formats=${allowedFormats}&folder=${uploadFolder}&timestamp=${timestamp}`;
+  const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(params + env.CLOUDINARY_API_SECRET));
+  const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return response({ cloudName: env.CLOUDINARY_CLOUD_NAME, apiKey: env.CLOUDINARY_API_KEY, timestamp, folder: uploadFolder, allowedFormats, signature });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     let headers: Headers;
@@ -675,6 +708,17 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/uploads/sign") {
+      try {
+        const result = await signCloudinaryUpload(request, env);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر تجهيز رفع الصورة.");
+        return response({ error: e.message }, e.status, headers);
+      }
     }
     const editPrefix = "/v1/orders/";
     const rawEditId = url.pathname.startsWith(editPrefix)
