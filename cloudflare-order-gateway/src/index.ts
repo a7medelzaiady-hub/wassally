@@ -65,6 +65,7 @@ function decodeFields(fields: Record<string, any>): JsonMap {
 
 function encodeValue(value: any): any {
   if (value === null || value === undefined) return { nullValue: null };
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
   if (typeof value === "string") return { stringValue: value };
   if (typeof value === "boolean") return { booleanValue: value };
   if (typeof value === "number") return Number.isInteger(value)
@@ -227,6 +228,67 @@ function validateContact(contact: any): JsonMap {
   return { userName, phone, address, ...(courierNotes ? { courierNotes } : {}) };
 }
 
+async function resolveItems(
+  env: Env,
+  token: string,
+  storeId: string,
+  store: JsonMap,
+  lines: any[],
+): Promise<{ items: JsonMap[]; subtotal: number }> {
+  if (lines.length < 1 || lines.length > Number(env.MAX_ORDER_LINES ?? 100)) {
+    throw new HttpError(400, "عدد الأصناف خارج الحدود المسموحة.");
+  }
+  const productIds = [...new Set(lines.map((line: any) => String(line?.productId ?? "").trim()).filter(Boolean))];
+  if (productIds.some((id) => id.includes("/") || id.length > 150)) {
+    throw new HttpError(400, "معرّف صنف غير صالح.");
+  }
+  const productPaths = productIds.map((id) => `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(id)}`);
+  const productDocs = await batchGetDocuments(env, productPaths, token);
+  const seen = new Set<string>();
+  const items: JsonMap[] = [];
+  let subtotal = 0;
+  for (const line of lines) {
+    const qty = Number(line?.qty);
+    if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
+      throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
+    }
+    const productId = String(line?.productId ?? "").trim();
+    let product: JsonMap;
+    let resolvedId = productId;
+    if (productId) {
+      const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
+      const found = productDocs.get(path);
+      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.");
+      product = found;
+    } else {
+      const name = String(line?.name ?? "").trim();
+      if (!name || name.length > 120) throw new HttpError(400, "صنف قديم بدون اسم صالح.");
+      product = productFromLegacy(store, name);
+      resolvedId = "";
+    }
+    if (product.available === false || product.isAvailable === false) {
+      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
+    }
+    const name = String(product.name ?? "").trim();
+    if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
+    const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
+    if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
+    seen.add(identity);
+    const price = effectiveCatalogPrice(product);
+    const expectedPrice = Number(line?.expectedPrice);
+    // expectedPrice is only a stale-cart check; the saved price always comes from Firestore.
+    if (!catalogPriceMatches(expectedPrice, price)) {
+      throw new HttpError(409, "سعر أحد الأصناف اتغير. راجع السلة قبل تأكيد الطلب.");
+    }
+    subtotal = money(subtotal + price * qty);
+    items.push({ name, price, qty, ...(resolvedId ? { productId: resolvedId } : {}) });
+  }
+  if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
+    throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
+  }
+  return { items, subtotal };
+}
+
 async function createOrder(request: Request, env: Env): Promise<Response> {
   if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
       !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -303,47 +365,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "رسوم التوصيل غير مضبوطة في إعدادات الإدارة.");
   }
 
-  const productIds = [...new Set(lines.map((line: any) => String(line?.productId ?? "").trim()).filter(Boolean))];
-  if (productIds.some((id) => id.includes("/") || id.length > 150)) {
-    throw new HttpError(400, "معرّف صنف غير صالح.");
-  }
-  const productPaths = productIds.map((id) => `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(id)}`);
-  const productDocs = await batchGetDocuments(env, productPaths, token);
-
-  const seen = new Set<string>();
-  const items: JsonMap[] = [];
-  let subtotal = 0;
-  for (const line of lines) {
-    const qty = Number(line?.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
-      throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
-    }
-    const productId = String(line?.productId ?? "").trim();
-    let product: JsonMap;
-    let resolvedId = productId;
-    if (productId) {
-      const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
-      const found = productDocs.get(path);
-      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.");
-      product = found;
-    } else {
-      const name = String(line?.name ?? "").trim();
-      if (!name || name.length > 120) throw new HttpError(400, "صنف قديم بدون اسم صالح.");
-      product = productFromLegacy(store, name);
-      resolvedId = "";
-    }
-    if (product.available === false || product.isAvailable === false) {
-      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
-    }
-    const name = String(product.name ?? "").trim();
-    if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
-    const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
-    if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
-    seen.add(identity);
-    const price = effectiveCatalogPrice(product);
-    subtotal = money(subtotal + price * qty);
-    items.push({ name, price, qty, ...(resolvedId ? { productId: resolvedId } : {}) });
-  }
+  const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
   if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
     throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
   }
