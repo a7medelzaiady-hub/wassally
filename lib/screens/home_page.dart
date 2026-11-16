@@ -1101,9 +1101,17 @@ class _HomePageState extends State<HomePage>
                           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
+                      IconButton(
+                        tooltip: 'العروض والخصومات',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const OffersPage()),
+                        ),
+                        icon: const Icon(Icons.local_offer_outlined),
+                        color: Brand.green,
+                      ),
                       TextButton(
                         onPressed: _openDirectory,
-                        child: const Text('عرض كل المحلات'),
+                        child: const Text('كل المحلات'),
                       ),
                     ],
                   ),
@@ -1155,79 +1163,7 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
-          return Stack(
-            children: [
-              scroll,
-              // زر العروض على يمين الشاشة في واجهة RTL؛ زر الشكاوى
-              // العائم تابع للـ MainShell ويظهر على الجهة المقابلة.
-              PositionedDirectional(
-                start: 18,
-                bottom: 18,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(28),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const OffersPage()),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 15,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Brand.greenLight,
-                            Brand.green,
-                            Brand.greenDark,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.45),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Brand.green.withValues(alpha: 0.32),
-                            blurRadius: 18,
-                            offset: const Offset(0, 7),
-                          ),
-                          const BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 8,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.local_offer_rounded,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                          SizedBox(width: 9),
-                          Text(
-                            'العروض والخصومات',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+          return scroll;        },
       ),
     );
   }
