@@ -22,9 +22,9 @@ class _AdminStoreOwnersPageState extends State<AdminStoreOwnersPage> {
   bool _busy = false;
 
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _owners =
-      FirebaseFirestore.instance.collection('storeOwners').snapshots();
+      FirebaseFirestore.instance.collection('storeOwners').limit(200).snapshots();
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _stores =
-      FirebaseFirestore.instance.collection('stores').snapshots();
+      FirebaseFirestore.instance.collection('stores').limit(200).snapshots();
 
   CollectionReference<Map<String, dynamic>> get _col =>
       FirebaseFirestore.instance.collection('storeOwners');
