@@ -89,15 +89,19 @@ class _AccountPageState extends State<AccountPage> {
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
       stream: RoleRequestService.watchMine(),
       builder: (context, snap) {
-        final status = <String, String>{
+        final requests = <String, Map<String, dynamic>>{
           for (final d in snap.data ?? const [])
-            (d.data()['type'] ?? '').toString(): (d.data()['status'] ?? '')
-                .toString(),
+            (d.data()['type'] ?? '').toString(): d.data(),
+        };
+        final status = <String, String>{
+          for (final entry in requests.entries)
+            entry.key: (entry.value['status'] ?? '').toString(),
         };
         Widget tile(JoinType t, IconData icon, String subtitle) {
           final st = status[t.key];
           final pending = st == 'pending';
           final approved = st == 'approved';
+          final rejectionReason = (requests[t.key]?['adminNote'] ?? '').toString().trim();
           return ListTile(
             enabled: !pending && !approved,
             onTap: () => _openJoin(t, profile),
@@ -109,7 +113,7 @@ class _AccountPageState extends State<AccountPage> {
                   : approved
                   ? 'تم قبول طلبك. اقفل التطبيق وافتحه تاني'
                   : st == 'rejected'
-                  ? 'طلبك اترفض. تقدر تقدّم تاني'
+                  ? 'طلبك اترفض. السبب: ${rejectionReason.isEmpty ? 'راجع الإدارة لمعرفة السبب' : rejectionReason}. تقدر تقدّم تاني'
                   : subtitle,
             ),
             trailing: const Icon(Icons.chevron_left),
