@@ -448,7 +448,9 @@ async function deleteFirebaseAuthUser(env: Env, token: string, uid: string): Pro
     },
   );
   if (!result.ok) {
-    const detail = (await result.text()).slice(0, 300);
+    const detail = (await result.text()).slice(0, 500);
+    // A retry after a lost response is successful if Firebase already deleted the user.
+    if (detail.includes("USER_NOT_FOUND")) return;
     throw new HttpError(503, `تم تنظيف البيانات لكن تعذر حذف حساب تسجيل الدخول (${result.status}): ${detail}`);
   }
 }
