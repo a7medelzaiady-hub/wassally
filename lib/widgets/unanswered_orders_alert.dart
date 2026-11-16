@@ -7,7 +7,7 @@ import '../models/order.dart';
 import '../theme/app_theme.dart';
 
 /// تنبيه مجاني داخل التطبيق للطلبات الجديدة التي لم يرد عليها المحل خلال 5 دقائق.
-/// لا يعمل في الخلفية؛ يظهر عند فتح الشاشة أو أثناء بقائها مفتوحة.
+/// يظهر عند فتح الشاشة أو أثناء بقائها مفتوحة، ويصدر صوتًا مرة واحدة لكل طلب متأخر.
 class UnansweredOrdersAlert extends StatefulWidget {
   final List<AppOrder> orders;
 
