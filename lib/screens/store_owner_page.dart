@@ -8,11 +8,13 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/image_service.dart';
 import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
@@ -468,6 +470,7 @@ class _OwnerOrderCard extends StatefulWidget {
 
 class _OwnerOrderCardState extends State<_OwnerOrderCard> {
   bool _busy = false;
+  bool _customerRated = false;
 
   /// الأصناف اللي المحل اختارها «غير متاحة» (محلي لحد ما يضغط «بلّغ العميل»).
   late Set<String> _unavailable = {...widget.order.unavailableItems};
@@ -531,6 +534,35 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
         const SnackBar(
           content: Text('تعذر تأكيد جاهزية الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
         ),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _rateCustomer() async {
+    if (_busy || widget.order.userId.isEmpty) return;
+    final input = await showCustomerRatingDialog(context);
+    if (input == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.rate(
+        orderId: widget.order.id,
+        customerId: widget.order.userId,
+        storeId: widget.order.storeId,
+        reviewerRole: 'store_owner',
+        rating: input.rating,
+        reason: input.reason,
+        comment: input.comment,
+      );
+      if (mounted) setState(() => _customerRated = true);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تسجيل تقييم العميل. شكرًا لمشاركتك.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.')),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -762,6 +794,23 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                   onPressed: _busy ? null : _markReady,
                   icon: const Icon(Icons.inventory_2_outlined),
                   label: const Text('الطلب جاهز للاستلام'),
+                ),
+              ),
+          ],
+          if (o.status == OrderStatus.delivered && o.userId.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            if (_customerRated)
+              const Text(
+                'تم تقييم تعامل العميل على هذا الطلب.',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.green),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _rateCustomer,
+                  icon: const Icon(Icons.star_outline_rounded),
+                  label: const Text('تقييم تعامل العميل'),
                 ),
               ),
           ],
