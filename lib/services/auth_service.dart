@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'cart_model.dart';
 import 'navigation.dart';
 import 'notification_service.dart';
+import 'order_gateway.dart';
 
 class AuthService {
   const AuthService._();
@@ -141,33 +142,41 @@ class AuthService {
     }
   }
 
-  /// حذف الحساب نهائيًا. بيطلب تأكيد الهوية بجوجل الأول (شرط من Firebase).
-  /// تنظيف البيانات المرتبطة بالحساب يعتمد على onUserDeleted إن كانت منشورة؛ لا نعتبر حذف البيانات مكتملًا من حذف Auth وحده.
+  /// حذف الحساب نهائيًا بعد إعادة تأكيد الهوية وتنظيف البيانات عبر Worker.
   static Future<void> deleteAccount([BuildContext? context]) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    final initialUser = FirebaseAuth.instance.currentUser;
+    if (initialUser == null) return;
+    if (!OrderGateway.isConfigured) {
+      throw StateError('حذف الحساب الآمن غير متاح في هذه النسخة. حدّث التطبيق أو تواصل مع الدعم.');
+    }
 
     final provider = GoogleAuthProvider();
     if (kIsWeb) {
-      await user.reauthenticateWithPopup(provider);
+      await initialUser.reauthenticateWithPopup(provider);
     } else {
-      await user.reauthenticateWithProvider(provider);
+      await initialUser.reauthenticateWithProvider(provider);
     }
 
+    final user = FirebaseAuth.instance.currentUser ?? initialUser;
+    final idToken = await user.getIdToken(true);
+    if (idToken == null || idToken.isEmpty) {
+      throw StateError('تعذر تأكيد هويتك. سجّل الدخول من جديد وحاول مرة أخرى.');
+    }
+
+    // Worker removes Firestore records first and deletes Firebase Auth last.
+    // On any failure the account remains available so the user can retry.
+    await OrderGateway.deleteAccount(idToken: idToken);
+    await NotificationService.dispose();
+    cart.clear();
+    shellTab.value = 0;
+    await FirebaseAuth.instance.signOut();
+    if (_googleInitialized) {
+      try {
+        await GoogleSignIn.instance.signOut();
+      } catch (_) {}
+    }
     if (context != null && context.mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
-    cart.clear();
-    shellTab.value = 0;
-    await NotificationService.dispose();
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .delete();
-    } catch (_) {
-      // لو فشل، دالة السيرفر هتمسح الملف الشخصي برضه.
-    }
-    await user.delete();
   }
 }
