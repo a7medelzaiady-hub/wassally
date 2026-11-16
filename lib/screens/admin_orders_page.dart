@@ -28,7 +28,7 @@ class AdminOrdersPage extends StatefulWidget {
 }
 
 class _AdminOrdersPageState extends State<AdminOrdersPage> {
-  static const _pageSize = 50;
+  static const _pageSize = 100;
   int _limit = _pageSize;
   late Stream<List<AppOrder>> _orders = StaffOrderService.watchAll(
     limit: _limit,
@@ -268,7 +268,6 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             ),
             SliverToBoxAdapter(child: _bannersShortcut()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
-            SliverToBoxAdapter(child: UnansweredOrdersAlert(orders: all)),
           ];
 
           if (snapshot.hasError) {
@@ -293,6 +292,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             );
           } else {
             final all = snapshot.data!;
+            slivers.add(SliverToBoxAdapter(child: UnansweredOrdersAlert(orders: all)));
             // لو عدد الطلبات وصل للحد، غالبًا فيه طلبات أقدم لسه ما اتحمّلتش.
             final canLoadMore = all.length >= _limit;
             final shown = _filter == null
