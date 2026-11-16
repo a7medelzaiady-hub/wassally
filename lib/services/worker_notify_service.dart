@@ -9,7 +9,8 @@ class WorkerNotifyService {
   static const String _workerUrl =
       'https://throbbing-water-4ef7.a7medelzaiady.workers.dev';
 
-  static Future?> _post(Map<String, dynamic> payload) async {
+  static Future<Map<String, dynamic>?> _post(
+      Map<String, dynamic> payload) async {
     try {
       // جلب معرف المصادقة للمستخدم الحالي من Firebase Auth
       final user = FirebaseAuth.instance.currentUser;
@@ -28,7 +29,8 @@ class WorkerNotifyService {
         Uri.parse(_workerUrl),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $idToken', // إرسال رمز المصادقة للتحقق في الـ Worker
+          'Authorization':
+              'Bearer $idToken', // إرسال رمز المصادقة للتحقق في الـ Worker
         },
         body: jsonEncode(payload),
       );
