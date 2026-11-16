@@ -123,7 +123,8 @@ service cloud.firestore {
             resource.data.get('courierId', '').size() > 0))) ||
         (resource.data.get('status', '') == 'on_the_way' &&
           request.resource.data.get('status', '') == 'delivered' &&
-          resource.data.get('pickedUpAt', null) is timestamp &&
+          (resource.data.get('pickedUpAt', null) is timestamp ||
+           resource.data.get('courierAt', null) is timestamp) &&
           resource.data.get('courierArrivedAt', null) is timestamp &&
           k.hasAll(stampKeys()));
     }
@@ -500,7 +501,8 @@ service cloud.firestore {
               request.resource.data.get('pickedUpAt', null) == request.time) ||
            (resource.data.get('status', '') == 'on_the_way' &&
               request.resource.data.get('status', '') == 'delivered' &&
-              resource.data.get('pickedUpAt', null) is timestamp &&
+              (resource.data.get('pickedUpAt', null) is timestamp ||
+               resource.data.get('courierAt', null) is timestamp) &&
               resource.data.get('courierArrivedAt', null) is timestamp &&
               !('activeDeliveryIssueId' in resource.data))) &&
           historyGate(orderId, k)
@@ -880,7 +882,8 @@ service cloud.firestore {
         order != null &&
         order.get('status', '') == 'on_the_way' &&
         order.get('courierId', '') == request.auth.uid &&
-        order.get('pickedUpAt', null) is timestamp &&
+        (order.get('pickedUpAt', null) is timestamp ||
+         order.get('courierAt', null) is timestamp) &&
         order.get('courierArrivedAt', null) is timestamp &&
         order.get('userId', '') == d.customerId &&
         order.get('storeId', '') == d.storeId;
