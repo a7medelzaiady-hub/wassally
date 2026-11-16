@@ -406,6 +406,10 @@ test('customer reviews: يمنع التقييم المزور أو قبل الت�
     doc(as('cour1'), 'customer_reviews/o1_courier'),
     customerReview('courier', 'cour1', { reason: 'invented' }),
   ));
+  await assertFails(setDoc(
+    doc(as('cour1'), 'customer_reviews/o1_courier'),
+    customerReview('courier', 'cour1', { rating: 2, reason: 'positive' }),
+  ));
 });
 
 test('customer restrictions: الإدارة فقط تفرض تقييدًا مؤقتًا، والقواعد تمنع الطلب حتى رفعه', async () => {
@@ -642,6 +646,7 @@ test('couriers: السجل القديم بلا active يظل نشطًا، وacti
     const db = c.firestore();
     await setDoc(doc(db, 'couriers/legacy'), { name: 'Legacy' });
     await setDoc(doc(db, 'couriers/disabled'), { name: 'Disabled', active: false });
+    await setDoc(doc(db, 'couriers/null-active'), { name: 'Null active', active: null });
     await updateDoc(doc(db, 'orders/o1'), { status: 'preparing' });
     await setDoc(doc(db, 'courier_available_orders/o1'), {
       storeId: store, storeName: 'S', area: '', items: [], subtotal: 20,
@@ -650,6 +655,7 @@ test('couriers: السجل القديم بلا active يظل نشطًا، وacti
   });
   await assertSucceeds(getDoc(doc(as('legacy'), 'courier_available_orders/o1')));
   await assertFails(getDoc(doc(as('disabled'), 'courier_available_orders/o1')));
+  await assertFails(getDoc(doc(as('null-active'), 'courier_available_orders/o1')));
   const legacy = as('legacy');
   const claim = writeBatch(legacy);
   claim.update(doc(legacy, 'orders/o1'), {
