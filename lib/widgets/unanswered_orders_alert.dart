@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../models/order.dart';
 import '../theme/app_theme.dart';
 
 /// تنبيه مجاني داخل التطبيق للطلبات الجديدة التي لم يرد عليها المحل خلال 5 دقائق.
 /// لا يعمل في الخلفية؛ يظهر عند فتح الشاشة أو أثناء بقائها مفتوحة.
 class UnansweredOrdersAlert extends StatefulWidget {
-  final String? storeId;
+  final List<AppOrder> orders;
 
-  const UnansweredOrdersAlert({super.key, this.storeId});
+  const UnansweredOrdersAlert({super.key, required this.orders});
 
   @override
   State<UnansweredOrdersAlert> createState() => _UnansweredOrdersAlertState();
@@ -18,31 +18,15 @@ class UnansweredOrdersAlert extends StatefulWidget {
 
 class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
   Timer? _clock;
-  late Stream<QuerySnapshot<Map<String, dynamic>>> _stream;
   late DateTime _now;
 
   @override
   void initState() {
     super.initState();
     _now = DateTime.now();
-    _stream = _watch();
     _clock = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
-  }
-
-  Stream<QuerySnapshot<Map<String, dynamic>>> _watch() {
-    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-        .collection('orders')
-        .where('status', isEqualTo: 'new');
-    final storeId = widget.storeId;
-    if (storeId != null && storeId.isNotEmpty) {
-      query = query.where('storeId', isEqualTo: storeId);
-    }
-    return query
-        .orderBy('createdAt')
-        .limit(100)
-        .snapshots();
   }
 
   @override
@@ -53,62 +37,57 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _stream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        final docs = snapshot.data!.docs.where((doc) {
-          final data = doc.data();
-          final unavailable = data['unavailableItems'];
-          if (unavailable is List && unavailable.isNotEmpty) return false;
-          final lastActivity = data['editedAt'] ?? data['createdAt'];
-          return lastActivity is Timestamp &&
-              _now.difference(lastActivity.toDate()) >= const Duration(minutes: 5);
-        }).toList();
-        if (docs.isEmpty) return const SizedBox.shrink();
-        final firstData = docs.first.data();
-        final firstActivity = (firstData['editedAt'] ?? firstData['createdAt']) as Timestamp;
-        final oldest = _now.difference(firstActivity.toDate()).inMinutes;
-        final count = docs.length;
-        final countLabel = count == 100 ? '100+' : '$count';
-        return Container(
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: kDanger.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: kDanger.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.notifications_active_outlined, color: kDanger),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'تنبيه: يوجد $countLabel طلب جديد لم يتم الرد عليه منذ 5 دقائق أو أكثر.',
-                  style: TextStyle(
-                    color: kDanger,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12.5,
-                  ),
-                ),
+    final overdue = widget.orders.where((order) {
+      if (order.status != OrderStatus.newOrder || order.hasUnavailableItems) {
+        return false;
+      }
+      final lastActivity = order.editedAt ?? order.createdAt;
+      return lastActivity != null &&
+          _now.difference(lastActivity) >= const Duration(minutes: 5);
+    }).toList();
+
+    if (overdue.isEmpty) return const SizedBox.shrink();
+
+    final oldestActivity = overdue
+        .map((order) => order.editedAt ?? order.createdAt!)
+        .reduce((a, b) => a.isBefore(b) ? a : b);
+    final oldest = _now.difference(oldestActivity).inMinutes;
+    final countLabel = overdue.length >= 100 ? '100+' : '\${overdue.length}';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: kDanger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kDanger.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_active_outlined, color: kDanger),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'تنبيه: يوجد $countLabel طلب جديد لم يتم الرد عليه منذ 5 دقائق أو أكثر.',
+              style: TextStyle(
+                color: kDanger,
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
               ),
-              const SizedBox(width: 8),
-              Text(
-                '$oldest د',
-                style: TextStyle(
-                  color: kDanger,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 12,
-                ),
-              ),
-            ],
+            ),
           ),
-        );
-      },
+          const SizedBox(width: 8),
+          Text(
+            '$oldest د',
+            style: TextStyle(
+              color: kDanger,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
