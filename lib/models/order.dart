@@ -120,6 +120,12 @@ class AppOrder {
 
   /// وقت ما المندوب استلم الطلب (بيبدأ عدّاد المندوب منه).
   final DateTime? courierAt;
+
+  /// وقت تسجيل وصول المندوب إلى عنوان العميل.
+  final DateTime? courierArrivedAt;
+
+  /// معرّف بلاغ التسليم المفتوح الذي ينتظر قرار الإدارة.
+  final String activeDeliveryIssueId;
   final double collectedAmount;
   final double courierEarning;
 
@@ -160,6 +166,8 @@ class AppOrder {
     this.deliveredBy = '',
     this.deliveredAt,
     this.courierAt,
+    this.courierArrivedAt,
+    this.activeDeliveryIssueId = '',
     this.collectedAmount = 0,
     this.courierEarning = 0,
     this.verifiedTotal,
@@ -205,6 +213,8 @@ class AppOrder {
       deliveredBy: deliveredBy,
       deliveredAt: deliveredAt,
       courierAt: courierAt,
+      courierArrivedAt: courierArrivedAt,
+      activeDeliveryIssueId: activeDeliveryIssueId,
       collectedAmount: collectedAmount,
       courierEarning: courierEarning,
       verifiedTotal: verifiedTotal,
@@ -269,6 +279,10 @@ class AppOrder {
       courierAt: m['courierAt'] is Timestamp
           ? (m['courierAt'] as Timestamp).toDate()
           : null,
+      courierArrivedAt: m['courierArrivedAt'] is Timestamp
+          ? (m['courierArrivedAt'] as Timestamp).toDate()
+          : null,
+      activeDeliveryIssueId: (m['activeDeliveryIssueId'] ?? '').toString(),
       collectedAmount: (m['collectedAmount'] as num?)?.toDouble() ?? 0,
       courierEarning: (m['courierEarning'] as num?)?.toDouble() ?? 0,
       verifiedTotal: (m['verifiedTotal'] as num?)?.toDouble(),
