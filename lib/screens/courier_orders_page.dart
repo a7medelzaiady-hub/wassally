@@ -679,7 +679,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: reason,
+                    initialValue: reason,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'سبب تعذر التسليم',
@@ -795,11 +795,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                             issueId: order.activeDeliveryIssueId,
                           );
                         } catch (error) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('تعذر استئناف التوصيل: $error')),
-                            );
-                          }
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('تعذر استئناف التوصيل: $error')),
+                          );
                         } finally {
                           if (mounted) setState(() => _busy = false);
                         }
@@ -834,11 +833,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                             issueId: order.activeDeliveryIssueId,
                           );
                         } catch (error) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('تعذر تسجيل الإرجاع: $error')),
-                            );
-                          }
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('تعذر تسجيل الإرجاع: $error')),
+                          );
                         } finally {
                           if (mounted) setState(() => _busy = false);
                         }
