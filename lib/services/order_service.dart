@@ -451,61 +451,89 @@ class OrderService {
         )
         .toList();
 
-    final ref = _orders.doc(order.id);
-    final batch = FirebaseFirestore.instance.batch();
-    batch.update(ref, {
-      'items': updatedItems,
-      'subtotal': subtotal,
-      'total': total,
-      'notes': notes,
-      'customerName': _firstName(name),
-      if (discount > 0) 'discount': discount,
-      if (discount == 0 && order.discount > 0) 'discount': FieldValue.delete(),
-      if (discount == 0 && order.discount > 0) 'promoCode': FieldValue.delete(),
-      'editedAt': FieldValue.serverTimestamp(),
-      // تعديل العميل هو رده على «صنف غير متاح»: نشيل العلامة عشان المحل يقدر يبدأ التجهيز.
-      if (order.unavailableItems.isNotEmpty)
-        'unavailableItems': FieldValue.delete(),
-    });
-    batch.update(OrderContactService.ref(order.id), {
-      'userName': name,
-      'phone': phone,
-      'address': address,
-      'courierNotes': courierNotes.trim().isEmpty
-          ? FieldValue.delete()
-          : courierNotes.trim(),
-    });
-
-    // أثناء التحضير، قائمة المندوبين تتحدث في نفس Batch مع الطلب وبيانات التواصل.
-    // نحدّث الحقول المتغيرة فقط ونحافظ على createdAt الأصلي كما هو.
-    if (order.status == OrderStatus.preparing && order.courierId.isEmpty) {
-      batch.update(
-        FirebaseFirestore.instance
-            .collection('courier_available_orders')
-            .doc(order.id),
-        {
-          'items': updatedItems,
-          'subtotal': subtotal,
-          'discount': discount,
-          'total': total,
+    if (OrderGateway.isConfigured) {
+      final idToken = await user.getIdToken();
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول وحاول تاني.');
+      }
+      await OrderGateway.update(
+        idToken: idToken,
+        orderId: order.id,
+        payload: {
+          'customerName': _firstName(name),
+          'notes': notes,
+          'items': lines
+              .map((line) => {
+                    if (line.productId.isNotEmpty) 'productId': line.productId,
+                    if (line.productId.isEmpty) 'name': line.name,
+                    'expectedPrice': line.price,
+                    'qty': line.qty,
+                  })
+              .toList(),
+          'contact': {
+            'userName': name,
+            'phone': phone,
+            'address': address,
+            if (courierNotes.trim().isNotEmpty)
+              'courierNotes': courierNotes.trim(),
+          },
         },
       );
-    }
+    } else {
+      final ref = _orders.doc(order.id);
+      final batch = FirebaseFirestore.instance.batch();
+      batch.update(ref, {
+        'items': updatedItems,
+        'subtotal': subtotal,
+        'total': total,
+        'notes': notes,
+        'customerName': _firstName(name),
+        if (discount > 0) 'discount': discount,
+        if (discount == 0 && order.discount > 0) 'discount': FieldValue.delete(),
+        if (discount == 0 && order.discount > 0) 'promoCode': FieldValue.delete(),
+        'editedAt': FieldValue.serverTimestamp(),
+        if (order.unavailableItems.isNotEmpty)
+          'unavailableItems': FieldValue.delete(),
+      });
+      batch.update(OrderContactService.ref(order.id), {
+        'userName': name,
+        'phone': phone,
+        'address': address,
+        'courierNotes': courierNotes.trim().isEmpty
+            ? FieldValue.delete()
+            : courierNotes.trim(),
+      });
 
-    try {
-      await batch.commit();
-    } on FirebaseException catch (e) {
-      if (kDebugMode) debugPrint('ORDER EDIT ERROR [${e.code}]');
-      if (e.code == 'permission-denied') {
-        throw StateError(
-          'مبقاش ينفع تعدّل الطلب (المحل استلمه أو اتغيّرت حالته). (${e.code})',
+      if (order.status == OrderStatus.preparing && order.courierId.isEmpty) {
+        batch.update(
+          FirebaseFirestore.instance
+              .collection('courier_available_orders')
+              .doc(order.id),
+          {
+            'items': updatedItems,
+            'subtotal': subtotal,
+            'discount': discount,
+            'total': total,
+          },
         );
       }
-      if (e.code == 'unavailable') {
-        throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+
+      try {
+        await batch.commit();
+      } on FirebaseException catch (e) {
+        if (kDebugMode) debugPrint('ORDER EDIT ERROR [${e.code}]');
+        if (e.code == 'permission-denied') {
+          throw StateError(
+            'مبقاش ينفع تعدّل الطلب (المحل استلمه أو اتغيّرت حالته). (${e.code})',
+          );
+        }
+        if (e.code == 'unavailable') {
+          throw StateError('مفيش اتصال بالإنترنت. حاول تاني.');
+        }
+        throw StateError('تعذر تعديل الطلب (${e.code}).');
       }
-      throw StateError('تعذر تعديل الطلب (${e.code}).');
     }
+
     try {
       await UserService.save(
         UserProfile(name: name, phone: phone, address: address),
