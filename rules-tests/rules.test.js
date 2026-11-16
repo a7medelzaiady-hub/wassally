@@ -252,7 +252,7 @@ test('claim/edit race: التزامن الفعلي لا يترك feed قديمً
     const edit = customerEditBatch(customerDb, orderId);
     const claim = writeBatch(courierDb);
     claim.update(doc(courierDb, `orders/${orderId}`), {
-      courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+      courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(), deliveryMode: 'external',
     });
     claim.delete(doc(courierDb, `courier_available_orders/${orderId}`));
     const [editResult, claimResult] = await Promise.allSettled([edit.commit(), claim.commit()]);
@@ -276,7 +276,7 @@ test('claim/edit race: الاستلام أولًا يمنع التعديل با�
   const courierDb = as('cour1');
   const claim = writeBatch(courierDb);
   claim.update(doc(courierDb, 'orders/o1'), {
-    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   claim.delete(doc(courierDb, 'courier_available_orders/o1'));
   await assertSucceeds(claim.commit());
@@ -294,7 +294,7 @@ test('claim/edit race: التعديل أولًا يحدّث feed ثم الاست
   const courierDb = as('cour1');
   const claim = writeBatch(courierDb);
   claim.update(doc(courierDb, 'orders/o1'), {
-    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(),
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   claim.delete(doc(courierDb, 'courier_available_orders/o1'));
   await assertSucceeds(claim.commit());
@@ -843,7 +843,7 @@ test('couriers: السجل القديم بلا active يظل نشطًا، وacti
   const legacy = as('legacy');
   const claim = writeBatch(legacy);
   claim.update(doc(legacy, 'orders/o1'), {
-    courierId: 'legacy', courierName: 'Legacy', courierPhone: '', courierAt: serverTimestamp(),
+    courierId: 'legacy', courierName: 'Legacy', courierPhone: '', courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   claim.delete(doc(legacy, 'courier_available_orders/o1'));
   await assertSucceeds(claim.commit());
@@ -1218,7 +1218,7 @@ test('courier assignment: التعيين الإداري يفشل لو الـ fee
   const partial = writeBatch(db);
   partial.update(doc(db, 'orders/o1'), {
     courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
-    courierAt: serverTimestamp(),
+    courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   await assertFails(partial.commit());
   assert.equal((await getDoc(doc(db, 'orders/o1'))).data().courierId ?? '', '');
@@ -1227,7 +1227,7 @@ test('courier assignment: التعيين الإداري يفشل لو الـ fee
   const atomic = writeBatch(db);
   atomic.update(doc(db, 'orders/o1'), {
     courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
-    courierAt: serverTimestamp(),
+    courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   atomic.delete(doc(db, 'courier_available_orders/o1'));
   await assertSucceeds(atomic.commit());
@@ -1241,7 +1241,7 @@ test('courier unassignment: لا يُفك الإسناد إلا مع إعادة 
   const assign = writeBatch(admin);
   assign.update(doc(admin, 'orders/o1'), {
     courierId: 'cour1', courierName: 'C', courierPhone: '01012345678',
-    courierAt: serverTimestamp(),
+    courierAt: serverTimestamp(), deliveryMode: 'external',
   });
   assign.delete(doc(admin, 'courier_available_orders/o1'));
   await assertSucceeds(assign.commit());
