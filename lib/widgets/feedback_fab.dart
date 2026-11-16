@@ -26,6 +26,7 @@ class _FeedbackFabState extends State<FeedbackFab> {
     FeedbackKind.complaint => Icons.report_gmailerrorred_outlined,
     FeedbackKind.suggestion => Icons.lightbulb_outline,
     FeedbackKind.orderIssue => Icons.receipt_long_outlined,
+    FeedbackKind.restrictionAppeal => Icons.gavel_outlined,
   };
 
   Future<void> _pick(FeedbackKind k) async {
@@ -47,7 +48,8 @@ class _FeedbackFabState extends State<FeedbackFab> {
   Widget build(BuildContext context) {
     final kinds = [
       for (final k in FeedbackKind.values)
-        if (k != FeedbackKind.orderIssue || widget.allowOrderIssue) k,
+        if ((k != FeedbackKind.orderIssue || widget.allowOrderIssue) &&
+            (k != FeedbackKind.restrictionAppeal || widget.allowOrderIssue)) k,
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
