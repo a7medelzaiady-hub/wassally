@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/image_service.dart';
 import '../services/role_request_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -27,13 +28,16 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
   final _store = TextEditingController();
   String? _storeCategory;
   final _address = TextEditingController();
+  final _storeImageUrl = TextEditingController();
+  final _registrationNumber = TextEditingController();
+  final _proofUrl = TextEditingController();
   final _vehicle = TextEditingController();
   final _notes = TextEditingController();
   bool _busy = false;
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _store, _address, _vehicle, _notes]) {
+    for (final c in [_name, _phone, _store, _address, _storeImageUrl, _registrationNumber, _proofUrl, _vehicle, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -50,6 +54,13 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
 
   Future<void> _send() async {
     if (!(_form.currentState?.validate() ?? false)) return;
+    if (widget.type == JoinType.storeOwner &&
+        _registrationNumber.text.trim().isEmpty && _proofUrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أدخل رقم السجل التجاري أو رابط إثبات النشاط.')),
+      );
+      return;
+    }
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
@@ -61,6 +72,9 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         storeName: _store.text,
         storeCategory: _storeCategory ?? '',
         address: _address.text,
+        storeImageUrl: _storeImageUrl.text,
+        registrationNumber: _registrationNumber.text,
+        proofUrl: _proofUrl.text,
         vehicle: _vehicle.text,
         notes: _notes.text,
       );
@@ -167,6 +181,91 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                     ? 'اكتب العنوان بالتفصيل'
                     : null,
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _storeImageUrl,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط صورة واجهة/المحل (مطلوب)',
+                  prefixIcon: Icon(Icons.photo_outlined),
+                ),
+                validator: (v) => isValidImageUrl(v ?? '')
+                    ? null
+                    : 'أدخل رابط صورة صحيح يبدأ بـ https://',
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _registrationNumber,
+                decoration: const InputDecoration(
+                  labelText: 'رقم السجل التجاري (اختياري)',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                validator: (v) {
+                  final value = (v ?? '').trim();
+                  return value.isEmpty || RegExp(r'^[A-Za-z0-9\\-/]{6,30}
+            ] else
+              TextFormField(
+                controller: _vehicle,
+                decoration: const InputDecoration(
+                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
+                  prefixIcon: Icon(Icons.two_wheeler),
+                ),
+                validator: (v) =>
+                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
+              ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _notes,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظات (اختياري)',
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _busy ? null : _send,
+              child: _busy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('إرسال الطلب'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+).hasMatch(value)
+                      ? null
+                      : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _proofUrl,
+                keyboardType: TextInputType.url,
+                textDirection: TextDirection.ltr,
+                decoration: const InputDecoration(
+                  labelText: 'رابط إثبات النشاط (اختياري)',
+                  prefixIcon: Icon(Icons.verified_outlined),
+                ),
+                validator: (v) => (v ?? '').trim().isEmpty || isValidImageUrl(v ?? '')
+                    ? null
+                    : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
+              ),
+              const SizedBox(height: 6),
+              Text('لازم رقم سجل تجاري أو رابط إثبات نشاط على الأقل.',
+                  style: TextStyle(color: kMuted, fontSize: 12)),
             ] else
               TextFormField(
                 controller: _vehicle,
