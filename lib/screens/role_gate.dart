@@ -48,7 +48,7 @@ class _RoleGateState extends State<RoleGate> {
 
   /// تنبيهات الدردشة والشكاوى اللحظية (المدير بياخد تنبيهات زيادة).
   void _startAlerts(RoleInfo info) {
-    if (info.pendingStoreOwner) {
+    if (info.pendingStoreOwner && info.held.length == 1) {
       LiveAlerts.stop();
       return;
     }
