@@ -322,7 +322,7 @@ class _StorePageState extends State<StorePage> {
                 onPressed: _sendingSpecial ? null : _toggleVoiceRecording,
                 icon: Icon(_recording ? Icons.stop_circle_outlined : Icons.mic_none),
                 label: Text(_recording
-                    ? 'إيقاف التسجيل (${_recordSeconds}/15 ث)'
+                    ? 'إيقاف التسجيل ($_recordSeconds/15 ث)'
                     : (_voicePath == null ? 'رسالة صوتية' : 'تم تسجيل الصوت')),
               ),
             ],
