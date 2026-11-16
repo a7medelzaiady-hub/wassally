@@ -8,6 +8,7 @@ import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
 import '../services/user_service.dart';
+import '../services/worker_notify_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -189,7 +190,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final navigator = Navigator.of(context);
 
     try {
-      await OrderService.placeOrder(
+      final orderId = await OrderService.placeOrder(
         cart: cart,
         name: _name.text.trim(),
         phone: _phone.text.replaceAll(RegExp(r'[\s\-]'), ''),
@@ -197,6 +198,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
         notes: _notes.text.trim(),
         courierNotes: _courierNotes.text.trim(),
       );
+
+      // إرسال الإشعارات عبر Cloudflare Worker المجاني
+      try {
+        await WorkerNotifyService.notifyOrderCreated(
+          orderId: orderId ?? 'new',
+          userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+          storeId: cart.storeId ?? '',
+          customerName: _name.text.trim(),
+          storeName: cart.storeName ?? 'المحل',
+          total: cart.total,
+        );
+      } catch (_) {}
+
       navigator.popUntil((route) => route.isFirst);
       shellTab.value = 2;
       final dialogContext = navigator.context;
@@ -243,7 +257,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
       setState(() => _submitting = false);
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } on StateError catch (e) {
-      // رسائل placeOrder (المحل مقفول، صلاحيات، كود الخطأ...) كانت بتتبلع هنا.
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
