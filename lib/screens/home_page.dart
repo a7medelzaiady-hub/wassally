@@ -93,8 +93,10 @@ class _HomePageState extends State<HomePage>
 
   static Future<QuerySnapshot<Map<String, dynamic>>> _loadStores() =>
       CatalogService.get(
-        FirebaseFirestore.instance.collection('stores'),
-        'stores',
+        FirebaseFirestore.instance
+            .collection('stores')
+            .where('active', isEqualTo: true),
+        'stores_active',
       );
 
   @override
