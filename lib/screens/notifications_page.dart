@@ -177,6 +177,8 @@ class NotificationsPage extends StatelessWidget {
               stream: FirebaseFirestore.instance
                   .collection('notifications')
                   .where('userId', isEqualTo: uid)
+                  .orderBy('createdAt', descending: true)
+                  .limit(100)
                   .snapshots(),
               builder: (context, snap) {
                 if (snap.hasError) {
