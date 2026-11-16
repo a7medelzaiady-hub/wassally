@@ -446,7 +446,7 @@ class StaffOrderService {
     required String status,
     required String decision,
   }) async {
-    if (!['in_review', 'retry', 'return_to_store'].contains(status)) {
+    if (!['in_review', 'retry', 'return_to_store', 'store_confirmed_return'].contains(status)) {
       throw ArgumentError.value(status, 'status');
     }
     final db = FirebaseFirestore.instance;
@@ -494,6 +494,27 @@ class StaffOrderService {
     });
     batch.update(orderRef, {'activeDeliveryIssueId': FieldValue.delete()});
     await batch.commit();
+  }
+
+  /// صاحب المحل يؤكد استلام المرتجع فعليًا قبل أن تغلق الإدارة الطلب.
+  static Future<void> confirmStoreReceivedReturn({
+    required String orderId,
+    required String issueId,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final ref = FirebaseFirestore.instance.collection('delivery_issues').doc(issueId);
+    final snap = await ref.get();
+    final data = snap.data();
+    if (data == null || data['orderId'] != orderId ||
+        data['status'] != 'returned_to_store') {
+      throw StateError('البلاغ لا ينتظر تأكيد استلام المحل.');
+    }
+    await ref.update({
+      'status': 'store_confirmed_return',
+      'storeReceivedAt': FieldValue.serverTimestamp(),
+      'storeReceivedBy': uid,
+    });
   }
 
   /// المندوب يؤكد رجوع الطلب للمحل بعد قرار الإدارة.
