@@ -97,7 +97,7 @@ export function calculateDiscount(subtotal: number, percent: number): number {
 
 export function effectiveCatalogPrice(product: JsonMap, now = Date.now()): number {
   const base = Number(product.price);
-  const oldPrice = Number(product.oldPrice ?? 0);
+  const oldPrice = typeof product.oldPrice === "number" ? product.oldPrice : 0;
   if (!Number.isFinite(base) || base <= 0 || base > 20000) {
     throw new HttpError(409, "يوجد صنف بسعر غير صالح في الكتالوج.");
   }
@@ -254,6 +254,7 @@ async function resolveItems(
     const productId = String(line?.productId ?? "").trim();
     let product: JsonMap;
     let resolvedId = productId;
+    let isLegacy = false;
     if (productId) {
       const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
       const found = productDocs.get(path);
@@ -264,6 +265,7 @@ async function resolveItems(
       if (!name || name.length > 120) throw new HttpError(400, "صنف قديم بدون اسم صالح.");
       product = productFromLegacy(store, name);
       resolvedId = "";
+      isLegacy = true;
     }
     if (product.available === false || product.isAvailable === false) {
       throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
@@ -273,7 +275,9 @@ async function resolveItems(
     const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
     if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
     seen.add(identity);
-    const price = effectiveCatalogPrice(isLegacy\n      ? { ...product, oldPrice: 0, offerEndsAt: null }\n      : product);
+    const price = effectiveCatalogPrice(
+      isLegacy ? { ...product, oldPrice: 0, offerEndsAt: null } : product,
+    );
     const expectedPrice = Number(line?.expectedPrice);
     // expectedPrice is only a stale-cart check; the saved price always comes from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
@@ -339,7 +343,9 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   ]);
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
-  if (store.active !== undefined && store.active !== true) {\n    throw new HttpError(409, "المحل مغلق حاليًا.");\n  }
+  if (store.active !== undefined && store.active !== true) {
+    throw new HttpError(409, "المحل مغلق حاليًا.");
+  }
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
   if (restriction.active === true &&
       restriction.expiresAt instanceof Date &&
@@ -352,13 +358,17 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.");
   }
 
-  const rawAreas = areasDoc ? decodeFields(areasDoc.fields ?? {}).areas : null;\n  const areaList = Array.isArray(rawAreas) ? rawAreas as JsonMap[] : [];
+  const rawAreas = areasDoc ? decodeFields(areasDoc.fields ?? {}).areas : null;
+  const areaList = Array.isArray(rawAreas) ? rawAreas as JsonMap[] : [];
   let deliveryFee = Number(env.DEFAULT_DELIVERY_FEE ?? 20);
   let orderArea = "";
   if (areaList.length) {
     const selected = areaList.find((entry) => String(entry.name ?? "").trim() === area);
     if (!selected) throw new HttpError(400, "اختار منطقة توصيل صالحة.");
-    if (typeof selected.fee !== "number") {\n      throw new HttpError(409, "سعر منطقة التوصيل غير صالح في الإعدادات.");\n    }\n    deliveryFee = selected.fee;
+    if (typeof selected.fee !== "number") {
+      throw new HttpError(409, "سعر منطقة التوصيل غير صالح في الإعدادات.");
+    }
+    deliveryFee = selected.fee;
     orderArea = area;
   } else if (area) {
     throw new HttpError(400, "قائمة مناطق التوصيل غير مفعّلة؛ أعد تحميل صفحة الدفع.");
@@ -381,7 +391,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (promoCode) {
     const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
     const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
-    const percent = Number(promo.percent ?? 0);
+    const percent = typeof promo.percent === "number" ? promo.percent : 0;
     if (promo.active !== true || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
       throw new HttpError(409, "الكوبون لم يعد صالحًا.");
     }
