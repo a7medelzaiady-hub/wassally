@@ -132,7 +132,7 @@ async function googleAccessToken(env: Env): Promise<string> {
   const key = await importPKCS8(privateKey, "RS256");
   const now = Math.floor(Date.now() / 1000);
   const assertion = await new SignJWT({
-    scope: "https://www.googleapis.com/auth/datastore",
+    scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging",
   })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
@@ -290,6 +290,50 @@ async function resolveItems(
     throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
   }
   return { items, subtotal };
+}
+
+export function courierTopicMessage(orderId: string, storeName: string) {
+  const shortId = "#" + orderId.slice(0, 5).toUpperCase();
+  return {
+    message: {
+      topic: "couriers",
+      notification: {
+        title: "طلب توصيل جديد متاح " + shortId,
+        body: String(storeName || "محل").slice(0, 80) + " • افتح التطبيق لمراجعة الطلب والتقديم عليه",
+      },
+      data: {
+        type: "available_order",
+        orderId,
+      },
+      android: {
+        priority: "HIGH",
+        notification: { sound: "default" },
+      },
+    },
+  };
+}
+
+async function notifyCouriersOfNewOrder(
+  env: Env,
+  accessToken: string,
+  orderId: string,
+  storeName: string,
+): Promise<void> {
+  const sent = await fetch(
+    `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(courierTopicMessage(orderId, storeName)),
+    },
+  );
+  if (!sent.ok) {
+    const detail = (await sent.text()).slice(0, 500);
+    throw new Error(`FCM send failed (${sent.status}): ${detail}`);
+  }
 }
 
 async function createOrder(request: Request, env: Env): Promise<Response> {
@@ -461,6 +505,12 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "تم تغيير الطلب بالتزامن. راجع طلباتك قبل إعادة المحاولة.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
+  // الإشعار يُرسل من الخادم بعد نجاح حفظ الطلب فقط. فشل FCM لا يلغي الطلب.
+  try {
+    await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
+  } catch (error) {
+    console.error("Courier push notification failed", error);
+  }
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
 
