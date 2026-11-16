@@ -385,6 +385,18 @@ test('customer reviews: المندوب وصاحب المحل يقيّمان ال
   ));
   await assertSucceeds(getDoc(doc(as('admin1'), 'customer_reviews/o1_courier')));
   await assertFails(getDoc(doc(as('cust1'), 'customer_reviews/o1_courier')));
+  await assertFails(updateDoc(doc(as('cour1'), 'customer_reviews/o1_courier'), {
+    moderationStatus: 'excluded',
+  }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'customer_reviews/o1_courier'), {
+    moderationStatus: 'excluded',
+    adminNote: 'تمت مراجعة البلاغ واستبعاد التقييم.',
+    moderatedAt: serverTimestamp(),
+    moderatedBy: 'admin1',
+  }));
+  await assertFails(updateDoc(doc(as('admin1'), 'customer_reviews/o1_courier'), {
+    rating: 5,
+  }));
 });
 
 test('customer reviews: يمنع التقييم المزور أو قبل التسليم أو من طرف غير مشارك', async () => {
