@@ -363,7 +363,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
                 minLines: 4,
                 maxLines: 6,
                 maxLength: FeedbackService.maxLength,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: _kind == FeedbackKind.restrictionAppeal
                       ? 'اشرح سبب اعتراضك وأي معلومات تدعم طلب المراجعة'
                       : 'اكتب رسالتك',
