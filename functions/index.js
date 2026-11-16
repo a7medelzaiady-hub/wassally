@@ -6,7 +6,7 @@
  * - تكليف مندوب بطلب    ← المندوب
  * - طلب اتلغى / اتسلّم  ← المديرين (والمندوب في حالة الإلغاء)
  *
- * توكنات الأجهزة متخزنة في users/{uid}.fcmTokens (التطبيق بيسجّلها).
+ * معرّفات تثبيت FCM متخزنة في users/{uid}.fcmInstallationIds، مع دعم مؤقت للتوكنات القديمة.
  */
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
@@ -60,15 +60,19 @@ async function ownerUids(storeId) {
   }
 }
 
-/** بترجع [{uid, token}] لكل أجهزة المستخدمين المطلوبين. */
-async function tokensOf(uids) {
+/** بترجع معرّفات FID والتوكنات القديمة لكل أجهزة المستخدمين المطلوبين. */
+async function devicesOf(uids) {
   const out = [];
   await Promise.all(
     uids.map(async (uid) => {
       const snap = await db.collection('users').doc(uid).get();
-      const list = snap.exists ? snap.get('fcmTokens') : null;
-      if (!Array.isArray(list)) return;
-      for (const token of list) {
+      if (!snap.exists) return;
+      const data = snap.data();
+      for (const fid of Array.isArray(data.fcmInstallationIds) ? data.fcmInstallationIds : []) {
+        if (typeof fid === 'string' && fid) out.push({ uid, fid });
+      }
+      // دعم الأجهزة التي لم تُحدّث التطبيق بعد.
+      for (const token of Array.isArray(data.fcmTokens) ? data.fcmTokens : []) {
         if (typeof token === 'string' && token) out.push({ uid, token });
       }
     }),
@@ -76,20 +80,20 @@ async function tokensOf(uids) {
   return out;
 }
 
-/** بتبعت إشعار لكل أجهزة المستخدمين، وبتمسح التوكنات الميتة. */
+/** بتبعت إشعار لكل الأجهزة، وبتمسح معرّفات التسجيل غير الصالحة. */
 async function notify(uids, title, body, data = {}) {
   const unique = [...new Set(uids.filter(Boolean))];
   if (unique.length === 0) return;
 
-  const entries = (await tokensOf(unique)).slice(0, 500);
+  const entries = (await devicesOf(unique)).slice(0, 500);
   if (entries.length === 0) return;
 
-  const res = await admin.messaging().sendEachForMulticast({
-    tokens: entries.map((e) => e.token),
+  const res = await admin.messaging().sendEach(entries.map((entry) => ({
+    ...(entry.fid ? { fid: entry.fid } : { token: entry.token }),
     notification: { title, body },
     data,
     android: { priority: 'high', notification: { sound: 'default' } },
-  });
+  })));
 
   const dead = [];
   res.responses.forEach((r, i) => {
@@ -107,9 +111,9 @@ async function notify(uids, title, body, data = {}) {
       db
         .collection('users')
         .doc(e.uid)
-        .update({
-          fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token),
-        })
+        .update(e.fid
+          ? { fcmInstallationIds: admin.firestore.FieldValue.arrayRemove(e.fid) }
+          : { fcmTokens: admin.firestore.FieldValue.arrayRemove(e.token) })
         .catch(() => {}),
     ),
   );
