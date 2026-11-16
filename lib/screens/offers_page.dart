@@ -205,7 +205,7 @@ class _OffersPageState extends State<OffersPage> {
             if (snap.hasError) {
               return Column(
                 children: [
-                  const _pageHeader(),
+                  _pageHeader(),
                   Expanded(
                     child: EmptyState(
                       icon: Icons.cloud_off,
