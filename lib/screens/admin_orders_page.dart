@@ -15,6 +15,7 @@ import '../widgets/admin_stats_card.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/staff_header.dart';
+import '../widgets/unanswered_orders_alert.dart';
 import 'admin_banners_page.dart';
 
 /// شاشة المدير: كل الطلبات، فلترة بالحالة، تغيير الحالة، وتعيين مندوب.
@@ -267,6 +268,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             ),
             SliverToBoxAdapter(child: _bannersShortcut()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
+            const SliverToBoxAdapter(child: UnansweredOrdersAlert()),
           ];
 
           if (snapshot.hasError) {
