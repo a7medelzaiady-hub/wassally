@@ -139,7 +139,7 @@ async function googleAccessToken(env: Env): Promise<string> {
   const key = await importPKCS8(privateKey, "RS256");
   const now = Math.floor(Date.now() / 1000);
   const assertion = await new SignJWT({
-    scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging",
+    scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/identitytoolkit",
   })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
@@ -176,6 +176,277 @@ async function getDocument(env: Env, path: string, token: string): Promise<Fires
   if (result.status === 404) return null;
   if (!result.ok) throw new HttpError(503, "تعذر قراءة بيانات الطلب من قاعدة البيانات.");
   return await result.json() as FirestoreDoc;
+}
+
+
+async function verifyRecentCustomer(request: Request, env: Env): Promise<string> {
+  const auth = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  try {
+    const { payload } = await jwtVerify(token, firebaseKeys, {
+      audience: env.FIREBASE_PROJECT_ID,
+      issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
+    });
+    const authTime = Number(payload.auth_time);
+    if (typeof payload.sub !== "string" || !payload.sub ||
+        !Number.isFinite(authTime) ||
+        authTime > Math.floor(Date.now() / 1000) + 60 ||
+        Math.floor(Date.now() / 1000) - authTime > 300) {
+      throw new Error("Recent authentication required");
+    }
+    return payload.sub;
+  } catch {
+    throw new HttpError(401, "لأمان حسابك، سجّل الدخول وأكّد هويتك من جديد قبل الحذف.");
+  }
+}
+
+function firestoreDocumentsUrl(env: Env): string {
+  return `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+}
+
+async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Promise<void> {
+  if (!writes.length) return;
+  for (let offset = 0; offset < writes.length; offset += 400) {
+    const result = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes: writes.slice(offset, offset + 400) }),
+    });
+    if (!result.ok) {
+      const detail = (await result.text()).slice(0, 300);
+      throw new HttpError(503, `تعذر استكمال تنظيف بيانات الحساب (${result.status}): ${detail}`);
+    }
+  }
+}
+
+async function queryAccountDocuments(
+  env: Env,
+  token: string,
+  collectionId: string,
+  fieldPath: string,
+  uid: string,
+  parent = "",
+  allDescendants = false,
+): Promise<FirestoreDoc[]> {
+  const root = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const endpoint = `${firestoreDocumentsUrl(env)}${parent ? `/${parent}` : ""}:runQuery`;
+  const docs: FirestoreDoc[] = [];
+  let cursor = "";
+  for (;;) {
+    const structuredQuery: any = {
+      from: [{ collectionId, ...(allDescendants ? { allDescendants: true } : {}) }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath },
+          op: "EQUAL",
+          value: { stringValue: uid },
+        },
+      },
+      orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }],
+      limit: 200,
+      ...(cursor ? { startAt: { values: [{ referenceValue: cursor }], before: false } } : {}),
+    };
+    const result = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ structuredQuery }),
+    });
+    if (!result.ok) {
+      const detail = (await result.text()).slice(0, 300);
+      throw new HttpError(503, `تعذر قراءة سجلات حذف الحساب (${result.status}): ${detail}`);
+    }
+    const rows = await result.json() as Array<{ document?: FirestoreDoc }>;
+    const page = rows.map((row) => row.document).filter((doc): doc is FirestoreDoc => Boolean(doc?.name));
+    if (!page.length) break;
+    docs.push(...page);
+    cursor = page[page.length - 1].name;
+    if (page.length < 200) break;
+  }
+  return docs;
+}
+
+async function mutateAccountQuery(
+  env: Env,
+  token: string,
+  collectionId: string,
+  fieldPath: string,
+  uid: string,
+  transform: (doc: FirestoreDoc) => JsonMap | null,
+  parent = "",
+  allDescendants = false,
+): Promise<void> {
+  const docs = await queryAccountDocuments(
+    env, token, collectionId, fieldPath, uid, parent, allDescendants,
+  );
+  const writes = docs.map((doc) => {
+    const patch = transform(doc);
+    if (patch === null) return { delete: doc.name };
+    const fieldPaths = Object.keys(patch);
+    return {
+      update: { name: doc.name, fields: encodeFields(patch) },
+      updateMask: { fieldPaths },
+    };
+  });
+  await commitFirestoreWrites(env, token, writes);
+}
+
+async function deleteAccountData(env: Env, token: string, uid: string): Promise<void> {
+  const ownerDoc = await getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token);
+  const ownerData = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+  const ownedStoreId = typeof ownerData.storeId === "string" ? ownerData.storeId : "";
+
+  // Keep commercial order history, but remove every direct customer identifier/contact.
+  const customerOrders = await queryAccountDocuments(env, token, "orders", "userId", uid);
+  const customerWrites: any[] = [];
+  for (const order of customerOrders) {
+    customerWrites.push({
+      update: {
+        name: order.name,
+        fields: encodeFields({
+          customerName: "عميل محذوف",
+          notes: "",
+          userId: "deleted",
+          userDeleted: true,
+        }),
+      },
+      updateMask: { fieldPaths: ["customerName", "notes", "userId", "userDeleted", "userName", "userEmail", "phone", "address"] },
+    });
+    const orderPath = order.name.split("/documents/")[1];
+    customerWrites.push({ delete: `${firestoreDocumentsUrl(env)}/${orderPath}/private/contact` });
+  }
+  await commitFirestoreWrites(env, token, customerWrites);
+
+  // Remove courier applications and pseudonymize historical courier activity.
+  await mutateAccountQuery(env, token, "applicants", "courierId", uid, () => null, "", true);
+  await mutateAccountQuery(env, token, "orders", "courierId", uid, (doc) => {
+    const data = decodeFields(doc.fields ?? {});
+    if (["delivered", "cancelled"].includes(String(data.status ?? ""))) {
+      return {
+        courierId: "deleted",
+        courierName: "مندوب محذوف",
+        courierPhone: "",
+        deliveredBy: data.deliveredBy === uid ? "deleted" : String(data.deliveredBy ?? ""),
+      };
+    }
+    const patch: JsonMap = {
+      courierId: null,
+      courierName: null,
+      courierPhone: null,
+      courierAt: null,
+    };
+    if (data.status === "on_the_way") patch.status = "preparing";
+    return patch;
+  });
+  await mutateAccountQuery(env, token, "orders", "deliveredBy", uid, () => ({ deliveredBy: "deleted" }));
+  await mutateAccountQuery(env, token, "statusHistory", "actorUid", uid, () => ({ actorUid: "deleted" }), "", true);
+
+  // Remove user-authored support, complaints, applications, and notifications.
+  for (const [collection, field] of [
+    ["complaints", "userId"],
+    ["role_requests", "userId"],
+    ["notifications", "userId"],
+  ]) {
+    await mutateAccountQuery(env, token, collection, field, uid, () => null);
+  }
+
+  // Keep aggregate scores while removing the account link and free-text content.
+  await mutateAccountQuery(env, token, "reviews", "userId", uid, () => ({
+    userId: "deleted", comment: "", userDeleted: true,
+  }));
+  await mutateAccountQuery(env, token, "reviews", "courierId", uid, () => ({
+    courierId: "deleted", comment: "", courierDeleted: true,
+  }));
+  await mutateAccountQuery(env, token, "customer_reviews", "reviewerId", uid, () => ({
+    reviewerId: "deleted", customerId: "deleted", comment: "", userDeleted: true,
+  }));
+  await mutateAccountQuery(env, token, "courier_settlements", "courierId", uid, () => ({
+    courierId: "deleted", courierName: "مندوب محذوف", note: "", courierDeleted: true,
+  }));
+
+  // Delete support messages before their parent document (Firestore has no cascade delete).
+  const chatPath = `support_chats/${encodeURIComponent(uid)}`;
+  const chatMessages = await queryAccountDocuments(env, token, "messages", "__name__", uid, chatPath);
+  await commitFirestoreWrites(env, token, chatMessages.map((doc) => ({ delete: doc.name })));
+  await commitFirestoreWrites(env, token, [{ delete: `${firestoreDocumentsUrl(env)}/${chatPath}` }]);
+
+  // Remove role/profile documents.
+  await commitFirestoreWrites(env, token, [
+    "admins", "couriers", "storeOwners", "supervisors",
+    "customer_restrictions", "orderLimits", "first_orders",
+  ].map((collection) => ({
+    delete: `${firestoreDocumentsUrl(env)}/${collection}/${encodeURIComponent(uid)}`,
+  })));
+
+  if (ownedStoreId) {
+    const remainingOwners = await fetch(`${firestoreDocumentsUrl(env)}/storeOwners:runQuery`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "storeOwners" }],
+          where: { fieldFilter: {
+            field: { fieldPath: "storeId" }, op: "EQUAL", value: { stringValue: ownedStoreId },
+          } },
+          limit: 100,
+        },
+      }),
+    });
+    if (!remainingOwners.ok) throw new HttpError(503, "تعذر التحقق من مالكي المحل بعد حذف الحساب.");
+    const rows = await remainingOwners.json() as Array<{ document?: FirestoreDoc }>;
+    const activeOwner = rows.some((row) => {
+      if (!row.document) return false;
+      return decodeFields(row.document.fields ?? {}).active !== false;
+    });
+    if (!activeOwner) {
+      const store = await getDocument(env, `stores/${encodeURIComponent(ownedStoreId)}`, token);
+      if (store) await commitFirestoreWrites(env, token, [{
+        update: {
+          name: store.name,
+          fields: encodeFields({
+            active: false,
+            ownerDeleted: true,
+            updatedAt: new Date(),
+          }),
+        },
+        updateMask: { fieldPaths: ["active", "ownerDeleted", "updatedAt"] },
+      }]);
+    }
+  }
+
+  await mutateAccountQuery(env, token, "couriers", "supervisorId", uid, () => ({ supervisorId: null }));
+  await mutateAccountQuery(env, token, "account_deletions", "userId", uid, () => null);
+  await commitFirestoreWrites(env, token, [
+    { delete: `${firestoreDocumentsUrl(env)}/account_deletions/${encodeURIComponent(uid)}` },
+    { delete: `${firestoreDocumentsUrl(env)}/users/${encodeURIComponent(uid)}` },
+  ]);
+}
+
+async function deleteFirebaseAuthUser(env: Env, token: string, uid: string): Promise<void> {
+  const result = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/accounts:delete`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ localId: uid }),
+    },
+  );
+  if (!result.ok) {
+    const detail = (await result.text()).slice(0, 300);
+    throw new HttpError(503, `تم تنظيف البيانات لكن تعذر حذف حساب تسجيل الدخول (${result.status}): ${detail}`);
+  }
+}
+
+async function deleteAccount(request: Request, env: Env): Promise<Response> {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
+      !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new HttpError(503, "خدمة حذف الحساب غير مهيأة على الخادم.");
+  }
+  const uid = await verifyRecentCustomer(request, env);
+  const token = await googleAccessToken(env);
+  await deleteAccountData(env, token, uid);
+  await deleteFirebaseAuthUser(env, token, uid);
+  return response({ ok: true, deleted: true });
 }
 
 async function batchGetDocuments(env: Env, paths: string[], token: string): Promise<Map<string, JsonMap>> {
@@ -746,6 +1017,17 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/account/delete") {
+      try {
+        const result = await deleteAccount(request, env);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر حذف الحساب بأمان. لم يتم تأكيد حذف حساب تسجيل الدخول.");
+        return response({ error: e.message }, e.status, headers);
+      }
     }
     if (request.method === "POST" && url.pathname === "/v1/uploads/sign") {
       try {
