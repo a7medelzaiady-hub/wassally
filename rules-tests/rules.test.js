@@ -827,7 +827,7 @@ test('delivery: لا يمكن تسجيل التسليم قبل تسجيل الو
 });
 
 test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' }));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ courierEarning: 99 })));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 5 })));
@@ -837,7 +837,7 @@ test('delivery stamp: الختم إلزامي دائمًا والمندوب لا
 });
 
 test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اكتماله', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
   await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { courierEarning: 500 }));
 });
@@ -902,7 +902,7 @@ test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمول
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 9999 }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 'x' }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 35, verifiedTotal: 55, verifiedAt: serverTimestamp() }));
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 20 })));
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 35 })));
 });
