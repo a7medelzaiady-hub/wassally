@@ -697,11 +697,8 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
   const close = writeBatch(as('admin1'));
   close.update(doc(as('admin1'), 'orders/o1'), {
     status: 'cancelled',
-    courierId: deleteField(),
-    courierName: deleteField(),
-    courierPhone: deleteField(),
-    courierAt: deleteField(),
     activeDeliveryIssueId: deleteField(),
+    lastDeliveryIssueId: 'return1',
   });
   close.set(doc(as('admin1'), 'orders/o1/statusHistory/cancelled'), {
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
