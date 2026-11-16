@@ -33,6 +33,16 @@
    npx wrangler secret put ALLOWED_ORIGINS
    ```
    قيمة `ALLOWED_ORIGINS` قائمة origins مفصولة بفواصل لنسخة الويب. تطبيقات الهاتف لا ترسل Origin عادةً.
+**بيئة الاختبار أولًا:** أنشئ مشروع Firebase منفصلًا للاختبار، وحساب خدمة مخصصًا له. خزّن أسراره على Worker الاختبار باستخدام `--env staging` ثم انشر:
+```bash
+npx wrangler secret put FIREBASE_PROJECT_ID --env staging
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL --env staging
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY --env staging
+npx wrangler secret put ALLOWED_ORIGINS --env staging
+npx wrangler deploy --env staging
+```
+لا تستخدم بيانات الإنتاج في بيئة الاختبار. بعد اجتياز الاختبارات، كرر إعداد الأسرار دون `--env staging` لنشر Worker الإنتاج.
+
 5. انشر Worker بعد اجتياز الاختبارات:
    ```bash
    npm run deploy
