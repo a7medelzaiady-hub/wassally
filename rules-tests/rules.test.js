@@ -522,6 +522,27 @@ test('courier lifecycle: لا يبدأ المندوب الرحلة قبل تجه
 const { query, collection, where, getDocs } = require('firebase/firestore');
 const setOrder = (patch) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), patch));
 
+test('admin cancellation: إلغاء طلب قيد التجهيز يزيل تعيين المندوب', async () => {
+  await env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), 'orders/o1'), {
+      status: 'preparing', courierId: 'cour1', courierName: 'C',
+      courierPhone: '010', courierAt: new Date(),
+    }));
+  const db = as('admin1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    status: 'cancelled', courierId: deleteField(), courierName: deleteField(),
+    courierPhone: deleteField(), courierAt: deleteField(),
+  });
+  b.set(doc(db, 'orders/o1/statusHistory/cancelled'), {
+    from: 'preparing', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+  const order = (await getDoc(doc(db, 'orders/o1'))).data();
+  assert.equal(order.status, 'cancelled');
+  assert.equal('courierId' in order, false);
+});
+
 test('admin lifecycle: لا يتخطى المراحل ولا يعيد فتح الطلب النهائي ولا يسلّم دون ختم', async () => {
   // لا يمكن بدء الطريق من new مباشرة.
   await assertFails(changeStatus(as('admin1'), 'o1', 'new', 'on_the_way', 'admin'));
