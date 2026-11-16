@@ -59,7 +59,8 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
                   ),
                   items: [
                     for (final entry in CustomerRatingService.reasonLabels.entries)
-                      DropdownMenuItem(
+                      if (rating > 3 || entry.key != 'positive')
+                        DropdownMenuItem(
                         value: entry.key,
                         child: Text(entry.value, maxLines: 2, overflow: TextOverflow.ellipsis),
                       ),
