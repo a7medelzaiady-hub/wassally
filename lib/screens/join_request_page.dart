@@ -126,7 +126,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
               controller: _phone,
               keyboardType: TextInputType.phone,
               textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: isStore ? 'رقم موبايل صاحب المحل (اختياري)' : 'رقم الموبايل',
                 prefixIcon: Icon(Icons.phone_outlined),
               ),
@@ -198,131 +198,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                 ),
                 validator: (v) {
                   final value = _digits(v ?? '');
-                  return value.isEmpty || RegExp(r'^[0-9]{8,11}
-                keyboardType: TextInputType.url,
-                textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(
-                  labelText: 'رابط صورة واجهة/المحل (مطلوب)',
-                  prefixIcon: Icon(Icons.photo_outlined),
-                ),
-                validator: (v) => isValidImageUrl(v ?? '')
-                    ? null
-                    : 'أدخل رابط صورة صحيح يبدأ بـ https://',
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _registrationNumber,
-                decoration: const InputDecoration(
-                  labelText: 'رقم السجل التجاري (اختياري)',
-                  prefixIcon: Icon(Icons.badge_outlined),
-                ),
-                validator: (v) {
-                  final value = (v ?? '').trim();
-                  return value.isEmpty || RegExp(r'^[A-Za-z0-9\\-/]{6,30}
-            ] else
-              TextFormField(
-                controller: _vehicle,
-                decoration: const InputDecoration(
-                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
-                  prefixIcon: Icon(Icons.two_wheeler),
-                ),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
-              ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'ملاحظات (اختياري)',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : _send,
-              child: _busy
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('إرسال الطلب'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-).hasMatch(value)
-                      ? null
-                      : 'رقم السجل من 6 إلى 30 حرفًا أو رقمًا';
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _proofUrl,
-                keyboardType: TextInputType.url,
-                textDirection: TextDirection.ltr,
-                decoration: const InputDecoration(
-                  labelText: 'رابط إثبات النشاط (اختياري)',
-                  prefixIcon: Icon(Icons.verified_outlined),
-                ),
-                validator: (v) => (v ?? '').trim().isEmpty || isValidImageUrl(v ?? '')
-                    ? null
-                    : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
-              ),
-              const SizedBox(height: 6),
-              Text('يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
-                  style: TextStyle(color: kMuted, fontSize: 12)),
-            ] else
-              TextFormField(
-                controller: _vehicle,
-                decoration: const InputDecoration(
-                  labelText: 'وسيلة التوصيل (موتوسيكل، عجلة...)',
-                  prefixIcon: Icon(Icons.two_wheeler),
-                ),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'اكتب وسيلة التوصيل' : null,
-              ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 4,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'ملاحظات (اختياري)',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : _send,
-              child: _busy
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('إرسال الطلب'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-).hasMatch(value)
+                  return value.isEmpty || RegExp(r'^[0-9]{8,11}$').hasMatch(value)
                       ? null
                       : 'اكتب رقم تليفون صحيح من 8 إلى 11 رقمًا';
                 },
@@ -410,7 +286,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                     : 'أدخل رابط إثبات صحيح يبدأ بـ https://',
               ),
               const SizedBox(height: 6),
-              Text('لازم رقم سجل تجاري أو رابط إثبات نشاط على الأقل.',
+              Text('يكفي واحد من: رقم السجل التجاري أو رابط إثبات النشاط أو رقم تليفون المحل. رقمك الشخصي للتواصل اختياري.',
                   style: TextStyle(color: kMuted, fontSize: 12)),
             ] else
               TextFormField(
