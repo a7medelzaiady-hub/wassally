@@ -425,6 +425,9 @@ class _HomePageState extends State<HomePage>
     if (user == null) return;
     try {
       if (await NotificationService.hasPermission()) {
+        // الإذن قد يكون محفوظًا من جلسة سابقة؛ لازم نسجل FCM token ونربط listeners
+        // في كل تشغيل، مش مجرد الاشتراك في topics.
+        await NotificationService.init();
         await _syncBroadcastTopic(user.uid);
         return;
       }
