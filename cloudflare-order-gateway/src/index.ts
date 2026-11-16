@@ -179,6 +179,13 @@ async function getDocument(env: Env, path: string, token: string): Promise<Fires
 }
 
 
+export function isRecentAuthTime(authTime: number, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
+  return Number.isFinite(authTime) &&
+    authTime > 0 &&
+    authTime <= nowSeconds + 60 &&
+    nowSeconds - authTime <= 300;
+}
+
 async function verifyRecentCustomer(request: Request, env: Env): Promise<string> {
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -190,9 +197,7 @@ async function verifyRecentCustomer(request: Request, env: Env): Promise<string>
     });
     const authTime = Number(payload.auth_time);
     if (typeof payload.sub !== "string" || !payload.sub ||
-        !Number.isFinite(authTime) ||
-        authTime > Math.floor(Date.now() / 1000) + 60 ||
-        Math.floor(Date.now() / 1000) - authTime > 300) {
+        !isRecentAuthTime(authTime)) {
       throw new Error("Recent authentication required");
     }
     return payload.sub;
@@ -429,6 +434,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   await commitFirestoreWrites(env, token, [
     { delete: firestoreDocumentName(env, `account_deletions/${encodeURIComponent(uid)}`) },
     { delete: firestoreDocumentName(env, `users/${encodeURIComponent(uid)}`) },
+    { delete: firestoreDocumentName(env, `courier_settlement_balances/${encodeURIComponent(uid)}`) },
   ]);
 }
 
