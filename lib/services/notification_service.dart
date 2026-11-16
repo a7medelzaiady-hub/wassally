@@ -85,19 +85,28 @@ class NotificationService {
       await _tokenRefresh?.cancel();
       final token = await messaging.getToken();
       if (token != null && token.isNotEmpty) {
+        final previousToken = _fcmToken;
         _fcmToken = token;
+        if (previousToken != null && previousToken != token) {
+          await _removeToken(user.uid, previousToken);
+        }
         await _saveToken(user.uid, token);
       }
       // الاشتراك في تنبيهات تحديث التطبيق القادمة من Cloudflare Worker
       await messaging.subscribeToTopic('app_updates');
 
-      _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) {
+      _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) async {
+        final previousToken = _fcmToken;
         _fcmToken = nextToken;
         final current = FirebaseAuth.instance.currentUser;
-        if (current != null) {
-          _saveToken(current.uid, nextToken).catchError((e) {
-            debugPrint('تعذر تحديث رمز الإشعارات: $e');
-          });
+        if (current == null) return;
+        try {
+          if (previousToken != null && previousToken != nextToken) {
+            await _removeToken(current.uid, previousToken);
+          }
+          await _saveToken(current.uid, nextToken);
+        } catch (e) {
+          debugPrint('تعذر تحديث رمز الإشعارات: $e');
         }
       });
 
