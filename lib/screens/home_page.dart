@@ -434,7 +434,7 @@ class _HomePageState extends State<HomePage>
       return;
     }
 
-    var lastSubscribedState = false;
+    bool? lastSubscribedState;
     _courierStatusSubscription = FirebaseFirestore.instance
         .collection('couriers')
         .doc(uid)
