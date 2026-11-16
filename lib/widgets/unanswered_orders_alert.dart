@@ -41,15 +41,15 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
       if (order.status != OrderStatus.newOrder || order.hasUnavailableItems) {
         return false;
       }
-      final lastActivity = order.editedAt ?? order.createdAt;
-      return lastActivity != null &&
-          _now.difference(lastActivity) >= const Duration(minutes: 5);
+      final createdAt = order.createdAt;
+      return createdAt != null &&
+          _now.difference(createdAt) >= const Duration(minutes: 5);
     }).toList();
 
     if (overdue.isEmpty) return const SizedBox.shrink();
 
     final activities = overdue
-        .map((order) => order.editedAt ?? order.createdAt)
+        .map((order) => order.createdAt)
         .whereType<DateTime>()
         .toList();
     final oldestActivity = activities.reduce(
