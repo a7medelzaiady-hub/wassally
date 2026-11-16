@@ -394,16 +394,24 @@ class _HomePageState extends State<HomePage>
   /// الاشتراك في topic العروض العامة (all): للعملاء بس.
   /// الأدمن وأصحاب المحلات بنشيلهم منه لو كانوا مشتركين قبل كده.
   Future<void> _syncBroadcastTopic(String uid) async {
-    final known = RoleService.cachedFor(uid);
-    final isStaff =
-        known != null &&
-        (known.role == AppRole.admin || known.role == AppRole.storeOwner);
     try {
+      // الاشتراك في topics للعرض فقط؛ صلاحيات الطلبات تظل محكومة بالسيرفر وFirestore.
+      final known = RoleService.cachedFor(uid) ?? await RoleService.load();
+      final roles = known.held;
+      final isCourier = roles.contains(AppRole.courier);
+      final isStaff = roles.contains(AppRole.admin) ||
+          roles.contains(AppRole.storeOwner) ||
+          roles.contains(AppRole.supervisor);
       final fm = FirebaseMessaging.instance;
       if (isStaff) {
         await fm.unsubscribeFromTopic('all');
       } else {
         await fm.subscribeToTopic('all');
+      }
+      if (isCourier) {
+        await fm.subscribeToTopic('couriers');
+      } else {
+        await fm.unsubscribeFromTopic('couriers');
       }
     } catch (e) {
       debugPrint('Topic sync error: $e');
