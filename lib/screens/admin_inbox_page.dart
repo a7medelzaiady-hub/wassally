@@ -353,6 +353,11 @@ class _RequestCardState extends State<_RequestCard> {
           if (type == JoinType.storeOwner)
             line(Icons.category_outlined, 'نوع النشاط: ${m['storeCategory'] ?? 'غير محدد (طلب قديم)'}'),
           line(Icons.location_on_outlined, '${m['address'] ?? ''}'),
+          if (type == JoinType.storeOwner) ...[
+            line(Icons.photo_outlined, 'صورة المحل: ${m['storeImageUrl'] ?? ''}'),
+            line(Icons.badge_outlined, 'السجل التجاري: ${m['registrationNumber'] ?? 'غير مرفق'}'),
+            line(Icons.verified_outlined, 'إثبات النشاط: ${m['proofUrl'] ?? 'غير مرفق'}'),
+          ],
           line(Icons.two_wheeler, '${m['vehicle'] ?? ''}'),
           line(Icons.sticky_note_2_outlined, '${m['notes'] ?? ''}'),
           line(Icons.schedule, _date(m['createdAt'])),
