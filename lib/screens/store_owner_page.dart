@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart' as audio;
@@ -11,6 +12,8 @@ import '../services/catalog_service.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/image_service.dart';
+import '../services/navigation.dart' show roleInfoOverride;
+import '../services/role_service.dart';
 import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -130,6 +133,35 @@ class _PendingStoreSetup extends StatefulWidget {
 
 class _PendingStoreSetupState extends State<_PendingStoreSetup> {
   bool _uploading = false;
+  bool _statusHandled = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _requestSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _requestSub = FirebaseFirestore.instance
+          .collection('role_requests')
+          .doc('${uid}_store_owner')
+          .snapshots()
+          .listen((snapshot) {
+            final status = snapshot.data()?['status'];
+            if (!_statusHandled && (status == 'approved' || status == 'rejected')) {
+              _statusHandled = true;
+              RoleService.load().then((info) {
+                roleInfoOverride.value = info;
+              });
+            }
+          });
+    }
+  }
+
+  @override
+  void dispose() {
+    _requestSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _changeImage() async {
     if (_uploading) return;
