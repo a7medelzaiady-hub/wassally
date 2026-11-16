@@ -153,7 +153,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
     final isStore = widget.type == JoinType.storeOwner;
 
     return Scaffold(
-      appBar: AppBar(title: Text('انضم كـ ' + widget.type.label)),
+      appBar: AppBar(title: Text('انضم كـ ${widget.type.label}')),
       body: Form(
         key: _form,
         child: ListView(
@@ -297,7 +297,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
                           _storeImageUrl,
                           height: 160,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox(
+                          errorBuilder: (_, _, _) => const SizedBox(
                             height: 80,
                             child: Center(child: Text('تعذر عرض الصورة')),
                           ),
