@@ -329,7 +329,7 @@ test('notifications: أدمن ينشئ، عميل يقرأ إشعاراته فق
 
 async function deliveredWithCourier() {
   await env.withSecurityRulesDisabled((c) =>
-    updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'delivered', courierId: 'cour1' }));
+    updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'delivered', courierId: 'cour1', pickedUpAt: new Date() }));
 }
 const rate = (db, rating, orderId = 'o1') => {
   const b = writeBatch(db);
@@ -589,7 +589,7 @@ test('admin: يضيف صاحب محل ويقرأ القائمة، ويظل يت�
 
 test('courier lifecycle: لا يبدأ المندوب الرحلة قبل تجهيز المحل وتأكيد الجاهزية', async () => {
   await env.withSecurityRulesDisabled((c) =>
-    updateDoc(doc(c.firestore(), 'orders/o1'), { courierId: 'cour1' }));
+    updateDoc(doc(c.firestore(), 'orders/o1'), { courierId: 'cour1', pickedUpAt: new Date() }));
   // لا يمكن تخطي قبول المحل والتجهيز.
   await assertFails(changeStatus(as('cour1'), 'o1', 'new', 'on_the_way', 'courier'));
   await env.withSecurityRulesDisabled((c) =>
@@ -653,7 +653,7 @@ test('delivery issue: لا بلاغ قبل تسجيل الوصول أو دون �
 });
 
 test('delivery issue: الإدارة تختار إعادة المحاولة ويستأنف المندوب بأمان', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   const courier = as('cour1');
   const batch = writeBatch(courier);
   batch.set(doc(courier, 'delivery_issues/retry1'), deliveryIssueData());
@@ -677,7 +677,7 @@ test('delivery issue: الإدارة تختار إعادة المحاولة وي
 });
 
 test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن تغلق الإدارة الطلب', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1', courierArrivedAt: new Date() });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   const courier = as('cour1');
   const batch = writeBatch(courier);
   batch.set(doc(courier, 'delivery_issues/return1'), deliveryIssueData());
@@ -821,13 +821,13 @@ const deliver = (db, role, patch) => {
 };
 
 test('delivery: لا يمكن تسجيل التسليم قبل تسجيل الوصول للعميل', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(deliver(as('cour1'), 'courier', stamp()));
   await assertFails(deliver(as('admin1'), 'admin', stamp()));
 });
 
 test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(deliver(as('cour1'), 'courier', { status: 'delivered' }));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ courierEarning: 99 })));
   await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 5 })));
@@ -837,7 +837,7 @@ test('delivery stamp: الختم إلزامي دائمًا والمندوب لا
 });
 
 test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اكتماله', async () => {
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp()));
   await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { courierEarning: 500 }));
 });
@@ -902,7 +902,7 @@ test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمول
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 9999 }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 'x' }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { finalDeliveryFee: 35, verifiedTotal: 55, verifiedAt: serverTimestamp() }));
-  await setOrder({ status: 'on_the_way', courierId: 'cour1' });
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 20 })));
   await assertSucceeds(deliver(as('cour1'), 'courier', stamp({ collectedAmount: 55, courierEarning: 35 })));
 });
@@ -951,7 +951,7 @@ test('خصوصية: صاحب المحل لا يقرأ بيانات تواصل ا
 test('خصوصية: المندوب يقرأ بيانات التواصل فقط وهو مكلّف بالطلب وجاري', async () => {
   await setOrderState({ status: 'preparing' });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // طلب متاح لسه ماستلمهوش
-  await setOrderState({ status: 'preparing', courierId: 'cour1' });
+  await setOrderState({ status: 'preparing', courierId: 'cour1', pickedUpAt: new Date() });
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
   await setOrderState({ status: 'on_the_way' });
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
@@ -976,7 +976,7 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   await assertSucceeds(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
   await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
   // بعد تعيين المندوب تُقفل بيانات التواصل عن العميل.
-  await setOrderState({ courierId: 'cour1' });
+  await setOrderState({ courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
   // وهو new: الحذف ينجح
   await seed();
