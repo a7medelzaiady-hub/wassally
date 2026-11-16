@@ -61,11 +61,9 @@ class LiveAlerts {
       _watchAdminChats();
       _watchAdminComplaints(user.uid);
     }
-    if (storeId.isNotEmpty) _watchStoreOrders(storeId);
-    if (isCourier) {
-      _watchAvailableOrders();
-      _watchMyReadyOrders(user.uid);
-    }
+    // لا نكرر مستمع الطلبات: شاشة صاحب المحل نفسها تراقب طلبات محله،
+    // وشاشة المندوب تراقب قائمة المتاح. تكرار نفس الاستعلام هنا يضاعف القراءات.
+    if (isCourier) _watchMyReadyOrders(user.uid);
   }
 
   static Future<void> stop() async {
@@ -247,92 +245,8 @@ class LiveAlerts {
     );
   }
 
-  // ───────────────────────── لصاحب المحل ─────────────────────────
-
-  /// طلب جديد (status = new) على محل صاحب الحساب. أول مرة بنعرض ملخص بالعدد بس.
-  static void _watchStoreOrders(String storeId) {
-    var first = true;
-    final seen = <String>{};
-    _subs.add(
-      _db
-          .collection('orders')
-          .where('storeId', isEqualTo: storeId)
-          .where('status', isEqualTo: 'new')
-          .orderBy('createdAt', descending: true)
-          .limit(100)
-          .snapshots()
-          .listen(
-            (snap) {
-              // أول لقطة ممكن تيجي من الكاش، فنستنى لقطة السيرفر عشان ما ننبّهش على طلبات قديمة.
-              if (snap.metadata.hasPendingWrites) return;
-              if (first) {
-                if (snap.metadata.isFromCache) return;
-                first = false;
-                for (final d in snap.docs) {
-                  seen.add(d.id);
-                }
-                if (snap.docs.isNotEmpty) {
-                  _notify(
-                    'طلبات جديدة',
-                    'عندك ${snap.docs.length} طلب جديد مستني القبول.',
-                  );
-                }
-                return;
-              }
-              for (final ch in snap.docChanges) {
-                if (ch.type != DocumentChangeType.added) continue;
-                if (!seen.add(ch.doc.id)) continue;
-                _notify('طلب جديد', 'وصل طلب جديد على محلك. افتح الطلبات وراجعه.');
-              }
-            },
-            onError: (Object e) => debugPrint('LiveAlerts store orders: $e'),
-          ),
-    );
-  }
-
-  // ───────────────────────── للمندوب ─────────────────────────
-
-  /// طلب جديد بقى متاح للاستلام (المحل بدأ التجهيز).
-  static void _watchAvailableOrders() {
-    var first = true;
-    final seen = <String>{};
-    _subs.add(
-      _db
-          .collection('courier_available_orders')
-          .orderBy('createdAt', descending: true)
-          .limit(100)
-          .snapshots()
-          .listen(
-        (snap) {
-          if (snap.metadata.hasPendingWrites) return;
-          if (first) {
-            if (snap.metadata.isFromCache) return;
-            first = false;
-            for (final d in snap.docs) {
-              seen.add(d.id);
-            }
-            if (snap.docs.isNotEmpty) {
-              _notify(
-                'طلبات متاحة',
-                'فيه ${snap.docs.length} طلب متاح للاستلام.',
-              );
-            }
-            return;
-          }
-          for (final ch in snap.docChanges) {
-            if (ch.type != DocumentChangeType.added) continue;
-            if (!seen.add(ch.doc.id)) continue;
-            final store = (ch.doc.data()?['storeName'] ?? '').toString();
-            _notify(
-              'طلب جديد متاح',
-              store.isEmpty ? 'فيه طلب جديد متاح للاستلام.' : 'طلب من $store متاح للاستلام.',
-            );
-          }
-        },
-        onError: (Object e) => debugPrint('LiveAlerts available: $e'),
-      ),
-    );
-  }
+  // مستمع الطلبات الجديدة للمحل وقائمة الطلبات المتاحة للمندوب
+  // موجودان بالفعل في الشاشتين المختصتين؛ لا نعيد فتحهما هنا.
 
   /// المحل أكّد إن طلب المندوب (اللي استلمه) بقى جاهز.
   static void _watchMyReadyOrders(String uid) {
