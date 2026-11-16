@@ -118,6 +118,30 @@ class _DetailsWithContact extends StatefulWidget {
 
 class _DetailsWithContactState extends State<_DetailsWithContact> {
   OrderContact? _contact;
+  bool _confirmingDelivery = false;
+
+  Future<void> _confirmDelivery() async {
+    if (_confirmingDelivery) return;
+    setState(() => _confirmingDelivery = true);
+    try {
+      await OrderService.confirmDelivery(widget.order);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(widget.order.deliveryMode == 'external'
+              ? 'تم تأكيد الاستلام. أكد المحل استلام النقدية لإغلاق الطلب.'
+              : 'تم تأكيد استلام طلبك. شكرًا لك.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تأكيد الاستلام. حاول مرة أخرى.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _confirmingDelivery = false);
+    }
+  }
 
   @override
   void initState() {
@@ -134,6 +158,7 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
       order: order,
       onCancel: widget.onCancel,
       onDelete: widget.onDelete,
+      onConfirmDelivery: _confirmingDelivery ? null : _confirmDelivery,
       onEdit: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => EditOrderPage(order: order)),
       ),
@@ -146,11 +171,13 @@ class _Details extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  final VoidCallback? onConfirmDelivery;
   const _Details({
     required this.order,
     required this.onCancel,
     required this.onDelete,
     required this.onEdit,
+    required this.onConfirmDelivery,
   });
 
   BoxDecoration get _card => BoxDecoration(
@@ -474,6 +501,44 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
+        if (order.status == OrderStatus.onTheWay &&
+            order.customerDeliveryReportedAt != null &&
+            order.customerConfirmedAt == null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF7EF),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: kSuccess),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'المندوب أبلغ إنه سلّمك الطلب. من فضلك أكد الاستلام بعد مراجعة الطلب.',
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.5),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: onConfirmDelivery,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: Text(order.deliveryMode == 'external'
+                      ? 'تأكيد استلام الطلب'
+                      : 'تأكيد الاستلام وإغلاق الطلب'),
+                ),
+              ],
+            ),
+          ),
+        ] else if (order.customerConfirmedAt != null &&
+            order.deliveryMode == 'external' &&
+            order.status == OrderStatus.onTheWay) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'تم تأكيد استلامك. الطلب في انتظار تأكيد المحل استلام النقدية من المندوب.',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
         if ([OrderStatus.newOrder, OrderStatus.preparing].contains(order.status) &&
             order.courierId.isEmpty) ...[
           if (order.status == OrderStatus.preparing)
