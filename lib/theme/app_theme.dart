@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'brand.dart';
 
-/// ألوان وصّلي بتتبع السمة المختارة (brand.dart). غيّر القيم من هناك.
+/// ألوان وصلي بتتبع السمة المختارة (brand.dart). غيّر القيم من هناك.
 Color get kPrimary => Brand.green;
 Color get kPrimaryDark => Brand.greenDark;
 Color get kPrimarySoft => Brand.palette.soft;

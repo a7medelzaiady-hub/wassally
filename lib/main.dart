@@ -35,7 +35,7 @@ Future<void> _bootstrap() async {
   runApp(const WasallyApp());
 }
 
-/// App Check: بيثبت إن الطلبات جاية من تطبيق وصّلي الأصلي (Play Integrity على أندرويد)،
+/// App Check: بيثبت إن الطلبات جاية من تطبيق وصلي الأصلي (Play Integrity على أندرويد)،
 /// فمفتاح Firebase ما يتستخدمش من تطبيقات أو سكريبتات تانية. فشله ما يوقفش التطبيق.
 /// في وضع التطوير بنستخدم Debug provider (التوكن بيظهر في logcat وتسجّله في Firebase Console).
 Future<void> _activateAppCheck() async {
@@ -63,7 +63,7 @@ class WasallyApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: ThemeController.instance,
       builder: (context, _) => MaterialApp(
-        title: 'وصّلي',
+        title: 'وصلي',
         debugShowCheckedModeBanner: false,
         navigatorKey: rootNavigatorKey,
         scaffoldMessengerKey: NotificationService.messengerKey,

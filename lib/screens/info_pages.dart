@@ -76,7 +76,7 @@ class AboutPage extends StatelessWidget {
                   child: const Column(
                     children: [
                       Text(
-                        'وصّلي',
+                        'وصلي',
                         style: TextStyle(
                           fontSize: 30,
                           fontWeight: FontWeight.w900,

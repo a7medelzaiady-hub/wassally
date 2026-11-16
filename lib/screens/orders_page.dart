@@ -95,7 +95,7 @@ class _OrderCardState extends State<_OrderCard> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('إخفاء الطلب من السجل'),
-        content: const Text('سيختفي الطلب من قائمة طلباتك فقط، وسيظل محفوظًا لدى وصّلي لمتابعة المعاملة وحل أي مشكلة.'),
+        content: const Text('سيختفي الطلب من قائمة طلباتك فقط، وسيظل محفوظًا لدى وصلي لمتابعة المعاملة وحل أي مشكلة.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إخفاء')),
