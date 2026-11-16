@@ -6,11 +6,14 @@ compatibility_date = "2026-11-16"
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"
+CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
 
 # Configure secrets with: wrangler secret put FIREBASE_PROJECT_ID
 # FIREBASE_SERVICE_ACCOUNT_EMAIL
 # FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
 # Set ALLOWED_ORIGINS as a comma-separated secret/variable for web clients.
+# Signed image uploads also require: wrangler secret put CLOUDINARY_API_KEY
+# wrangler secret put CLOUDINARY_API_SECRET (never commit either value).
 
 [env.staging]
 name = "throbbing-water-4ef7-staging"
