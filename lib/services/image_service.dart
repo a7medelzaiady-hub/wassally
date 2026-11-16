@@ -72,7 +72,7 @@ class ImageService {
       body: jsonEncode({'folder': folder, 'storeId': storeId ?? ''}),
     ).timeout(const Duration(seconds: 20));
     if (signResponse.statusCode != 200) {
-      String message = 'تعذر تأمين رفع الصورة (\${signResponse.statusCode}).';
+      String message = 'تعذر تأمين رفع الصورة (${signResponse.statusCode}).';
       try {
         final data = jsonDecode(signResponse.body);
         if (data is Map && data['error'] is String) message = data['error'] as String;
@@ -105,7 +105,7 @@ class ImageService {
           'file',
           bytes,
           filename: picked.name.isEmpty
-              ? '\${DateTime.now().millisecondsSinceEpoch}.jpg'
+              ? '${DateTime.now().millisecondsSinceEpoch}.jpg'
               : picked.name,
         ),
       );
@@ -114,7 +114,7 @@ class ImageService {
       await request.send().timeout(const Duration(seconds: 60)),
     );
     if (response.statusCode != 200) {
-      throw StateError('فشل رفع الصورة (\${response.statusCode}).');
+      throw StateError('فشل رفع الصورة (${response.statusCode}).');
     }
     final result = jsonDecode(response.body);
     final url = result is Map ? result['secure_url'] as String? : null;
