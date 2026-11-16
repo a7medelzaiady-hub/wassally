@@ -20,7 +20,7 @@
 lib/
   main.dart                  نقطة البداية والثيم واللغة
   firebase_options.dart      إعدادات Firebase لكل المنصات
-  theme/app_theme.dart       الألوان والخط (Cairo) وثيم Material
+  theme/app_theme.dart       الألوان والخط (Tajawal) وثيم Material
   models/                    Product, Store, AppOrder, UserProfile
   services/                  السلة، الدخول، الطلبات، بيانات المستخدم
   data/seed_stores.dart      المحلات التجريبية
@@ -98,6 +98,7 @@ flutter test
 
 - رسوم التوصيل ثابتة (10 ج.م) في `CartModel.deliveryFee`.
 - خط Tajawal مضمن داخل التطبيق، ولا يحتاج تنزيله من الإنترنت عند التشغيل.
+- خطة Firebase المعتمدة لهذا الإصدار هي Spark؛ لا تعتمد الميزات الحالية على Cloud Functions أو Firebase Storage.
 
 
 ## الأدوار: عميل ومندوب ومدير
@@ -159,28 +160,13 @@ flutter build appbundle          # ملف للرفع على Google Play
 ```
 
 
-## الإشعارات (Push)
+## الإشعارات (خطة Firebase Spark)
 
-الإشعارات بتتبعت من Cloud Functions (فولدر `functions`) وبتوصل حتى لو التطبيق مقفول:
-
-| الحدث | بيوصل لمين |
-|---|---|
-| طلب جديد | كل المديرين |
-| تغيير حالة الطلب | العميل صاحب الطلب |
-| تكليف مندوب بطلب | المندوب |
-| طلب اتلغى أو اتسلّم | المديرين (والمندوب لو اتلغى) |
-
-التطبيق بيسجّل توكن الجهاز في `users/{uid}.fcmTokens` بعد تسجيل الدخول، وبيمسحه عند الخروج. شغّال على أندرويد فقط حاليًا (الويب محتاج إعداد إضافي).
-
-### النشر (مرة واحدة)
-1. فعّل خطة **Blaze** من Firebase Console ← Usage and billing (فيه حصة مجانية، وحط تنبيه ميزانية).
-2. من غير ما تثبّت Node على جهازك: افتح **Google Cloud Shell** (`shell.cloud.google.com`)، ارفع مجلد `functions` مع `firebase.json` و`.firebaserc`، وشغّل:
-   ```
-   firebase login --no-localhost
-   firebase deploy --only functions
-   ```
-   أو من جهازك لو عندك Node 22 وFirebase CLI: `firebase deploy --only functions`.
-3. في التطبيق: `flutter pub add firebase_messaging` ثم `flutter run`.
+- التنبيهات اللحظية داخل التطبيق تعتمد على مستمعات Firestore، وتعمل ما دامت عملية التطبيق مفتوحة أو ما زالت حية.
+- لا يوجد إرسال Push مضمون عند إغلاق التطبيق تمامًا في إعداد Spark الحالي؛ إرسال FCM بأمان يحتاج Backend موثوقًا.
+- مجلد `functions/` محفوظ كمصدر داخل المستودع، لكنه غير مفعّل في `firebase.json` ولا يتم نشره أو الاعتماد عليه في الإصدار الحالي.
+- لا تفعّل Blaze أو تنشر Cloud Functions أو Firebase Storage دون قرار صريح ومراجعة التكلفة.
+- لا تضع مفاتيح Admin أو أسرار Cloudinary داخل تطبيق Flutter.
 
 
 ## فحص الإصدار والتحديث داخل التطبيق
