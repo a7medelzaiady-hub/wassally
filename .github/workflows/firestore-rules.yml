@@ -8,6 +8,7 @@ on:
       - "firebase.json"
       - "rules-tests/**"
       - ".github/workflows/firestore-rules.yml"
+      - "ORDER_LIFECYCLE_AUDIT_AR.md"
   pull_request:
     branches: ["main"]
     paths:
