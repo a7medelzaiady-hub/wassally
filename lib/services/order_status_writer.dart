@@ -82,6 +82,11 @@ class OrderStatusWriter {
     }
 
     final data = snapshot.data()!;
+    if (to == OrderStatus.delivered &&
+        currentStatus == 'on_the_way' &&
+        data['courierArrivedAt'] is! Timestamp) {
+      throw StateError('لا يمكن تأكيد التسليم قبل تسجيل وصول المندوب لعنوان العميل.');
+    }
     final activeIssueId = (data['activeDeliveryIssueId'] ?? '').toString();
     final cancellingBeforePickup = to == OrderStatus.cancelled &&
         currentStatus == 'preparing' &&
