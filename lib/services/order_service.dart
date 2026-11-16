@@ -202,6 +202,16 @@ class OrderService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
 
+    if (cart.isEmpty) throw StateError('السلة فاضية');
+    if (cart.items.length > kMaxOrderLines) {
+      throw const OrderLimitException(
+        'الطلب الواحد مينفعش يزيد عن $kMaxOrderLines أصناف مختلفة. قسّمه على طلبين.',
+      );
+    }
+    if (cart.items.values.any((q) => q > kMaxLineQty)) {
+      throw const OrderLimitException('أقصى كمية للصنف الواحد $kMaxLineQty.');
+    }
+
     // فحص واجهة مبكر لشرح سبب التقييد؛ قواعد Firestore تظل الحماية النهائية
     // وتمنع الطلب حتى لو استخدم العميل إصدارًا قديمًا من التطبيق.
     final restriction = await FirebaseFirestore.instance
@@ -218,16 +228,6 @@ class OrderService {
         'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
         '${until.day}/${until.month}/${until.year}. تواصل مع الإدارة لو محتاج مراجعة.',
       );
-    }
-
-    if (cart.isEmpty) throw StateError('السلة فاضية');
-    if (cart.items.length > kMaxOrderLines) {
-      throw const OrderLimitException(
-        'الطلب الواحد مينفعش يزيد عن $kMaxOrderLines أصناف مختلفة. قسّمه على طلبين.',
-      );
-    }
-    if (cart.items.values.any((q) => q > kMaxLineQty)) {
-      throw const OrderLimitException('أقصى كمية للصنف الواحد $kMaxLineQty.');
     }
 
     // نتحقق من المحل من Firestore وقت إرسال الطلب، ولا نعتمد على بيانات السلة
