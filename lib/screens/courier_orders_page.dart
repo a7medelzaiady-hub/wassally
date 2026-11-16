@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
+import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
@@ -12,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/maps.dart';
+import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
@@ -124,11 +126,9 @@ BoxDecoration _cardDeco() => BoxDecoration(
   ],
 );
 
-enum _Tab { available, current }
+enum _Tab { available, current, history }
 
-/// شاشة المندوب: الطلبات المتاحة (كل المناديب تشوفها ويقدّموا عليها والمدير يختار)، وطلباته الحالية،
-/// والمسلَّمة بتختفي من القوائم (بتتحسب في الإحصائيات بس)
-/// وإحصائياته الشخصية بس (اللي سلّمه هو: deliveredBy == uid).
+/// شاشة المندوب: الطلبات المتاحة، الطلبات الحالية، وسجل التسليمات لتقييم العميل بعد انتهاء الطلب.
 class CourierOrdersPage extends StatefulWidget {
   final String name;
   const CourierOrdersPage({super.key, this.name = ''});
@@ -292,9 +292,13 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                         )
                         .length;
                     final current = mine.where(_isCurrent).toList();
+                    final completed = mine
+                        .where((o) => o.status == OrderStatus.delivered)
+                        .toList();
                     final List<AppOrder> shown = switch (_tab) {
                       _Tab.available => available,
                       _Tab.current => current,
+                      _Tab.history => completed,
                     };
 
                     return Column(
@@ -335,6 +339,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                 _Tab.available,
                               ),
                               _chip('طلباتي (${current.length})', _Tab.current),
+                              _chip('سجل التسليمات (${completed.length})', _Tab.history),
                             ],
                           ),
                         ),
@@ -352,11 +357,12 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                   title: switch (_tab) {
                                     _Tab.available => 'مفيش طلبات متاحة دلوقتي',
                                     _Tab.current => 'مفيش طلبات حالية',
+                                    _Tab.history => 'مفيش تسليمات مكتملة',
                                   },
                                   message: switch (_tab) {
                                     _Tab.available => 'أول ما محل يبدأ تجهيز طلب هيظهر هنا. أول مندوب نشط يضغط «استلم الطلب» وينجح في تأكيده يتعيّن له الطلب.',
-                                    _Tab.current =>
-                                      'الطلبات اللي تستلمها هتظهر هنا.',
+                                    _Tab.current => 'الطلبات اللي تستلمها هتظهر هنا.',
+                                    _Tab.history => 'الطلبات المكتملة هتظهر هنا، وتقدر تقيّم تعامل العميل بعد التسليم.',
                                   },
                                 )
                               : ListView.separated(
@@ -517,6 +523,7 @@ class _CourierOrderCard extends StatefulWidget {
 
 class _CourierOrderCardState extends State<_CourierOrderCard> {
   bool _busy = false;
+  bool _customerRated = false;
 
   // بيانات العميل (الاسم الكامل والموبايل والعنوان) من المستند الخاص،
   // والقواعد بتسمح بيها للمندوب المكلّف بالطلب وهو لسه جاري.
@@ -528,16 +535,17 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   @override
   void initState() {
     super.initState();
-    _loadContact();
+    if (widget.order.status != OrderStatus.delivered) _loadContact();
   }
 
   @override
   void didUpdateWidget(covariant _CourierOrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.order.id != widget.order.id) {
+    if (oldWidget.order.id != widget.order.id ||
+        oldWidget.order.status != widget.order.status) {
       _contact = null;
       _contactFailed = false;
-      _loadContact();
+      if (widget.order.status != OrderStatus.delivered) _loadContact();
     }
   }
 
@@ -635,6 +643,35 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('تم نسخ الرقم')));
       }
+    }
+  }
+
+  Future<void> _rateCustomer() async {
+    if (_busy || widget.order.userId.isEmpty) return;
+    final input = await showCustomerRatingDialog(context);
+    if (input == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await CustomerRatingService.rate(
+        orderId: widget.order.id,
+        customerId: widget.order.userId,
+        storeId: widget.order.storeId,
+        reviewerRole: 'courier',
+        rating: input.rating,
+        reason: input.reason,
+        comment: input.comment,
+      );
+      if (mounted) setState(() => _customerRated = true);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تسجيل تقييم العميل. شكرًا لمشاركتك.')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -809,6 +846,23 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                       ),
               ),
             ),
+          ],
+          if (o.status == OrderStatus.delivered && o.userId.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            if (_customerRated)
+              const Text(
+                'تم تقييم تعامل العميل على هذا الطلب.',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.green),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _rateCustomer,
+                  icon: const Icon(Icons.star_outline_rounded),
+                  label: const Text('تقييم تعامل العميل'),
+                ),
+              ),
           ],
         ],
       ),
