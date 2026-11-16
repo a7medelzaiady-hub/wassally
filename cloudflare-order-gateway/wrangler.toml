@@ -1,0 +1,13 @@
+name = "wasally-order-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-11-16"
+
+[vars]
+DEFAULT_DELIVERY_FEE = "20"
+MAX_ORDER_LINES = "100"
+MAX_LINE_QTY = "50"
+
+# Configure secrets with: wrangler secret put FIREBASE_PROJECT_ID
+# FIREBASE_SERVICE_ACCOUNT_EMAIL
+# FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
+# Set ALLOWED_ORIGINS as a comma-separated secret/variable for web clients.
