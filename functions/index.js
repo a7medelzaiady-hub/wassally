@@ -206,21 +206,38 @@ exports.onSupportMessageCreated = onDocumentCreated(
       : 'الإدارة ردّت على رسالتك';
     const data = { type: 'support_chat', chatUid: uid, messageId };
     const targets = [...new Set(recipients.filter(Boolean))];
-    await Promise.all(targets.map(async (recipientUid) => {
-      const notificationId = 'support_' + uid + '_' + messageId + '_' + recipientUid;
-      await db.collection('notifications').doc(notificationId).create({
-        userId: recipientUid,
-        title,
-        body,
-        type: 'support_chat',
-        chatUid: uid,
-        read: false,
+    const logRef = db.collection('support_push_log').doc(uid + '_' + messageId);
+    try {
+      await logRef.create({
+        senderRole: message.senderRole,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      }).catch((e) => {
-        if (e.code !== 6 && e.code !== 'already-exists') throw e;
+        status: 'sending',
       });
-    }));
-    await notify(targets, title, body, data);
+    } catch (e) {
+      if (e.code === 6 || e.code === 'already-exists') return;
+      throw e;
+    }
+    try {
+      await Promise.all(targets.map(async (recipientUid) => {
+        const notificationId = 'support_' + uid + '_' + messageId + '_' + recipientUid;
+        await db.collection('notifications').doc(notificationId).create({
+          userId: recipientUid,
+          title,
+          body,
+          type: 'support_chat',
+          chatUid: uid,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }).catch((e) => {
+          if (e.code !== 6 && e.code !== 'already-exists') throw e;
+        });
+      }));
+      await notify(targets, title, body, data);
+      await logRef.update({ status: 'sent', sentAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (e) {
+      await logRef.delete().catch(() => {});
+      throw e;
+    }
   },
 );
 
