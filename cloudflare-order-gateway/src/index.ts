@@ -300,6 +300,9 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   } catch {
     throw new HttpError(400, "بيانات الطلب غير مفهومة.");
   }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new HttpError(400, "صيغة بيانات الطلب غير صحيحة.");
+  }
 
   const orderId = String(input.orderId ?? "");
   const storeId = String(input.storeId ?? "").trim();
@@ -458,6 +461,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     input = await request.json();
   } catch {
     throw new HttpError(400, "بيانات التعديل غير مفهومة.");
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new HttpError(400, "صيغة بيانات التعديل غير صحيحة.");
   }
   const lines = Array.isArray(input.items) ? input.items : [];
   const customerName = String(input.customerName ?? "").trim().split(/\\s+/)[0] ?? "";
