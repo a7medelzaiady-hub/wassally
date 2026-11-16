@@ -1317,4 +1317,22 @@ test('courier settlements: لا يقبل مبلغًا غير صالح أو إي�
     updatedAt: serverTimestamp(),
   });
   await assertFails(mismatched.commit());
+
+  const inconsistentUnits = writeBatch(admin);
+  inconsistentUnits.set(doc(admin, 'courier_settlements/inconsistent-units'), {
+    courierId: 'cour1',
+    courierName: 'C',
+    amount: 12,
+    amountMinor: 1199,
+    note: '',
+    createdBy: 'admin1',
+    createdAt: serverTimestamp(),
+  });
+  inconsistentUnits.set(doc(admin, 'courier_settlement_balances/cour1'), {
+    courierId: 'cour1',
+    settledAmountMinor: 1199,
+    lastSettlementId: 'inconsistent-units',
+    updatedAt: serverTimestamp(),
+  });
+  await assertFails(inconsistentUnits.commit());
 });
