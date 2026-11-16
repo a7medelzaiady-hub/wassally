@@ -252,7 +252,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
             children: [
               TextField(
                 controller: amount,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'المبلغ المستلم'),
               ),
               const SizedBox(height: 10),
