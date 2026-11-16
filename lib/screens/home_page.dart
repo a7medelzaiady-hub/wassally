@@ -675,6 +675,25 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  /// زر العروض ظاهر دائمًا في الهيدر الرئيسي.
+  Widget _offersButton() {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const OffersPage()),
+        ),
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(Icons.local_offer_outlined, color: Brand.ink, size: 21),
+        ),
+      ),
+    );
+  }
+
   /// أيقونة زخرفية غامقة شفافة في خلفية الهيدر.
   Widget _bgIcon(IconData icon, double size, double angle) => Transform.rotate(
     angle: angle,
@@ -753,7 +772,9 @@ class _HomePageState extends State<HomePage>
                       ),
                       const SizedBox(width: 10),
                       _bell(),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
+                      _offersButton(),
+                      const SizedBox(width: 8),
                       _cartButton(),
                     ],
                   ),
