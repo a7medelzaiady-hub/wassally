@@ -471,7 +471,9 @@ class StaffOrderService {
         ? 'الإدارة وافقت على إعادة محاولة التسليم. تواصل مع العميل واستأنف التوصيل.'
         : status == 'return_to_store'
             ? 'الإدارة طلبت إرجاع الطلب للمحل. لا تغلق الطلب قبل تأكيد الإرجاع.'
-            : 'الإدارة تراجع بلاغ تعذر التسليم.';
+            : status == 'store_confirmed_return'
+                ? 'الإدارة اعتمدت استلام المحل للمرتجع.'
+                : 'الإدارة تراجع بلاغ تعذر التسليم.';
     await _notify(courierId, 'تحديث بلاغ التسليم', message, orderId);
     await _notify(customerId, 'تحديث بخصوص طلبك', message, orderId);
   }
