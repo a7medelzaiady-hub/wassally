@@ -49,7 +49,7 @@ enum OrderStatus {
       case OrderStatus.preparing:
         return OrderStatus.onTheWay;
       case OrderStatus.onTheWay:
-        return OrderStatus.delivered;
+        return null;
       case OrderStatus.delivered:
       case OrderStatus.cancelled:
         return null;
@@ -128,6 +128,11 @@ class AppOrder {
 
   /// وقت تسجيل وصول المندوب إلى عنوان العميل.
   final DateTime? courierArrivedAt;
+  final DateTime? customerDeliveryReportedAt;
+  final String customerDeliveryReportedBy;
+  final DateTime? customerConfirmedAt;
+  final DateTime? cashHandedToStoreAt;
+  final String cashHandedToStoreBy;
 
   /// معرّف بلاغ التسليم المفتوح الذي ينتظر قرار الإدارة.
   final String activeDeliveryIssueId;
@@ -178,6 +183,11 @@ class AppOrder {
     this.courierAt,
     this.pickedUpAt,
     this.courierArrivedAt,
+    this.customerDeliveryReportedAt,
+    this.customerDeliveryReportedBy = '',
+    this.customerConfirmedAt,
+    this.cashHandedToStoreAt,
+    this.cashHandedToStoreBy = '',
     this.activeDeliveryIssueId = '',
     this.lastDeliveryIssueId = '',
     this.collectedAmount = 0,
@@ -229,6 +239,11 @@ class AppOrder {
       courierAt: courierAt,
       pickedUpAt: pickedUpAt,
       courierArrivedAt: courierArrivedAt,
+      customerDeliveryReportedAt: customerDeliveryReportedAt,
+      customerDeliveryReportedBy: customerDeliveryReportedBy,
+      customerConfirmedAt: customerConfirmedAt,
+      cashHandedToStoreAt: cashHandedToStoreAt,
+      cashHandedToStoreBy: cashHandedToStoreBy,
       activeDeliveryIssueId: activeDeliveryIssueId,
       lastDeliveryIssueId: lastDeliveryIssueId,
       collectedAmount: collectedAmount,
@@ -304,6 +319,17 @@ class AppOrder {
       courierArrivedAt: m['courierArrivedAt'] is Timestamp
           ? (m['courierArrivedAt'] as Timestamp).toDate()
           : null,
+      customerDeliveryReportedAt: m['customerDeliveryReportedAt'] is Timestamp
+          ? (m['customerDeliveryReportedAt'] as Timestamp).toDate()
+          : null,
+      customerDeliveryReportedBy: (m['customerDeliveryReportedBy'] ?? '').toString(),
+      customerConfirmedAt: m['customerConfirmedAt'] is Timestamp
+          ? (m['customerConfirmedAt'] as Timestamp).toDate()
+          : null,
+      cashHandedToStoreAt: m['cashHandedToStoreAt'] is Timestamp
+          ? (m['cashHandedToStoreAt'] as Timestamp).toDate()
+          : null,
+      cashHandedToStoreBy: (m['cashHandedToStoreBy'] ?? '').toString(),
       activeDeliveryIssueId: (m['activeDeliveryIssueId'] ?? '').toString(),
       lastDeliveryIssueId: (m['lastDeliveryIssueId'] ?? '').toString(),
       collectedAmount: (m['collectedAmount'] as num?)?.toDouble() ?? 0,
