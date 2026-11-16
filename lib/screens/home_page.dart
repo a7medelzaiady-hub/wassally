@@ -875,6 +875,15 @@ class _HomePageState extends State<HomePage>
         for (final e in raw) {
           if (e is! Map) continue;
           final m = Map<String, dynamic>.from(e);
+          if (k == 'offerItems') {
+            final ends = m['offerEndsAt'];
+            if (isOfferExpired(
+              ends is Timestamp ? ends.toDate() : null,
+              DateTime.now(),
+            )) {
+              continue;
+            }
+          }
           (k == 'offerItems' ? offers : best).add((s, m));
         }
       }
@@ -968,25 +977,36 @@ class _HomePageState extends State<HomePage>
                                       ),
                                     ),
                                   ),
-                            if (offer && old > price && old > 0)
+                            if (offer &&
+                                ((old > price && old > 0) ||
+                                    (m['offerText'] ?? '').toString().trim().isNotEmpty))
                               Positioned(
                                 top: 6,
                                 right: 6,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: kDanger,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    '${((1 - price / old) * 100).round()}%-',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w800,
+                                left: 6,
+                                child: Align(
+                                  alignment: AlignmentDirectional.topEnd,
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxWidth: 112),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: kDanger,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      old > price && old > 0
+                                          ? '${((1 - price / old) * 100).round()}%-'
+                                          : (m['offerText'] ?? '').toString(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                      ),
                                     ),
                                   ),
                                 ),
