@@ -354,7 +354,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                     _Tab.current => 'مفيش طلبات حالية',
                                   },
                                   message: switch (_tab) {
-                                    _Tab.available => 'أول ما محل يجهّز طلب هيظهر هنا، وقدّم عليه. المدير أو صاحب المحل هو اللي بيختار المندوب.',
+                                    _Tab.available => 'أول ما محل يبدأ تجهيز طلب هيظهر هنا. أول مندوب نشط يضغط «استلم الطلب» وينجح في تأكيده يتعيّن له الطلب.',
                                     _Tab.current =>
                                       'الطلبات اللي تستلمها هتظهر هنا.',
                                   },
@@ -542,10 +542,16 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   }
 
   Future<void> _loadContact() async {
+    if (mounted) {
+      setState(() {
+        _contactFailed = false;
+      });
+    }
     try {
       final contact = await OrderContactService.load(widget.order.id);
       if (mounted) setState(() => _contact = contact);
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Courier contact load failed: $error');
       if (mounted) setState(() => _contactFailed = true);
     }
   }
@@ -583,9 +589,28 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           actorRole: 'courier',
         );
       }
-    } catch (_) {
+    } on FirebaseException catch (error) {
+      final message = switch (error.code) {
+        'permission-denied' =>
+          'التحديث غير مسموح. تأكد من تعيين الطلب وجاهزية المحل.',
+        'unavailable' =>
+          'الاتصال بالإنترنت غير متاح. لم يتم تأكيد التحديث؛ حدّث الطلب قبل إعادة المحاولة.',
+        'deadline-exceeded' =>
+          'انتهت مهلة الاتصال. تحقق من حالة الطلب قبل المحاولة مرة أخرى.',
+        'failed-precondition' =>
+          'حالة الطلب لا تسمح بهذه الخطوة. حدّث الصفحة.',
+        'not-found' => 'الطلب لم يعد موجودًا.',
+        _ => 'تعذر تحديث الطلب (${error.code}). حاول مرة أخرى.',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    } on StateError catch (error) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر تحديث الحالة، جرّب تاني.')),
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (error) {
+      debugPrint('Courier order status update failed: $error');
+      messenger.showSnackBar(
+        const SnackBar(content: Text('حدث خطأ غير متوقع أثناء تحديث الطلب.')),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -655,9 +680,23 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           ),
           const SizedBox(height: 12),
           if (_contactFailed)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text('تعذر تحميل بيانات العميل الخاصة. أعد فتح الشاشة أو تحقق من صلاحيات الطلب.'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'تعذر تحميل بيانات العميل. تحقق من الاتصال والصلاحيات.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _loadContact,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              ),
             ),
           Row(
             children: [
