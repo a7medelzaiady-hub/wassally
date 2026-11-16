@@ -271,7 +271,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   ]);
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
-  if (store.active !== true) throw new HttpError(409, "المحل مغلق حاليًا.");
+  if (store.active === false) throw new HttpError(409, "المحل مغلق حاليًا.");
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
   if (restriction.active === true &&
       restriction.expiresAt instanceof Date &&
