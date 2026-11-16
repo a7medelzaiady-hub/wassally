@@ -11,6 +11,8 @@ class _OperationsReport {
   final int onTheWayOrders;
   final int deliveredToday;
   final int openDeliveryIssues;
+  final int returnsAwaitingStore;
+  final int returnsConfirmed;
   final int openComplaints;
   final double collectedToday;
   final double courierEarningsToday;
@@ -23,6 +25,8 @@ class _OperationsReport {
     required this.onTheWayOrders,
     required this.deliveredToday,
     required this.openDeliveryIssues,
+    required this.returnsAwaitingStore,
+    required this.returnsConfirmed,
     required this.openComplaints,
     required this.collectedToday,
     required this.courierEarningsToday,
@@ -77,6 +81,14 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
           ])
           .count()
           .get(),
+      db.collection('delivery_issues')
+          .where('status', isEqualTo: 'returned_to_store')
+          .count()
+          .get(),
+      db.collection('delivery_issues')
+          .where('status', isEqualTo: 'store_confirmed_return')
+          .count()
+          .get(),
       db.collection('complaints')
           .where('status', whereIn: ['open', 'in_progress'])
           .count()
@@ -92,10 +104,10 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
     ]);
 
     final todayMoney = results[3];
-    final allMoney = results[7];
+    final allMoney = results[9];
     final totalCollected = _sum(allMoney, 'collectedAmount');
     final totalEarnings = _sum(allMoney, 'courierEarning');
-    final totalSettled = _sum(results[8], 'amount');
+    final totalSettled = _sum(results[10], 'amount');
 
     return _OperationsReport(
       newOrders: results[0].count ?? 0,
@@ -103,10 +115,12 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
       onTheWayOrders: results[2].count ?? 0,
       deliveredToday: todayMoney.count ?? 0,
       openDeliveryIssues: results[4].count ?? 0,
-      openComplaints: results[5].count ?? 0,
+      returnsAwaitingStore: results[5].count ?? 0,
+      returnsConfirmed: results[6].count ?? 0,
+      openComplaints: results[7].count ?? 0,
       collectedToday: _sum(todayMoney, 'collectedAmount'),
       courierEarningsToday: _sum(todayMoney, 'courierEarning'),
-      settlementsToday: _sum(results[6], 'amount'),
+      settlementsToday: _sum(results[8], 'amount'),
       outstanding: totalCollected - totalEarnings - totalSettled,
     );
   }
@@ -258,7 +272,8 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                 const SizedBox(height: 14),
                 Text(
                   'الأرقام المالية محسوبة من الطلبات المسلّمة وسجلات التوريد. '
-                  'التقرير لا يغيّر الطلبات أو الأرصدة، ولا يعرض بيانات تواصل العملاء.',
+                  'التقرير لا يغيّر الطلبات أو الأرصدة، ولا يعرض بيانات تواصل العملاء. '
+                  'لا يحسب التأخير آليًا لعدم اعتماد مهلة تشغيلية (SLA) حتى الآن.',
                   style: TextStyle(color: kMuted, fontSize: 11.5),
                 ),
               ],
