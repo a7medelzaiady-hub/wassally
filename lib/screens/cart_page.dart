@@ -115,6 +115,61 @@ class _CartBody extends StatelessWidget {
                   ],
                 ),
               ),
+              if (cart.specialRequest != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7E8),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE5B85C)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text('طلب خاص مرفق بالطلب',
+                                style: TextStyle(fontWeight: FontWeight.w900)),
+                          ),
+                          IconButton(
+                            tooltip: 'إزالة الطلب الخاص',
+                            onPressed: cart.clearSpecialRequest,
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          ),
+                        ],
+                      ),
+                      if ((cart.specialRequest!['description'] ?? '').toString().isNotEmpty)
+                        Text(cart.specialRequest!['description'].toString()),
+                      Text('الكمية المطلوبة: ${cart.specialRequest!['quantity'] ?? 1}'),
+                      if ((cart.specialRequest!['imageUrl'] ?? '').toString().isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              cart.specialRequest!['imageUrl'].toString(),
+                              height: 110,
+                              width: 110,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      if ((cart.specialRequest!['voiceBase64'] ?? '').toString().isNotEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              Icon(Icons.mic, size: 18),
+                              SizedBox(width: 6),
+                              Text('رسالة صوتية مرفقة بالطلب'),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               for (final e in entries)
                 Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -199,10 +254,10 @@ class _CartBody extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () => Navigator.of(context).push(
+                    onPressed: cart.items.isEmpty ? null : () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CheckoutPage()),
                     ),
-                    child: const Text('كمّل الطلب'),
+                    child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
                   ),
                 ),
               ],
