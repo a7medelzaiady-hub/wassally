@@ -101,7 +101,7 @@ class CartModel extends ChangeNotifier {
     } else {
       _items[p] = current - 1;
     }
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _specialRequest == null) {
       _storeId = null;
       _storeName = null;
     }
@@ -111,7 +111,7 @@ class CartModel extends ChangeNotifier {
   /// حذف الصنف بالكامل من السلة.
   void removeItem(Product p) {
     _items.remove(p);
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _specialRequest == null) {
       _storeId = null;
       _storeName = null;
       promoCode = '';
