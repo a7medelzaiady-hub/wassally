@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -353,6 +353,39 @@ describe("courier account deletion order recovery", () => {
       subtotal: 100,
       deliveryFee: 20,
       discount: 0,
+      total: 120,
+      status: "preparing",
+      createdAt: new Date(0),
+    });
+  });
+});
+
+
+describe("courier feed privacy sanitization", () => {
+  it("keeps only the public allow-listed fields when updating legacy feeds", () => {
+    expect(sanitizeCourierFeed({
+      storeId: "store-1",
+      storeName: "Market",
+      area: "Area",
+      items: [],
+      subtotal: 100,
+      deliveryFee: 20,
+      total: 120,
+      status: "preparing",
+      createdAt: new Date(0),
+      userId: "customer-1",
+      customerName: "Ali",
+      phone: "01000000000",
+      address: "Private address",
+      courierNotes: "Private note",
+      adminNote: "internal",
+    })).toEqual({
+      storeId: "store-1",
+      storeName: "Market",
+      area: "Area",
+      items: [],
+      subtotal: 100,
+      deliveryFee: 20,
       total: 120,
       status: "preparing",
       createdAt: new Date(0),
