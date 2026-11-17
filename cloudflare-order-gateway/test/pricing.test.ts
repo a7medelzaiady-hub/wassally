@@ -203,6 +203,15 @@ describe("account deletion privacy cleanup", () => {
     }, "user-1")).toEqual({ customerId: "deleted", note: "" });
   });
 
+  it("anonymizes the creator UID when the customer opened the issue", () => {
+    expect(anonymizeDeliveryIssue({
+      courierId: "courier-2", customerId: "user-1", createdBy: "user-1",
+      note: "Private address", status: "open",
+    }, "user-1")).toEqual({
+      customerId: "deleted", createdBy: "deleted", note: "",
+    });
+  });
+
   it("does not modify an issue unrelated to the deleted account", () => {
     expect(anonymizeDeliveryIssue({
       courierId: "courier-2", customerId: "customer-2", note: "keep",
