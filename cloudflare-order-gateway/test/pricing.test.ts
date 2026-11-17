@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -219,5 +219,20 @@ describe("account deletion authentication freshness", () => {
     expect(isRecentAuthTime(now + 61, now)).toBe(false);
     expect(isRecentAuthTime(Number.NaN, now)).toBe(false);
     expect(isRecentAuthTime(0, now)).toBe(false);
+  });
+});
+
+
+describe("gateway Google-only authentication", () => {
+  it("accepts Firebase ID tokens authenticated with Google", () => {
+    expect(isGoogleSignIn({ firebase: { sign_in_provider: "google.com" } })).toBe(true);
+  });
+
+  it("rejects password, anonymous, missing, and malformed provider claims", () => {
+    expect(isGoogleSignIn({ firebase: { sign_in_provider: "password" } })).toBe(false);
+    expect(isGoogleSignIn({ firebase: { sign_in_provider: "anonymous" } })).toBe(false);
+    expect(isGoogleSignIn({})).toBe(false);
+    expect(isGoogleSignIn({ firebase: null })).toBe(false);
+    expect(isGoogleSignIn({ firebase: "google.com" })).toBe(false);
   });
 });
