@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -234,5 +234,32 @@ describe("gateway Google-only authentication", () => {
     expect(isGoogleSignIn({})).toBe(false);
     expect(isGoogleSignIn({ firebase: null })).toBe(false);
     expect(isGoogleSignIn({ firebase: "google.com" })).toBe(false);
+  });
+});
+
+
+describe("public order contact sanitization", () => {
+  it("removes legacy contact fields while preserving order and delivery data", () => {
+    expect(sanitizePublicOrder({
+      userId: "customer-1",
+      customerName: "Ali",
+      userName: "Ali Full",
+      userEmail: "ali@example.test",
+      phone: "01000000000",
+      address: "Private address",
+      courierNotes: "Call me",
+      contact: { phone: "01000000000" },
+      items: [{ name: "Bread", qty: 1 }],
+      notes: "Leave at door",
+      status: "preparing",
+      total: 125,
+    })).toEqual({
+      userId: "customer-1",
+      customerName: "Ali",
+      items: [{ name: "Bread", qty: 1 }],
+      notes: "Leave at door",
+      status: "preparing",
+      total: 125,
+    });
   });
 });
