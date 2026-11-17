@@ -256,7 +256,7 @@ service cloud.firestore {
           d.specialRequest.get('imageUrl', '').matches('https://res\\.cloudinary\\.com/[^/]+/image/upload/.*')) &&
         d.specialRequest.get('voiceBase64', '') is string &&
         d.specialRequest.get('voiceBase64', '').size() <= 700000 &&
-        d.specialRequest.get('voiceBase64', '').matches('^[A-Za-z0-9+/]*={0,2}
+        d.specialRequest.get('voiceBase64', '').matches('^[A-Za-z0-9+/]*={0,2}') &&
         d.specialRequest.get('createdAt', '') is string &&
         d.specialRequest.get('createdAt', '').size() <= 40 &&
         (d.specialRequest.get('description', '').size() > 0 ||
