@@ -11,7 +11,7 @@ interface Env {
   CLOUDINARY_CLOUD_NAME?: string;
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
-  UPLOAD_RATE_LIMITER?: RateLimit;
+  UPLOAD_RATE_LIMITER: RateLimit;
 }
 
 type JsonMap = Record<string, unknown>;
@@ -1030,6 +1030,14 @@ export async function cloudinarySignature(
     byte.toString(16).padStart(2, "0")).join("");
 }
 
+export async function isUploadRateLimited(
+  limiter: { limit(options: { key: string }): Promise<{ success: boolean }> },
+  uid: string,
+): Promise<boolean> {
+  const { success } = await limiter.limit({ key: uid });
+  return !success;
+}
+
 export function isUploadSizeAllowed(size: number): boolean {
   return Number.isInteger(size) && size > 0 && size <= 5 * 1024 * 1024;
 }
@@ -1062,9 +1070,8 @@ export function detectImageContent(bytes: Uint8Array): { format: string; mime: s
 
 async function uploadCloudinaryImage(request: Request, env: Env): Promise<Response> {
   const uid = await verifyCustomer(request, env);
-  if (env.UPLOAD_RATE_LIMITER) {
-    const { success } = await env.UPLOAD_RATE_LIMITER.limit({ key: uid });
-    if (!success) throw new HttpError(429, "وصلت للحد المؤقت لرفع الصور. حاول بعد دقيقة.");
+  if (await isUploadRateLimited(env.UPLOAD_RATE_LIMITER, uid)) {
+    throw new HttpError(429, "وصلت للحد المؤقت لرفع الصور. حاول بعد دقيقة.");
   }
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
     throw new HttpError(503, "خدمة رفع الصور الآمنة غير مهيأة على الخادم.");
