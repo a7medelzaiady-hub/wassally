@@ -102,7 +102,7 @@ test('staged concurrent order creation: 2 → 500 independent customers', {
     const started = Date.now();
     const attempts = Array.from({ length: count }, async (_, index) => {
       const uid = `stress-customer-${sequence + index}`;
-      const context = testEnv.authenticatedContext(uid);
+      const context = testEnv.authenticatedContext(uid, { firebase: { sign_in_provider: 'google.com' } });
       const orderId = `stress-order-${sequence + index}`;
       const t0 = performance.now();
       try {
@@ -138,7 +138,7 @@ test('staged concurrent order creation: 2 → 500 independent customers', {
 
 test('same idempotency order ID cannot be created twice; a new checkout may use a new ID', async () => {
   const uid = 'duplicate-submit-customer';
-  const context = testEnv.authenticatedContext(uid);
+  const context = testEnv.authenticatedContext(uid, { firebase: { sign_in_provider: 'google.com' } });
 
   // Two overlapping retries for the same checkout share one stable order ID.
   const duplicateResults = await Promise.allSettled([
