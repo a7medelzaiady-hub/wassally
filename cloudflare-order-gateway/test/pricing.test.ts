@@ -26,7 +26,7 @@ describe("customer restriction fail-closed behavior", () => {
     expect(isCustomerRestricted({ expiresAt: null }, now)).toBe(true);
   });
 
-  it("allows a non-active restriction only when explicitly set false", () => {
+  it("matches the expiry alternative even if the active flag is missing", () => {
     expect(isCustomerRestricted({ active: null, expiresAt: new Date(now - 1) }, now)).toBe(false);
     expect(isCustomerRestricted({ active: null }, now)).toBe(true);
   });
