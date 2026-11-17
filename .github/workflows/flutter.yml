@@ -56,7 +56,16 @@ jobs:
         df -h /
 
     # 7. تحقق من Gradle وAndroid plugins دون الحاجة إلى مفتاح Release
-    - name: Build debug APK
-      run: >-
-        flutter build apk --debug
-        --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
+    - name: Build debug APK (retry transient dependency failures)
+      shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          echo "Android build attempt ${attempt}/3"
+          if flutter build apk --debug --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev; then
+            exit 0
+          fi
+          if [ "$attempt" -lt 3 ]; then
+            sleep $((attempt * 20))
+          fi
+        done
+        exit 1
