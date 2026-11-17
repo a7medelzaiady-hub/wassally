@@ -6,6 +6,8 @@ on:
     paths:
       - "cloudflare-order-gateway/**"
       - ".github/workflows/order-gateway.yml"
+      - ".github/workflows/firestore-rules.yml"
+      - ".github/workflows/firestore-emulator-stress.yml"
   pull_request:
     paths:
       - "cloudflare-order-gateway/**"
