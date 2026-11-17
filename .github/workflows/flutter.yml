@@ -63,7 +63,9 @@ jobs:
         # Verify the app-critical upload route directly; older deployed Worker versions may not expose /health.
         STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}' \
           --request POST "$WORKER_URL/v1/uploads" \
-          --header 'Authorization: Bearer invalid-smoke-test-token')"
+          --header 'Authorization: Bearer invalid-smoke-test-token' \
+          --header 'Content-Type: application/json' \
+          --data '{}')"
         if [ "$STATUS" != "401" ]; then
           echo "Unexpected upload route status: $STATUS"
           cat "$RUNNER_TEMP/upload-route.json"
