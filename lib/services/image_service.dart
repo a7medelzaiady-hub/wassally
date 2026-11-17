@@ -19,12 +19,12 @@ class ImageService {
   const ImageService._();
 
   /// المجلدات المسموحة؛ الخادم يربط المستخدم بالمحل ويتحقق من صلاحية الرفع.
-  static const Set<String> _allowedFolders = {'stores', 'products', 'banners'};
+  static const Set<String> _allowedFolders = {'stores', 'products', 'banners', 'special_requests'};
 
   /// بيفتح معرض الصور في الموبايل، وبعد ما تختار صورة بيرفعها على Cloudinary
-  /// في المجلد [folder] (stores / products / banners) وبيرجّع رابط الصورة (https).
+  /// في المجلد [folder] (stores / products / banners / special_requests) وبيرجّع رابط الصورة (https).
   ///
-  /// صاحب المحل لا يستطيع رفع صور خارج المحل المرتبط بحسابه؛ البانرات للإدارة فقط.
+  /// صور الطلبات الخاصة تُحفظ في مجلد منفصل خاص بالعميل، وصور المحل/المنتجات للمالك، والبانرات للإدارة فقط.
   ///
   /// بيرجّع null لو المستخدم لغى الاختيار. ولو الرفع فشل بيرمي استثناء
   /// (عشان الشاشة تعرض رسالة الخطأ بدل ما يفشل في صمت).
