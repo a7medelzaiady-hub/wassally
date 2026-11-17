@@ -47,120 +47,26 @@ class OrderGateway {
     required String idToken,
     required String orderId,
   }) async {
-    final root = baseUrl.trim().replaceFirst(RegExp(r'/+
-    final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
-    final uri = Uri.tryParse('$root/v1/account/delete');
-    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
-      throw StateError('خدمة حذف الحساب غير مهيأة. حدّث التطبيق أو تواصل مع الدعم.');
+    var root = baseUrl.trim();
+    while (root.endsWith('/')) {
+      root = root.substring(0, root.length - 1);
     }
-
-    final client = http.Client();
-    late final http.Response result;
-    try {
-      final streamed = await client
-          .send(http.Request('POST', uri)
-            ..headers.addAll({
-              'Authorization': 'Bearer $idToken',
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            })
-            ..body = '{}')
-          .timeout(const Duration(seconds: 90));
-      result = await http.Response.fromStream(streamed)
-          .timeout(const Duration(seconds: 90));
-    } catch (_) {
-      throw StateError('تعذر الاتصال بخدمة حذف الحساب. لم يتم تأكيد الحذف؛ حاول مرة أخرى.');
-    } finally {
-      client.close();
-    }
-
-    Map<String, dynamic> body = {};
-    try {
-      final decoded = jsonDecode(result.body);
-      if (decoded is Map<String, dynamic>) body = decoded;
-    } catch (_) {}
-
-    if (result.statusCode < 200 || result.statusCode >= 300 ||
-        body['deleted'] != true) {
-      final message = (body['error'] ?? '').toString().trim();
-      throw StateError(message.isNotEmpty
-          ? message
-          : 'لم يؤكد الخادم حذف الحساب (${result.statusCode}).');
-    }
-  }
-
-  static Future<void> _send({
-    required String idToken,
-    required String method,
-    required String path,
-    required Map<String, dynamic> payload,
-  }) async {
-    final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
-    final uri = Uri.tryParse('$root$path');
-    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
-      throw StateError('إعداد بوابة الطلبات غير صحيح.');
-    }
-
-    late final http.Response result;
-    final client = http.Client();
-    try {
-      final request = http.Request(method, uri)
-        ..headers.addAll({
-          'Authorization': 'Bearer $idToken',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        })
-        ..body = jsonEncode(payload);
-      final streamed = await client
-          .send(request)
-          .timeout(const Duration(seconds: 25));
-      result = await http.Response.fromStream(streamed);
-    } catch (_) {
-      throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
-    } finally {
-      client.close();
-    }
-
-    Map<String, dynamic> body = {};
-    try {
-      final decoded = jsonDecode(result.body);
-      if (decoded is Map<String, dynamic>) body = decoded;
-    } catch (_) {}
-
-    if (result.statusCode < 200 || result.statusCode >= 300) {
-      final message = (body['error'] ?? '').toString().trim();
-      throw StateError(
-        message.isNotEmpty
-            ? message
-            : 'تعذر تنفيذ الطلب (${result.statusCode}).',
-      );
-    }
-    if ((body['orderId'] ?? '').toString().isEmpty) {
-      throw StateError('لم يصل تأكيد العملية من الخادم.');
-    }
-  }
-}
-), '');
-    final uri = Uri.tryParse(
-      root + '/v1/orders/' + Uri.encodeComponent(orderId) + '/cleanup-attachments',
-    );
+    final uri = Uri.tryParse(root + '/v1/orders/' + Uri.encodeComponent(orderId) + '/cleanup-attachments');
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw StateError('خدمة تنظيف مرفقات الطلب غير مهيأة.');
     }
     final client = http.Client();
     late final http.Response result;
     try {
-      final streamed = await client.send(
-        http.Request('POST', uri)
-          ..headers.addAll({
-            'Authorization': 'Bearer ' + idToken,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          })
-          ..body = '{}',
-      ).timeout(const Duration(seconds: 45));
-      result = await http.Response.fromStream(streamed)
-          .timeout(const Duration(seconds: 45));
+      final request = http.Request('POST', uri)
+        ..headers.addAll({
+          'Authorization': 'Bearer ' + idToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        })
+        ..body = '{}';
+      final streamed = await client.send(request).timeout(const Duration(seconds: 45));
+      result = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 45));
     } finally {
       client.close();
     }
@@ -169,12 +75,10 @@ class OrderGateway {
       final decoded = jsonDecode(result.body);
       if (decoded is Map<String, dynamic>) body = decoded;
     } catch (_) {}
-    if (result.statusCode < 200 || result.statusCode >= 300 ||
-        body['cleaned'] != true) {
+    if (result.statusCode < 200 || result.statusCode >= 300 || body['cleaned'] != true) {
       throw StateError((body['error'] ?? 'تعذر حذف مرفقات الطلب.').toString());
     }
   }
-
   /// Deletes the authenticated account and its server-owned data.
   static Future<void> deleteAccount({required String idToken}) async {
     final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
