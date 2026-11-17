@@ -993,6 +993,10 @@ service cloud.firestore {
     // التقييم والتحديث التراكمي لمستند المندوب (ratingSum/ratingCount) لازم يتكتبوا
     // في نفس الـ batch، والقواعد بتربط الاتنين ببعض (getAfter / existsAfter).
     function validCourierReview(rid, d) {
+      let orderPath = /databases/$(database)/documents/orders/$(d.orderId);
+      let order = get(orderPath).data;
+      let courierPath = /databases/$(database)/documents/couriers/$(d.courierId);
+      let courierAfter = getAfter(courierPath).data;
       return d.keys().hasOnly(['orderId', 'courierId', 'userId', 'rating',
                                'comment', 'createdAt']) &&
         d.keys().hasAll(['orderId', 'courierId', 'userId', 'rating',
@@ -1003,14 +1007,18 @@ service cloud.firestore {
         d.rating is int && d.rating >= 1 && d.rating <= 5 &&
         d.comment is string && d.comment.size() <= 300 &&
         d.createdAt == request.time &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.status == 'delivered' &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('courierId', '') == d.courierId &&
-        getAfter(/databases/$(database)/documents/couriers/$(d.courierId)).data.get('lastReviewId', '') == rid;
+        order.userId == request.auth.uid &&
+        order.status == 'delivered' &&
+        order.get('courierId', '') == d.courierId &&
+        courierAfter.get('lastReviewId', '') == rid;
     }
 
     // تقييم المحل: reviews/{orderId}_store بعد تسليم الطلب، مرة واحدة لكل طلب.
     function validStoreReview(rid, d) {
+      let orderPath = /databases/$(database)/documents/orders/$(d.orderId);
+      let order = get(orderPath).data;
+      let storePath = /databases/$(database)/documents/stores/$(d.storeId);
+      let storeAfter = getAfter(storePath).data;
       return d.keys().hasOnly(['orderId', 'storeId', 'userId', 'rating',
                                'comment', 'createdAt']) &&
         d.keys().hasAll(['orderId', 'storeId', 'userId', 'rating',
@@ -1021,10 +1029,10 @@ service cloud.firestore {
         d.rating is int && d.rating >= 1 && d.rating <= 5 &&
         d.comment is string && d.comment.size() <= 300 &&
         d.createdAt == request.time &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.userId == request.auth.uid &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.status == 'delivered' &&
-        get(/databases/$(database)/documents/orders/$(d.orderId)).data.get('storeId', '') == d.storeId &&
-        getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('lastReviewId', '') == rid;
+        order.userId == request.auth.uid &&
+        order.status == 'delivered' &&
+        order.get('storeId', '') == d.storeId &&
+        storeAfter.get('lastReviewId', '') == rid;
     }
 
     // تقييم العميل من المندوب أو صاحب المحل: سجل داخلي لا يراه العميل.
