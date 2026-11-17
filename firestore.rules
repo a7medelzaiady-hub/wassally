@@ -384,6 +384,8 @@ service cloud.firestore {
     // مسودات المحلات خاصة بصاحبها والإدارة، والعملاء لا يرون إلا المحلات النشطة.
     function validStoreDraft(storeId, d) {
       let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      let requestExists = existsAfter(requestPath);
+      let requestData = requestExists ? getAfter(requestPath).data : {};
       return signedIn() &&
         d.keys().hasOnly(['name', 'category', 'address', 'ownerUid', 'active', 'approved',
                           'time', 'image', 'imageUrl', 'storePhone', 'productCount',
@@ -400,15 +402,15 @@ service cloud.firestore {
         d.image == d.imageUrl &&
         d.get('storePhone', '') is string && d.get('storePhone', '').size() <= 20 &&
         d.productCount == 0 &&
-        existsAfter(requestPath) &&
-        getAfter(requestPath).data.get('type', '') == 'store_owner' &&
-        getAfter(requestPath).data.get('status', '') == 'pending' &&
-        getAfter(requestPath).data.get('storeId', '') == storeId &&
-        getAfter(requestPath).data.get('storeName', '') == d.name &&
-        getAfter(requestPath).data.get('storeCategory', '') == d.category &&
-        getAfter(requestPath).data.get('address', '') == d.address &&
-        getAfter(requestPath).data.get('storeImageUrl', '') == d.imageUrl &&
-        getAfter(requestPath).data.get('storePhone', '') == d.get('storePhone', '');
+        requestExists &&
+        requestData.get('type', '') == 'store_owner' &&
+        requestData.get('status', '') == 'pending' &&
+        requestData.get('storeId', '') == storeId &&
+        requestData.get('storeName', '') == d.name &&
+        requestData.get('storeCategory', '') == d.category &&
+        requestData.get('address', '') == d.address &&
+        requestData.get('storeImageUrl', '') == d.imageUrl &&
+        requestData.get('storePhone', '') == d.get('storePhone', '');
     }
 
     match /stores/{storeId} {
