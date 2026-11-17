@@ -212,6 +212,16 @@ describe("account deletion privacy cleanup", () => {
     });
   });
 
+  it("removes a deleted administrator from decision metadata and free text", () => {
+    expect(anonymizeDeliveryIssue({
+      courierId: "courier-2", customerId: "customer-2",
+      createdBy: "courier-2", updatedBy: "user-1",
+      adminDecision: "Personal details in decision", note: "Courier note",
+    }, "user-1")).toEqual({
+      updatedBy: "deleted", adminDecision: "",
+    });
+  });
+
   it("does not modify an issue unrelated to the deleted account", () => {
     expect(anonymizeDeliveryIssue({
       courierId: "courier-2", customerId: "customer-2", note: "keep",
