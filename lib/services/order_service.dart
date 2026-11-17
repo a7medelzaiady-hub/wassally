@@ -517,6 +517,7 @@ class OrderService {
             'subtotal': subtotal,
             'discount': discount,
             'total': total,
+            'editedAt': FieldValue.serverTimestamp(),
           },
         );
       }

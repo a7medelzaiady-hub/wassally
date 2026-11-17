@@ -294,9 +294,18 @@ service cloud.firestore {
         feedDataMatchesOrder(getAfter(feedPath).data, orderData);
     }
 
+    // أثناء تعديل العميل، ختم editedAt يثبت أن نسخة الـ feed اتحدثت في نفس الـ Batch.
+    // المقارنة التفصيلية للبيانات تتم مرة واحدة في قاعدة تحديث الـ feed نفسها.
+    function feedUpdatedForCustomerEdit(orderId) {
+      let feedPath = /databases/$(database)/documents/courier_available_orders/$(orderId);
+      return existsAfter(feedPath) &&
+        getAfter(feedPath).data.get('editedAt', null) == request.time;
+    }
+
     function feedDataMatchesOrder(f, orderData) {
       return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
-          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']) &&
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt',
+          'editedAt']) &&
         f.get('storeId', '') == orderData.get('storeId', '') &&
         f.get('storeName', '') == orderData.get('storeName', '') &&
         f.get('area', '') == orderData.get('area', '') &&
@@ -308,7 +317,20 @@ service cloud.firestore {
         f.get('total', -1) == orderData.get('total', -2) &&
         f.get('status', '') == 'preparing' &&
         orderData.get('status', '') == 'preparing' &&
-        f.get('createdAt', null) == orderData.get('createdAt', null);
+        f.get('createdAt', null) == orderData.get('createdAt', null) &&
+        f.get('editedAt', null) == orderData.get('editedAt', null);
+    }
+
+    function customerFeedUpdateAllowed(orderId) {
+      let orderPath = /databases/$(database)/documents/orders/$(orderId);
+      let oldOrder = get(orderPath).data;
+      let newOrder = getAfter(orderPath).data;
+      return signedIn() &&
+        oldOrder.get('userId', '') == request.auth.uid &&
+        oldOrder.get('status', '') == 'preparing' &&
+        oldOrder.get('courierId', '') == '' &&
+        newOrder.get('editedAt', null) == request.time &&
+        feedMatchesOrder(orderId, newOrder);
     }
 
     // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
@@ -510,12 +532,7 @@ service cloud.firestore {
 
       // العميل صاحب الطلب يحدّث نسخة القائمة في نفس Batch تعديل الطلب فقط.
       // getAfter يربط المستندين بالقيم النهائية ويمنع إدخال أي PII.
-      allow update: if signedIn() &&
-        get(/databases/$(database)/documents/orders/$(orderId)).data.get('userId', '') == request.auth.uid &&
-        get(/databases/$(database)/documents/orders/$(orderId)).data.get('status', '') == 'preparing' &&
-        get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
-        getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('editedAt', null) == request.time &&
-        feedMatchesOrder(orderId, getAfter(/databases/$(database)/documents/orders/$(orderId)).data);
+      allow update: if customerFeedUpdateAllowed(orderId);
 
       allow delete: if signedIn() && (isAdmin() ||
         isStoreOwner(get(/databases/$(database)/documents/orders/$(orderId)).data.get('storeId', '')) ||
@@ -546,7 +563,7 @@ service cloud.firestore {
             !('unavailableItems' in nd) &&
             validCustomerEdit(nd, od) &&
             (st != 'preparing' ||
-              feedMatchesOrder(orderId, nd)))
+              feedUpdatedForCustomerEdit(orderId)))
           ||
           (st == 'new' &&
             k.hasOnly(['status']) &&

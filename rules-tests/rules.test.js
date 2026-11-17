@@ -193,7 +193,7 @@ function customerEditBatch(db, orderId, { qty = 3, address = 'عنوان تجر�
   b.update(doc(db, `orders/${orderId}/private/contact`), { address });
   b.update(doc(db, `courier_available_orders/${orderId}`), {
     items: [{ name: 'p', price: 10, qty, productId: 'p1' }],
-    subtotal: qty * 10, total: qty * 10 + 20,
+    subtotal: qty * 10, total: qty * 10 + 20, editedAt: serverTimestamp(),
   });
   return b;
 }
@@ -220,8 +220,19 @@ test('feed sync: يمنع تحديثًا غير مطابق أو كتابة feed 
     subtotal: 40, total: 60, editedAt: serverTimestamp(),
   });
   mismatch.update(doc(db, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 3' });
-  mismatch.update(doc(db, 'courier_available_orders/o1'), { total: 999 });
+  mismatch.update(doc(db, 'courier_available_orders/o1'), {
+    total: 999, editedAt: serverTimestamp(),
+  });
   await assertFails(mismatch.commit());
+
+  // تحديث الطلب وبيانات التواصل دون تحديث الـ feed في نفس الـ Batch لازم يُرفض.
+  const missingFeed = writeBatch(db);
+  missingFeed.update(doc(db, 'orders/o1'), {
+    items: [{ name: 'p', price: 10, qty: 4, productId: 'p1' }],
+    subtotal: 40, total: 60, editedAt: serverTimestamp(),
+  });
+  missingFeed.update(doc(db, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 4' });
+  await assertFails(missingFeed.commit());
 
   const strangerDb = as('cust2');
   const stranger = writeBatch(strangerDb);
