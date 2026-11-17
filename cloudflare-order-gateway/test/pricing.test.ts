@@ -1,5 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, firstName, isRecentAuthTime } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
+
+describe("customer restriction fail-closed behavior", () => {
+  const now = Date.UTC(2026, 10, 17);
+
+  it("allows an account with no restriction document", () => {
+    expect(isCustomerRestricted({}, now)).toBe(false);
+  });
+
+  it("allows only an explicitly deactivated restriction", () => {
+    expect(isCustomerRestricted({ active: false }, now)).toBe(false);
+    expect(isCustomerRestricted({ active: false, expiresAt: new Date(now + 60_000) }, now)).toBe(false);
+  });
+
+  it("blocks active restrictions until a valid expiry has passed", () => {
+    expect(isCustomerRestricted({ active: true, expiresAt: new Date(now + 1) }, now)).toBe(true);
+    expect(isCustomerRestricted({ active: true, expiresAt: new Date(now - 1) }, now)).toBe(false);
+  });
+
+  it("fails closed for missing, malformed, or invalid expiry data", () => {
+    expect(isCustomerRestricted({ active: true }, now)).toBe(true);
+    expect(isCustomerRestricted({ active: true, expiresAt: "yesterday" }, now)).toBe(true);
+    expect(isCustomerRestricted({ active: true, expiresAt: new Date(Number.NaN) }, now)).toBe(true);
+    expect(isCustomerRestricted({ active: true, expiresAt: null }, now)).toBe(true);
+    expect(isCustomerRestricted({ expiresAt: null }, now)).toBe(true);
+  });
+
+  it("allows a non-active restriction only when explicitly set false", () => {
+    expect(isCustomerRestricted({ active: null, expiresAt: new Date(now - 1) }, now)).toBe(false);
+    expect(isCustomerRestricted({ active: null }, now)).toBe(true);
+  });
+});
 
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
