@@ -84,6 +84,32 @@ function encodeFields(fields: JsonMap): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, encodeValue(value)]));
 }
 
+export function shouldRequeueCourierOrder(data: JsonMap): boolean {
+  const status = String(data.status ?? "");
+  return ["preparing", "on_the_way"].includes(status) &&
+    !String(data.activeDeliveryIssueId ?? "").trim() &&
+    data.customerDeliveryReportedAt == null;
+}
+
+export function courierAvailableFeedData(data: JsonMap): JsonMap {
+  const feed: JsonMap = {
+    storeId: data.storeId,
+    storeName: data.storeName,
+    area: data.area ?? "",
+    items: data.items,
+    subtotal: data.subtotal,
+    deliveryFee: data.deliveryFee,
+    finalDeliveryFee: data.finalDeliveryFee,
+    discount: data.discount ?? 0,
+    total: data.total,
+    status: "preparing",
+    createdAt: data.createdAt,
+  };
+  return Object.fromEntries(
+    Object.entries(feed).filter(([, value]) => value !== null && value !== undefined),
+  );
+}
+
 export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
   const patch: JsonMap = {};
   const isParty = data.courierId === uid || data.customerId === uid;
@@ -374,25 +400,63 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
 
   // Remove courier applications and pseudonymize historical courier activity.
   await mutateAccountQuery(env, token, "applicants", "courierId", uid, () => null, "", true);
-  await mutateAccountQuery(env, token, "orders", "courierId", uid, (doc) => {
+  const courierOrders = await queryAccountDocuments(env, token, "orders", "courierId", uid);
+  const courierOrderWrites: any[] = [];
+  for (const doc of courierOrders) {
     const data = decodeFields(doc.fields ?? {});
-    if (["delivered", "cancelled"].includes(String(data.status ?? ""))) {
-      return {
+    const status = String(data.status ?? "");
+    const orderPath = doc.name.split("/documents/")[1];
+    const orderId = orderPath?.split("/").pop() ?? "";
+    if (["delivered", "cancelled"].includes(status)) {
+      const patch = {
         courierId: "deleted",
         courierName: "مندوب محذوف",
         courierPhone: "",
         deliveredBy: data.deliveredBy === uid ? "deleted" : String(data.deliveredBy ?? ""),
       };
+      courierOrderWrites.push({
+        update: { name: doc.name, fields: encodeFields(patch) },
+        updateMask: { fieldPaths: Object.keys(patch) },
+      });
+      continue;
     }
+
+    const requeue = shouldRequeueCourierOrder(data);
     const patch: JsonMap = {
       courierId: null,
       courierName: null,
       courierPhone: null,
       courierAt: null,
+      deliveryMode: null,
     };
-    if (data.status === "on_the_way") patch.status = "preparing";
-    return patch;
-  });
+    if (status === "on_the_way" && requeue) {
+      patch.status = "preparing";
+      patch.courierArrivedAt = null;
+    }
+    const fieldPaths = Object.keys(patch);
+    const values = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== null),
+    );
+    courierOrderWrites.push({
+      update: { name: doc.name, fields: encodeFields(values) },
+      updateMask: { fieldPaths },
+    });
+
+    if (orderId && requeue) {
+      const feed = courierAvailableFeedData({ ...data, ...patch, courierId: "", status: "preparing" });
+      courierOrderWrites.push({
+        update: {
+          name: firestoreDocumentName(env, `courier_available_orders/${encodeURIComponent(orderId)}`),
+          fields: encodeFields(feed),
+        },
+      });
+    } else if (orderId) {
+      courierOrderWrites.push({
+        delete: firestoreDocumentName(env, `courier_available_orders/${encodeURIComponent(orderId)}`),
+      });
+    }
+  }
+  await commitFirestoreWrites(env, token, courierOrderWrites);
   await mutateAccountQuery(env, token, "orders", "deliveredBy", uid, () => ({ deliveredBy: "deleted" }));
   await mutateAccountQuery(env, token, "statusHistory", "actorUid", uid, () => ({ actorUid: "deleted" }), "", true);
 
