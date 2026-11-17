@@ -63,6 +63,7 @@ class MainShell extends StatelessWidget {
 }
 
 class _WasallyBottomBar extends StatelessWidget {
+  static const _navPalette = AppPalette.purple;
   final int index;
   const _WasallyBottomBar({required this.index});
 
@@ -91,7 +92,7 @@ class _WasallyBottomBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, size: 22,
-                    color: selected ? Brand.green : Brand.palette.muted),
+                    color: selected ? _navPalette.primary : Brand.palette.muted),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -100,7 +101,7 @@ class _WasallyBottomBar extends StatelessWidget {
                     fontSize: 10.5,
                     height: 1.1,
                     fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                    color: selected ? Brand.green : Brand.palette.muted,
+                    color: selected ? _navPalette.primary : Brand.palette.muted,
                   ),
                 ),
               ],
@@ -133,12 +134,12 @@ class _WasallyBottomBar extends StatelessWidget {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(28),
                       border: Border.all(
-                        color: Brand.green.withValues(alpha: 0.24),
+                        color: _navPalette.primary.withValues(alpha: 0.24),
                         width: 1.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Brand.greenDark.withValues(alpha: 0.13),
+                          color: _navPalette.primaryDark.withValues(alpha: 0.13),
                           blurRadius: 18,
                           offset: const Offset(0, 7),
                         ),
@@ -243,10 +244,14 @@ class _GradientNavButton extends StatelessWidget {
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: Brand.headerGradient,
+            gradient: const LinearGradient(
+              colors: [Color(0xFF9F67FF), Color(0xFF5B21B6)],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Brand.green.withValues(alpha: selected ? 0.34 : 0.22),
+                color: AppPalette.purple.primary.withValues(alpha: selected ? 0.34 : 0.22),
                 blurRadius: selected ? 17 : 12,
                 offset: Offset(0, hangsBelow ? -2 : 4),
               ),
@@ -255,7 +260,11 @@ class _GradientNavButton extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: Brand.softGradient,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF9F67FF), Color(0xFF7C3AED)],
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+              ),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.72),
                 width: 1.2,
@@ -292,12 +301,12 @@ class _GradientNavButton extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Brand.greenDark, width: 1),
+                        border: Border.all(color: AppPalette.purple.primaryDark, width: 1),
                       ),
                       child: Text(
                         badgeText!,
                         style: TextStyle(
-                          color: Brand.greenDark,
+                          color: AppPalette.purple.primaryDark,
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
                         ),
