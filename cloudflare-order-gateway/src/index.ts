@@ -97,7 +97,21 @@ export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
   return patch;
 }
 
-export function firstName(value: unknown): string {
+export const PRIVATE_ORDER_FIELDS = [
+  "userName", "userEmail", "email", "fullName", "customerFullName",
+  "phone", "userPhone", "customerPhone", "address", "userAddress",
+  "customerAddress", "courierNotes", "contact", "privateContact",
+  "customerContact",
+] as const;
+
+/** Strip legacy contact fields before writing a public order document. */
+export function sanitizePublicOrder(data: JsonMap): JsonMap {
+  const safe = { ...data };
+  for (const field of PRIVATE_ORDER_FIELDS) delete safe[field];
+  return safe;
+}
+
+function firstName(value: unknown): string {
   return String(value ?? "").trim().split(/\s+/)[0] ?? "";
 }
 
@@ -928,14 +942,14 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     throw new HttpError(409, "إجمالي الطلب اتغير. راجع الأصناف والخصم قبل التعديل.");
   }
 
-  const updatedOrder: JsonMap = {
+  const updatedOrder = sanitizePublicOrder({
     ...order,
     items,
     subtotal,
     total,
     notes,
     customerName,
-  };
+  });
   delete updatedOrder.unavailableItems;
   if (discount > 0 && promoCode) {
     updatedOrder.discount = discount;
