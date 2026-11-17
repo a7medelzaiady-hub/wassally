@@ -55,13 +55,71 @@ jobs:
         flutter pub get
         df -h /
 
-    # 7. تحقق من Gradle وAndroid plugins دون الحاجة إلى مفتاح Release
+    # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
+    - name: Prepare Android debug keystore directory
+      run: mkdir -p "$HOME/.android"
+
+    - name: Restore stable Android debug keystore
+      id: android-debug-key
+      uses: actions/cache/restore@v5
+      with:
+        path: ~/.android/debug.keystore
+        key: wasally-android-debug-keystore-v1
+
+    - name: Generate stable Android debug keystore when absent
+      if: steps.android-debug-key.outputs.cache-hit != 'true'
+      run: |
+        keytool -genkeypair -v \
+          -keystore "$HOME/.android/debug.keystore" \
+          -storepass android -alias androiddebugkey -keypass android \
+          -keyalg RSA -keysize 2048 -validity 10000 \
+          -dname "CN=Android Debug,O=Android,C=US"
+
+    - name: Save stable Android debug keystore
+      if: steps.android-debug-key.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.android/debug.keystore
+        key: wasally-android-debug-keystore-v1
+
+    # لا نرفع APK إذا كانت شهادة توقيعه غير مسجلة في Google OAuth داخل Firebase.
+    - name: Verify stable debug SHA-1 is registered in Firebase config
+      id: debug-cert
+      shell: bash
+      run: |
+        SHA1="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA1: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+        echo "Stable Android debug SHA-1: $SHA1"
+        echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
+        python - "$SHA1" <<'PY'
+        import json, sys
+        expected = sys.argv[1].lower()
+        with open("android/app/google-services.json", encoding="utf-8") as f:
+            config = json.load(f)
+        found = any(
+            client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+            and any(
+                oauth.get("client_type") == 1
+                and oauth.get("android_info", {}).get("package_name") == "com.wassally.app"
+                and oauth.get("android_info", {}).get("certificate_hash", "").lower() == expected
+                for oauth in client.get("oauth_client", [])
+            )
+            for client in config.get("client", [])
+        )
+        if not found:
+            print("ERROR: This stable CI signing SHA-1 is not registered for com.wassally.app.")
+            print("Add the SHA-1 above to the Android app in Firebase Console, then download and commit the updated google-services.json.")
+            raise SystemExit(1)
+        print("Firebase Android OAuth certificate matches the stable CI signing key.")
+        PY
+
+    # نسخة الاختبار تستخدم Firestore مباشرة؛ serverOrders غير مفعّل حسب سجل الأمان.
+    # لا نوجّهها إلى Worker الإنتاج قبل التحقق من نشره واختبار طلب حقيقي عليه.
     - name: Build debug APK (retry transient dependency failures)
       shell: bash
       run: |
         for attempt in 1 2 3; do
           echo "Android build attempt ${attempt}/3"
-          if flutter build apk --debug --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev; then
+          if flutter build apk --debug; then
             exit 0
           fi
           if [ "$attempt" -lt 3 ]; then
@@ -70,7 +128,7 @@ jobs:
         done
         exit 1
 
-    # اطبع بصمة شهادة APK الفعلية حتى نطابقها مع Android OAuth في Firebase.
+    # اطبع بصمة شهادة APK الفعلية للتأكد من تطابق الملف الناتج.
     - name: Report debug APK signing certificate SHA-1
       run: |
         APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
