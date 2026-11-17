@@ -74,6 +74,7 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   // العنوان المحفوظ للعميل.
   String _address = '';
+  final GlobalKey _offersKey = GlobalKey();
 
   // فلتر قائمة المحلات (null = الكل).
   String? _filter;
@@ -108,6 +109,7 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    homeOffersRequest.addListener(_onOffersRequest);
 
     // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
@@ -136,8 +138,22 @@ class _HomePageState extends State<HomePage>
     });
   }
 
+  void _onOffersRequest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _offersKey.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 520),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.04,
+      );
+    });
+  }
+
   @override
   void dispose() {
+    homeOffersRequest.removeListener(_onOffersRequest);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -824,7 +840,7 @@ class _HomePageState extends State<HomePage>
       child: LayoutBuilder(
         builder: (context, c) {
           const gap = 10.0;
-          final w = (c.maxWidth - gap * 3) / 4;
+          final w = (c.maxWidth - gap * 2) / 3;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -832,11 +848,11 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 104,
+                  height: 126,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
-                        ? ''
+                        ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=75'
                         : (kCategoryPhotos[info.category] ??
                               categoryImages[info.category] ??
                               ''),
@@ -1426,6 +1442,7 @@ class _HomePageState extends State<HomePage>
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(
+                  key: _offersKey,
                   child: _highlights(
                     all,
                     _offersFuture ??= _loadCatalogOffers(all),
@@ -1485,12 +1502,13 @@ class _HomePageState extends State<HomePage>
   }
 }
 
-/// مربع قسم بصورة حقيقية على خلفية بيج، زي تطبيقات التوصيل الكبيرة.
+/// بطاقة قسم فوتوغرافية؛ الصورة تملأ البطاقة والاسم فوق طبقة تدرّج مقروءة.
 class _CategoryTile extends StatelessWidget {
   final String label;
   final String imageUrl;
   final bool isAll;
   final VoidCallback onTap;
+
   const _CategoryTile({
     required this.label,
     required this.imageUrl,
@@ -1498,93 +1516,99 @@ class _CategoryTile extends StatelessWidget {
     required this.onTap,
   });
 
-  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
-  static String _emojiFor(String label) {
-    if (label == 'الكل') return '🛍️';
-    const map = <String, String>{
-      'مطاعم': '🍔',
-      'سوبرماركت': '🛒',
-      'بقالة': '🧺',
-      'خضار وفاكهة': '🥬',
-      'لحوم ودواجن': '🥩',
-      'مخبوزات وحلويات': '🥐',
-      'محمصات وعطارة': '🌰',
-      'كافيه ومشروبات': '☕',
-      'ورد وهدايا': '💐',
-      'أخرى': '📦',
-    };
-    final exact = map[label];
-    if (exact != null) return exact;
-    // احتياطي لو اسم القسم اتغيّر شوية.
-    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
-    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
-    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
-    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
-    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
-    if (label.contains('ورد') || label.contains('هدا')) return '💐';
-    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
-    if (label.contains('صيدل')) return '💊';
-    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
-    return '📦';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: kTileBeige,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: isAll || imageUrl.isEmpty
-                    ? _emojiBox()
-                    : Image.network(
-                        thumb(imageUrl, w: 200),
-                        cacheWidth: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _emojiBox(),
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageUrl.isNotEmpty)
+                Image.network(
+                  thumb(imageUrl, w: 420),
+                  cacheWidth: 420,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => _fallback(),
+                )
+              else
+                _fallback(),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.02),
+                      Colors.black.withValues(alpha: 0.08),
+                      Colors.black.withValues(alpha: 0.72),
+                    ],
+                    stops: const [0, 0.42, 1],
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                start: 10,
+                end: 10,
+                bottom: 10,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        blurRadius: 8,
+                        offset: Offset(0, 1),
                       ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
+              PositionedDirectional(
+                top: 8,
+                end: 8,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Brand.green.withValues(alpha: 0.5),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _emojiBox() {
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(gradient: Brand.softGradient),
-      child: Text(
-        _emojiFor(label),
-        style: const TextStyle(fontSize: 32, height: 1.1),
-      ),
-    );
-  }
+  Widget _fallback() => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Brand.greenLight, Brand.greenDark],
+          ),
+        ),
+        child: const SizedBox.expand(),
+      );
 }
