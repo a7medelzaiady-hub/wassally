@@ -650,10 +650,8 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
 
   // Remove customer-uploaded special-request images before deleting their Firestore references.
   const specialRequestDocs = await queryAccountDocuments(env, token, "special_requests", "userId", uid);
-  const hasSpecialRequestImages = specialRequestDocs.some((doc) => {
-    const data = decodeFields(doc.fields ?? {});
-    return typeof data.imageUrl === "string" && data.imageUrl.trim().length > 0;
-  });
+  const hasSpecialRequestImages = specialRequestDocs.some((doc) =>
+    isCloudinaryImageUrl(decodeFields(doc.fields ?? {}).imageUrl));
   const cloudinaryConfigured = Boolean(
     env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
   );
@@ -1207,6 +1205,18 @@ export function canUploadSpecialRequestImage(storeId: string, store: JsonMap | n
   return /^[A-Za-z0-9_-]{1,100}$/.test(storeId) && store?.active === true;
 }
 
+export function isCloudinaryImageUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname === "res.cloudinary.com" &&
+      url.pathname.includes("/image/upload/");
+  } catch {
+    return false;
+  }
+}
+
 export async function cloudinarySpecialRequestFolder(uid: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(uid));
   const hash = Array.from(new Uint8Array(digest), (byte) =>
@@ -1239,7 +1249,10 @@ async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Prom
       throw new HttpError(503, "تعذر حذف صور الطلبات الخاصة. حاول حذف الحساب مرة أخرى.");
     }
     const result = await deleted.json() as { partial?: boolean; next_cursor?: string };
-    if (!result.partial || !result.next_cursor) return;
+    if (!result.partial) return;
+    if (!result.next_cursor) {
+      throw new HttpError(503, "لم تكتمل إزالة كل صور الطلبات الخاصة. أعد محاولة حذف الحساب.");
+    }
     nextCursor = result.next_cursor;
   }
   throw new HttpError(503, "توجد صور كثيرة مرتبطة بالحساب؛ أعد محاولة حذف الحساب لإكمال التنظيف.");
@@ -1378,9 +1391,9 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   const publicId = crypto.randomUUID();
   const signedParams = {
     allowed_formats: "jpg,jpeg,png,webp",
-    folder: uploadFolder,
+    ...(folder === "special_requests" ? {} : { folder: uploadFolder }),
     overwrite: "false",
-    public_id: publicId,
+    public_id: folder === "special_requests" ? `${uploadFolder}/${publicId}` : publicId,
     timestamp: String(timestamp),
     unique_filename: "true",
     use_filename: "false",
