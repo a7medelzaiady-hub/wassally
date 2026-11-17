@@ -1468,7 +1468,7 @@ async function cleanupConfirmedOrderAttachments(
     throw new HttpError(409, "لا يمكن حذف المرفقات قبل تأكيد العميل استلام الطلب.");
   }
   const special = order.specialRequest && typeof order.specialRequest === "object"
-    ? { ...order.specialRequest as JsonMap }
+    ? Object.assign({}, order.specialRequest as JsonMap)
     : null;
   if (!special) return response({ cleaned: true, alreadyClean: true });
   if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
@@ -1579,10 +1579,13 @@ export default {
     const rawEditId = url.pathname.startsWith(editPrefix)
       ? url.pathname.slice(editPrefix.length)
       : "";
-    const cleanupMatch = request.method === "POST"
-      ? url.pathname.match(/^\\/v1\\/orders\\/([^/]+)\\/cleanup-attachments$/)
-      : null;
-    const isCleanup = cleanupMatch !== null;
+    const cleanupPrefix = "/v1/orders/";
+    const cleanupSuffix = "/cleanup-attachments";
+    const cleanupOrderId = request.method === "POST" &&
+      url.pathname.startsWith(cleanupPrefix) && url.pathname.endsWith(cleanupSuffix)
+        ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
+        : "";
+    const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
     if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
@@ -1590,7 +1593,7 @@ export default {
       const result = isCreate
         ? await createOrder(request, env)
         : isCleanup
-          ? await cleanupConfirmedOrderAttachments(request, env, decodeURIComponent(cleanupMatch![1]))
+          ? await cleanupConfirmedOrderAttachments(request, env, decodeURIComponent(cleanupOrderId))
           : await updateOrder(request, env, decodeURIComponent(rawEditId));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
