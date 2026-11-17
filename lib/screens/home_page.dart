@@ -856,7 +856,6 @@ class _HomePageState extends State<HomePage>
                         : (kCategoryPhotos[info.category] ??
                               categoryImages[info.category] ??
                               ''),
-                    isAll: info.category == 'الكل',
                     onTap: () => _openDirectory(
                       info.category == 'الكل' ? null : info.category,
                     ),
@@ -1506,13 +1505,11 @@ class _HomePageState extends State<HomePage>
 class _CategoryTile extends StatelessWidget {
   final String label;
   final String imageUrl;
-  final bool isAll;
   final VoidCallback onTap;
 
   const _CategoryTile({
     required this.label,
     required this.imageUrl,
-    required this.isAll,
     required this.onTap,
   });
 
