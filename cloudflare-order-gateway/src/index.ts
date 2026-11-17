@@ -1499,10 +1499,14 @@ async function cleanupConfirmedOrderAttachments(
       throw new HttpError(403, "الصورة لا تخص مرفقات هذا العميل.");
     }
     const timestamp = String(Math.floor(Date.now() / 1000));
-    const signature = await cloudinarySignature({ public_id: publicId, timestamp }, env.CLOUDINARY_API_SECRET);
+    const signature = await cloudinarySignature(
+      { invalidate: "true", public_id: publicId, timestamp },
+      env.CLOUDINARY_API_SECRET,
+    );
     const form = new FormData();
     form.append("public_id", publicId);
     form.append("timestamp", timestamp);
+    form.append("invalidate", "true");
     form.append("api_key", env.CLOUDINARY_API_KEY);
     form.append("signature", signature);
     const deleted = await fetch(
