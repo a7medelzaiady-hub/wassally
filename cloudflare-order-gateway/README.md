@@ -4,7 +4,7 @@
 
 ## ما الذي تتحقق منه؟
 
-- تتحقق من Firebase ID token وتستخرج UID من الرمز الموقّع، ولا تقبل UID من جسم الطلب.
+- تتحقق من Firebase ID token وتستخرج UID من الرمز الموقّع، ولا تقبل UID من جسم الطلب. كما تشترط Google provider، وتتحقق من وجود حساب Firebase Auth وعدم تعطيله وعدم إلغاء الرمز عبر Identity Toolkit `projects.accounts:lookup` (صلاحية `firebaseauth.users.get`). نتيجة الحالة تُخزّن مؤقتًا 5 ثوانٍ لكل Worker isolate لتقليل الاستدعاءات؛ لا تُضاف قراءة إلى Firestore. مسار حذف الحساب يتحقق من حد `validSince` أيضًا، ويسمح فقط بإعادة المحاولة الآمنة إذا كان الحساب حُذف بالفعل.
 - تقرأ المحل والكتالوج من Firestore مباشرةً باستخدام حساب خدمة محفوظ كـ Cloudflare Secret.
 - تستخدم سعر الكتالوج الحالي، وتتحقق من توافر الصنف والعروض وتاريخ انتهائها.
 - تستخدم السعر القادم من التطبيق كاختبار لاكتشاف تغيّر السعر فقط؛ لا تستخدمه أبدًا كسعر للطلب.
@@ -20,7 +20,7 @@
 
 ## الإعداد الآمن
 
-1. أنشئ حساب خدمة مخصصًا في Google Cloud داخل مشروع Firebase نفسه. امنحه **Cloud Datastore User** (`roles/datastore.user`) لعمليات Firestore، ودور **Firebase Authentication Admin** (`roles/firebaseauth.admin`) لحذف مستخدمي Auth، وأضف صلاحية `cloudmessaging.messages.create` عبر Custom IAM Role محدود. كبديل أسهل لكنه أوسع، استخدم **Firebase Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`). لا تستخدم Owner أو Editor.
+1. أنشئ حساب خدمة مخصصًا في Google Cloud داخل مشروع Firebase نفسه. امنحه **Cloud Datastore User** (`roles/datastore.user`) لعمليات Firestore، ودور **Firebase Authentication Admin** (`roles/firebaseauth.admin`) لحذف مستخدمي Auth والتحقق من وجودهم وحالة إلغاء الرموز (`firebaseauth.users.get`)، وأضف صلاحية `cloudmessaging.messages.create` عبر Custom IAM Role محدود. كبديل أسهل لكنه أوسع، استخدم **Firebase Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`). لا تستخدم Owner أو Editor.
 2. فعّل Firebase Cloud Messaging HTTP v1 API في المشروع (`fcm.googleapis.com`).
 3. أنشئ مفتاح JSON للحساب، واحتفظ به خارج المستودع.
 4. من مجلد الخدمة نفّذ:
