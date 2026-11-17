@@ -10,14 +10,10 @@ class _Slide {
   final String? image;
   final String title;
   final String subtitle;
-  final List<Color>? colors;
-  final IconData icon;
   const _Slide({
     this.image,
     this.title = '',
     this.subtitle = '',
-    this.colors,
-    this.icon = Icons.delivery_dining_rounded,
   });
 }
 
