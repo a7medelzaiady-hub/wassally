@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -281,5 +281,18 @@ describe("image upload rate limiting", () => {
   it("rejects uploads when Cloudflare reports the per-user limit exceeded", async () => {
     const limiter = { limit: async (_: { key: string }) => ({ success: false }) };
     await expect(isUploadRateLimited(limiter, "user-123")).resolves.toBe(true);
+  });
+});
+
+
+describe("account deletion order privacy mask", () => {
+  it("clears every legacy private field from customer order documents", () => {
+    for (const field of PRIVATE_ORDER_FIELDS) {
+      expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain(field);
+    }
+    expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("userId");
+    expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("userDeleted");
+    expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("customerName");
+    expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("notes");
   });
 });
