@@ -5,13 +5,12 @@ import 'package:flutter/material.dart';
 import '../services/order_contact_service.dart';
 import '../theme/app_theme.dart';
 
-/// true = المندوب ما يبدأش التوصيل إلا بعد ما المحل يجهّز الطلب (preparing).
-/// لو غيّرتها لـ false المندوب يقدر يبدأ من أول ما الطلب يتعيّنله.
-/// القواعد ليها مفتاح مقابل: courierAfterPrep في app_info/security.
+/// إعداد واجهة فقط: المندوب ينتظر تجهيز المحل قبل بدء الطريق.
+/// قواعد Firestore تفرض انتقال الحالة والجاهزية بشكل مستقل، حتى لو تغيّر هذا الإعداد.
 const bool kCourierWaitsForPrep = true;
 
-/// true = المندوب ما يبدأش التوصيل إلا بعد ما المحل (أو الأدمن) يضغط «الطلب جاهز للاستلام».
-/// القواعد ليها مفتاح مقابل: courierAfterReady في app_info/security (اختياري، افتراضيًا مقفول).
+/// إعداد واجهة فقط: المندوب ينتظر تأكيد «الطلب جاهز للاستلام».
+/// قواعد Firestore تظل المرجع النهائي وتتحقق من الجاهزية على الخادم.
 const bool kCourierWaitsForReady = true;
 
 enum OrderStatus {
