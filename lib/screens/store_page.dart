@@ -177,6 +177,10 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _pickSpecialImage() async {
     if (_sendingSpecial) return;
+    if (!cart.canAddFrom(store.id)) {
+      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
+      return;
+    }
     try {
       final url = await ImageService.pickAndUpload('special_requests', storeId: store.id);
       if (url != null && mounted) setState(() => _specialImageUrl = url);
@@ -266,6 +270,10 @@ class _StorePageState extends State<StorePage> {
     final description = _specialRequestCtrl.text.trim();
     if (user == null) {
       _say('سجّل الدخول الأول لإرسال الطلب.');
+      return;
+    }
+    if (!cart.canAddFrom(store.id)) {
+      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
       return;
     }
     if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
