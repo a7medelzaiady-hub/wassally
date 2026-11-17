@@ -23,11 +23,14 @@ class _LoginScreenState extends State<LoginScreen> {
       await AuthService.signInWithGoogle();
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in failed: ${e.code} | ${e.message}');
-      if (e.code == 'web-context-canceled' || e.code == 'canceled') return;
       if (mounted) {
         final msg = e.code == 'network-request-failed'
             ? 'مفيش اتصال بالإنترنت. جرّب تاني.'
-            : 'تعذر تسجيل الدخول. حاول تاني.';
+            : e.code == 'google-sign-in-interrupted'
+                ? 'جوجل رجّعك من اختيار الحساب قبل إكمال تسجيل الدخول. جرّب مرة تانية.'
+                : e.code == 'canceled' || e.code == 'web-context-canceled'
+                    ? 'عملية تسجيل الدخول ما اكتملتش. جرّب تاني.'
+                    : 'تعذر تسجيل الدخول (' + e.code + '). حاول تاني.';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(msg)));
       }
