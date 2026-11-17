@@ -173,6 +173,10 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _pickSpecialImage() async {
     if (_sendingSpecial) return;
+    if (!cart.canAddFrom(store.id)) {
+      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
+      return;
+    }
     try {
       final url = await ImageService.pickAndUpload('special_requests', storeId: store.id);
       if (url != null && mounted) setState(() => _specialImageUrl = url);
@@ -264,6 +268,10 @@ class _StorePageState extends State<StorePage> {
       _say('سجّل الدخول الأول لإرسال الطلب.');
       return;
     }
+    if (!cart.canAddFrom(store.id)) {
+      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
+      return;
+    }
     if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
       _say('اكتب وصف المنتج أو أرفق صورة أو رسالة صوتية.');
       return;
@@ -288,17 +296,22 @@ class _StorePageState extends State<StorePage> {
           throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
         }
       }
-      await FirebaseFirestore.instance.collection('special_requests').add({
-        'storeId': store.id,
-        'storeName': store.name,
-        'userId': user.uid,
-        'description': description,
-        'quantity': _specialQty,
-        'imageUrl': _specialImageUrl ?? '',
-        'voiceBase64': voiceBase64 ?? '',
-        'status': 'new',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      final attached = cart.setSpecialRequest(
+        storeId: store.id,
+        storeName: store.name,
+        request: {
+          'description': description,
+          'quantity': _specialQty,
+          if ((_specialImageUrl ?? '').isNotEmpty) 'imageUrl': _specialImageUrl,
+          if ((voiceBase64 ?? '').isNotEmpty) 'voiceBase64': voiceBase64,
+          'createdAt': DateTime.now().toIso8601String(),
+        },
+      );
+      if (!attached) {
+        throw StateError(
+          'سلتك فيها طلب من محل ${cart.storeName}. أفرغ السلة أو أنهِ الطلب الأول.',
+        );
+      }
       if (sentVoicePath != null) {
         await _voicePreviewPlayer.stop();
       }
@@ -317,7 +330,7 @@ class _StorePageState extends State<StorePage> {
           } catch (_) {}
         }());
       }
-      _say('تم إرسال الطلب الخاص للمحل.');
+      _say('تمت إضافة الطلب الخاص إلى سلتك. كمّل الطلب لإرساله مع المنتجات.');
     } catch (e) {
       _say('تعذر إرسال الطلب الخاص: $e');
     } finally {
@@ -357,6 +370,19 @@ class _StorePageState extends State<StorePage> {
           const SizedBox(height: 4),
           Text('اكتب اللي محتاجه أو أرفق صورة أو رسالة صوتية وسيقوم المحل بتجهيزه لك',
               style: TextStyle(fontSize: 15, height: 1.5, color: Brand.ink)),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7E8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Brand.gold.withValues(alpha: 0.6)),
+            ),
+            child: const Text(
+              'تنبيه: سيتم حذف الصور والتسجيلات الصوتية المرفقة تلقائيًا من مساحة التخزين بعد تأكيد استلامك للطلب.',
+              style: TextStyle(fontSize: 12.5, height: 1.5, fontWeight: FontWeight.w700),
+            ),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _specialRequestCtrl,

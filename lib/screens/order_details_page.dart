@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -149,6 +153,9 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
+    if (widget.order.customerConfirmedAt != null) {
+      OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
+    }
   }
 
   @override
@@ -476,6 +483,10 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
+        if (order.specialRequest != null) ...[
+          const SizedBox(height: 12),
+          _CustomerSpecialRequestCard(request: order.specialRequest!),
+        ],
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(16),
@@ -860,6 +871,91 @@ class _TimelineStep extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _CustomerSpecialRequestCard extends StatefulWidget {
+  final Map<String, dynamic> request;
+  const _CustomerSpecialRequestCard({required this.request});
+
+  @override
+  State<_CustomerSpecialRequestCard> createState() => _CustomerSpecialRequestCardState();
+}
+
+class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard> {
+  final audio.AudioPlayer _player = audio.AudioPlayer();
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleAudio(String encoded) async {
+    try {
+      if (_playing) {
+        await _player.pause();
+        if (mounted) setState(() => _playing = false);
+        return;
+      }
+      final bytes = Uint8List.fromList(base64Decode(encoded));
+      await _player.play(audio.BytesSource(bytes));
+      if (mounted) setState(() => _playing = true);
+      _player.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _playing = false);
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _playing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية المرفقة.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final description = (widget.request['description'] ?? '').toString();
+    final imageUrl = (widget.request['imageUrl'] ?? '').toString();
+    final voice = (widget.request['voiceBase64'] ?? '').toString();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('الطلب الخاص والمرفقات',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          const SizedBox(height: 8),
+          if (description.isNotEmpty) Text(description),
+          Text('الكمية المطلوبة: ${widget.request['quantity'] ?? 1}'),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(imageUrl, height: 180, fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Text('تعذر عرض الصورة المرفقة.')),
+            ),
+          ],
+          if (voice.isNotEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: OutlinedButton.icon(
+                onPressed: () => _toggleAudio(voice),
+                icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
+                label: Text(_playing ? 'إيقاف الرسالة الصوتية' : 'تشغيل الرسالة الصوتية'),
+              ),
+            ),
         ],
       ),
     );

@@ -42,6 +42,43 @@ class OrderGateway {
         payload: payload,
       );
 
+  /// Removes this order's uploaded attachments only after customer receipt confirmation.
+  static Future<void> cleanupAttachments({
+    required String idToken,
+    required String orderId,
+  }) async {
+    var root = baseUrl.trim();
+    while (root.endsWith('/')) {
+      root = root.substring(0, root.length - 1);
+    }
+    final uri = Uri.tryParse(root + '/v1/orders/' + Uri.encodeComponent(orderId) + '/cleanup-attachments');
+    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
+      throw StateError('خدمة تنظيف مرفقات الطلب غير مهيأة.');
+    }
+    final client = http.Client();
+    late final http.Response result;
+    try {
+      final request = http.Request('POST', uri)
+        ..headers.addAll({
+          'Authorization': 'Bearer ' + idToken,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        })
+        ..body = '{}';
+      final streamed = await client.send(request).timeout(const Duration(seconds: 45));
+      result = await http.Response.fromStream(streamed).timeout(const Duration(seconds: 45));
+    } finally {
+      client.close();
+    }
+    Map<String, dynamic> body = {};
+    try {
+      final decoded = jsonDecode(result.body);
+      if (decoded is Map<String, dynamic>) body = decoded;
+    } catch (_) {}
+    if (result.statusCode < 200 || result.statusCode >= 300 || body['cleaned'] != true) {
+      throw StateError((body['error'] ?? 'تعذر حذف مرفقات الطلب.').toString());
+    }
+  }
   /// Deletes the authenticated account and its server-owned data.
   static Future<void> deleteAccount({required String idToken}) async {
     final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');

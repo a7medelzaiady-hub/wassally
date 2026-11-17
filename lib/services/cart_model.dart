@@ -38,6 +38,33 @@ class CartModel extends ChangeNotifier {
   }
 
   final Map<Product, int> _items = {};
+  Map<String, dynamic>? _specialRequest;
+
+  Map<String, dynamic>? get specialRequest => _specialRequest == null
+      ? null
+      : Map<String, dynamic>.unmodifiable(_specialRequest!);
+
+  bool setSpecialRequest({
+    required String storeId,
+    required String storeName,
+    required Map<String, dynamic> request,
+  }) {
+    if (!canAddFrom(storeId)) return false;
+    _storeId = storeId;
+    _storeName = storeName;
+    _specialRequest = Map<String, dynamic>.from(request);
+    notifyListeners();
+    return true;
+  }
+
+  void clearSpecialRequest() {
+    _specialRequest = null;
+    if (_items.isEmpty) {
+      _storeId = null;
+      _storeName = null;
+    }
+    notifyListeners();
+  }
   String? _storeId;
   String? _storeName;
 
@@ -45,7 +72,7 @@ class CartModel extends ChangeNotifier {
   String? get storeId => _storeId;
   String? get storeName => _storeName;
 
-  bool get isEmpty => _items.isEmpty;
+  bool get isEmpty => _items.isEmpty && _specialRequest == null;
   int get count => _items.values.fold(0, (a, b) => a + b);
   double get subtotal =>
       _items.entries.fold(0.0, (sum, e) => sum + e.key.price * e.value);
@@ -54,7 +81,8 @@ class CartModel extends ChangeNotifier {
   int qtyOf(Product p) => _items[p] ?? 0;
 
   /// هل ينفع نضيف منتج من المحل ده من غير ما نفرّغ السلة؟
-  bool canAddFrom(String storeId) => _items.isEmpty || _storeId == storeId;
+  bool canAddFrom(String storeId) =>
+      (_items.isEmpty && _specialRequest == null) || _storeId == storeId;
 
   /// بتضيف منتج. بترجع false لو السلة فيها منتجات من محل تاني.
   bool add(Product p, {required String storeId, required String storeName}) {
@@ -73,7 +101,7 @@ class CartModel extends ChangeNotifier {
     } else {
       _items[p] = current - 1;
     }
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _specialRequest == null) {
       _storeId = null;
       _storeName = null;
     }
@@ -83,7 +111,7 @@ class CartModel extends ChangeNotifier {
   /// حذف الصنف بالكامل من السلة.
   void removeItem(Product p) {
     _items.remove(p);
-    if (_items.isEmpty) {
+    if (_items.isEmpty && _specialRequest == null) {
       _storeId = null;
       _storeName = null;
       promoCode = '';
@@ -96,6 +124,7 @@ class CartModel extends ChangeNotifier {
     promoCode = '';
     promoPercent = 0;
     _items.clear();
+    _specialRequest = null;
     _storeId = null;
     _storeName = null;
     notifyListeners();
