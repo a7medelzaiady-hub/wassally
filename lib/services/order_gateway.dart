@@ -42,7 +42,7 @@ class OrderGateway {
         payload: payload,
       );
 
-  /// Removes only this order's uploaded attachments after customer receipt confirmation.
+  /// Removes this order's uploaded attachments only after customer receipt confirmation.
   static Future<void> cleanupAttachments({
     required String idToken,
     required String orderId,
@@ -142,7 +142,7 @@ class OrderGateway {
 }
 ), '');
     final uri = Uri.tryParse(
-      '$root/v1/orders/${Uri.encodeComponent(orderId)}/cleanup-attachments',
+      root + '/v1/orders/' + Uri.encodeComponent(orderId) + '/cleanup-attachments',
     );
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw StateError('خدمة تنظيف مرفقات الطلب غير مهيأة.');
@@ -153,7 +153,7 @@ class OrderGateway {
       final streamed = await client.send(
         http.Request('POST', uri)
           ..headers.addAll({
-            'Authorization': 'Bearer $idToken',
+            'Authorization': 'Bearer ' + idToken,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           })
