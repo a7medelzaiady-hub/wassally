@@ -1452,6 +1452,93 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   return response({ url: secureUrl });
 }
 
+async function cleanupConfirmedOrderAttachments(
+  request: Request,
+  env: Env,
+  orderId: string,
+): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  const token = await googleAccessToken(env);
+  const path = `orders/${encodeURIComponent(orderId)}`;
+  const doc = await getDocument(env, path, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(doc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية تنظيف مرفقات هذا الطلب.");
+  if (!(order.customerConfirmedAt instanceof Date)) {
+    throw new HttpError(409, "لا يمكن حذف المرفقات قبل تأكيد العميل استلام الطلب.");
+  }
+  const special = order.specialRequest && typeof order.specialRequest === "object"
+    ? { ...order.specialRequest as JsonMap }
+    : null;
+  if (!special) return response({ cleaned: true, alreadyClean: true });
+  if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
+
+  const imageUrl = String(special.imageUrl ?? "");
+  if (imageUrl) {
+    if (!isCloudinaryImageUrl(imageUrl) || !env.CLOUDINARY_CLOUD_NAME ||
+        !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+      special.cleanupStatus = "failed";
+      await commitFirestoreWrites(env, token, [{
+        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
+        updateMask: { fieldPaths: ["specialRequest"] },
+        currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+      }]);
+      throw new HttpError(503, "تعذر التحقق من الصورة أو إعدادات حذفها. يمكن إعادة المحاولة.");
+    }
+    const parsed = new URL(imageUrl);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const uploadIndex = segments.indexOf("upload");
+    if (uploadIndex < 0) throw new HttpError(400, "مسار الصورة غير صالح.");
+    const assetSegments = segments.slice(uploadIndex + 1);
+    if (assetSegments[0]?.startsWith("v") && /^v\\d+$/.test(assetSegments[0])) assetSegments.shift();
+    const last = assetSegments.pop() ?? "";
+    const publicId = [...assetSegments, last.replace(/\\.[^.]+$/, "")].join("/");
+    const expectedPrefix = await cloudinarySpecialRequestFolder(uid);
+    if (!publicId.startsWith(expectedPrefix + "/")) {
+      throw new HttpError(403, "الصورة لا تخص مرفقات هذا العميل.");
+    }
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = await cloudinarySignature({ public_id: publicId, timestamp }, env.CLOUDINARY_API_SECRET);
+    const form = new FormData();
+    form.append("public_id", publicId);
+    form.append("timestamp", timestamp);
+    form.append("api_key", env.CLOUDINARY_API_KEY);
+    form.append("signature", signature);
+    const deleted = await fetch(
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`,
+      { method: "POST", body: form },
+    );
+    if (!deleted.ok) {
+      special.cleanupStatus = "failed";
+      await commitFirestoreWrites(env, token, [{
+        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
+        updateMask: { fieldPaths: ["specialRequest"] },
+      }]);
+      throw new HttpError(503, "تعذر حذف الصورة من التخزين. أعد المحاولة.");
+    }
+    const result = await deleted.json() as { result?: string };
+    if (!["ok", "not found"].includes(String(result.result ?? ""))) {
+      special.cleanupStatus = "failed";
+      await commitFirestoreWrites(env, token, [{
+        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
+        updateMask: { fieldPaths: ["specialRequest"] },
+      }]);
+      throw new HttpError(503, "لم تؤكد خدمة الصور حذف المرفق. أعد المحاولة.");
+    }
+  }
+
+  delete special.imageUrl;
+  delete special.voiceBase64;
+  special.cleanupStatus = "deleted";
+  special.cleanedAt = new Date();
+  await commitFirestoreWrites(env, token, [{
+    update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
+    updateMask: { fieldPaths: ["specialRequest"] },
+    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+  }]);
+  return response({ cleaned: true, orderId });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     let headers: Headers;
@@ -1492,13 +1579,19 @@ export default {
     const rawEditId = url.pathname.startsWith(editPrefix)
       ? url.pathname.slice(editPrefix.length)
       : "";
+    const cleanupMatch = request.method === "POST"
+      ? url.pathname.match(/^\\/v1\\/orders\\/([^/]+)\\/cleanup-attachments$/)
+      : null;
+    const isCleanup = cleanupMatch !== null;
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
-    if (!isCreate && !isEdit) return response({ error: "Not found." }, 404, headers);
+    if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
     try {
       const result = isCreate
         ? await createOrder(request, env)
-        : await updateOrder(request, env, decodeURIComponent(rawEditId));
+        : isCleanup
+          ? await cleanupConfirmedOrderAttachments(request, env, decodeURIComponent(cleanupMatch![1]))
+          : await updateOrder(request, env, decodeURIComponent(rawEditId));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
       return new Response(await result.text(), {
