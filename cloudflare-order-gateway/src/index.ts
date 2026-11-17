@@ -441,10 +441,16 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
         courierPhone: "",
         deliveredBy: data.deliveredBy === uid ? "deleted" : String(data.deliveredBy ?? ""),
       };
-      courierOrderWriteGroups.push([{
+      const historicalWrites: any[] = [{
         update: { name: doc.name, fields: encodeFields(patch) },
         updateMask: { fieldPaths: Object.keys(patch) },
-      }]);
+      }];
+      if (orderId) {
+        historicalWrites.push({
+          delete: firestoreDocumentName(env, `courier_available_orders/${encodeURIComponent(orderId)}`),
+        });
+      }
+      courierOrderWriteGroups.push(historicalWrites);
       continue;
     }
 
