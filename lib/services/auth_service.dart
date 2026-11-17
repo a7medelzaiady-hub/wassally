@@ -33,9 +33,14 @@ class AuthService {
         await _nativeGoogleSignIn();
         return;
       } on GoogleSignInException catch (e) {
-        if (e.code == GoogleSignInExceptionCode.canceled ||
-            e.code == GoogleSignInExceptionCode.interrupted) {
+        if (e.code == GoogleSignInExceptionCode.canceled) {
           throw FirebaseAuthException(code: 'canceled');
+        }
+        if (e.code == GoogleSignInExceptionCode.interrupted) {
+          throw FirebaseAuthException(
+            code: 'google-sign-in-interrupted',
+            message: 'Google sign-in activity was interrupted before Firebase authentication completed.',
+          );
         }
         debugPrint('Native Google sign-in failed: ${e.code}, fallback.');
       } on FirebaseAuthException {
