@@ -105,6 +105,12 @@ function money(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export function isGoogleSignIn(payload: Record<string, unknown>): boolean {
+  const firebase = payload.firebase;
+  if (!firebase || typeof firebase !== "object" || Array.isArray(firebase)) return false;
+  return (firebase as Record<string, unknown>).sign_in_provider === "google.com";
+}
+
 export function catalogPriceMatches(expected: number, actual: number): boolean {
   return Number.isFinite(expected) && expected > 0 && Math.abs(expected - actual) < 0.01;
 }
@@ -138,6 +144,9 @@ async function verifyCustomer(request: Request, env: Env): Promise<string> {
     });
     if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128) {
       throw new Error("Missing subject");
+    }
+    if (!isGoogleSignIn(payload as Record<string, unknown>)) {
+      throw new Error("Google sign-in required");
     }
     return payload.sub;
   } catch {
@@ -211,8 +220,9 @@ async function verifyRecentCustomer(request: Request, env: Env): Promise<string>
     });
     const authTime = Number(payload.auth_time);
     if (typeof payload.sub !== "string" || !payload.sub ||
-        !isRecentAuthTime(authTime)) {
-      throw new Error("Recent authentication required");
+        !isRecentAuthTime(authTime) ||
+        !isGoogleSignIn(payload as Record<string, unknown>)) {
+      throw new Error("Recent Google authentication required");
     }
     return payload.sub;
   } catch {
