@@ -152,6 +152,9 @@ class AppOrder {
   /// (يكمّل من غيرها أو يلغي) قبل ما المحل يبدأ التجهيز.
   final List<String> unavailableItems;
 
+  /// طلب العميل الخاص ومرفقاته داخل نفس مستند الطلب.
+  final Map<String, dynamic>? specialRequest;
+
   const AppOrder({
     required this.id,
     required this.storeName,
@@ -195,6 +198,7 @@ class AppOrder {
     this.ready = false,
     this.readyAt,
     this.unavailableItems = const [],
+    this.specialRequest,
   });
 
   /// الطلب متاح للمناديب: جاهز من المحل ومحدّش خده لسه.
@@ -251,6 +255,7 @@ class AppOrder {
       ready: ready,
       readyAt: readyAt,
       unavailableItems: unavailableItems,
+      specialRequest: specialRequest,
     );
   }
 
@@ -342,6 +347,9 @@ class AppOrder {
         for (final n in (m['unavailableItems'] as List?) ?? const [])
           if (n != null && n.toString().isNotEmpty) n.toString(),
       ],
+      specialRequest: m['specialRequest'] is Map
+          ? Map<String, dynamic>.from(m['specialRequest'] as Map)
+          : null,
     );
   }
 }
