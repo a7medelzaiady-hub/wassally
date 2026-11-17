@@ -1489,9 +1489,9 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(child: _header()),
 
               // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 12),
+                  padding: const EdgeInsets.only(top: 12),
                   child: PromoBanners(onExploreTap: () => _openDirectory()),
                 ),
               ),
