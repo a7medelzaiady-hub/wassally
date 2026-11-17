@@ -105,6 +105,11 @@ export const PRIVATE_ORDER_FIELDS = [
   "customerContact",
 ] as const;
 
+export const CUSTOMER_ORDER_DELETE_FIELD_PATHS = [
+  "customerName", "notes", "userId", "userDeleted",
+  ...PRIVATE_ORDER_FIELDS,
+] as const;
+
 /** Strip legacy contact fields before writing a public order document. */
 export function sanitizePublicOrder(data: JsonMap): JsonMap {
   const safe = { ...data };
@@ -360,7 +365,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
           userDeleted: true,
         }),
       },
-      updateMask: { fieldPaths: ["customerName", "notes", "userId", "userDeleted", "userName", "userEmail", "phone", "address"] },
+      updateMask: { fieldPaths: [...CUSTOMER_ORDER_DELETE_FIELD_PATHS] },
     });
     const orderPath = order.name.split("/documents/")[1];
     customerWrites.push({ delete: firestoreDocumentName(env, `${orderPath}/private/contact`) });
