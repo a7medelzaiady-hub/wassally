@@ -7,7 +7,7 @@ describe("customer restriction fail-closed behavior", () => {
   it("allows an account with no restriction document", () => {
     expect(isCustomerRestricted(null, now)).toBe(false);
   });
-test("fails closed when a restriction document exists but is empty", () => {
+it("fails closed when a restriction document exists but is empty", () => {
     expect(isCustomerRestricted({}, now)).toBe(true);
   });
 
