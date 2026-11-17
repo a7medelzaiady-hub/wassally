@@ -748,7 +748,7 @@ service cloud.firestore {
           !('courierId' in nd) &&
           !('deliveryMode' in nd) &&
           historyGate(nd, orderId, k)
-        ) : k.hasOnly(issueCloseKeys) ? (
+        ) : (k.hasOnly(issueCloseKeys) && k.hasAny(['activeDeliveryIssueId', 'lastDeliveryIssueId'])) ? (
           st == 'on_the_way' &&
           nst == 'cancelled' &&
           oai is string &&
