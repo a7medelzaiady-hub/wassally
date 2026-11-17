@@ -461,99 +461,104 @@ class _StorePageState extends State<StorePage> {
     childAspectRatio: 0.74,
   );
 
-  Widget _grid(List<Product> products) {
-    return GridView.builder(
-      controller: _scroll,
+  Widget _gridSliver(List<Product> products) {
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
-      gridDelegate: _gridDelegate,
-      itemCount: products.length,
-      itemBuilder: (context, i) {
-        final p = products[i];
-        return _ProductCard(
-          product: p,
-          store: store,
-          // التعديل متاح للأصناف اللي ليها id في Firestore فقط.
-          canEdit: _canEditStore && p.id.isNotEmpty,
-          onAdd: () => _add(context, p),
-          onEdit: () => _showProductDialog(context, product: p),
-        );
-      },
+      sliver: SliverGrid.builder(
+        gridDelegate: _gridDelegate,
+        itemCount: products.length,
+        itemBuilder: (context, i) {
+          final p = products[i];
+          return _ProductCard(
+            product: p,
+            store: store,
+            canEdit: _canEditStore && p.id.isNotEmpty,
+            onAdd: () => _add(context, p),
+            onEdit: () => _showProductDialog(context, product: p),
+          );
+        },
+      ),
     );
   }
 
   Widget _body() {
     final products = _visible;
-
-    Widget content;
-    if (products.isEmpty) {
-      if (_loading) {
-        content = Center(child: CircularProgressIndicator(color: kPrimary));
-      } else if (_error) {
-        content = EmptyState(
-          icon: Icons.cloud_off,
-          title: 'تعذر تحميل الأصناف',
-          message: 'تأكد من الاتصال وحاول تاني.',
-          actionLabel: 'إعادة المحاولة',
-          onAction: () => _load(reset: true),
-        );
-      } else {
-        content = EmptyState(
-          icon: Icons.inventory_2_outlined,
-          title: _term.isEmpty
-              ? 'مفيش منتجات في المحل ده لسه'
-              : 'مفيش نتايج للبحث',
-          message: _term.isEmpty
-              ? (_canEditStore
-                    ? 'ابدأ بإضافة صنف من زر + أو ارفع ملف أصناف.'
-                    : 'جرّب محل تاني أو ارجع بعد شوية.')
-              : 'جرّب كلمة تانية.',
-        );
-      }
+    final Widget emptyContent;
+    if (_loading) {
+      emptyContent = Center(child: CircularProgressIndicator(color: kPrimary));
+    } else if (_error) {
+      emptyContent = EmptyState(
+        icon: Icons.cloud_off,
+        title: 'تعذر تحميل الأصناف',
+        message: 'تأكد من الاتصال وحاول تاني.',
+        actionLabel: 'إعادة المحاولة',
+        onAction: () => _load(reset: true),
+      );
     } else {
-      content = _grid(products);
+      emptyContent = EmptyState(
+        icon: Icons.inventory_2_outlined,
+        title: _term.isEmpty ? 'مفيش منتجات في المحل ده لسه' : 'مفيش نتايج للبحث',
+        message: _term.isEmpty
+            ? (_canEditStore
+                ? 'ابدأ بإضافة صنف من زر + أو ارفع ملف أصناف.'
+                : 'جرّب محل تاني أو ارجع بعد شوية.')
+            : 'جرّب كلمة تانية.',
+      );
     }
 
-    return Column(
-      children: [
-        _specialRequestCard(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: _onSearch,
-                  textInputAction: TextInputAction.search,
-                  decoration: const InputDecoration(
-                    hintText: 'ابحث عن صنف...',
-                    prefixIcon: Icon(Icons.search),
+    return CustomScrollView(
+      controller: _scroll,
+      physics: const AlwaysScrollableScrollPhysics(),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      slivers: [
+        SliverToBoxAdapter(child: _specialRequestCard()),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 10, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: _onSearch,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      hintText: 'ابحث عن صنف...',
+                      prefixIcon: Icon(Icons.search),
+                    ),
                   ),
                 ),
-              ),
-              // أزرار التحكم تظهر للمدير في كل المحلات.
-              if (_canEditStore) ...[
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  onPressed: () => _showProductDialog(context),
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  tooltip: 'إضافة صنف جديد',
-                  style: IconButton.styleFrom(backgroundColor: Brand.green),
-                ),
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  onPressed: _showUploadGuide,
-                  icon: const Icon(Icons.upload_file, color: Colors.white),
-                  tooltip: 'رفع ملف أصناف (CSV)',
-                  style: IconButton.styleFrom(backgroundColor: Brand.goldDeep),
-                ),
+                if (_canEditStore) ...[
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: () => _showProductDialog(context),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    tooltip: 'إضافة صنف جديد',
+                    style: IconButton.styleFrom(backgroundColor: Brand.green),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton.filled(
+                    onPressed: _showUploadGuide,
+                    icon: const Icon(Icons.upload_file, color: Colors.white),
+                    tooltip: 'رفع ملف أصناف (CSV)',
+                    style: IconButton.styleFrom(backgroundColor: Brand.goldDeep),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         if (_loading && _items.isNotEmpty)
-          LinearProgressIndicator(minHeight: 2, color: kPrimary),
-        Expanded(child: content),
+          SliverToBoxAdapter(
+            child: LinearProgressIndicator(minHeight: 2, color: kPrimary),
+          ),
+        if (products.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: emptyContent,
+          )
+        else
+          _gridSliver(products),
       ],
     );
   }
