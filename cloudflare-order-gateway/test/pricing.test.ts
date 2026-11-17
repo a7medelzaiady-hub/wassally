@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -313,5 +313,49 @@ describe("account deletion order privacy mask", () => {
     expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("userDeleted");
     expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("customerName");
     expect(CUSTOMER_ORDER_DELETE_FIELD_PATHS).toContain("notes");
+  });
+});
+
+
+describe("courier account deletion order recovery", () => {
+  it("requeues preparing and in-transit orders only when no delivery decision is pending", () => {
+    expect(shouldRequeueCourierOrder({ status: "preparing" })).toBe(true);
+    expect(shouldRequeueCourierOrder({ status: "on_the_way" })).toBe(true);
+    expect(shouldRequeueCourierOrder({
+      status: "on_the_way", activeDeliveryIssueId: "issue-1",
+    })).toBe(false);
+    expect(shouldRequeueCourierOrder({
+      status: "on_the_way", customerDeliveryReportedAt: new Date(),
+    })).toBe(false);
+    expect(shouldRequeueCourierOrder({ status: "delivered" })).toBe(false);
+  });
+
+  it("builds a courier feed without customer identity or contact fields", () => {
+    expect(courierAvailableFeedData({
+      storeId: "store-1",
+      storeName: "Market",
+      area: "Area",
+      items: [{ name: "Bread", qty: 1 }],
+      subtotal: 100,
+      deliveryFee: 20,
+      total: 120,
+      createdAt: new Date(0),
+      userId: "customer-1",
+      customerName: "Ali",
+      phone: "01000000000",
+      address: "Private address",
+      courierNotes: "Private note",
+    })).toEqual({
+      storeId: "store-1",
+      storeName: "Market",
+      area: "Area",
+      items: [{ name: "Bread", qty: 1 }],
+      subtotal: 100,
+      deliveryFee: 20,
+      discount: 0,
+      total: 120,
+      status: "preparing",
+      createdAt: new Date(0),
+    });
   });
 });
