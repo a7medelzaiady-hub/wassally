@@ -754,12 +754,13 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "إجمالي الطلب اتغير. راجع السلة قبل تأكيد الطلب.");
   }
 
+  const storeName = String(store.name ?? "").trim();
   const order: JsonMap = {
     userId: uid,
     customerName,
     notes,
     storeId,
-    storeName: String(store.name ?? "").trim(),
+    storeName,
     items,
     subtotal,
     deliveryFee,
@@ -769,7 +770,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
   };
-  if (!order.storeName || order.storeName.length > 100) {
+  if (!storeName || storeName.length > 100) {
     throw new HttpError(409, "بيانات المحل غير مكتملة.");
   }
 
