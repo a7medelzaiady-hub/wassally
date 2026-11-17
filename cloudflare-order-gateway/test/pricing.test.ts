@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
+import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -112,6 +112,19 @@ describe("server-side image content validation", () => {
     expect(isUploadSizeAllowed(5 * 1024 * 1024 + 1)).toBe(false);
     expect(isUploadSizeAllowed(0)).toBe(false);
     expect(isUploadSizeAllowed(Number.NaN)).toBe(false);
+  });
+
+  it("requires a bounded Content-Length before parsing multipart bodies", () => {
+    expect(isUploadRequestLengthAllowed("1")).toBe(true);
+    expect(isUploadRequestLengthAllowed(String(5 * 1024 * 1024 + 64 * 1024))).toBe(true);
+    expect(isUploadRequestLengthAllowed(null)).toBe(false);
+    expect(isUploadRequestLengthAllowed("")).toBe(false);
+    expect(isUploadRequestLengthAllowed("0")).toBe(false);
+    expect(isUploadRequestLengthAllowed("-1")).toBe(false);
+    expect(isUploadRequestLengthAllowed("1.5")).toBe(false);
+    expect(isUploadRequestLengthAllowed("5e6")).toBe(false);
+    expect(isUploadRequestLengthAllowed(String(5 * 1024 * 1024 + 64 * 1024 + 1))).toBe(false);
+    expect(isUploadRequestLengthAllowed("999999999999999999999")).toBe(false);
   });
 
   it("accepts JPEG, PNG, and WEBP signatures", () => {
