@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -248,6 +249,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } on FirebaseException catch (e) {
+      debugPrint('CHECKOUT FIREBASE ERROR: code=${e.code}, message=${e.message}');
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('تعذر إرسال الطلب (${e.code}). حاول تاني أو تواصل مع الدعم.')),
+      );
     } catch (e) {
       debugPrint('CHECKOUT ERROR: $e');
       if (!mounted) return;
