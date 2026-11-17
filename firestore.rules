@@ -1269,14 +1269,14 @@ service cloud.firestore {
         (d.type != 'store_owner' ||
           ('storeId' in d && d.storeId is string && d.storeId.size() > 0 &&
            storeExistsAfter &&
-           storeAfter.get('ownerUid', '') == d.userId == d.userId &&
-           storeAfter.get('active', true) == false == false &&
-           storeAfter.get('approved', true) == false == false &&
-           storeAfter.get('name', '') == d.get('storeName', '') == d.get('storeName', '') &&
-           storeAfter.get('category', '') == d.get('storeCategory', '') == d.get('storeCategory', '') &&
-           storeAfter.get('address', '') == d.get('address', '') == d.get('address', '') &&
-           storeAfter.get('imageUrl', '') == d.get('storeImageUrl', '') == d.get('storeImageUrl', '') &&
-           storeAfter.get('storePhone', '') == d.get('storePhone', '') == d.get('storePhone', ''))) &&
+           storeAfter.get('ownerUid', '') == d.userId &&
+           storeAfter.get('active', true) == false &&
+           storeAfter.get('approved', true) == false &&
+           storeAfter.get('name', '') == d.get('storeName', '') &&
+           storeAfter.get('category', '') == d.get('storeCategory', '') &&
+           storeAfter.get('address', '') == d.get('address', '') &&
+           storeAfter.get('imageUrl', '') == d.get('storeImageUrl', '') &&
+           storeAfter.get('storePhone', '') == d.get('storePhone', ''))) &&
         (d.type != 'store_owner' ||
           ('storeName' in d && d.storeName.size() >= 2 &&
            'storeCategory' in d && validStoreCategory(d.storeCategory) &&
