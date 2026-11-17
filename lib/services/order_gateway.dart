@@ -13,6 +13,14 @@ class OrderGateway {
 
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
 
+  /// Order writes stay on Firestore's Spark-compatible path until the Worker
+  /// has been deployed, verified, and Firestore serverOrders is enabled.
+  /// The same Worker URL can still be used for signed image uploads.
+  static const bool serverOrdersEnabled = bool.fromEnvironment(
+    'WASALLY_SERVER_ORDERS',
+    defaultValue: false,
+  );
+
   static Future<void> submit({
     required String idToken,
     required Map<String, dynamic> payload,
