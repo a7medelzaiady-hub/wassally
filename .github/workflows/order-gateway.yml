@@ -33,4 +33,5 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npx wrangler deploy --dry-run
       - run: npm test
