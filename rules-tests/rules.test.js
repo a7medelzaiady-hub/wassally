@@ -1220,6 +1220,32 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   await assertSucceeds(setDoc(doc(as('cust1'), 'role_requests/cust1_courier'), courierRequest('cust1')));
 });
 
+test('customer restrictions: Fail-Closed مع مستند تقييد ناقص أو تالف', async () => {
+  const put = (data) => env.withSecurityRulesDisabled(async (c) => {
+    await setDoc(doc(c.firestore(), 'customer_restrictions/cust1'), data);
+  });
+  const past = new Date(Date.now() - 60 * 60 * 1000);
+  const future = new Date(Date.now() + 60 * 60 * 1000);
+  // active=true بدون expiresAt → يُمنع
+  await put({ customerId: 'cust1', active: true });
+  await assertFails(setDoc(doc(as('cust1'), 'orders/fc1'), baseOrder('cust1')));
+  // expiresAt ليس Timestamp → يُمنع
+  await put({ customerId: 'cust1', active: true, expiresAt: 'tomorrow' });
+  await assertFails(setDoc(doc(as('cust1'), 'orders/fc2'), baseOrder('cust1')));
+  // active غير منطقي (نص) بدون تاريخ → يُمنع
+  await put({ customerId: 'cust1', active: 'true' });
+  await assertFails(setDoc(doc(as('cust1'), 'orders/fc3'), baseOrder('cust1')));
+  // تقييد ساري → يُمنع
+  await put({ customerId: 'cust1', active: true, expiresAt: future });
+  await assertFails(setDoc(doc(as('cust1'), 'orders/fc4'), baseOrder('cust1')));
+  // تقييد منتهي فعلًا → يُسمح
+  await put({ customerId: 'cust1', active: true, expiresAt: past });
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/fc5'), baseOrder('cust1')));
+  // تقييد مُلغى صراحةً → يُسمح
+  await put({ customerId: 'cust1', active: false, expiresAt: future });
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/fc6'), baseOrder('cust1')));
+});
+
 test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، والمدير يقرأ الكل ويقفلها', async () => {
   const c = (over = {}) => ({
     userId: 'cust1', userEmail: 'a@x.com', userName: 'Ali', kind: 'complaint', message: 'المندوب اتأخر جدًا',

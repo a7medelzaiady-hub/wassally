@@ -238,9 +238,12 @@ service cloud.firestore {
     function customerNotRestricted(uid) {
       // get() على مستند غير موجود بيرمي خطأ تقييم وبيفشل الإنشاء كله، فلازم exists() الأول.
       let p = /databases/$(database)/documents/customer_restrictions/$(uid);
+      // Fail-closed: يُسمح فقط لو المستند غير موجود، أو التقييد مُلغى صراحةً (active == false)،
+      // أو انتهى فعلًا بتاريخ صالح. أي مستند ناقص/تالف (بدون expiresAt Timestamp) يمنع الطلب.
       return !exists(p) ||
-        get(p).data.get('active', false) != true ||
-        get(p).data.get('expiresAt', request.time) <= request.time;
+        get(p).data.get('active', null) == false ||
+        (get(p).data.get('expiresAt', null) is timestamp &&
+          get(p).data.get('expiresAt', null) <= request.time);
     }
 
     function validNewOrder(d) {
