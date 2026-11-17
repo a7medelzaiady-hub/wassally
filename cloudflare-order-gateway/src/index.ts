@@ -111,7 +111,7 @@ export function sanitizePublicOrder(data: JsonMap): JsonMap {
   return safe;
 }
 
-function firstName(value: unknown): string {
+export function firstName(value: unknown): string {
   return String(value ?? "").trim().split(/\s+/)[0] ?? "";
 }
 
