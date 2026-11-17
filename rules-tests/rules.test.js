@@ -1412,6 +1412,26 @@ test('special_requests: العميل ينشئ طلبًا صالحًا وصاحب
   }));
 });
 
+test('special_requests: يقبل مرفق صورة فقط أو صوت فقط ويرفض الصوت المتجاوز للحد', async () => {
+  const base = {
+    storeId: 'shop1', storeName: 'S', userId: 'cust1',
+    description: '', quantity: 1, imageUrl: '',
+    voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/image-only'), {
+    ...base,
+    imageUrl: 'https://res.cloudinary.com/example/image/upload/test.jpg',
+  }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/voice-only'), {
+    ...base,
+    voiceBase64: 'A'.repeat(1000),
+  }));
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/voice-too-large'), {
+    ...base,
+    voiceBase64: 'A'.repeat(700001),
+  }));
+});
+
 test('store owner: حذف المحل وفك ربط حسابه يتمان في Batch واحدة', async () => {
   const db = as('owner1');
   const batch = writeBatch(db);
