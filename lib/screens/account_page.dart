@@ -179,92 +179,7 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  Future<String?> _askReason() {
-    const reasons = [
-      'مش بستخدم التطبيق',
-      'الأسعار غالية',
-      'التوصيل بطيء',
-      'مشكلة في طلب',
-      'مخاوف على الخصوصية',
-      'سبب تاني',
-    ];
-    final other = TextEditingController();
-    String? picked;
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text(
-              'حذف الحساب نهائياً',
-              style: TextStyle(fontSize: 16),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'هنحذف حسابك وبياناتك، ومينفعش يترجع. قولنا السبب عشان نتحسن:',
-                    style: TextStyle(fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
-                  for (final r in reasons)
-                    InkWell(
-                      onTap: () => setS(() => picked = r),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(
-                          children: [
-                            Icon(
-                              picked == r
-                                  ? Icons.radio_button_checked
-                                  : Icons.radio_button_off,
-                              size: 20,
-                              color: picked == r ? kPrimary : kMuted,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(r, style: const TextStyle(fontSize: 14)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  if (picked == 'سبب تاني')
-                    TextField(
-                      controller: other,
-                      maxLength: 200,
-                      decoration: const InputDecoration(hintText: 'اكتب السبب'),
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('إلغاء'),
-              ),
-              TextButton(
-                onPressed: picked == null
-                    ? null
-                    : () => Navigator.pop(
-                        ctx,
-                        picked == 'سبب تاني' && other.text.trim().isNotEmpty
-                            ? other.text.trim()
-                            : picked,
-                      ),
-                child: Text('حذف حسابي', style: TextStyle(color: kDanger)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _deleteAccount() async {
-    final reason = await _askReason();
-    if (reason == null || !mounted) return;
     final ok = await confirmDialog(
       context,
       title: 'متأكد؟',
@@ -274,16 +189,6 @@ class _AccountPageState extends State<AccountPage> {
     );
     if (!ok || !mounted) return;
 
-    try {
-      final u = FirebaseAuth.instance.currentUser;
-      if (u != null) {
-        await FirebaseFirestore.instance.collection('account_deletions').add({
-          'userId': u.uid,
-          'reason': reason.length > 200 ? reason.substring(0, 200) : reason,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-    } catch (_) {}
     if (!mounted) return;
     try {
       await AuthService.deleteAccount(context);
