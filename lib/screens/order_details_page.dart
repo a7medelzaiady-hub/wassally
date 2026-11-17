@@ -153,6 +153,9 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
+    if (widget.order.customerConfirmedAt != null) {
+      OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
+    }
   }
 
   @override
