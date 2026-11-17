@@ -74,6 +74,7 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   // العنوان المحفوظ للعميل.
   String _address = '';
+  final GlobalKey _offersKey = GlobalKey();
 
   // فلتر قائمة المحلات (null = الكل).
   String? _filter;
@@ -108,6 +109,7 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    homeOffersRequest.addListener(_onOffersRequest);
 
     // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
@@ -136,8 +138,22 @@ class _HomePageState extends State<HomePage>
     });
   }
 
+  void _onOffersRequest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _offersKey.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        duration: const Duration(milliseconds: 520),
+        curve: Curves.easeInOutCubic,
+        alignment: 0.04,
+      );
+    });
+  }
+
   @override
   void dispose() {
+    homeOffersRequest.removeListener(_onOffersRequest);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -824,7 +840,7 @@ class _HomePageState extends State<HomePage>
       child: LayoutBuilder(
         builder: (context, c) {
           const gap = 10.0;
-          final w = (c.maxWidth - gap * 3) / 4;
+          final w = (c.maxWidth - gap * 2) / 3;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -832,15 +848,14 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 104,
+                  height: 126,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
-                        ? ''
+                        ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=75'
                         : (kCategoryPhotos[info.category] ??
                               categoryImages[info.category] ??
                               ''),
-                    isAll: info.category == 'الكل',
                     onTap: () => _openDirectory(
                       info.category == 'الكل' ? null : info.category,
                     ),
@@ -999,79 +1014,184 @@ class _HomePageState extends State<HomePage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 9),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
                     color: Brand.ink,
                   ),
                 ),
               ),
-
+              TextButton(
+                onPressed: _openDirectory,
+                style: TextButton.styleFrom(
+                  foregroundColor: Brand.green,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('اكتشف المزيد', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
             ],
           ),
         ),
         SizedBox(
-          height: 176,
+          height: 116,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: items.length > 12 ? 12 : items.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
-              final (s, m) = items[i];
-              final price = (m['price'] as num?)?.toDouble() ?? 0;
-              final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
-              final img = (m['image'] ?? '').toString();
-              return GestureDetector(
-                onTap: () => _openStore(s.store),
-                child: Container(
-                  width: 128,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kLine),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            img.isEmpty
-                                ? Container(
-                                    decoration: BoxDecoration(
-                                      gradient: Brand.softGradient,
+              final (store, product) = items[i];
+              final price = (product['price'] as num?)?.toDouble() ?? 0;
+              final old = (product['oldPrice'] as num?)?.toDouble() ?? 0;
+              final image = (product['image'] ?? '').toString();
+              final name = (product['name'] ?? '').toString().trim();
+              final offerText = (product['offerText'] ?? '').toString().trim();
+              final hasDiscount = offer && old > price && old > 0;
+              return Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _openStore(store.store),
+                  child: Container(
+                    width: 276,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Brand.palette.line),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Brand.greenDark.withValues(alpha: 0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  name.isEmpty ? store.store.name : name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    color: Brand.ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  store.store.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Brand.palette.muted,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Row(
+                                  children: [
+                                    Text(
+                                      formatPrice(price),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: Brand.greenDark,
+                                      ),
                                     ),
-                                  )
-                                : Image.network(
-                                    thumb(img, w: 300),
-                                    cacheWidth: 300,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
+                                    if (hasDiscount) ...[
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        formatPrice(old),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Brand.palette.muted,
+                                          decoration: TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 25,
+                                      height: 25,
+                                      decoration: BoxDecoration(
+                                        gradient: Brand.headerGradient,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Brand.green.withValues(alpha: 0.2),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.add_rounded,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'اختار',
+                                      style: TextStyle(
+                                        color: Brand.greenDark,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 108,
+                          height: double.infinity,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              image.isEmpty
+                                  ? DecoratedBox(
                                       decoration: BoxDecoration(
                                         gradient: Brand.softGradient,
                                       ),
+                                    )
+                                  : Image.network(
+                                      thumb(image, w: 300),
+                                      cacheWidth: 300,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: Brand.softGradient,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                            if (offer &&
-                                ((old > price && old > 0) ||
-                                    (m['offerText'] ?? '').toString().trim().isNotEmpty))
-                              Positioned(
-                                top: 6,
-                                right: 6,
-                                left: 6,
-                                child: Align(
-                                  alignment: AlignmentDirectional.topEnd,
+                              if (hasDiscount || offerText.isNotEmpty)
+                                PositionedDirectional(
+                                  top: 6,
+                                  start: 6,
                                   child: Container(
-                                    constraints: const BoxConstraints(maxWidth: 112),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
                                       vertical: 3,
@@ -1081,72 +1201,24 @@ class _HomePageState extends State<HomePage>
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      old > price && old > 0
+                                      hasDiscount
                                           ? '${((1 - price / old) * 100).round()}%-'
-                                          : (m['offerText'] ?? '').toString(),
+                                          : offerText,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (m['name'] ?? '').toString(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: Brand.ink,
-                              ),
-                            ),
-                            Text(
-                              s.store.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: kMuted),
-                            ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Text(
-                                  formatPrice(price),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                    color: Brand.goldDeep,
-                                  ),
-                                ),
-                                if (offer && old > price) ...[
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    formatPrice(old),
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: kMuted,
-                                      decoration: TextDecoration.lineThrough,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -1181,7 +1253,7 @@ class _HomePageState extends State<HomePage>
           child: Text(
             'المطاعم والمحلات',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 17,
               fontWeight: FontWeight.w900,
               color: Brand.ink,
             ),
@@ -1332,7 +1404,7 @@ class _HomePageState extends State<HomePage>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 17,
+                            fontSize: 15,
                             fontWeight: FontWeight.w900,
                             color: Brand.ink,
                           ),
@@ -1360,7 +1432,7 @@ class _HomePageState extends State<HomePage>
                     s.category,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: kMuted),
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -1374,7 +1446,7 @@ class _HomePageState extends State<HomePage>
                       Text(
                         'توصيل ${formatPrice(CartModel.deliveryFee)}',
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                           color: Brand.ink,
                         ),
@@ -1417,15 +1489,16 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(child: _header()),
 
               // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: PromoBanners(),
+                  padding: const EdgeInsets.only(top: 12),
+                  child: PromoBanners(onExploreTap: () => _openDirectory()),
                 ),
               ),
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(
+                  key: _offersKey,
                   child: _highlights(
                     all,
                     _offersFuture ??= _loadCatalogOffers(all),
@@ -1440,7 +1513,7 @@ class _HomePageState extends State<HomePage>
                       Expanded(
                         child: Text(
                           'أقسامنا المختلفة',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
                       TextButton(
@@ -1485,106 +1558,111 @@ class _HomePageState extends State<HomePage>
   }
 }
 
-/// مربع قسم بصورة حقيقية على خلفية بيج، زي تطبيقات التوصيل الكبيرة.
+/// بطاقة قسم فوتوغرافية؛ الصورة تملأ البطاقة والاسم فوق طبقة تدرّج مقروءة.
 class _CategoryTile extends StatelessWidget {
   final String label;
   final String imageUrl;
-  final bool isAll;
   final VoidCallback onTap;
+
   const _CategoryTile({
     required this.label,
     required this.imageUrl,
-    required this.isAll,
     required this.onTap,
   });
 
-  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
-  static String _emojiFor(String label) {
-    if (label == 'الكل') return '🛍️';
-    const map = <String, String>{
-      'مطاعم': '🍔',
-      'سوبرماركت': '🛒',
-      'بقالة': '🧺',
-      'خضار وفاكهة': '🥬',
-      'لحوم ودواجن': '🥩',
-      'مخبوزات وحلويات': '🥐',
-      'محمصات وعطارة': '🌰',
-      'كافيه ومشروبات': '☕',
-      'ورد وهدايا': '💐',
-      'أخرى': '📦',
-    };
-    final exact = map[label];
-    if (exact != null) return exact;
-    // احتياطي لو اسم القسم اتغيّر شوية.
-    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
-    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
-    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
-    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
-    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
-    if (label.contains('ورد') || label.contains('هدا')) return '💐';
-    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
-    if (label.contains('صيدل')) return '💊';
-    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
-    return '📦';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: kTileBeige,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.transparent,
-            width: 2,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: isAll || imageUrl.isEmpty
-                    ? _emojiBox()
-                    : Image.network(
-                        thumb(imageUrl, w: 200),
-                        cacheWidth: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _emojiBox(),
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageUrl.isNotEmpty)
+                Image.network(
+                  thumb(imageUrl, w: 420),
+                  cacheWidth: 420,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => _fallback(),
+                )
+              else
+                _fallback(),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.02),
+                      Colors.black.withValues(alpha: 0.08),
+                      Colors.black.withValues(alpha: 0.72),
+                    ],
+                    stops: const [0, 0.42, 1],
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                start: 10,
+                end: 10,
+                bottom: 10,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        blurRadius: 8,
+                        offset: Offset(0, 1),
                       ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
+              PositionedDirectional(
+                top: 8,
+                end: 8,
+                child: Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Brand.green.withValues(alpha: 0.5),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _emojiBox() {
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(gradient: Brand.softGradient),
-      child: Text(
-        _emojiFor(label),
-        style: const TextStyle(fontSize: 32, height: 1.1),
-      ),
-    );
-  }
+  Widget _fallback() => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+            colors: [Brand.greenLight, Brand.greenDark],
+          ),
+        ),
+        child: const SizedBox.expand(),
+      );
 }
