@@ -42,9 +42,14 @@ async function seed(extra = async () => {}) {
     await extra(db);
   });
 }
-const as = (uid, claims = {}) => env.authenticatedContext(uid, { email: 'a@x.com', ...claims }).firestore();
+const as = (uid, claims = {}) => env.authenticatedContext(uid, { email: 'a@x.com', firebase: { sign_in_provider: 'google.com' }, ...claims }).firestore();
 
 beforeEach(() => seed());
+
+test('auth: Firestore rejects email/password sessions when Google-only login is required', async () => {
+  const db = as('email-user', { firebase: { sign_in_provider: 'password' } });
+  await assertFails(setDoc(doc(db, 'orders/email-provider-order'), baseOrder('email-user')));
+});
 
 test('users: whitelist يمنع حقول غريبة', async () => {
   const db = as('cust1');
