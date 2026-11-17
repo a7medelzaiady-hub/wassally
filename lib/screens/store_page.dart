@@ -169,7 +169,7 @@ class _StorePageState extends State<StorePage> {
   Future<void> _pickSpecialImage() async {
     if (_sendingSpecial) return;
     try {
-      final url = await ImageService.pickAndUpload('products', storeId: store.id);
+      final url = await ImageService.pickAndUpload('special_requests', storeId: store.id);
       if (url != null && mounted) setState(() => _specialImageUrl = url);
     } catch (e) {
       _say('تعذر إرفاق الصورة: $e');
