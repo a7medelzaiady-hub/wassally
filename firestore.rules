@@ -1232,6 +1232,17 @@ service cloud.firestore {
     }
 
     function validRoleRequest(rid, d) {
+      let storePath = /databases/$(database)/documents/stores/$(d.get('storeId', ''));
+      let storeExistsAfter = d.get('type', '') == 'store_owner' &&
+        d.get('storeId', '') is string && d.get('storeId', '').size() > 0 &&
+        existsAfter(storePath);
+      let storeAfter = storeExistsAfter ? getAfter(storePath).data : {};
+      let courierRequestPath = /databases/$(database)/documents/role_requests/$(d.get('userId', '') + '_courier');
+      let courierRequestExists = d.get('type', '') == 'store_owner' && exists(courierRequestPath);
+      let courierRequest = courierRequestExists ? get(courierRequestPath).data : {};
+      let ownerRequestPath = /databases/$(database)/documents/role_requests/$(d.get('userId', '') + '_store_owner');
+      let ownerRequestExists = d.get('type', '') == 'courier' && exists(ownerRequestPath);
+      let ownerRequest = ownerRequestExists ? get(ownerRequestPath).data : {};
       return d.keys().hasOnly(['userId', 'userEmail', 'type', 'name', 'phone', 'status',
                                'createdAt', 'storeName', 'storeCategory', 'address', 'vehicle', 'notes',
                                'storeImageUrl', 'registrationNumber', 'proofUrl', 'storePhone', 'storeId']) &&
@@ -1257,15 +1268,15 @@ service cloud.firestore {
         (d.type != 'courier' || !('storeId' in d)) &&
         (d.type != 'store_owner' ||
           ('storeId' in d && d.storeId is string && d.storeId.size() > 0 &&
-           existsAfter(/databases/$(database)/documents/stores/$(d.storeId)) &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('ownerUid', '') == d.userId &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == false &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('approved', true) == false &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('name', '') == d.get('storeName', '') &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('category', '') == d.get('storeCategory', '') &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('address', '') == d.get('address', '') &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('imageUrl', '') == d.get('storeImageUrl', '') &&
-           getAfter(/databases/$(database)/documents/stores/$(d.storeId)).data.get('storePhone', '') == d.get('storePhone', ''))) &&
+           storeExistsAfter &&
+           storeAfter.get('ownerUid', '') == d.userId == d.userId &&
+           storeAfter.get('active', true) == false == false &&
+           storeAfter.get('approved', true) == false == false &&
+           storeAfter.get('name', '') == d.get('storeName', '') == d.get('storeName', '') &&
+           storeAfter.get('category', '') == d.get('storeCategory', '') == d.get('storeCategory', '') &&
+           storeAfter.get('address', '') == d.get('address', '') == d.get('address', '') &&
+           storeAfter.get('imageUrl', '') == d.get('storeImageUrl', '') == d.get('storeImageUrl', '') &&
+           storeAfter.get('storePhone', '') == d.get('storePhone', '') == d.get('storePhone', ''))) &&
         (d.type != 'store_owner' ||
           ('storeName' in d && d.storeName.size() >= 2 &&
            'storeCategory' in d && validStoreCategory(d.storeCategory) &&
@@ -1275,11 +1286,9 @@ service cloud.firestore {
             d.get('proofUrl', '').matches('https://.*') ||
             d.get('storePhone', '').matches('^[0-9]{8,11}$')))) &&
         (d.type != 'store_owner' ||
-          !exists(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')) ||
-          get(/databases/$(database)/documents/role_requests/$(d.userId + '_courier')).data.status != 'pending') &&
+          !courierRequestExists || courierRequest.get('status', '') != 'pending') &&
         (d.type == 'store_owner' ||
-          !exists(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')) ||
-          get(/databases/$(database)/documents/role_requests/$(d.userId + '_store_owner')).data.status != 'pending') &&
+          !ownerRequestExists || ownerRequest.get('status', '') != 'pending') &&
         (d.type != 'courier' || ('vehicle' in d && d.vehicle.size() >= 2));
     }
 
