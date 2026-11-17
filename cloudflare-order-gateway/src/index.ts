@@ -650,9 +650,10 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
 
   // Remove customer-uploaded special-request images before deleting their Firestore references.
   const specialRequestDocs = await queryAccountDocuments(env, token, "special_requests", "userId", uid);
-  const hasSpecialRequestImages = specialRequestDocs.some((doc) =>
-    typeof decodeFields(doc.fields ?? {}).imageUrl === "string" &&
-    String(decodeFields(doc.fields ?? {}).imageUrl).trim().isNotEmpty);
+  const hasSpecialRequestImages = specialRequestDocs.some((doc) => {
+    const data = decodeFields(doc.fields ?? {});
+    return typeof data.imageUrl === "string" && data.imageUrl.trim().length > 0;
+  });
   const cloudinaryConfigured = Boolean(
     env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
   );
