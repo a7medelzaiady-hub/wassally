@@ -2254,7 +2254,7 @@ class _OwnerSpecialRequestsTab extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.receipt_long_outlined, color: kPrimary),
+                    Icon(Icons.receipt_long_outlined, color: kPrimary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
