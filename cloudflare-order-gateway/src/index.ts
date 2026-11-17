@@ -27,6 +27,12 @@ const firebaseKeys = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
 );
 let cachedAccessToken: { token: string; expiresAt: number } | undefined;
+const firebaseUserStateCache = new Map<string, {
+  checkedAt: number;
+  validSince: number;
+  disabled: boolean;
+}>();
+const FIREBASE_USER_STATE_CACHE_MS = 5_000;
 
 function response(body: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -190,25 +196,78 @@ export function effectiveCatalogPrice(product: JsonMap, now = Date.now()): numbe
   return money(base);
 }
 
+export function isAuthTimeAfterValidSince(authTime: number, validSince: number): boolean {
+  return Number.isFinite(authTime) && Number.isFinite(validSince) && authTime >= validSince;
+}
+
+async function assertFirebaseUserActive(
+  env: Env,
+  uid: string,
+  authTime: number,
+): Promise<void> {
+  const now = Date.now();
+  let state = firebaseUserStateCache.get(uid);
+  if (!state || now - state.checkedAt > FIREBASE_USER_STATE_CACHE_MS) {
+    const accessToken = await googleAccessToken(env);
+    const lookup = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(env.FIREBASE_PROJECT_ID)}/accounts:lookup`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ localId: [uid] }),
+      },
+    );
+    if (!lookup.ok) {
+      const detail = (await lookup.text()).slice(0, 500);
+      if (detail.includes("USER_NOT_FOUND")) {
+        throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
+      }
+      console.error("Firebase Auth account lookup failed", lookup.status, detail);
+      throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
+    }
+    const result = await lookup.json() as {
+      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean }>;
+    };
+    const user = result.users?.find((entry) => entry.localId === uid);
+    if (!user) throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
+    const validSince = Number(user.validSince);
+    if (!Number.isFinite(validSince)) {
+      throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
+    }
+    state = { checkedAt: now, validSince, disabled: user.disabled === true };
+    firebaseUserStateCache.set(uid, state);
+    if (firebaseUserStateCache.size > 1_000) {
+      const oldestUid = firebaseUserStateCache.keys().next().value;
+      if (oldestUid) firebaseUserStateCache.delete(oldestUid);
+    }
+  }
+  if (state.disabled || !isAuthTimeAfterValidSince(authTime, state.validSince)) {
+    throw new HttpError(401, "انتهت صلاحية جلسة الحساب أو تم إلغاؤها. سجّل الدخول من جديد.");
+  }
+}
+
 async function verifyCustomer(request: Request, env: Env): Promise<string> {
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  let payload;
   try {
-    const { payload } = await jwtVerify(token, firebaseKeys, {
+    ({ payload } = await jwtVerify(token, firebaseKeys, {
       audience: env.FIREBASE_PROJECT_ID,
       issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
-    });
-    if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128) {
-      throw new Error("Missing subject");
-    }
-    if (!isGoogleSignIn(payload as Record<string, unknown>)) {
-      throw new Error("Google sign-in required");
-    }
-    return payload.sub;
+    }));
   } catch {
     throw new HttpError(401, "رمز تسجيل الدخول غير صالح أو منتهي.");
   }
+  if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128 ||
+      !isGoogleSignIn(payload as Record<string, unknown>)) {
+    throw new HttpError(401, "يلزم تسجيل الدخول بحساب جوجل صالح.");
+  }
+  await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
+  return payload.sub;
 }
 
 async function googleAccessToken(env: Env): Promise<string> {
