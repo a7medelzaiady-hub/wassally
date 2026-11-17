@@ -25,7 +25,8 @@ class _Slide {
 /// (كل مستند: image، order، active) وبتتحكم فيه من صفحة "بوسترات الرئيسية".
 /// لو الكولكشن فاضي بيعرض 3 بوسترات جاهزة.
 class PromoBanners extends StatefulWidget {
-  const PromoBanners({super.key});
+  final VoidCallback? onExploreTap;
+  const PromoBanners({super.key, this.onExploreTap});
 
   @override
   State<PromoBanners> createState() => _PromoBannersState();
@@ -215,14 +216,21 @@ class _PromoBannersState extends State<PromoBanners> {
                         ),
                       ],
                     ),
-                    child: Text(
-                      'اكتشف دلوقتي',
-                      style: TextStyle(
-                        color: Brand.greenDark,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
+                    child: InkWell(
+                    onTap: widget.onExploreTap,
+                    borderRadius: BorderRadius.circular(18),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+                      child: Text(
+                        'اكتشف دلوقتي',
+                        style: TextStyle(
+                          color: Brand.greenDark,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
+                  ),
                   ),
                 ],
               ),
@@ -261,7 +269,7 @@ class _PromoBannersState extends State<PromoBanners> {
         return Column(
           children: [
             SizedBox(
-              height: 160,
+              height: 174,
               // لو لمست البانر الحركة التلقائية بتقف لحد ما تشيل إيدك
               child: Listener(
                 onPointerDown: (_) => _timer?.cancel(),
@@ -290,8 +298,10 @@ class _PromoBannersState extends State<PromoBanners> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 5),
                         child: Container(
+                          padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
+                            gradient: Brand.headerGradient,
+                            borderRadius: BorderRadius.circular(23),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.14),
@@ -300,9 +310,16 @@ class _PromoBannersState extends State<PromoBanners> {
                               ),
                             ],
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: _slideView(slide),
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(18),
+                              child: _slideView(slide),
+                            ),
                           ),
                         ),
                       ),
