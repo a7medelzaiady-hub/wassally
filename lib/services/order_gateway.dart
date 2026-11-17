@@ -8,7 +8,9 @@ class OrderGateway {
 
   static const String baseUrl = String.fromEnvironment(
     'WASALLY_ORDER_GATEWAY_URL',
-    defaultValue: '',
+    // الرابط عام (مش سر) وهو نفسه المستخدم في CI؛ وجوده كقيمة افتراضية يمنع أي بناء
+    // (محلي أو Release) من الخروج من غير رفع الصور وحذف الحساب وتنظيف المرفقات.
+    defaultValue: 'https://throbbing-water-4ef7.a7medelzaiady.workers.dev',
   );
 
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
