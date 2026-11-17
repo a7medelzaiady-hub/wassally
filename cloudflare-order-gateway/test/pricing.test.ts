@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -390,5 +390,16 @@ describe("courier feed privacy sanitization", () => {
       status: "preparing",
       createdAt: new Date(0),
     });
+  });
+});
+
+
+describe("Firebase token revocation checks", () => {
+  it("rejects tokens issued before the user's validSince boundary", () => {
+    expect(isAuthTimeAfterValidSince(2_000, 1_999)).toBe(true);
+    expect(isAuthTimeAfterValidSince(2_000, 2_000)).toBe(true);
+    expect(isAuthTimeAfterValidSince(1_999, 2_000)).toBe(false);
+    expect(isAuthTimeAfterValidSince(Number.NaN, 2_000)).toBe(false);
+    expect(isAuthTimeAfterValidSince(2_000, Number.NaN)).toBe(false);
   });
 });
