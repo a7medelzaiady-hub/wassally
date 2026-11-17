@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isCustomerRestricted } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -185,6 +185,30 @@ describe("Cloudinary upload signatures", () => {
   });
 });
 
+
+describe("account deletion privacy cleanup", () => {
+  it("anonymizes courier identity and free-text notes in delivery issues", () => {
+    expect(anonymizeDeliveryIssue({
+      courierId: "user-1", customerId: "customer-2", createdBy: "user-1",
+      note: "Personal contact details", status: "open",
+    }, "user-1")).toEqual({
+      courierId: "deleted", createdBy: "deleted", note: "",
+    });
+  });
+
+  it("anonymizes customer identity and free-text notes in delivery issues", () => {
+    expect(anonymizeDeliveryIssue({
+      courierId: "courier-2", customerId: "user-1", createdBy: "courier-2",
+      note: "Personal contact details", status: "open",
+    }, "user-1")).toEqual({ customerId: "deleted", note: "" });
+  });
+
+  it("does not modify an issue unrelated to the deleted account", () => {
+    expect(anonymizeDeliveryIssue({
+      courierId: "courier-2", customerId: "customer-2", note: "keep",
+    }, "user-1")).toEqual({});
+  });
+});
 
 describe("account deletion authentication freshness", () => {
   it("accepts only authentication performed within the last five minutes", () => {
