@@ -91,6 +91,19 @@ export function shouldRequeueCourierOrder(data: JsonMap): boolean {
     data.customerDeliveryReportedAt == null;
 }
 
+export const COURIER_FEED_FIELDS = [
+  "storeId", "storeName", "area", "items", "subtotal", "deliveryFee",
+  "finalDeliveryFee", "discount", "total", "status", "createdAt",
+] as const;
+
+export function sanitizeCourierFeed(data: JsonMap): JsonMap {
+  return Object.fromEntries(
+    COURIER_FEED_FIELDS
+      .filter((field) => data[field] !== null && data[field] !== undefined)
+      .map((field) => [field, data[field]]),
+  );
+}
+
 export function courierAvailableFeedData(data: JsonMap): JsonMap {
   const feed: JsonMap = {
     storeId: data.storeId,
@@ -105,9 +118,7 @@ export function courierAvailableFeedData(data: JsonMap): JsonMap {
     status: "preparing",
     createdAt: data.createdAt,
   };
-  return Object.fromEntries(
-    Object.entries(feed).filter(([, value]) => value !== null && value !== undefined),
-  );
+  return sanitizeCourierFeed(feed);
 }
 
 export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
@@ -1071,13 +1082,13 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   ];
   if (order.status === "preparing" && feedDoc) {
     const feed = decodeFields(feedDoc.fields ?? {});
-    const updatedFeed = {
+    const updatedFeed = sanitizeCourierFeed({
       ...feed,
       items,
       subtotal,
       discount,
       total,
-    };
+    });
     writes.push({
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/courier_available_orders/${encodeURIComponent(orderId)}`,
