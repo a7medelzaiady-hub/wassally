@@ -204,6 +204,9 @@ class OrderService {
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
 
     if (cart.isEmpty) throw StateError('السلة فاضية');
+    if (cart.items.isEmpty) {
+      throw StateError('ضيف منتجًا واحدًا على الأقل قبل إرسال الطلب الخاص.');
+    }
     if (cart.items.length > kMaxOrderLines) {
       throw const OrderLimitException(
         'الطلب الواحد مينفعش يزيد عن $kMaxOrderLines أصناف مختلفة. قسّمه على طلبين.',
@@ -294,6 +297,7 @@ class OrderService {
             },
           )
           .toList(),
+      if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
       'subtotal': cart.subtotal,
       'deliveryFee': cart.effectiveFee,
       if (cart.area.isNotEmpty) 'area': cart.area,
@@ -350,6 +354,7 @@ class OrderService {
                     'qty': e.value,
                   })
               .toList(),
+          if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
           'contact': contactData,
         },
       );
