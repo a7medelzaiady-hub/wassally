@@ -144,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'طعام وبقالة وورد من محلات مدينتك لحد باب بيتك.',
+                    ' تسوق من محلات مدينتك لحد باب بيتك',
                     style: TextStyle(
                       color: Colors.white60,
                       fontSize: 14.5,
