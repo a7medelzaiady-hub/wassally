@@ -633,6 +633,17 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+export function isCustomerRestricted(
+  restriction: JsonMap,
+  now = Date.now(),
+): boolean {
+  // Match Firestore rules: only explicit deactivation or a valid expired timestamp
+  // releases a restriction. Missing/malformed expiry must fail closed.
+  if (restriction.active === false) return false;
+  return !(restriction.expiresAt instanceof Date) ||
+    restriction.expiresAt.getTime() > now;
+}
+
 async function createOrder(request: Request, env: Env): Promise<Response> {
   if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
       !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -688,10 +699,8 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "المحل مغلق حاليًا.");
   }
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
-  if (restriction.active === true &&
-      restriction.expiresAt instanceof Date &&
-      restriction.expiresAt.getTime() > Date.now()) {
-    throw new HttpError(403, "حسابك مقيّد مؤقتًا. راجع زر الشكاوى للاعتراض.");
+  if (isCustomerRestricted(restriction)) {
+    throw new HttpError(403, "حسابك مقيّد مؤقتًا أو بيانات التقييد غير مكتملة. راجع الدعم.");
   }
   const previousLimit = limitDoc ? decodeFields(limitDoc.fields ?? {}) : {};
   const lastAt = previousLimit.lastAt instanceof Date ? previousLimit.lastAt.getTime() : 0;
