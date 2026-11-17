@@ -631,6 +631,16 @@ class OrderService {
     });
   }
 
+  /// يطلب من Worker حذف مرفقات هذا الطلب بعد ختم تأكيد الاستلام فقط.
+  /// الفشل لا يلغي تأكيد الاستلام؛ تكرار فتح الطلب يسمح بإعادة المحاولة.
+  static Future<void> cleanupConfirmedAttachments(String orderId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !OrderGateway.isConfigured) return;
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) return;
+    await OrderGateway.cleanupAttachments(idToken: idToken, orderId: orderId);
+  }
+
   /// تأكيد العميل استلام الطلب بعد بلاغ المندوب.
   /// مندوب المحل: تأكيد العميل يغلق الطلب. المندوب الخارجي: التأكيد لا يغلقه.
   static Future<void> confirmDelivery(AppOrder order) async {
@@ -660,6 +670,11 @@ class OrderService {
           'courierEarning': order.courierFee,
         },
       );
+      try {
+        await cleanupConfirmedAttachments(order.id);
+      } catch (error) {
+        if (kDebugMode) debugPrint('ORDER ATTACHMENT CLEANUP PENDING: $error');
+      }
       return;
     }
 
@@ -669,6 +684,11 @@ class OrderService {
     await _orders.doc(order.id).update({
       'customerConfirmedAt': FieldValue.serverTimestamp(),
     });
+    try {
+      await cleanupConfirmedAttachments(order.id);
+    } catch (error) {
+      if (kDebugMode) debugPrint('ORDER ATTACHMENT CLEANUP PENDING: $error');
+    }
   }
 
   /// إلغاء الطلب (مسموح بس طالما حالته "تم استلام الطلب").
