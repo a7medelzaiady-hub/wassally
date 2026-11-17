@@ -2304,10 +2304,20 @@ class _SpecialVoicePlayer extends StatefulWidget {
 
 class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
   late final audio.AudioPlayer _player = audio.AudioPlayer();
+  StreamSubscription<void>? _completionSubscription;
   bool _playing = false;
 
   @override
+  void initState() {
+    super.initState();
+    _completionSubscription = _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+  }
+
+  @override
   void dispose() {
+    _completionSubscription?.cancel();
     _player.dispose();
     super.dispose();
   }
@@ -2318,9 +2328,6 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
       await _player.setSource(audio.BytesSource(base64Decode(widget.encoded)));
       await _player.resume();
       if (mounted) setState(() => _playing = true);
-      _player.onPlayerComplete.listen((_) {
-        if (mounted) setState(() => _playing = false);
-      });
     } catch (_) {
       if (mounted) {
         setState(() => _playing = false);
