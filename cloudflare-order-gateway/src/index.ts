@@ -204,6 +204,7 @@ async function assertFirebaseUserActive(
   env: Env,
   uid: string,
   authTime: number,
+  options: { allowMissingUser?: boolean; allowDisabled?: boolean } = {},
 ): Promise<void> {
   const now = Date.now();
   let state = firebaseUserStateCache.get(uid);
@@ -223,6 +224,7 @@ async function assertFirebaseUserActive(
     if (!lookup.ok) {
       const detail = (await lookup.text()).slice(0, 500);
       if (detail.includes("USER_NOT_FOUND")) {
+        if (options.allowMissingUser) return;
         throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
       }
       console.error("Firebase Auth account lookup failed", lookup.status, detail);
@@ -232,7 +234,10 @@ async function assertFirebaseUserActive(
       users?: Array<{ localId?: string; validSince?: string; disabled?: boolean }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
-    if (!user) throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
+    if (!user) {
+      if (options.allowMissingUser) return;
+      throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
+    }
     const validSince = Number(user.validSince);
     if (!Number.isFinite(validSince)) {
       throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
@@ -244,7 +249,8 @@ async function assertFirebaseUserActive(
       if (oldestUid) firebaseUserStateCache.delete(oldestUid);
     }
   }
-  if (state.disabled || !isAuthTimeAfterValidSince(authTime, state.validSince)) {
+  if ((!options.allowDisabled && state.disabled) ||
+      !isAuthTimeAfterValidSince(authTime, state.validSince)) {
     throw new HttpError(401, "انتهت صلاحية جلسة الحساب أو تم إلغاؤها. سجّل الدخول من جديد.");
   }
 }
@@ -329,21 +335,27 @@ async function verifyRecentCustomer(request: Request, env: Env): Promise<string>
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  let payload;
   try {
-    const { payload } = await jwtVerify(token, firebaseKeys, {
+    ({ payload } = await jwtVerify(token, firebaseKeys, {
       audience: env.FIREBASE_PROJECT_ID,
       issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
-    });
-    const authTime = Number(payload.auth_time);
-    if (typeof payload.sub !== "string" || !payload.sub ||
-        !isRecentAuthTime(authTime) ||
-        !isGoogleSignIn(payload as Record<string, unknown>)) {
-      throw new Error("Recent Google authentication required");
-    }
-    return payload.sub;
+    }));
   } catch {
     throw new HttpError(401, "لأمان حسابك، سجّل الدخول وأكّد هويتك من جديد قبل الحذف.");
   }
+  const authTime = Number(payload.auth_time);
+  if (typeof payload.sub !== "string" || !payload.sub ||
+      !isRecentAuthTime(authTime) ||
+      !isGoogleSignIn(payload as Record<string, unknown>)) {
+    throw new HttpError(401, "لأمان حسابك، سجّل الدخول وأكّد هويتك من جديد قبل الحذف.");
+  }
+  // Allow USER_NOT_FOUND only for an idempotent retry after Auth deletion already succeeded.
+  await assertFirebaseUserActive(env, payload.sub, authTime, {
+    allowMissingUser: true,
+    allowDisabled: true,
+  });
+  return payload.sub;
 }
 
 function firestoreDocumentsUrl(env: Env): string {
