@@ -952,6 +952,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function notificationOrderAllowed(d) {
+      let order = get(/databases/$(database)/documents/orders/$(d.orderId)).data;
+      return (order.get('userId', '') == d.userId ||
+              order.get('courierId', '') == d.userId) &&
+        (isAdmin() ||
+         (isCourier() && order.get('courierId', '') == request.auth.uid) ||
+         isStoreOwner(order.get('storeId', '')));
+    }
+
     // ───────────── الإشعارات داخل التطبيق ─────────────
     // العميل (أو المندوب) يقرأ إشعاراته هو بس، ويعلّمها مقروءة أو يمسحها.
     // الكتابة (إنشاء) من المدير أو المندوب بس، بحقول محددة (StaffOrderService._notify).
@@ -963,15 +972,7 @@ service cloud.firestore {
         request.resource.data.get('orderId', '') is string &&
         request.resource.data.orderId.size() > 0 &&
         exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
-        (get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId ==
-           request.resource.data.userId ||
-         get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('courierId', '') ==
-           request.resource.data.userId) &&
-        (isAdmin() ||
-         (isCourier() &&
-           get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('courierId', '') ==
-             request.auth.uid) ||
-         isStoreOwner(get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('storeId', ''))) &&
+        notificationOrderAllowed(request.resource.data) &&
         request.resource.data.keys().hasOnly(
           ['userId', 'title', 'body', 'orderId', 'read', 'createdAt']) &&
         request.resource.data.userId is string &&
