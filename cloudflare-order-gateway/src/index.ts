@@ -93,6 +93,7 @@ export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
   }
   if (data.customerId === uid) {
     patch.customerId = "deleted";
+    if (data.createdBy === uid) patch.createdBy = "deleted";
     patch.note = "";
   }
   return patch;
