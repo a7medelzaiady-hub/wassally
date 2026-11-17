@@ -63,6 +63,22 @@ class AuthService {
     );
   }
 
+  /// إعادة تأكيد جوجل على أندرويد بنفس المسار الأصلي المستخدم عند تسجيل الدخول.
+  static Future<void> _nativeGoogleReauthenticate(User user) async {
+    final google = GoogleSignIn.instance;
+    if (!_googleInitialized) {
+      await google.initialize(serverClientId: _serverClientId);
+      _googleInitialized = true;
+    }
+    final account = await google.authenticate();
+    final idToken = account.authentication.idToken;
+    if (idToken == null) {
+      throw FirebaseAuthException(code: 'missing-id-token');
+    }
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+    await user.reauthenticateWithCredential(credential);
+  }
+
   /// الطريقة القديمة (متصفح) مع إعادة محاولة تلقائية لو رجع خطأ unknown.
   static Future<void> _providerSignInWithRetry() async {
     try {
@@ -105,6 +121,8 @@ class AuthService {
     final provider = GoogleAuthProvider();
     if (kIsWeb) {
       await initialUser.reauthenticateWithPopup(provider);
+    } else if (defaultTargetPlatform == TargetPlatform.android) {
+      await _nativeGoogleReauthenticate(initialUser);
     } else {
       await initialUser.reauthenticateWithProvider(provider);
     }
