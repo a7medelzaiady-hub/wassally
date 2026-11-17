@@ -117,7 +117,7 @@ class StoreOwnerPage extends StatelessWidget {
                         error: snapshot.error,
                       ),
                       _OwnerProductsTab(storeId: storeId),
-                      _OwnerSpecialRequestsTab(storeId: storeId),
+                      _OwnerSpecialRequestsTab(orders: orders),
                     ],
                   ),
                 ),
@@ -2212,88 +2212,96 @@ class _OfferDialogState extends State<_OfferDialog> {
 }
 
 
-/// الطلبات الخاصة التي يرسلها العملاء عندما لا يجدون المنتج في قائمة المحل.
+///// الطلبات الخاصة المرفقة بالطلب العادي في النظام الجديد.
+/// نستخدم نفس قائمة الطلبات المحمّلة بالفعل بدل مستمع Firestore إضافي.
 class _OwnerSpecialRequestsTab extends StatelessWidget {
-  final String storeId;
-  const _OwnerSpecialRequestsTab({required this.storeId});
+  final List<AppOrder> orders;
+  const _OwnerSpecialRequestsTab({required this.orders});
 
   @override
   Widget build(BuildContext context) {
-    final stream = FirebaseFirestore.instance
-        .collection('special_requests')
-        .where('storeId', isEqualTo: storeId)
-        .orderBy('createdAt', descending: true)
-        .limit(50)
-        .snapshots();
+    final specialOrders = orders
+        .where((order) => order.specialRequest != null)
+        .toList(growable: false);
 
-    return StreamBuilder<QuerySnapshot<_Json>>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('تعذر تحميل الطلبات الخاصة.'));
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return const EmptyState(
-            icon: Icons.inbox_outlined,
-            title: 'لا توجد طلبات خاصة',
-            message: 'طلبات المنتجات غير الموجودة هتظهر هنا.',
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final data = docs[index].data();
-            final created = data['createdAt'];
-            final date = created is Timestamp ? created.toDate() : null;
-            return Card(
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    if (specialOrders.isEmpty) {
+      return const EmptyState(
+        icon: Icons.inbox_outlined,
+        title: 'لا توجد طلبات خاصة',
+        message: 'الطلبات الخاصة المرسلة ضمن الطلبات العادية هتظهر هنا.',
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: specialOrders.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final order = specialOrders[index];
+        final data = order.specialRequest!;
+        final description = (data['description'] ?? '').toString().trim();
+        final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+        final voiceBase64 = (data['voiceBase64'] ?? '').toString().trim();
+        final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
+        final date = order.createdAt;
+
+        return Card(
+          color: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      (data['description'] ?? '').toString().isEmpty
-                          ? 'طلب بدون وصف نصي'
-                          : (data['description'] ?? '').toString(),
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                    ),
-                    const SizedBox(height: 6),
-                    Text('الكمية: ${data['quantity'] ?? 1}'),
-                    if (date != null)
-                      Text('${date.day}/${date.month}/${date.year} • ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                    if ((data['imageUrl'] ?? '').toString().isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          data['imageUrl'].toString(),
-                          height: 150,
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Text('تعذر عرض الصورة المرفقة'),
-                        ),
+                    Icon(Icons.receipt_long_outlined, color: kPrimary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'طلب رقم ${order.id}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
-                    ],
-                    if ((data['voiceBase64'] ?? '').toString().isNotEmpty)
-                      _SpecialVoicePlayer(encoded: data['voiceBase64'].toString()),
+                    ),
+                    OrderStatusPill(status: order.status),
                   ],
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 8),
+                Text(
+                  description.isEmpty ? 'طلب بدون وصف نصي' : description,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                const SizedBox(height: 6),
+                Text('الكمية المطلوبة: $quantity'),
+                if (date != null)
+                  Text(
+                    '${date.day}/${date.month}/${date.year} • ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                if (imageUrl.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      imageUrl,
+                      height: 150,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) =>
+                          const Text('تعذر عرض الصورة المرفقة'),
+                    ),
+                  ),
+                ],
+                if (voiceBase64.isNotEmpty)
+                  _SpecialVoicePlayer(encoded: voiceBase64),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 }
-
 class _SpecialVoicePlayer extends StatefulWidget {
   final String encoded;
   const _SpecialVoicePlayer({required this.encoded});
