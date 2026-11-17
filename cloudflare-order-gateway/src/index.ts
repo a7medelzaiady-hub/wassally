@@ -986,6 +986,14 @@ export function isUploadSizeAllowed(size: number): boolean {
   return Number.isInteger(size) && size > 0 && size <= 5 * 1024 * 1024;
 }
 
+export function isUploadRequestLengthAllowed(value: string | null): boolean {
+  if (value === null || !/^\\d+$/.test(value)) return false;
+  const length = Number(value);
+  return Number.isSafeInteger(length) &&
+    length > 0 &&
+    length <= 5 * 1024 * 1024 + 64 * 1024;
+}
+
 export function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return { format: "jpg", mime: "image/jpeg" };
@@ -1010,9 +1018,11 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
     throw new HttpError(503, "خدمة رفع الصور الآمنة غير مهيأة على الخادم.");
   }
 
-  const declaredLength = Number(request.headers.get("Content-Length") ?? 0);
-  if (declaredLength > 5 * 1024 * 1024 + 64 * 1024) {
-    throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
+  if (!isUploadRequestLengthAllowed(request.headers.get("Content-Length"))) {
+    throw new HttpError(413, "حجم طلب رفع الصورة غير صالح أو يتجاوز الحد المسموح.");
+  }
+  if (!(request.headers.get("Content-Type") ?? "").toLowerCase().startsWith("multipart/form-data;")) {
+    throw new HttpError(400, "صيغة طلب رفع الصورة غير صحيحة.");
   }
   let input: FormData;
   try {
