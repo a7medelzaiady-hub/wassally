@@ -2264,7 +2264,7 @@ class _OwnerSpecialRequestsTab extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    StatusPill(status: order.status),
+                    OrderStatusPill(status: order.status),
                   ],
                 ),
                 const SizedBox(height: 8),
