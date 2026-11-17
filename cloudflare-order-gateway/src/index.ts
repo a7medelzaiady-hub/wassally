@@ -903,6 +903,31 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const promoCode = String(input.promoCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   const customerName = firstName(input.customerName);
   const notes = String(input.notes ?? "").trim();
+  const rawSpecialRequest = input.specialRequest;
+  let specialRequest: JsonMap | undefined;
+  if (rawSpecialRequest !== undefined && rawSpecialRequest !== null) {
+    if (typeof rawSpecialRequest !== "object" || Array.isArray(rawSpecialRequest)) {
+      throw new HttpError(400, "بيانات الطلب الخاص غير صحيحة.");
+    }
+    const description = String(rawSpecialRequest.description ?? "").trim();
+    const quantity = Number(rawSpecialRequest.quantity ?? 1);
+    const imageUrl = String(rawSpecialRequest.imageUrl ?? "");
+    const voiceBase64 = String(rawSpecialRequest.voiceBase64 ?? "");
+    if (description.length > 300 || !Number.isInteger(quantity) || quantity < 1 || quantity > 99 ||
+        (imageUrl && (!isCloudinaryImageUrl(imageUrl) || imageUrl.length > 450)) ||
+        voiceBase64.length > 700000 ||
+        (voiceBase64 && !/^[A-Za-z0-9+/]+={0,2}$/.test(voiceBase64)) ||
+        (!description && !imageUrl && !voiceBase64)) {
+      throw new HttpError(400, "راجع وصف الطلب الخاص والمرفقات.");
+    }
+    specialRequest = {
+      description,
+      quantity,
+      ...(imageUrl ? { imageUrl } : {}),
+      ...(voiceBase64 ? { voiceBase64 } : {}),
+      createdAt: String(rawSpecialRequest.createdAt ?? "").slice(0, 40),
+    };
+  }
   const contact = validateContact(input.contact);
 
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
@@ -997,6 +1022,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     storeId,
     storeName,
     items,
+    ...(specialRequest ? { specialRequest } : {}),
     subtotal,
     deliveryFee,
     total,
