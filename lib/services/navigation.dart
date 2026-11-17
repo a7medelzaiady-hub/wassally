@@ -7,6 +7,9 @@ import 'role_service.dart';
 /// 0 الرئيسية، 1 السلة، 2 طلباتي، 3 حسابي.
 final ValueNotifier<int> shellTab = ValueNotifier<int>(0);
 
+/// يطلب من شريط التنقل فتح قسم العروض داخل الرئيسية دون إنشاء شاشة أو قراءة إضافية.
+final ValueNotifier<int> homeOffersRequest = ValueNotifier<int>(0);
+
 /// القسم اللي اختاره العميل من شاشة الأقسام بعد الدخول. الرئيسية بتقراه مرة واحدة وتفضّيه.
 final ValueNotifier<String?> homeCategoryRequest = ValueNotifier<String?>(null);
 
