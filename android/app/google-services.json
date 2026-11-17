@@ -178,6 +178,22 @@
           }
         },
         {
+          "client_id": "244081237486-fr07pdjlhgm7vm43nmn371ij5tbmo52s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "c6d77a7976d529b4690f7383eff7b61fc9656f85"
+          }
+        },
+        {
+          "client_id": "244081237486-r24qt129p555iv1j8b0vpkou8l712msu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "4e3e0dad5f014c58c433ae44c58debbf22a04810"
+          }
+        },
+        {
           "client_id": "244081237486-sipp9hnjljtvmeb0rginf4dg77ue7bnq.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
