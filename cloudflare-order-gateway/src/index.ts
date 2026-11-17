@@ -133,10 +133,8 @@ export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
   if (data.courierId === uid) patch.courierId = "deleted";
   if (data.customerId === uid) patch.customerId = "deleted";
   if (data.createdBy === uid) patch.createdBy = "deleted";
-  if (data.updatedBy === uid) {
-    patch.updatedBy = "deleted";
-    patch.adminDecision = "";
-  }
+  if (data.updatedBy === uid) patch.updatedBy = "deleted";
+  if (isParty || data.updatedBy === uid) patch.adminDecision = "";
   if (isParty) patch.note = "";
   return patch;
 }
