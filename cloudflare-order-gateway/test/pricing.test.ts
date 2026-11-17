@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -404,5 +404,23 @@ describe("Firebase token revocation checks", () => {
     expect(isAuthTimeAfterValidSince(1_999, 2_000)).toBe(false);
     expect(isAuthTimeAfterValidSince(Number.NaN, 2_000)).toBe(false);
     expect(isAuthTimeAfterValidSince(2_000, Number.NaN)).toBe(false);
+  });
+});
+
+
+describe("customer special-request image uploads", () => {
+  it("allows uploads only for a valid store that is active", () => {
+    expect(canUploadSpecialRequestImage("store-1", { active: true })).toBe(true);
+    expect(canUploadSpecialRequestImage("store-1", { active: false })).toBe(false);
+    expect(canUploadSpecialRequestImage("store-1", null)).toBe(false);
+    expect(canUploadSpecialRequestImage("../other", { active: true })).toBe(false);
+    expect(canUploadSpecialRequestImage("", { active: true })).toBe(false);
+  });
+
+  it("creates a stable per-user Cloudinary folder without exposing the UID", async () => {
+    const folder = await cloudinarySpecialRequestFolder("customer-uid-123");
+    expect(folder).toMatch(/^special_requests\/[a-f0-9]{64}$/);
+    expect(folder).not.toContain("customer-uid-123");
+    await expect(cloudinarySpecialRequestFolder("customer-uid-123")).resolves.toBe(folder);
   });
 });
