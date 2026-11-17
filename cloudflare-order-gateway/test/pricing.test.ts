@@ -5,7 +5,10 @@ describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
 
   it("allows an account with no restriction document", () => {
-    expect(isCustomerRestricted({}, now)).toBe(false);
+    expect(isCustomerRestricted(null, now)).toBe(false);
+  });
+test("fails closed when a restriction document exists but is empty", () => {
+    expect(isCustomerRestricted({}, now)).toBe(true);
   });
 
   it("allows only an explicitly deactivated restriction", () => {
