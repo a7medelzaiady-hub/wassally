@@ -1027,13 +1027,15 @@ class _HomePageState extends State<HomePage>
                   ),
                 ),
               ),
-              Text(
-                'اكتشف المزيد',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: Brand.green,
+              TextButton(
+                onPressed: _openDirectory,
+                style: TextButton.styleFrom(
+                  foregroundColor: Brand.green,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
+                child: const Text('اكتشف المزيد', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
               ),
             ],
           ),
@@ -1150,7 +1152,7 @@ class _HomePageState extends State<HomePage>
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      'شاهد الصنف',
+                                      'اختار',
                                       style: TextStyle(
                                         color: Brand.greenDark,
                                         fontSize: 10,
@@ -1490,7 +1492,7 @@ class _HomePageState extends State<HomePage>
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.only(top: 12),
-                  child: PromoBanners(),
+                  child: PromoBanners(onExploreTap: () => _openDirectory()),
                 ),
               ),
 
