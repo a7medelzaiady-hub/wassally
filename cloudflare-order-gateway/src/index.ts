@@ -83,6 +83,20 @@ function encodeFields(fields: JsonMap): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, encodeValue(value)]));
 }
 
+export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
+  const patch: JsonMap = {};
+  if (data.courierId === uid) {
+    patch.courierId = "deleted";
+    patch.createdBy = "deleted";
+    patch.note = "";
+  }
+  if (data.customerId === uid) {
+    patch.customerId = "deleted";
+    patch.note = "";
+  }
+  return patch;
+}
+
 export function firstName(value: unknown): string {
   return String(value ?? "").trim().split(/\s+/)[0] ?? "";
 }
@@ -428,6 +442,15 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
       }]);
     }
   }
+
+  // Keep delivery-dispute history while removing either party's account link and free text.
+  await mutateAccountQuery(env, token, "delivery_issues", "courierId", uid, (doc) =>
+    anonymizeDeliveryIssue(decodeFields(doc.fields ?? {}), uid));
+  await mutateAccountQuery(env, token, "delivery_issues", "customerId", uid, (doc) =>
+    anonymizeDeliveryIssue(decodeFields(doc.fields ?? {}), uid));
+
+  // Special requests contain customer text and uploaded media references; remove them on account deletion.
+  await mutateAccountQuery(env, token, "special_requests", "userId", uid, () => null);
 
   await mutateAccountQuery(env, token, "couriers", "supervisorId", uid, () => ({ supervisorId: null }));
   await mutateAccountQuery(env, token, "account_deletions", "userId", uid, () => null);
