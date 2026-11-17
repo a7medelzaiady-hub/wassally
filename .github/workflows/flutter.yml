@@ -55,6 +55,22 @@ jobs:
         flutter pub get
         df -h /
 
+    # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
+    - name: Smoke test signed image upload route
+      shell: bash
+      run: |
+        WORKER_URL="https://throbbing-water-4ef7.a7medelzaiady.workers.dev"
+        curl --fail --silent --show-error "$WORKER_URL/health" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("service") == "wasally-order-gateway", d'
+        STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}' \
+          --request POST "$WORKER_URL/v1/uploads" \
+          --header 'Authorization: Bearer invalid-smoke-test-token')"
+        if [ "$STATUS" != "401" ]; then
+          echo "Unexpected upload route status: $STATUS"
+          cat "$RUNNER_TEMP/upload-route.json"
+          exit 1
+        fi
+        echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
+
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
       run: mkdir -p "$HOME/.android"
@@ -111,22 +127,6 @@ jobs:
             raise SystemExit(1)
         print("Firebase Android OAuth certificate matches the stable CI signing key.")
         PY
-
-    # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
-    - name: Smoke test signed image upload route
-      shell: bash
-      run: |
-        WORKER_URL="https://throbbing-water-4ef7.a7medelzaiady.workers.dev"
-        curl --fail --silent --show-error "$WORKER_URL/health" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("ok") is True and d.get("service") == "wasally-order-gateway", d'
-        STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}' \
-          --request POST "$WORKER_URL/v1/uploads" \
-          --header 'Authorization: Bearer invalid-smoke-test-token')"
-        if [ "$STATUS" != "401" ]; then
-          echo "Unexpected upload route status: $STATUS"
-          cat "$RUNNER_TEMP/upload-route.json"
-          exit 1
-        fi
-        echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
 
     # نسخة الاختبار تستخدم Firestore مباشرة؛ serverOrders غير مفعّل حسب سجل الأمان.
     # لا نوجّهها إلى Worker الإنتاج قبل التحقق من نشره واختبار طلب حقيقي عليه.
