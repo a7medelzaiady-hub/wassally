@@ -8,6 +8,7 @@ on:
       - "firestore.rules"
       - "firebase.json"
       - "rules-tests/**"
+      - "cloudflare-order-gateway/**"
       - "firestore-debug.log"
       - ".github/workflows/firestore-rules.yml"
       - "ORDER_LIFECYCLE_AUDIT_AR.md"
