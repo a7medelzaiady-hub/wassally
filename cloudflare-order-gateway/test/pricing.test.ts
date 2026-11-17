@@ -199,8 +199,11 @@ describe("account deletion privacy cleanup", () => {
   it("anonymizes customer identity and free-text notes in delivery issues", () => {
     expect(anonymizeDeliveryIssue({
       courierId: "courier-2", customerId: "user-1", createdBy: "courier-2",
-      note: "Personal contact details", status: "open",
-    }, "user-1")).toEqual({ customerId: "deleted", note: "" });
+      note: "Personal contact details", adminDecision: "Customer phone: 01000000000",
+      status: "open",
+    }, "user-1")).toEqual({
+      customerId: "deleted", note: "", adminDecision: "",
+    });
   });
 
   it("anonymizes the creator UID when the customer opened the issue", () => {
