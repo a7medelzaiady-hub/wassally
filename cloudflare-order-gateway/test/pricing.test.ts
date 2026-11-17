@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, isCloudinaryImageUrl } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -415,6 +415,13 @@ describe("customer special-request image uploads", () => {
     expect(canUploadSpecialRequestImage("store-1", null)).toBe(false);
     expect(canUploadSpecialRequestImage("../other", { active: true })).toBe(false);
     expect(canUploadSpecialRequestImage("", { active: true })).toBe(false);
+  });
+
+  it("recognizes only secure Cloudinary image delivery URLs", () => {
+    expect(isCloudinaryImageUrl("https://res.cloudinary.com/demo/image/upload/special_requests/a.jpg")).toBe(true);
+    expect(isCloudinaryImageUrl("http://res.cloudinary.com/demo/image/upload/a.jpg")).toBe(false);
+    expect(isCloudinaryImageUrl("https://example.com/image/upload/a.jpg")).toBe(false);
+    expect(isCloudinaryImageUrl("not-a-url")).toBe(false);
   });
 
   it("creates a stable per-user Cloudinary folder without exposing the UID", async () => {
