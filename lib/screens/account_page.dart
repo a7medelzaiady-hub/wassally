@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +34,27 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  late final Stream<UserProfile> _profile = UserService.watch();
+  // اشتراك واحد في بيانات المستخدم يغذّي كل الأقسام. الـ Stream أحادي الاشتراك،
+  // فاستخدامه في أكتر من StreamBuilder كان بيرمي "Stream has already been listened to".
+  UserProfile _profileData = const UserProfile();
+  StreamSubscription<UserProfile>? _profileSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileSub = UserService.watch().listen(
+      (p) {
+        if (mounted) setState(() => _profileData = p);
+      },
+      onError: (Object e) => debugPrint('Profile stream error: $e'),
+    );
+  }
+
+  @override
+  void dispose() {
+    _profileSub?.cancel();
+    super.dispose();
+  }
 
   BoxDecoration get _card => BoxDecoration(
     color: Colors.white,
@@ -277,10 +299,9 @@ class _AccountPageState extends State<AccountPage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
-              StreamBuilder<UserProfile>(
-                stream: _profile,
-                builder: (context, snapshot) {
-                  final profile = snapshot.data ?? const UserProfile();
+              Builder(
+                builder: (context) {
+                  final profile = _profileData;
                   return Container(
                     padding: const EdgeInsets.all(16),
                     decoration: _card,
@@ -320,11 +341,7 @@ class _AccountPageState extends State<AccountPage> {
                   );
                 },
               ),
-              StreamBuilder<UserProfile>(
-                stream: _profile,
-                builder: (context, snapshot) =>
-                    _joinSection(snapshot.data ?? const UserProfile()),
-              ),
+              _joinSection(_profileData),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
