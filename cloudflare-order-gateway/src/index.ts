@@ -987,7 +987,7 @@ export function isUploadSizeAllowed(size: number): boolean {
 }
 
 export function isUploadRequestLengthAllowed(value: string | null): boolean {
-  if (value === null || !/^\\d+$/.test(value)) return false;
+  if (value === null || !/^\d+$/.test(value)) return false;
   const length = Number(value);
   return Number.isSafeInteger(length) &&
     length > 0 &&
