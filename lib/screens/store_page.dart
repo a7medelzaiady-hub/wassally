@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart' as audio;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -71,6 +72,9 @@ class _StorePageState extends State<StorePage> {
 
   final _specialRequestCtrl = TextEditingController();
   final _voiceRecorder = AudioRecorder();
+  final _voicePreviewPlayer = audio.AudioPlayer();
+  StreamSubscription<void>? _voicePreviewCompleteSub;
+  bool _playingVoicePreview = false;
   int _specialQty = 1;
   String? _specialImageUrl;
   String? _voicePath;
@@ -98,6 +102,9 @@ class _StorePageState extends State<StorePage> {
   @override
   void initState() {
     super.initState();
+    _voicePreviewCompleteSub = _voicePreviewPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playingVoicePreview = false);
+    });
     _checkAdmin();
 
     _scroll.addListener(() {
@@ -122,6 +129,8 @@ class _StorePageState extends State<StorePage> {
     _specialRequestCtrl.dispose();
     _recordTimer?.cancel();
     _voiceRecorder.dispose();
+    _voicePreviewCompleteSub?.cancel();
+    _voicePreviewPlayer.dispose();
     super.dispose();
   }
 
@@ -182,6 +191,9 @@ class _StorePageState extends State<StorePage> {
       try {
         final path = await _voiceRecorder.stop();
         _recordTimer?.cancel();
+        if (path == null || path.isEmpty || !await File(path).exists()) {
+          throw StateError('ملف التسجيل لم يُحفظ. حاول التسجيل مرة أخرى.');
+        }
         if (!mounted) return;
         setState(() {
           _recording = false;
@@ -228,6 +240,27 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
+  Future<void> _toggleVoicePreview() async {
+    final path = _voicePath;
+    if (path == null || path.isEmpty || _sendingSpecial) return;
+    try {
+      if (_playingVoicePreview) {
+        await _voicePreviewPlayer.pause();
+        if (mounted) setState(() => _playingVoicePreview = false);
+        return;
+      }
+      await _voicePreviewPlayer.stop();
+      await _voicePreviewPlayer.setSource(audio.DeviceFileSource(path));
+      await _voicePreviewPlayer.resume();
+      if (mounted) setState(() => _playingVoicePreview = true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _playingVoicePreview = false);
+        _say('تعذر تشغيل التسجيل قبل الإرسال: $e');
+      }
+    }
+  }
+
   Future<void> _sendSpecialRequest() async {
     final user = FirebaseAuth.instance.currentUser;
     final description = _specialRequestCtrl.text.trim();
@@ -243,11 +276,17 @@ class _StorePageState extends State<StorePage> {
       _say('أنه التسجيل الصوتي الأول.');
       return;
     }
+    final sentVoicePath = _voicePath;
     setState(() => _sendingSpecial = true);
     try {
       String? voiceBase64;
-      if (_voicePath != null) {
-        final bytes = await File(_voicePath!).readAsBytes();
+      if (sentVoicePath != null) {
+        final voiceFile = File(sentVoicePath);
+        if (!await voiceFile.exists()) {
+          throw StateError('ملف التسجيل غير موجود. سجّل الرسالة مرة أخرى.');
+        }
+        final bytes = await voiceFile.readAsBytes();
+        if (bytes.isEmpty) throw StateError('التسجيل الصوتي فارغ. حاول مرة أخرى.');
         voiceBase64 = base64Encode(bytes);
         if (voiceBase64.length > 700000) {
           throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
@@ -264,13 +303,20 @@ class _StorePageState extends State<StorePage> {
         'status': 'new',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      if (sentVoicePath != null) {
+        await _voicePreviewPlayer.stop();
+      }
       if (!mounted) return;
       setState(() {
+        _playingVoicePreview = false;
         _specialRequestCtrl.clear();
         _specialQty = 1;
         _specialImageUrl = null;
         _voicePath = null;
       });
+      if (sentVoicePath != null) {
+        unawaited(File(sentVoicePath).delete().catchError((_) {}));
+      }
       _say('تم إرسال الطلب الخاص للمحل.');
     } catch (e) {
       _say('تعذر إرسال الطلب الخاص: $e');
@@ -325,6 +371,12 @@ class _StorePageState extends State<StorePage> {
                     ? 'إيقاف التسجيل ($_recordSeconds/15 ث)'
                     : (_voicePath == null ? 'رسالة صوتية' : 'تم تسجيل الصوت')),
               ),
+              if (_voicePath != null)
+                OutlinedButton.icon(
+                  onPressed: _sendingSpecial ? null : _toggleVoicePreview,
+                  icon: Icon(_playingVoicePreview ? Icons.pause : Icons.play_arrow),
+                  label: Text(_playingVoicePreview ? 'إيقاف المعاينة' : 'معاينة الصوت'),
+                ),
             ],
           ),
           if (_specialImageUrl != null || _voicePath != null)
