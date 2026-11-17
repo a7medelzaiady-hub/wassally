@@ -192,7 +192,7 @@ describe("account deletion privacy cleanup", () => {
       courierId: "user-1", customerId: "customer-2", createdBy: "user-1",
       note: "Personal contact details", status: "open",
     }, "user-1")).toEqual({
-      courierId: "deleted", createdBy: "deleted", note: "",
+      courierId: "deleted", createdBy: "deleted", note: "", adminDecision: "",
     });
   });
 
@@ -211,7 +211,7 @@ describe("account deletion privacy cleanup", () => {
       courierId: "courier-2", customerId: "user-1", createdBy: "user-1",
       note: "Private address", status: "open",
     }, "user-1")).toEqual({
-      customerId: "deleted", createdBy: "deleted", note: "",
+      customerId: "deleted", createdBy: "deleted", note: "", adminDecision: "",
     });
   });
 
