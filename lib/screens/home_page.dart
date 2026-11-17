@@ -1014,79 +1014,182 @@ class _HomePageState extends State<HomePage>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 9),
           child: Row(
             children: [
               Expanded(
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
                     color: Brand.ink,
                   ),
                 ),
               ),
-
+              Text(
+                'اكتشف المزيد',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Brand.green,
+                ),
+              ),
             ],
           ),
         ),
         SizedBox(
-          height: 176,
+          height: 116,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: items.length > 12 ? 12 : items.length,
             separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
-              final (s, m) = items[i];
-              final price = (m['price'] as num?)?.toDouble() ?? 0;
-              final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
-              final img = (m['image'] ?? '').toString();
-              return GestureDetector(
-                onTap: () => _openStore(s.store),
-                child: Container(
-                  width: 128,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kLine),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            img.isEmpty
-                                ? Container(
-                                    decoration: BoxDecoration(
-                                      gradient: Brand.softGradient,
+              final (store, product) = items[i];
+              final price = (product['price'] as num?)?.toDouble() ?? 0;
+              final old = (product['oldPrice'] as num?)?.toDouble() ?? 0;
+              final image = (product['image'] ?? '').toString();
+              final name = (product['name'] ?? '').toString().trim();
+              final offerText = (product['offerText'] ?? '').toString().trim();
+              final hasDiscount = offer && old > price && old > 0;
+              return Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _openStore(store.store),
+                  child: Container(
+                    width: 276,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Brand.palette.line),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Brand.greenDark.withValues(alpha: 0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  name.isEmpty ? store.store.name : name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w900,
+                                    color: Brand.ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  store.store.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: Brand.palette.muted,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Row(
+                                  children: [
+                                    Text(
+                                      formatPrice(price),
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: Brand.greenDark,
+                                      ),
                                     ),
-                                  )
-                                : Image.network(
-                                    thumb(img, w: 300),
-                                    cacheWidth: 300,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
+                                    if (hasDiscount) ...[
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        formatPrice(old),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Brand.palette.muted,
+                                          decoration: TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 25,
+                                      height: 25,
+                                      decoration: BoxDecoration(
+                                        gradient: Brand.headerGradient,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Brand.green.withValues(alpha: 0.2),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(
+                                        Icons.add_rounded,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'شاهد الصنف',
+                                      style: TextStyle(
+                                        color: Brand.greenDark,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 108,
+                          height: double.infinity,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              image.isEmpty
+                                  ? DecoratedBox(
                                       decoration: BoxDecoration(
                                         gradient: Brand.softGradient,
                                       ),
+                                    )
+                                  : Image.network(
+                                      thumb(image, w: 300),
+                                      cacheWidth: 300,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: Brand.softGradient,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                            if (offer &&
-                                ((old > price && old > 0) ||
-                                    (m['offerText'] ?? '').toString().trim().isNotEmpty))
-                              Positioned(
-                                top: 6,
-                                right: 6,
-                                left: 6,
-                                child: Align(
-                                  alignment: AlignmentDirectional.topEnd,
+                              if (hasDiscount || offerText.isNotEmpty)
+                                PositionedDirectional(
+                                  top: 6,
+                                  start: 6,
                                   child: Container(
-                                    constraints: const BoxConstraints(maxWidth: 112),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 6,
                                       vertical: 3,
@@ -1096,72 +1199,24 @@ class _HomePageState extends State<HomePage>
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Text(
-                                      old > price && old > 0
+                                      hasDiscount
                                           ? '${((1 - price / old) * 100).round()}%-'
-                                          : (m['offerText'] ?? '').toString(),
+                                          : offerText,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
                                       ),
                                     ),
                                   ),
                                 ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              (m['name'] ?? '').toString(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: Brand.ink,
-                              ),
-                            ),
-                            Text(
-                              s.store.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: kMuted),
-                            ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Text(
-                                  formatPrice(price),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                    color: Brand.goldDeep,
-                                  ),
-                                ),
-                                if (offer && old > price) ...[
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    formatPrice(old),
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      color: kMuted,
-                                      decoration: TextDecoration.lineThrough,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -1196,7 +1251,7 @@ class _HomePageState extends State<HomePage>
           child: Text(
             'المطاعم والمحلات',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 17,
               fontWeight: FontWeight.w900,
               color: Brand.ink,
             ),
@@ -1347,7 +1402,7 @@ class _HomePageState extends State<HomePage>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 17,
+                            fontSize: 15,
                             fontWeight: FontWeight.w900,
                             color: Brand.ink,
                           ),
@@ -1375,7 +1430,7 @@ class _HomePageState extends State<HomePage>
                     s.category,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: kMuted),
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -1389,7 +1444,7 @@ class _HomePageState extends State<HomePage>
                       Text(
                         'توصيل ${formatPrice(CartModel.deliveryFee)}',
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                           color: Brand.ink,
                         ),
@@ -1456,7 +1511,7 @@ class _HomePageState extends State<HomePage>
                       Expanded(
                         child: Text(
                           'أقسامنا المختلفة',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
                       TextButton(
