@@ -552,41 +552,40 @@ service cloud.firestore {
         let nst = nd.get('status', '');
         let cid = od.get('courierId', '');
         let dm = od.get('deliveryMode', '');
-        return (
-          (!securityFlag('serverOrders') &&
-            st in ['new', 'preparing'] &&
-            cid == '' &&
-            'editedAt' in k &&
-            k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
-                       'promoCode', 'customerName', 'editedAt', 'unavailableItems']) &&
-            // تعديل العميل لازم يشيل علامة «صنف غير متاح» (لو كانت موجودة) في نفس العملية.
-            !('unavailableItems' in nd) &&
-            validCustomerEdit(nd, od) &&
-            (st != 'preparing' ||
-              feedUpdatedForCustomerEdit(orderId)))
-          ||
-          (st == 'new' &&
-            k.hasOnly(['status']) &&
-            nst == 'cancelled' &&
-            historyGate(nd, orderId, k))
-          ||
-          (st == 'on_the_way' &&
-            cid is string &&
-            cid.size() > 0 &&
-            od.get('customerDeliveryReportedAt', null) is timestamp &&
-            od.get('customerDeliveryReportedBy', '') == cid &&
-            !('customerConfirmedAt' in od) &&
-            nd.get('customerConfirmedAt', null) == request.time &&
-            (dm == 'external'
-              ? k.hasOnly(['customerConfirmedAt'])
-              : dm == 'store' &&
-                k.hasOnly(['status', 'customerConfirmedAt', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
-                nst == 'delivered' &&
-                nd.get('deliveredBy', '') == cid &&
-                deliveryStampOk(nd, cid, k) &&
-                stampRequired(nd, k) &&
-                historyGate(nd, orderId, k)))
-        );
+        let editKeys = ['items', 'subtotal', 'total', 'notes', 'discount',
+          'promoCode', 'customerName', 'editedAt', 'unavailableItems'];
+        let confirmKeys = ['status', 'customerConfirmedAt', 'deliveredBy',
+          'deliveredAt', 'collectedAmount', 'courierEarning'];
+        return k.hasOnly(editKeys) ? (
+          !securityFlag('serverOrders') &&
+          st in ['new', 'preparing'] &&
+          cid == '' &&
+          'editedAt' in k &&
+          !('unavailableItems' in nd) &&
+          validCustomerEdit(nd, od) &&
+          (st != 'preparing' || feedUpdatedForCustomerEdit(orderId))
+        ) : k.hasOnly(['status']) ? (
+          st == 'new' &&
+          nst == 'cancelled' &&
+          historyGate(nd, orderId, k)
+        ) : k.hasAny(['customerConfirmedAt']) ? (
+          st == 'on_the_way' &&
+          cid is string &&
+          cid.size() > 0 &&
+          od.get('customerDeliveryReportedAt', null) is timestamp &&
+          od.get('customerDeliveryReportedBy', '') == cid &&
+          !('customerConfirmedAt' in od) &&
+          nd.get('customerConfirmedAt', null) == request.time &&
+          (dm == 'external'
+            ? k.hasOnly(['customerConfirmedAt'])
+            : dm == 'store' &&
+              k.hasOnly(confirmKeys) &&
+              nst == 'delivered' &&
+              nd.get('deliveredBy', '') == cid &&
+              deliveryStampOk(nd, cid, k) &&
+              stampRequired(nd, k) &&
+              historyGate(nd, orderId, k))
+        ) : false;
       }
 
       // المندوب: يستلم طلب جاهز (preparing) ومحدّش خده (ذرّي بشرط resource.data)،
@@ -616,10 +615,10 @@ service cloud.firestore {
         let dm = od.get('deliveryMode', '');
         let oai = od.get('activeDeliveryIssueId', '');
         let nai = nd.get('activeDeliveryIssueId', '');
-        return (
+        let assignKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
+        return k.hasOnly(assignKeys) ? (
           st == 'preparing' &&
           cid == '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
           nd.get('courierId', '') == request.auth.uid &&
           nd.get('deliveryMode', '') == 'external' &&
           validCourierForOrder(request.auth.uid, sid, 'external') &&
@@ -629,63 +628,47 @@ service cloud.firestore {
           nd.get('courierPhone', '') is string &&
           nd.get('courierPhone', '').size() <= 20 &&
           nd.get('courierAt', null) == request.time
-        ) || (
-          // تسجيل الوصول عند العميل دون تغيير حالة الطلب.
+        ) : k.hasOnly(['courierArrivedAt']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
           !('activeDeliveryIssueId' in od) &&
-          k.hasOnly(['courierArrivedAt']) &&
           nd.get('courierArrivedAt', null) == request.time
-        ) || (
-          // فتح بلاغ تعذر التسليم في Batch واحدة مع ربطه بالطلب.
+        ) : k.hasOnly(['activeDeliveryIssueId']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
-          !('activeDeliveryIssueId' in od) &&
-          k.hasOnly(['activeDeliveryIssueId']) &&
-          nai is string &&
-          nai.size() > 0 &&
-          existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
-          issueOpenedOk(nai)
-        ) || (
-          // استئناف الرحلة بعد موافقة الإدارة على إعادة المحاولة.
-          st == 'on_the_way' &&
-          cid == request.auth.uid &&
-          oai is string &&
-          oai.size() > 0 &&
-          k.hasOnly(['activeDeliveryIssueId']) &&
-          !('activeDeliveryIssueId' in nd) &&
-          issueNowStatus(oai) == 'retry' &&
-          issueResumedOk(oai)
-        ) || (
-          // المندوب يبدأ الرحلة بعد جاهزية المحل؛ لا يمكنه إغلاق الطلب مباشرة.
+          ( !('activeDeliveryIssueId' in od)
+            ? (nai is string && nai.size() > 0 &&
+               existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
+               issueOpenedOk(nai))
+            : (oai is string && oai.size() > 0 &&
+               !('activeDeliveryIssueId' in nd) &&
+               issueNowStatus(oai) == 'retry' &&
+               issueResumedOk(oai)))
+        ) : k.hasOnly(['status', 'pickedUpAt']) ? (
           st == 'preparing' &&
           cid == request.auth.uid &&
           od.get('ready', false) == true &&
-          k.hasOnly(['status', 'pickedUpAt']) &&
           nst == 'on_the_way' &&
           nd.get('pickedUpAt', null) == request.time &&
           historyGate(nd, orderId, k)
-        ) || (
-          // بلاغ التسليم من المندوب لا يغلق الطلب ولا يكتب ختم التحصيل.
+        ) : k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
           od.get('courierArrivedAt', null) is timestamp &&
           dm in ['store', 'external'] &&
           !('activeDeliveryIssueId' in od) &&
           !('customerDeliveryReportedAt' in od) &&
-          k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy']) &&
           nd.get('customerDeliveryReportedAt', null) == request.time &&
           nd.get('customerDeliveryReportedBy', '') == request.auth.uid
-        ) || (
+        ) : k.hasOnly(['cashHandedToStoreAt', 'cashHandedToStoreBy']) ? (
           cid == request.auth.uid &&
           st == 'on_the_way' &&
           dm == 'external' &&
           od.get('customerConfirmedAt', null) is timestamp &&
           !('cashHandedToStoreAt' in od) &&
-          k.hasOnly(['cashHandedToStoreAt', 'cashHandedToStoreBy']) &&
           nd.get('cashHandedToStoreAt', null) == request.time &&
           nd.get('cashHandedToStoreBy', '') == request.auth.uid
-        );
+        ) : false;
       }
 
       // صاحب المحل (محل الطلب فقط): قبول/رفض، «جاهز للاستلام»، وتعيين مندوب.
@@ -695,32 +678,27 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let sid = od.get('storeId', '');
         let dm = od.get('deliveryMode', '');
-        return (
+        let assignKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
+        let closeKeys = ['status', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning'];
+        return k.hasOnly(['status']) ? (
           st == 'new' &&
-          k.hasOnly(['status']) &&
           nst in ['preparing', 'cancelled'] &&
-          // مينفعش يبدأ التجهيز طالما فيه صنف معلّم «غير متاح» (العميل لازم يرد الأول). الرفض متاح دايمًا.
-          (nst == 'cancelled' ||
-            !('unavailableItems' in od)) &&
+          (nst == 'cancelled' || !('unavailableItems' in od)) &&
           historyGate(nd, orderId, k)
-        ) || (
-          // «صنف غير متاح»: المحل يعلّم أصناف ناقصة على طلب جديد (أو يشيل العلامة).
+        ) : k.hasOnly(['unavailableItems']) ? (
           st == 'new' &&
           cid == '' &&
-          k.hasOnly(['unavailableItems']) &&
           (!('unavailableItems' in nd) ||
             (nd.unavailableItems is list &&
              nd.unavailableItems.size() >= 1 &&
              nd.unavailableItems.size() <= 20))
-        ) || (
+        ) : k.hasOnly(['ready', 'readyAt']) ? (
           st == 'preparing' &&
-          k.hasOnly(['ready', 'readyAt']) &&
           nd.get('ready', false) == true &&
           nd.get('readyAt', null) == request.time
-        ) || (
+        ) : k.hasOnly(assignKeys) ? (
           st == 'preparing' &&
           cid == '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
           nd.get('deliveryMode', '') == 'store' &&
           nd.get('courierName', '') is string &&
           nd.get('courierName', '').size() >= 1 &&
@@ -729,22 +707,19 @@ service cloud.firestore {
           nd.get('courierPhone', '').size() <= 20 &&
           nd.get('courierAt', null) == request.time &&
           validCourierForOrder(nd.get('courierId', ''), sid, 'store') &&
-          // التعيين وإزالة الطلب من القائمة العامة لازم يكونا ذريين.
           !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
-        ) || (
-          // إغلاق طلب المندوب الخارجي بعد تأكيد العميل وتسليم النقدية للمحل.
+        ) : k.hasOnly(closeKeys) ? (
           st == 'on_the_way' &&
           dm == 'external' &&
           od.get('customerConfirmedAt', null) is timestamp &&
           od.get('cashHandedToStoreAt', null) is timestamp &&
           od.get('cashHandedToStoreBy', '') == cid &&
-          k.hasOnly(['status', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
           nst == 'delivered' &&
           nd.get('deliveredBy', '') == cid &&
           deliveryStampOk(nd, cid, k) &&
           stampRequired(nd, k) &&
           historyGate(nd, orderId, k)
-        );
+        ) : false;
       }
 
       // الأدمن: «جاهز للاستلام»، إلغاء تعيين المندوب، واعتماد الحالة/الإجمالي/رسوم التوصيل (+ التعيين).
@@ -755,44 +730,34 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let sid = od.get('storeId', '');
         let oai = od.get('activeDeliveryIssueId', '');
-        return (
-          // «جاهز للاستلام» (كان مسموح للمدير في القواعد الأصلية، فاتحافظ عليه)
+        let assignKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
+        let cancelKeys = ['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
+        let issueCloseKeys = ['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+        let generalKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
+          'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
+          'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning', 'finalDeliveryFee'];
+        return k.hasOnly(['ready', 'readyAt']) ? (
           st == 'preparing' &&
-          k.hasOnly(['ready', 'readyAt']) &&
           nd.get('ready', false) == true &&
           nd.get('readyAt', null) == request.time
-        ) || (
-          st == 'preparing' &&
-          cid != '' &&
-          k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
+        ) : k.hasOnly(assignKeys) && st == 'preparing' && cid != '' ? (
           !('courierId' in nd) &&
           !('deliveryMode' in nd) &&
-          // إعادة إتاحة الطلب لا تتم إلا مع إعادة بناء الـ feed المطابق في نفس العملية.
           feedMatchesOrder(orderId, nd)
-        ) || (
-          // إلغاء إداري أثناء التجهيز: إغلاق الطلب وإزالة إسناد المندوب في نفس التحديث.
-          st == 'preparing' &&
-          nst == 'cancelled' &&
-          k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
+        ) : k.hasOnly(cancelKeys) && st == 'preparing' && nst == 'cancelled' ? (
           !('courierId' in nd) &&
           !('deliveryMode' in nd) &&
           historyGate(nd, orderId, k)
-        ) || (
-          // إغلاق طلب في الطريق لا يسمح به إلا بعد توثيق رجوعه فعليًا للمحل.
+        ) : k.hasOnly(issueCloseKeys) ? (
           st == 'on_the_way' &&
           nst == 'cancelled' &&
           oai is string &&
           oai.size() > 0 &&
           issueNowStatus(oai) == 'store_confirmed_return' &&
-          k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
           !('activeDeliveryIssueId' in nd) &&
           nd.get('lastDeliveryIssueId', '') == oai &&
           historyGate(nd, orderId, k)
-        ) || (
-          k.hasOnly(['status', 'pickedUpAt', 'courierId', 'courierName',
-                     'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
-                     'deliveredBy', 'deliveredAt', 'collectedAmount',
-                     'courierEarning', 'finalDeliveryFee']) &&
+        ) : k.hasOnly(generalKeys) ? (
           validFinalFee(nd, k) &&
           pricingApprovalWindow(od, k) &&
           validStatus(nst) &&
@@ -802,11 +767,10 @@ service cloud.firestore {
           (!('courierId' in k) ||
             (cid == '' &&
              validCourierForOrder(nd.get('courierId', ''), sid, nd.get('deliveryMode', '')) &&
-             // يمنع إعادة تعيين مندوب فوق إسناد قائم أو بقاء نسخة قديمة في القائمة.
              !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId)))) &&
           adminMoveOk(nd, od, k) &&
           historyGate(nd, orderId, k)
-        );
+        ) : false;
       }
 
       function evalOrderUpdate(nd, od) {
@@ -860,6 +824,15 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid &&
         resource.data.status == 'new';
 
+      function customerContactUpdateAllowed(orderId) {
+        let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return signedIn() &&
+          orderData.get('userId', '') == request.auth.uid &&
+          orderData.get('status', '') in ['new', 'preparing'] &&
+          orderData.get('courierId', '') == '' &&
+          validContact(request.resource.data);
+      }
+
       // ───────────── بيانات العميل الشخصية (خاصة) ─────────────
       // orders/{id}/private/contact = { userName, phone, address, courierNotes? }.
       //  • القراءة: العميل صاحب الطلب، والمدير، والمندوب المكلّف بالطلب وهو لسه جاري فقط
@@ -878,11 +851,7 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           validContact(request.resource.data);
         // العميل يعدّل بيانات التواصل حتى استلام المندوب، ويحذفها فقط مع طلب new.
-        allow update: if signedIn() && doc == 'contact' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['new', 'preparing'] &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
-          validContact(request.resource.data);
+        allow update: if doc == 'contact' && customerContactUpdateAllowed(orderId);
         allow delete: if signedIn() && doc == 'contact' &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
