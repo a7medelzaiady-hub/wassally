@@ -2302,7 +2302,7 @@ class _OwnerSpecialRequestsTab extends StatelessWidget {
     );
   }
 }
-lass _SpecialVoicePlayer extends StatefulWidget {
+class _SpecialVoicePlayer extends StatefulWidget {
   final String encoded;
   const _SpecialVoicePlayer({required this.encoded});
 
