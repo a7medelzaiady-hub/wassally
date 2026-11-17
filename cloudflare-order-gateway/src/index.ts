@@ -640,8 +640,9 @@ export function isCustomerRestricted(
   // Match Firestore rules: only explicit deactivation or a valid expired timestamp
   // releases a restriction. Missing/malformed expiry must fail closed.
   if (restriction.active === false) return false;
-  return !(restriction.expiresAt instanceof Date) ||
-    restriction.expiresAt.getTime() > now;
+  if (!(restriction.expiresAt instanceof Date)) return true;
+  const expiresAt = restriction.expiresAt.getTime();
+  return !Number.isFinite(expiresAt) || expiresAt > now;
 }
 
 async function createOrder(request: Request, env: Env): Promise<Response> {
