@@ -192,9 +192,10 @@ class _WasallyBottomBar extends StatelessWidget {
                     builder: (context, _) => _GradientNavButton(
                       size: 58,
                       icon: Icons.shopping_bag_rounded,
-                      label: cart.count > 0
+                      label: 'سلتي',
+                      badgeText: cart.count > 0
                           ? (cart.count > 99 ? '99+' : '${cart.count}')
-                          : 'سلتي',
+                          : null,
                       selected: index == 1,
                       onTap: () => shellTab.value = 1,
                       hangsBelow: true,
@@ -216,6 +217,7 @@ class _GradientNavButton extends StatelessWidget {
   final String label;
   final bool selected;
   final bool hangsBelow;
+  final String? badgeText;
   final VoidCallback onTap;
 
   const _GradientNavButton({
@@ -225,6 +227,7 @@ class _GradientNavButton extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.hangsBelow,
+    this.badgeText,
   });
 
   @override
@@ -258,30 +261,47 @@ class _GradientNavButton extends StatelessWidget {
                 width: 1.2,
               ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
               children: [
-                Icon(icon, color: Colors.white, size: size * 0.39),
-                if (!hangsBelow) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: Colors.white, size: size * 0.39),
+                    const SizedBox(height: 1),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: hangsBelow ? 9.5 : 10,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                ],
-                if (hangsBelow)
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 9.5,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
+                  ],
+                ),
+                if (badgeText != null)
+                  PositionedDirectional(
+                    top: 1,
+                    start: 0,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Brand.greenDark, width: 1),
+                      ),
+                      child: Text(
+                        badgeText!,
+                        style: TextStyle(
+                          color: Brand.greenDark,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
                   ),
               ],
