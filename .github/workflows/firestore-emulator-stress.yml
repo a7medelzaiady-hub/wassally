@@ -9,6 +9,7 @@ on:
       - 'firestore.rules'
       - 'firebase.json'
       - 'rules-tests/**'
+      - 'firestore-debug.log'
       - '.github/workflows/firestore-emulator-stress.yml'
       - 'ORDER_LIFECYCLE_AUDIT_AR.md'
   pull_request:
