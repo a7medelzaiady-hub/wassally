@@ -119,7 +119,9 @@ jobs:
       run: |
         for attempt in 1 2 3; do
           echo "Android build attempt ${attempt}/3"
-          if flutter build apk --debug; then
+          if flutter build apk --debug \\
+            --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \\
+            --dart-define=WASALLY_SERVER_ORDERS=false; then
             exit 0
           fi
           if [ "$attempt" -lt 3 ]; then
