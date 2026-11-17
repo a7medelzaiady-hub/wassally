@@ -1490,9 +1490,9 @@ async function cleanupConfirmedOrderAttachments(
     const uploadIndex = segments.indexOf("upload");
     if (uploadIndex < 0) throw new HttpError(400, "مسار الصورة غير صالح.");
     const assetSegments = segments.slice(uploadIndex + 1);
-    if (assetSegments[0]?.startsWith("v") && /^v\\d+$/.test(assetSegments[0])) assetSegments.shift();
+    if (assetSegments[0]?.startsWith("v") && /^v\d+$/.test(assetSegments[0])) assetSegments.shift();
     const last = assetSegments.pop() ?? "";
-    const publicId = [...assetSegments, last.replace(/\\.[^.]+$/, "")].join("/");
+    const publicId = [...assetSegments, last.replace(/\.[^.]+$/, "")].join("/");
     const expectedPrefix = await cloudinarySpecialRequestFolder(uid);
     if (!publicId.startsWith(expectedPrefix + "/")) {
       throw new HttpError(403, "الصورة لا تخص مرفقات هذا العميل.");
