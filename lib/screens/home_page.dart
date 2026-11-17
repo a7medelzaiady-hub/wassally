@@ -75,6 +75,9 @@ class _HomePageState extends State<HomePage>
   // العنوان المحفوظ للعميل.
   String _address = '';
 
+  // فلتر قائمة المحلات (null = الكل).
+  String? _filter;
+
   // الإشعارات.
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
@@ -713,94 +716,69 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  /// أيقونة زخرفية غامقة شفافة في خلفية الهيدر.
-  Widget _bgIcon(IconData icon, double size, double angle) => Transform.rotate(
-    angle: angle,
-    child: Icon(
-      icon,
-      size: size,
-      color: Brand.greenDark.withValues(alpha: 0.28),
-    ),
-  );
-
   /// الهيدر زي طلبات: لون واحد، "التوصيل إلى" فوق على جنب والسلة على الجنب التاني،
   /// وشريط البحث جوّه الهيدر نفسه، وحافة سفلية متموّجة.
   Widget _header() {
     final top = MediaQuery.paddingOf(context).top;
-    return ClipPath(
-      clipper: _WaveClipper(),
-      child: Container(
+    return Container(
+      decoration: BoxDecoration(
         color: Brand.green,
-        child: Stack(
-          children: [
-            PositionedDirectional(
-              top: top + 2,
-              start: 70,
-              child: _bgIcon(Icons.local_florist_rounded, 78, -0.4),
-            ),
-            PositionedDirectional(
-              top: top - 6,
-              start: 176,
-              child: _bgIcon(Icons.redeem_rounded, 96, 0.1),
-            ),
-            PositionedDirectional(
-              top: top + 8,
-              end: 24,
-              child: _bgIcon(Icons.sports_esports_rounded, 84, 0.25),
-            ),
-            PositionedDirectional(
-              bottom: 10,
-              start: -14,
-              child: _bgIcon(Icons.fastfood_rounded, 70, 0.3),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, top + 10, 16, 30),
-              child: Column(
-                children: [
-                  Row(
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(26)),
+      ),
+      padding: EdgeInsets.fromLTRB(16, top + 10, 16, 18),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _pickLocation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _pickLocation,
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  _address.isEmpty
-                                      ? 'التوصيل إلى: اختر الموقع'
-                                      : 'التوصيل إلى $_address',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 2),
-                              const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ],
-                          ),
+                      Text(
+                        'التوصيل إلى',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      _bell(),
-                      _cartButton(),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _address.isEmpty ? 'اختر الموقع' : _address,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  _searchBar(),
-                ],
+                ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: 10),
+              _bell(),
+              const SizedBox(width: 8),
+              _cartButton(),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _searchBar(),
+        ],
       ),
     );
   }
@@ -812,15 +790,14 @@ class _HomePageState extends State<HomePage>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.grey.shade300, width: 1),
-      ),
+              ),
       child: TextField(
         readOnly: true,
         onTap: _openDirectory,
         textInputAction: TextInputAction.search,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
-          hintText: 'ابحث عن مطعم أو محل هنا ...',
+          hintText: 'ابحث عن مطعم أو محل...',
           hintStyle: TextStyle(
             color: Colors.grey.shade600,
             fontWeight: FontWeight.w600,
@@ -1180,6 +1157,239 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  // ───────────────────────── قائمة المحلات (زي طلبات) ─────────────────────────
+
+  List<Widget> _storesSlivers(List<_StoreItem> all) {
+    final cats = <String>[];
+    for (final s in all) {
+      final c = s.store.isPharmacy ? 'صيدليات' : s.store.category;
+      if (c.trim().isNotEmpty && !cats.contains(c)) cats.add(c);
+    }
+    final visible = _filter == null
+        ? all
+        : all
+              .where(
+                (s) =>
+                    (s.store.isPharmacy ? 'صيدليات' : s.store.category) ==
+                    _filter,
+              )
+              .toList();
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
+          child: Text(
+            'المطاعم والمحلات',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: Brand.ink,
+            ),
+          ),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              _chip('الكل', _filter == null, () => setState(() => _filter = null)),
+              for (final c in cats)
+                _chip(c, _filter == c, () => setState(() => _filter = c)),
+            ],
+          ),
+        ),
+      ),
+      if (visible.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Center(child: Text('لا توجد محلات حاليًا')),
+          ),
+        )
+      else
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          sliver: SliverList.separated(
+            itemCount: visible.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 16),
+            itemBuilder: (_, i) => _storeCard(visible[i]),
+          ),
+        ),
+    ];
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        backgroundColor: Colors.white,
+        selectedColor: Brand.green,
+        side: BorderSide(color: selected ? Brand.green : kLine),
+        labelStyle: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: selected ? Colors.white : Brand.ink,
+        ),
+      ),
+    );
+  }
+
+  /// كارت محل زي طلبات: صورة عريضة فوق، وتحتها الاسم والتقييم والوقت والتوصيل.
+  Widget _storeCard(_StoreItem item) {
+    final s = item.store;
+    final rating = item.rating;
+    final time = item.time;
+    final fallback = Container(
+      color: Brand.green.withValues(alpha: 0.10),
+      alignment: Alignment.center,
+      child: Icon(s.icon, size: 46, color: Brand.green),
+    );
+    return GestureDetector(
+      onTap: () => _openStore(s),
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: kLine),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0F000000),
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 8,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  item.image.isEmpty
+                      ? fallback
+                      : Image.network(
+                          thumb(item.image, w: 700),
+                          cacheWidth: 700,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => fallback,
+                        ),
+                  if (time.isNotEmpty)
+                    PositionedDirectional(
+                      bottom: 10,
+                      start: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time_rounded,
+                              size: 14,
+                              color: Brand.ink,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              time,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: Brand.ink,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: Brand.ink,
+                          ),
+                        ),
+                      ),
+                      if (rating > 0) ...[
+                        const Icon(
+                          Icons.star_rounded,
+                          color: Color(0xFFFFA000),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          rating.toStringAsFixed(1),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.category,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12.5, color: kMuted),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.delivery_dining_rounded,
+                        size: 18,
+                        color: Brand.green,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'توصيل ${formatPrice(CartModel.deliveryFee)}',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Brand.ink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ───────────────────────── البناء ─────────────────────────
 
   @override
@@ -1246,26 +1456,7 @@ class _HomePageState extends State<HomePage>
                 child: _categoriesRow(parsed.categoryImages),
               ),
 
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: FilledButton.icon(
-                      onPressed: _openDirectory,
-                      icon: const Icon(Icons.shopping_bag_rounded),
-                      label: const Text('ابدأ التسوق', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Brand.green,
-                        foregroundColor: Colors.white,
-                        shape: const StadiumBorder(),
-                        elevation: 5,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              if (!loading && !hasError) ..._storesSlivers(all),
 
               if (loading)
                 const SliverToBoxAdapter(
@@ -1292,28 +1483,6 @@ class _HomePageState extends State<HomePage>
       ),
     );
   }
-}
-
-/// حافة سفلية متموّجة للهيدر.
-class _WaveClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    const amp = 6.0;
-    final base = size.height - amp * 2;
-    final p = Path()
-      ..moveTo(0, 0)
-      ..lineTo(0, base);
-    for (double x = 0; x <= size.width; x += 4) {
-      p.lineTo(x, base + amp + amp * math.sin(x / size.width * math.pi * 14));
-    }
-    p
-      ..lineTo(size.width, 0)
-      ..close();
-    return p;
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 /// مربع قسم بصورة حقيقية على خلفية بيج، زي تطبيقات التوصيل الكبيرة.
