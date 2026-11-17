@@ -65,6 +65,28 @@ test('orders: إنشاء عادي ينجح (الأسعار غير مفعّلة)'
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/new1'), baseOrder('cust1')));
 });
 
+test('orders: الطلب الخاص ومرفقاته تُحفظ داخل نفس مستند الطلب', async () => {
+  const request = {
+    description: 'منتج مخصوص',
+    quantity: 2,
+    imageUrl: 'https://res.cloudinary.com/demo/image/upload/special_requests/sample.jpg',
+    voiceBase64: 'QUJDRA==',
+    createdAt: new Date().toISOString(),
+  };
+  await assertSucceeds(setDoc(
+    doc(as('cust1'), 'orders/with-special-request'),
+    baseOrder('cust1', { specialRequest: request }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/invalid-special-request'),
+    baseOrder('cust1', { specialRequest: { ...request, quantity: 100 } }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/unknown-special-request-key'),
+    baseOrder('cust1', { specialRequest: { ...request, customerPhone: '01012345678' } }),
+  ));
+});
+
 test('orderLimits: العميل يكتب مستنده هو بس بوقت السيرفر، ومفيش قراءة ولا حذف', async () => {
   const db = as('cust1');
   await assertSucceeds(setDoc(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp() }));
