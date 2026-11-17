@@ -189,7 +189,6 @@ class _AccountPageState extends State<AccountPage> {
     );
     if (!ok || !mounted) return;
 
-    if (!mounted) return;
     try {
       await AuthService.deleteAccount(context);
     } on FirebaseAuthException catch (e) {
