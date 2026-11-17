@@ -323,7 +323,10 @@ class OrderService {
           'fee=${data['deliveryFee']} total=${data['total']}');
     }
     final ref = _orders.doc(orderId);
-    if (OrderGateway.isConfigured) {
+    if (OrderGateway.serverOrdersEnabled) {
+      if (!OrderGateway.isConfigured) {
+        throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
+      }
       final idToken = await user.getIdToken();
       if (idToken == null || idToken.isEmpty) {
         throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول وحاول تاني.');
@@ -453,7 +456,10 @@ class OrderService {
         )
         .toList();
 
-    if (OrderGateway.isConfigured) {
+    if (OrderGateway.serverOrdersEnabled) {
+      if (!OrderGateway.isConfigured) {
+        throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
+      }
       final idToken = await user.getIdToken();
       if (idToken == null || idToken.isEmpty) {
         throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول وحاول تاني.');
