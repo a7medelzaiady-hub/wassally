@@ -13,6 +13,7 @@ on:
       - 'firestore-debug.log'
       - '.github/workflows/firestore-emulator-stress.yml'
       - '.github/workflows/firestore-rules.yml'
+      - '.github/workflows/order-gateway.yml'
       - 'ORDER_LIFECYCLE_AUDIT_AR.md'
   pull_request:
     branches:
