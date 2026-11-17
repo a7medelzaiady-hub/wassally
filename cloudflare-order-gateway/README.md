@@ -64,6 +64,9 @@ npx wrangler deploy --env staging
 ابنِ التطبيق بعنوان Worker. التعديلات على الطلبات تستخدم نفس العنوان تلقائيًا عبر `PATCH`: 
 ```bash
 flutter build apk --release --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
+
+- `WASALLY_ORDER_GATEWAY_URL` enables signed image uploads (and secure account deletion) through the Worker.
+- Order creation and editing remain on the Spark-compatible Firestore path by default. Only add `--dart-define=WASALLY_SERVER_ORDERS=true` after the Worker order endpoint has passed a real authenticated test **and** Firestore `app_info/security.serverOrders` has been enabled. Do not enable the build flag before both steps are complete.
 ```
 لا يوجد مفتاح سري داخل تطبيق Flutter؛ المصادقة تتم برمز Firebase للمستخدم. رفع الصور لن يعمل عبر النسخة الجديدة إلا بعد نشر Worker وضبط أسرار Cloudinary.
 
