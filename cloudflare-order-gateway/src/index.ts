@@ -634,11 +634,12 @@ async function notifyCouriersOfNewOrder(
 }
 
 export function isCustomerRestricted(
-  restriction: JsonMap,
+  restriction: JsonMap | null,
   now = Date.now(),
 ): boolean {
   // Match Firestore rules: only explicit deactivation or a valid expired timestamp
   // releases a restriction. Missing/malformed expiry must fail closed.
+  if (restriction === null) return false;
   if (restriction.active === false) return false;
   if (!(restriction.expiresAt instanceof Date)) return true;
   const expiresAt = restriction.expiresAt.getTime();
@@ -699,7 +700,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (store.active !== undefined && store.active !== true) {
     throw new HttpError(409, "المحل مغلق حاليًا.");
   }
-  const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : {};
+  const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : null;
   if (isCustomerRestricted(restriction)) {
     throw new HttpError(403, "حسابك مقيّد مؤقتًا أو بيانات التقييد غير مكتملة. راجع الدعم.");
   }
