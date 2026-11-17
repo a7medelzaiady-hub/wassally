@@ -100,35 +100,7 @@ jobs:
         path: ~/.android/debug.keystore
         key: wasally-android-debug-keystore-v1
 
-    # لا نرفع APK إذا كانت شهادة توقيعه غير مسجلة في Google OAuth داخل Firebase.
-    - name: Verify stable debug SHA-1 is registered in Firebase config
-      id: debug-cert
-      shell: bash
-      run: |
-        SHA1="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA1: //p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-        echo "Stable Android debug SHA-1: $SHA1"
-        echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
-        python - "$SHA1" <<'PY'
-        import json, sys
-        expected = sys.argv[1].lower()
-        with open("android/app/google-services.json", encoding="utf-8") as f:
-            config = json.load(f)
-        found = any(
-            client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
-            and any(
-                oauth.get("client_type") == 1
-                and oauth.get("android_info", {}).get("package_name") == "com.wassally.app"
-                and oauth.get("android_info", {}).get("certificate_hash", "").lower() == expected
-                for oauth in client.get("oauth_client", [])
-            )
-            for client in config.get("client", [])
-        )
-        if not found:
-            print("ERROR: This stable CI signing SHA-1 is not registered for com.wassally.app.")
-            print("Add the SHA-1 above to the Android app in Firebase Console, then download and commit the updated google-services.json.")
-            raise SystemExit(1)
-        print("Firebase Android OAuth certificate matches the stable CI signing key.")
-        PY
+    # تسجيل الدخول عاد لمسار Firebase Provider القديم؛ لا يحتاج فحص SHA-1 داخل google-services.json.
 
     # نسخة الاختبار تستخدم Firestore مباشرة؛ serverOrders غير مفعّل حسب سجل الأمان.
     # لا نوجّهها إلى Worker الإنتاج قبل التحقق من نشره واختبار طلب حقيقي عليه.
