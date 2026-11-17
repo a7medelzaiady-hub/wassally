@@ -75,53 +75,6 @@ class AuthService {
     }
   }
 
-  /// رسالة عربية مفهومة لأخطاء الدخول (من غير ما نعرض كود الخطأ للمستخدم).
-  static String errorMessage(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'invalid-email':
-        return 'البريد الإلكتروني غير صحيح.';
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'البريد أو كلمة المرور غير صحيحة.';
-      case 'email-already-in-use':
-        return 'البريد ده مسجّل قبل كده. جرّب تسجّل دخول.';
-      case 'weak-password':
-        return 'كلمة المرور ضعيفة. استخدم 6 حروف على الأقل.';
-      case 'too-many-requests':
-        return 'محاولات كتير. استنى شوية وجرّب تاني.';
-      case 'user-disabled':
-        return 'الحساب ده موقوف.';
-      case 'network-request-failed':
-        return 'مفيش اتصال بالإنترنت. جرّب تاني.';
-      default:
-        return 'تعذر تسجيل الدخول. حاول تاني.';
-    }
-  }
-
-  static Future<void> signInWithEmail(String email, String password) async {
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: email.trim(),
-      password: password,
-    );
-  }
-
-  static Future<void> registerWithEmail(
-    String email,
-    String password,
-    String name,
-  ) async {
-    final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-      email: email.trim(),
-      password: password,
-    );
-    final n = name.trim();
-    if (n.isNotEmpty) await cred.user?.updateDisplayName(n);
-  }
-
-  static Future<void> sendPasswordReset(String email) =>
-      FirebaseAuth.instance.sendPasswordResetEmail(email: email.trim());
-
   /// لو اتبعت context بنقفل أي شاشات مفتوحة فوق البوابة (زي "عرض كعميل")
   /// قبل الخروج، عشان متفضلش ظاهرة بعد تسجيل الخروج.
   static Future<void> signOut([BuildContext? context]) async {
