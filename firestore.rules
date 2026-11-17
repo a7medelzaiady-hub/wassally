@@ -793,19 +793,35 @@ service cloud.firestore {
       }
 
       function evalOrderUpdate(nd, od) {
-        // request.resource.data و resource.data بيتقروا مرة واحدة هنا بس ويتمرّروا للدوال كمعاملات:
-        // كل مرجع ليهم بيتحسب بحجم المستند ضمن حد الـ 1000 تعبير للطلب كله (مش للقاعدة لوحدها).
+        // نحدد نوع الحقول المتغيرة أولًا حتى لا نفحص أدوارًا لا يمكنها تنفيذ هذا التغيير.
+        // ده يقلل استهلاك التعبيرات في الـ Batch مع الحفاظ على فحوص الصلاحيات التفصيلية.
         let cid = od.get('courierId', '');
         let sid = od.get('storeId', '');
+        let uid = request.auth.uid;
         let k = nd.diff(od).affectedKeys();
-        return (od.get('userId', '') == request.auth.uid &&
-            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true) || canCustomerUpdate(nd, od, k))) ||
-          ((cid == request.auth.uid ||
-            cid == '') &&
-            isCourier() && canCourierUpdate(nd, od, k)) ||
-          (sid != '' &&
+        let customerKeys = ['customerHidden', 'items', 'subtotal', 'total', 'notes',
+          'discount', 'promoCode', 'customerName', 'editedAt', 'unavailableItems',
+          'status', 'customerConfirmedAt', 'deliveredBy', 'deliveredAt',
+          'collectedAmount', 'courierEarning'];
+        let courierKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt',
+          'deliveryMode', 'courierArrivedAt', 'activeDeliveryIssueId', 'pickedUpAt',
+          'customerDeliveryReportedAt', 'customerDeliveryReportedBy',
+          'cashHandedToStoreAt', 'cashHandedToStoreBy'];
+        let ownerKeys = ['status', 'unavailableItems', 'ready', 'readyAt', 'courierId',
+          'courierName', 'courierPhone', 'courierAt', 'deliveryMode', 'deliveredBy',
+          'deliveredAt', 'collectedAmount', 'courierEarning'];
+        let adminKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
+          'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
+          'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning',
+          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+        return (od.get('userId', '') == uid &&
+            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true) ||
+             (k.hasAny(customerKeys) && canCustomerUpdate(nd, od, k)))) ||
+          ((cid == uid || cid == '') &&
+            k.hasAny(courierKeys) && isCourier() && canCourierUpdate(nd, od, k)) ||
+          (sid != '' && k.hasAny(ownerKeys) &&
             isStoreOwner(sid) && canOwnerUpdate(nd, od, k)) ||
-          (isAdmin() && canAdminUpdate(nd, od, k));
+          (k.hasAny(adminKeys) && isAdmin() && canAdminUpdate(nd, od, k));
       }
 
 
