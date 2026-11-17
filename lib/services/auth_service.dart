@@ -33,16 +33,10 @@ class AuthService {
         await _nativeGoogleSignIn();
         return;
       } on GoogleSignInException catch (e) {
-        if (e.code == GoogleSignInExceptionCode.canceled) {
-          throw FirebaseAuthException(code: 'canceled');
-        }
-        if (e.code == GoogleSignInExceptionCode.interrupted) {
-          throw FirebaseAuthException(
-            code: 'google-sign-in-interrupted',
-            message: 'Google sign-in activity was interrupted before Firebase authentication completed.',
-          );
-        }
-        debugPrint('Native Google sign-in failed: ${e.code}, fallback.');
+        // بعض أجهزة Android تُنهي تدفق Google الأصلي بعد اختيار الحساب
+        // وتعيد canceled/interrupted رغم أن المستخدم لم يضغط إلغاء.
+        // نجرّب مسار Firebase Auth الاحتياطي بدل إنهاء تسجيل الدخول فورًا.
+        debugPrint('Native Google sign-in did not complete: ${e.code}; trying Firebase provider flow.');
       } on FirebaseAuthException {
         rethrow;
       } catch (e) {
