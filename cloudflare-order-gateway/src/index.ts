@@ -86,16 +86,15 @@ function encodeFields(fields: JsonMap): Record<string, unknown> {
 
 export function anonymizeDeliveryIssue(data: JsonMap, uid: string): JsonMap {
   const patch: JsonMap = {};
-  if (data.courierId === uid) {
-    patch.courierId = "deleted";
-    patch.createdBy = "deleted";
-    patch.note = "";
+  const isParty = data.courierId === uid || data.customerId === uid;
+  if (data.courierId === uid) patch.courierId = "deleted";
+  if (data.customerId === uid) patch.customerId = "deleted";
+  if (data.createdBy === uid) patch.createdBy = "deleted";
+  if (data.updatedBy === uid) {
+    patch.updatedBy = "deleted";
+    patch.adminDecision = "";
   }
-  if (data.customerId === uid) {
-    patch.customerId = "deleted";
-    if (data.createdBy === uid) patch.createdBy = "deleted";
-    patch.note = "";
-  }
+  if (isParty) patch.note = "";
   return patch;
 }
 
