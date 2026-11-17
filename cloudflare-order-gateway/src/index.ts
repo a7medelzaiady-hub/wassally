@@ -299,6 +299,22 @@ async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Pr
   }
 }
 
+async function commitFirestoreWriteGroups(
+  env: Env,
+  token: string,
+  groups: any[][],
+): Promise<void> {
+  let batch: any[] = [];
+  for (const group of groups) {
+    if (batch.length + group.length > 400) {
+      await commitFirestoreWrites(env, token, batch);
+      batch = [];
+    }
+    batch.push(...group);
+  }
+  await commitFirestoreWrites(env, token, batch);
+}
+
 async function queryAccountDocuments(
   env: Env,
   token: string,
@@ -401,7 +417,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   // Remove courier applications and pseudonymize historical courier activity.
   await mutateAccountQuery(env, token, "applicants", "courierId", uid, () => null, "", true);
   const courierOrders = await queryAccountDocuments(env, token, "orders", "courierId", uid);
-  const courierOrderWrites: any[] = [];
+  const courierOrderWriteGroups: any[][] = [];
   for (const doc of courierOrders) {
     const data = decodeFields(doc.fields ?? {});
     const status = String(data.status ?? "");
@@ -414,10 +430,10 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
         courierPhone: "",
         deliveredBy: data.deliveredBy === uid ? "deleted" : String(data.deliveredBy ?? ""),
       };
-      courierOrderWrites.push({
+      courierOrderWriteGroups.push([{
         update: { name: doc.name, fields: encodeFields(patch) },
         updateMask: { fieldPaths: Object.keys(patch) },
-      });
+      }]);
       continue;
     }
 
@@ -432,31 +448,34 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
     if (status === "on_the_way" && requeue) {
       patch.status = "preparing";
       patch.courierArrivedAt = null;
+      patch.pickedUpAt = null;
     }
     const fieldPaths = Object.keys(patch);
     const values = Object.fromEntries(
       Object.entries(patch).filter(([, value]) => value !== null),
     );
-    courierOrderWrites.push({
+    const orderWrites: any[] = [{
       update: { name: doc.name, fields: encodeFields(values) },
       updateMask: { fieldPaths },
-    });
+    }];
 
     if (orderId && requeue) {
       const feed = courierAvailableFeedData({ ...data, ...patch, courierId: "", status: "preparing" });
-      courierOrderWrites.push({
+      orderWrites.push({
         update: {
           name: firestoreDocumentName(env, `courier_available_orders/${encodeURIComponent(orderId)}`),
           fields: encodeFields(feed),
         },
       });
     } else if (orderId) {
-      courierOrderWrites.push({
+      orderWrites.push({
         delete: firestoreDocumentName(env, `courier_available_orders/${encodeURIComponent(orderId)}`),
       });
     }
+    // Keep the order update and its available-feed change in the same Firestore commit.
+    courierOrderWriteGroups.push(orderWrites);
   }
-  await commitFirestoreWrites(env, token, courierOrderWrites);
+  await commitFirestoreWriteGroups(env, token, courierOrderWriteGroups);
   await mutateAccountQuery(env, token, "orders", "deliveredBy", uid, () => ({ deliveredBy: "deleted" }));
   await mutateAccountQuery(env, token, "statusHistory", "actorUid", uid, () => ({ actorUid: "deleted" }), "", true);
 
