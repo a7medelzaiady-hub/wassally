@@ -648,10 +648,21 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   await mutateAccountQuery(env, token, "delivery_issues", "customerId", uid, (doc) =>
     anonymizeDeliveryIssue(decodeFields(doc.fields ?? {}), uid));
 
-  // Remove customer-uploaded special-request images from the user's isolated Cloudinary folder.
-  await deleteCloudinarySpecialRequestAssets(env, uid);
+  // Remove customer-uploaded special-request images before deleting their Firestore references.
+  const specialRequestDocs = await queryAccountDocuments(env, token, "special_requests", "userId", uid);
+  const hasSpecialRequestImages = specialRequestDocs.some((doc) =>
+    typeof decodeFields(doc.fields ?? {}).imageUrl === "string" &&
+    String(decodeFields(doc.fields ?? {}).imageUrl).trim().isNotEmpty);
+  const cloudinaryConfigured = Boolean(
+    env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
+  );
+  if (cloudinaryConfigured) {
+    await deleteCloudinarySpecialRequestAssets(env, uid);
+  } else if (hasSpecialRequestImages) {
+    throw new HttpError(503, "تعذر حذف صور الطلبات الخاصة من خدمة الصور. أعد المحاولة لاحقًا.");
+  }
   // Remove special-request text, voice messages, and media URLs from Firestore.
-  await mutateAccountQuery(env, token, "special_requests", "userId", uid, () => null);
+  await commitFirestoreWrites(env, token, specialRequestDocs.map((doc) => ({ delete: doc.name })));
 
   await mutateAccountQuery(env, token, "couriers", "supervisorId", uid, () => ({ supervisorId: null }));
   await mutateAccountQuery(env, token, "account_deletions", "userId", uid, () => null);
