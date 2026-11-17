@@ -1207,6 +1207,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/courier_available_orders/${encodeURIComponent(orderId)}`,
         fields: encodeFields(updatedFeed),
       },
+      updateTransforms: [{ fieldPath: "editedAt", setToServerValue: "REQUEST_TIME" }],
       currentDocument: feedDoc.updateTime
         ? { updateTime: feedDoc.updateTime }
         : { exists: true },
