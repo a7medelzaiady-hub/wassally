@@ -648,7 +648,9 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   await mutateAccountQuery(env, token, "delivery_issues", "customerId", uid, (doc) =>
     anonymizeDeliveryIssue(decodeFields(doc.fields ?? {}), uid));
 
-  // Special requests contain customer text and uploaded media references; remove them on account deletion.
+  // Remove customer-uploaded special-request images from the user's isolated Cloudinary folder.
+  await deleteCloudinarySpecialRequestAssets(env, uid);
+  // Remove special-request text, voice messages, and media URLs from Firestore.
   await mutateAccountQuery(env, token, "special_requests", "userId", uid, () => null);
 
   await mutateAccountQuery(env, token, "couriers", "supervisorId", uid, () => ({ supervisorId: null }));
@@ -1189,6 +1191,48 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
 
+export function canUploadSpecialRequestImage(storeId: string, store: JsonMap | null): boolean {
+  return /^[A-Za-z0-9_-]{1,100}$/.test(storeId) && store?.active === true;
+}
+
+export async function cloudinarySpecialRequestFolder(uid: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(uid));
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+  return `special_requests/${hash}`;
+}
+
+async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Promise<void> {
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+    throw new HttpError(503, "تعذر تنظيف صور الطلبات الخاصة من خدمة الصور.");
+  }
+  const prefix = await cloudinarySpecialRequestFolder(uid);
+  let nextCursor = "";
+  for (let page = 0; page < 10; page++) {
+    const url = new URL(
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload`,
+    );
+    url.searchParams.set("prefix", prefix);
+    url.searchParams.set("invalidate", "true");
+    if (nextCursor) url.searchParams.set("next_cursor", nextCursor);
+    const deleted = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${btoa(`${env.CLOUDINARY_API_KEY}:${env.CLOUDINARY_API_SECRET}`)}`,
+      },
+    });
+    if (!deleted.ok) {
+      const detail = (await deleted.text()).slice(0, 300);
+      console.error("Cloudinary special request cleanup failed", deleted.status, detail);
+      throw new HttpError(503, "تعذر حذف صور الطلبات الخاصة. حاول حذف الحساب مرة أخرى.");
+    }
+    const result = await deleted.json() as { partial?: boolean; next_cursor?: string };
+    if (!result.partial || !result.next_cursor) return;
+    nextCursor = result.next_cursor;
+  }
+  throw new HttpError(503, "توجد صور كثيرة مرتبطة بالحساب؛ أعد محاولة حذف الحساب لإكمال التنظيف.");
+}
+
 export async function cloudinarySignature(
   params: Record<string, string>,
   secret: string,
@@ -1270,7 +1314,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
@@ -1278,10 +1322,13 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   }
 
   const token = await googleAccessToken(env);
-  const [adminDoc, ownerDoc, roleRequestDoc] = await Promise.all([
+  const [adminDoc, ownerDoc, roleRequestDoc, specialRequestStoreDoc] = await Promise.all([
     getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
     getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
     getDocument(env, `role_requests/${encodeURIComponent(uid + "_store_owner")}`, token),
+    folder === "special_requests" && storeId
+      ? getDocument(env, `stores/${encodeURIComponent(storeId)}`, token)
+      : Promise.resolve(null),
   ]);
   const isAdmin = adminDoc !== null;
   const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
@@ -1297,16 +1344,24 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
     (storeId === "" || storeId === requestedStoreId)) ||
     (folder === "stores" && storeId === "" &&
       (!roleRequestDoc || ["pending", "rejected"].includes(String(roleRequest.status))));
-  if (folder === "banners" ? !isAdmin : !(isAdmin || (storeId && isOwner) || isApplicant)) {
+  const specialRequestStore = specialRequestStoreDoc
+    ? decodeFields(specialRequestStoreDoc.fields ?? {})
+    : null;
+  const isSpecialRequestUpload = canUploadSpecialRequestImage(storeId, specialRequestStore);
+  if (folder === "banners" ? !isAdmin
+      : folder === "special_requests" ? !(isAdmin || isSpecialRequestUpload)
+      : !(isAdmin || (storeId && isOwner) || isApplicant)) {
     throw new HttpError(403, "مش مسموح لك ترفع صورة في المجلد ده.");
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const detected = detectImageContent(bytes);
   if (!detected) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
-  const uploadFolder = folder === "banners" || isAdmin
-    ? folder
-    : `${folder}/${isApplicant ? (requestedStoreId || "applications/" + uid) : storeId}`;
+  const uploadFolder = folder === "special_requests"
+    ? await cloudinarySpecialRequestFolder(uid)
+    : folder === "banners" || isAdmin
+      ? folder
+      : `${folder}/${isApplicant ? (requestedStoreId || "applications/" + uid) : storeId}`;
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = crypto.randomUUID();
   const signedParams = {
