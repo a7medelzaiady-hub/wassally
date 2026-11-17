@@ -98,55 +98,67 @@ service cloud.firestore {
 
     // k = diff().affectedKeys() محسوب مرة واحدة في evalOrderUpdate ومتبعوت هنا (من غير ما نعيد حساب الـ diff).
     function deliveryStampOk(courierUid, k) {
+      let nd = request.resource.data;
+      let nst = nd.get('status', '');
       return !k.hasAny(stampKeys()) || (
         k.hasAll(stampKeys()) &&
-        request.resource.data.get('status', '') == 'delivered' &&
+        nst == 'delivered' &&
         courierUid is string && courierUid.size() > 0 &&
-        request.resource.data.get('deliveredBy', '') == courierUid &&
-        request.resource.data.get('deliveredAt', null) == request.time &&
-        request.resource.data.get('courierEarning', -1) is number &&
-        request.resource.data.get('courierEarning', -1) ==
-          request.resource.data.get('finalDeliveryFee', request.resource.data.get('deliveryFee', -2)) &&
-        request.resource.data.get('collectedAmount', -1) is number &&
-        request.resource.data.get('collectedAmount', -1) ==
-          request.resource.data.get('verifiedTotal', request.resource.data.get('total', -2)));
+        nd.get('deliveredBy', '') == courierUid &&
+        nd.get('deliveredAt', null) == request.time &&
+        nd.get('courierEarning', -1) is number &&
+        nd.get('courierEarning', -1) ==
+          nd.get('finalDeliveryFee', nd.get('deliveryFee', -2)) &&
+        nd.get('collectedAmount', -1) is number &&
+        nd.get('collectedAmount', -1) ==
+          nd.get('verifiedTotal', nd.get('total', -2)));
     }
 
     // رسوم التوصيل النهائية: الأدمن بس بيحددها (لما يوافق على الطلب)، ولو ما حددهاش بتفضل الافتراضية.
     function validFinalFee(k) {
+      let nd = request.resource.data;
       return !('finalDeliveryFee' in k) || (
-        request.resource.data.get('finalDeliveryFee', -1) is number &&
-        request.resource.data.finalDeliveryFee >= 0 &&
-        request.resource.data.finalDeliveryFee <= 500);
+        nd.get('finalDeliveryFee', -1) is number &&
+        nd.finalDeliveryFee >= 0 &&
+        nd.finalDeliveryFee <= 500);
     }
 
     // أي تسليم من المندوب أو الإدارة لازم يجي مع الختم المالي الكامل.
     function stampRequired(k) {
+      let nd = request.resource.data;
+      let nst = nd.get('status', '');
       // ختم التسليم المالي إلزامي دائمًا؛ لا نعتمد على flag يمكن أن يكون غير مفعّل.
-      return request.resource.data.get('status', '') != 'delivered' ||
+      return nst != 'delivered' ||
         k.hasAll(stampKeys());
     }
 
     // انتقالات الإدارة متسلسلة: لا تخطي للتجهيز/الجاهزية ولا إعادة فتح حالة نهائية.
     function adminMoveOk(k) {
+      let nd = request.resource.data;
+      let od = resource.data;
+      let st = od.get('status', '');
+      let nst = nd.get('status', '');
+      let cid = od.get('courierId', '');
       return !('status' in k) ||
-        (resource.data.get('status', '') == 'new' &&
-          request.resource.data.get('status', '') in ['preparing', 'cancelled']) ||
-        (resource.data.get('status', '') == 'preparing' &&
-          (request.resource.data.get('status', '') == 'cancelled' ||
-           (request.resource.data.get('status', '') == 'on_the_way' &&
-            resource.data.get('ready', false) == true &&
-            request.resource.data.get('pickedUpAt', null) == request.time &&
-            resource.data.get('courierId', '') is string &&
-            resource.data.get('courierId', '').size() > 0))) ||
+        (st == 'new' &&
+          nst in ['preparing', 'cancelled']) ||
+        (st == 'preparing' &&
+          (nst == 'cancelled' ||
+           (nst == 'on_the_way' &&
+            od.get('ready', false) == true &&
+            nd.get('pickedUpAt', null) == request.time &&
+            cid is string &&
+            cid.size() > 0))) ||
         false; // التسليم لا يتم إداريًا؛ تأكيده حسب نوع المندوب.
     }
 
     // تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch) دائمًا.
     function historyGate(orderId, k) {
+      let nd = request.resource.data;
+      let nst = nd.get('status', '');
       // سجل الحالة إلزامي دائمًا عند تغيير status، وليس مرتبطًا بمفتاح تشغيل اختياري.
       return !('status' in k) ||
-        existsAfter(/databases/$(database)/documents/orders/$(orderId)/statusHistory/$(request.resource.data.get('status', '')));
+        existsAfter(/databases/$(database)/documents/orders/$(orderId)/statusHistory/$(nst));
     }
 
     function validCourierForAssignment(courierId) {
@@ -166,10 +178,12 @@ service cloud.firestore {
 
     // اعتماد السعر ورسوم التوصيل يُقفل بمجرد أن يبلغ المندوب عن التسليم.
     function pricingApprovalWindow(k) {
+      let od = resource.data;
+      let st = od.get('status', '');
       return !k.hasAny(['verifiedTotal', 'verifiedAt', 'finalDeliveryFee']) ||
-        (resource.data.get('status', '') in ['new', 'preparing'] &&
-         !('customerDeliveryReportedAt' in resource.data) &&
-         !('customerConfirmedAt' in resource.data));
+        (st in ['new', 'preparing'] &&
+         !('customerDeliveryReportedAt' in od) &&
+         !('customerConfirmedAt' in od));
     }
 
     // ───────────── التحقق من بيانات الطلب الجديد ─────────────
@@ -303,11 +317,12 @@ service cloud.firestore {
 
     // اعتماد المدير للإجمالي: لازم رقم معقول، وبختم وقت السيرفر.
     function validVerification(k) {
+      let nd = request.resource.data;
       return !('verifiedTotal' in k) || (
-        request.resource.data.get('verifiedTotal', -1) is number &&
-        request.resource.data.verifiedTotal >= 0 &&
-        request.resource.data.verifiedTotal <= 100000 &&
-        request.resource.data.get('verifiedAt', null) == request.time);
+        nd.get('verifiedTotal', -1) is number &&
+        nd.verifiedTotal >= 0 &&
+        nd.verifiedTotal <= 100000 &&
+        nd.get('verifiedAt', null) == request.time);
     }
 
     function userKeys() {
@@ -521,38 +536,44 @@ service cloud.firestore {
 
       // العميل: يعدّل طلبه أو يلغيه طالما لسه جديد (المحل ما قبلهوش).
       function canCustomerUpdate(k) {
+        let nd = request.resource.data;
+        let od = resource.data;
+        let st = od.get('status', '');
+        let nst = nd.get('status', '');
+        let cid = od.get('courierId', '');
+        let dm = od.get('deliveryMode', '');
         return (
           (!securityFlag('serverOrders') &&
-            resource.data.get('status', '') in ['new', 'preparing'] &&
-            resource.data.get('courierId', '') == '' &&
+            st in ['new', 'preparing'] &&
+            cid == '' &&
             'editedAt' in k &&
             k.hasOnly(['items', 'subtotal', 'total', 'notes', 'discount',
                        'promoCode', 'customerName', 'editedAt', 'unavailableItems']) &&
             // تعديل العميل لازم يشيل علامة «صنف غير متاح» (لو كانت موجودة) في نفس العملية.
-            !('unavailableItems' in request.resource.data) &&
+            !('unavailableItems' in nd) &&
             validCustomerEdit(request.resource.data, resource.data) &&
-            (resource.data.get('status', '') != 'preparing' ||
+            (st != 'preparing' ||
               feedMatchesOrder(orderId, request.resource.data)))
           ||
-          (resource.data.get('status', '') == 'new' &&
+          (st == 'new' &&
             k.hasOnly(['status']) &&
-            request.resource.data.get('status', '') == 'cancelled' &&
+            nst == 'cancelled' &&
             historyGate(orderId, k))
           ||
-          (resource.data.get('status', '') == 'on_the_way' &&
-            resource.data.get('courierId', '') is string &&
-            resource.data.get('courierId', '').size() > 0 &&
-            resource.data.get('customerDeliveryReportedAt', null) is timestamp &&
-            resource.data.get('customerDeliveryReportedBy', '') == resource.data.get('courierId', '') &&
-            !('customerConfirmedAt' in resource.data) &&
-            request.resource.data.get('customerConfirmedAt', null) == request.time &&
-            (resource.data.get('deliveryMode', '') == 'external'
+          (st == 'on_the_way' &&
+            cid is string &&
+            cid.size() > 0 &&
+            od.get('customerDeliveryReportedAt', null) is timestamp &&
+            od.get('customerDeliveryReportedBy', '') == cid &&
+            !('customerConfirmedAt' in od) &&
+            nd.get('customerConfirmedAt', null) == request.time &&
+            (dm == 'external'
               ? k.hasOnly(['customerConfirmedAt'])
-              : resource.data.get('deliveryMode', '') == 'store' &&
+              : dm == 'store' &&
                 k.hasOnly(['status', 'customerConfirmedAt', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
-                request.resource.data.get('status', '') == 'delivered' &&
-                request.resource.data.get('deliveredBy', '') == resource.data.get('courierId', '') &&
-                deliveryStampOk(resource.data.get('courierId', ''), k) &&
+                nst == 'delivered' &&
+                nd.get('deliveredBy', '') == cid &&
+                deliveryStampOk(cid, k) &&
                 stampRequired(k) &&
                 historyGate(orderId, k)))
         );
@@ -560,132 +581,161 @@ service cloud.firestore {
 
       // المندوب: يستلم طلب جاهز (preparing) ومحدّش خده (ذرّي بشرط resource.data)،
       // أو يغيّر حالة طلبه هو ويختم التسليم.
+      // مستند بلاغ التسليم بيتقرا مرة واحدة جوه الدالة بدل تكرار المسار الكامل في كل شرط.
+      function issueOpenedOk(id) {
+        let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
+        return d.get('orderId', '') == orderId &&
+          d.get('courierId', '') == request.auth.uid &&
+          d.get('status', '') == 'open';
+      }
+      function issueResumedOk(id) {
+        let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
+        return d.get('status', '') == 'resolved' &&
+          d.get('courierResumedBy', '') == request.auth.uid &&
+          d.get('courierResumedAt', null) == request.time;
+      }
+      function issueNowStatus(id) {
+        return get(/databases/$(database)/documents/delivery_issues/$(id)).data.get('status', '');
+      }
+
       function canCourierUpdate(k) {
+        let nd = request.resource.data;
+        let od = resource.data;
+        let st = od.get('status', '');
+        let nst = nd.get('status', '');
+        let cid = od.get('courierId', '');
+        let sid = od.get('storeId', '');
+        let dm = od.get('deliveryMode', '');
+        let oai = od.get('activeDeliveryIssueId', '');
+        let nai = nd.get('activeDeliveryIssueId', '');
         return (
-          resource.data.get('status', '') == 'preparing' &&
-          resource.data.get('courierId', '') == '' &&
+          st == 'preparing' &&
+          cid == '' &&
           k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
-          request.resource.data.get('courierId', '') == request.auth.uid &&
-          request.resource.data.get('deliveryMode', '') == 'external' &&
-          validCourierForOrder(request.auth.uid, resource.data.get('storeId', ''), 'external') &&
-          request.resource.data.get('courierName', '') is string &&
-          request.resource.data.get('courierName', '').size() >= 1 &&
-          request.resource.data.get('courierName', '').size() <= 80 &&
-          request.resource.data.get('courierPhone', '') is string &&
-          request.resource.data.get('courierPhone', '').size() <= 20 &&
-          request.resource.data.get('courierAt', null) == request.time
+          nd.get('courierId', '') == request.auth.uid &&
+          nd.get('deliveryMode', '') == 'external' &&
+          validCourierForOrder(request.auth.uid, sid, 'external') &&
+          nd.get('courierName', '') is string &&
+          nd.get('courierName', '').size() >= 1 &&
+          nd.get('courierName', '').size() <= 80 &&
+          nd.get('courierPhone', '') is string &&
+          nd.get('courierPhone', '').size() <= 20 &&
+          nd.get('courierAt', null) == request.time
         ) || (
           // تسجيل الوصول عند العميل دون تغيير حالة الطلب.
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          !('activeDeliveryIssueId' in resource.data) &&
+          st == 'on_the_way' &&
+          cid == request.auth.uid &&
+          !('activeDeliveryIssueId' in od) &&
           k.hasOnly(['courierArrivedAt']) &&
-          request.resource.data.get('courierArrivedAt', null) == request.time
+          nd.get('courierArrivedAt', null) == request.time
         ) || (
           // فتح بلاغ تعذر التسليم في Batch واحدة مع ربطه بالطلب.
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          !('activeDeliveryIssueId' in resource.data) &&
+          st == 'on_the_way' &&
+          cid == request.auth.uid &&
+          !('activeDeliveryIssueId' in od) &&
           k.hasOnly(['activeDeliveryIssueId']) &&
-          request.resource.data.get('activeDeliveryIssueId', '') is string &&
-          request.resource.data.get('activeDeliveryIssueId', '').size() > 0 &&
-          existsAfter(/databases/$(database)/documents/delivery_issues/$(request.resource.data.get('activeDeliveryIssueId', ''))) &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(request.resource.data.get('activeDeliveryIssueId', ''))).data.get('orderId', '') == orderId &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(request.resource.data.get('activeDeliveryIssueId', ''))).data.get('courierId', '') == request.auth.uid &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(request.resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'open'
+          nai is string &&
+          nai.size() > 0 &&
+          existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
+          issueOpenedOk(nai)
         ) || (
           // استئناف الرحلة بعد موافقة الإدارة على إعادة المحاولة.
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          resource.data.get('activeDeliveryIssueId', '') is string &&
-          resource.data.get('activeDeliveryIssueId', '').size() > 0 &&
+          st == 'on_the_way' &&
+          cid == request.auth.uid &&
+          oai is string &&
+          oai.size() > 0 &&
           k.hasOnly(['activeDeliveryIssueId']) &&
-          !('activeDeliveryIssueId' in request.resource.data) &&
-          get(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'retry' &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'resolved' &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('courierResumedBy', '') == request.auth.uid &&
-          getAfter(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('courierResumedAt', null) == request.time
+          !('activeDeliveryIssueId' in nd) &&
+          issueNowStatus(oai) == 'retry' &&
+          issueResumedOk(oai)
         ) || (
           // المندوب يبدأ الرحلة بعد جاهزية المحل؛ لا يمكنه إغلاق الطلب مباشرة.
-          resource.data.get('status', '') == 'preparing' &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          resource.data.get('ready', false) == true &&
+          st == 'preparing' &&
+          cid == request.auth.uid &&
+          od.get('ready', false) == true &&
           k.hasOnly(['status', 'pickedUpAt']) &&
-          request.resource.data.get('status', '') == 'on_the_way' &&
-          request.resource.data.get('pickedUpAt', null) == request.time &&
+          nst == 'on_the_way' &&
+          nd.get('pickedUpAt', null) == request.time &&
           historyGate(orderId, k)
         ) || (
           // بلاغ التسليم من المندوب لا يغلق الطلب ولا يكتب ختم التحصيل.
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('courierId', '') == request.auth.uid &&
-          resource.data.get('courierArrivedAt', null) is timestamp &&
-          resource.data.get('deliveryMode', '') in ['store', 'external'] &&
-          !('activeDeliveryIssueId' in resource.data) &&
-          !('customerDeliveryReportedAt' in resource.data) &&
+          st == 'on_the_way' &&
+          cid == request.auth.uid &&
+          od.get('courierArrivedAt', null) is timestamp &&
+          dm in ['store', 'external'] &&
+          !('activeDeliveryIssueId' in od) &&
+          !('customerDeliveryReportedAt' in od) &&
           k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy']) &&
-          request.resource.data.get('customerDeliveryReportedAt', null) == request.time &&
-          request.resource.data.get('customerDeliveryReportedBy', '') == request.auth.uid
+          nd.get('customerDeliveryReportedAt', null) == request.time &&
+          nd.get('customerDeliveryReportedBy', '') == request.auth.uid
         ) || (
-          resource.data.get('courierId', '') == request.auth.uid &&
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('deliveryMode', '') == 'external' &&
-          resource.data.get('customerConfirmedAt', null) is timestamp &&
-          !('cashHandedToStoreAt' in resource.data) &&
+          cid == request.auth.uid &&
+          st == 'on_the_way' &&
+          dm == 'external' &&
+          od.get('customerConfirmedAt', null) is timestamp &&
+          !('cashHandedToStoreAt' in od) &&
           k.hasOnly(['cashHandedToStoreAt', 'cashHandedToStoreBy']) &&
-          request.resource.data.get('cashHandedToStoreAt', null) == request.time &&
-          request.resource.data.get('cashHandedToStoreBy', '') == request.auth.uid
+          nd.get('cashHandedToStoreAt', null) == request.time &&
+          nd.get('cashHandedToStoreBy', '') == request.auth.uid
         );
       }
 
       // صاحب المحل (محل الطلب فقط): قبول/رفض، «جاهز للاستلام»، وتعيين مندوب.
       function canOwnerUpdate(k) {
+        let nd = request.resource.data;
+        let od = resource.data;
+        let st = od.get('status', '');
+        let nst = nd.get('status', '');
+        let cid = od.get('courierId', '');
+        let sid = od.get('storeId', '');
+        let dm = od.get('deliveryMode', '');
         return (
-          resource.data.get('status', '') == 'new' &&
+          st == 'new' &&
           k.hasOnly(['status']) &&
-          request.resource.data.get('status', '') in ['preparing', 'cancelled'] &&
+          nst in ['preparing', 'cancelled'] &&
           // مينفعش يبدأ التجهيز طالما فيه صنف معلّم «غير متاح» (العميل لازم يرد الأول). الرفض متاح دايمًا.
-          (request.resource.data.get('status', '') == 'cancelled' ||
-            !('unavailableItems' in resource.data)) &&
+          (nst == 'cancelled' ||
+            !('unavailableItems' in od)) &&
           historyGate(orderId, k)
         ) || (
           // «صنف غير متاح»: المحل يعلّم أصناف ناقصة على طلب جديد (أو يشيل العلامة).
-          resource.data.get('status', '') == 'new' &&
-          resource.data.get('courierId', '') == '' &&
+          st == 'new' &&
+          cid == '' &&
           k.hasOnly(['unavailableItems']) &&
-          (!('unavailableItems' in request.resource.data) ||
-            (request.resource.data.unavailableItems is list &&
-             request.resource.data.unavailableItems.size() >= 1 &&
-             request.resource.data.unavailableItems.size() <= 20))
+          (!('unavailableItems' in nd) ||
+            (nd.unavailableItems is list &&
+             nd.unavailableItems.size() >= 1 &&
+             nd.unavailableItems.size() <= 20))
         ) || (
-          resource.data.get('status', '') == 'preparing' &&
+          st == 'preparing' &&
           k.hasOnly(['ready', 'readyAt']) &&
-          request.resource.data.get('ready', false) == true &&
-          request.resource.data.get('readyAt', null) == request.time
+          nd.get('ready', false) == true &&
+          nd.get('readyAt', null) == request.time
         ) || (
-          resource.data.get('status', '') == 'preparing' &&
-          resource.data.get('courierId', '') == '' &&
+          st == 'preparing' &&
+          cid == '' &&
           k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
-          request.resource.data.get('deliveryMode', '') == 'store' &&
-          request.resource.data.get('courierName', '') is string &&
-          request.resource.data.get('courierName', '').size() >= 1 &&
-          request.resource.data.get('courierName', '').size() <= 80 &&
-          request.resource.data.get('courierPhone', '') is string &&
-          request.resource.data.get('courierPhone', '').size() <= 20 &&
-          request.resource.data.get('courierAt', null) == request.time &&
-          validCourierForOrder(request.resource.data.get('courierId', ''), resource.data.get('storeId', ''), 'store') &&
+          nd.get('deliveryMode', '') == 'store' &&
+          nd.get('courierName', '') is string &&
+          nd.get('courierName', '').size() >= 1 &&
+          nd.get('courierName', '').size() <= 80 &&
+          nd.get('courierPhone', '') is string &&
+          nd.get('courierPhone', '').size() <= 20 &&
+          nd.get('courierAt', null) == request.time &&
+          validCourierForOrder(nd.get('courierId', ''), sid, 'store') &&
           // التعيين وإزالة الطلب من القائمة العامة لازم يكونا ذريين.
           !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
         ) || (
           // إغلاق طلب المندوب الخارجي بعد تأكيد العميل وتسليم النقدية للمحل.
-          resource.data.get('status', '') == 'on_the_way' &&
-          resource.data.get('deliveryMode', '') == 'external' &&
-          resource.data.get('customerConfirmedAt', null) is timestamp &&
-          resource.data.get('cashHandedToStoreAt', null) is timestamp &&
-          resource.data.get('cashHandedToStoreBy', '') == resource.data.get('courierId', '') &&
+          st == 'on_the_way' &&
+          dm == 'external' &&
+          od.get('customerConfirmedAt', null) is timestamp &&
+          od.get('cashHandedToStoreAt', null) is timestamp &&
+          od.get('cashHandedToStoreBy', '') == cid &&
           k.hasOnly(['status', 'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning']) &&
-          request.resource.data.get('status', '') == 'delivered' &&
-          request.resource.data.get('deliveredBy', '') == resource.data.get('courierId', '') &&
-          deliveryStampOk(resource.data.get('courierId', ''), k) &&
+          nst == 'delivered' &&
+          nd.get('deliveredBy', '') == cid &&
+          deliveryStampOk(cid, k) &&
           stampRequired(k) &&
           historyGate(orderId, k)
         );
@@ -694,38 +744,45 @@ service cloud.firestore {
       // الأدمن: «جاهز للاستلام»، إلغاء تعيين المندوب، واعتماد الحالة/الإجمالي/رسوم التوصيل (+ التعيين).
       // محتوى الطلب نفسه (الأصناف والأسعار والإجمالي الأصلي) ما يتعدّلش أبدًا.
       function canAdminUpdate(k) {
+        let nd = request.resource.data;
+        let od = resource.data;
+        let st = od.get('status', '');
+        let nst = nd.get('status', '');
+        let cid = od.get('courierId', '');
+        let sid = od.get('storeId', '');
+        let oai = od.get('activeDeliveryIssueId', '');
         return (
           // «جاهز للاستلام» (كان مسموح للمدير في القواعد الأصلية، فاتحافظ عليه)
-          resource.data.get('status', '') == 'preparing' &&
+          st == 'preparing' &&
           k.hasOnly(['ready', 'readyAt']) &&
-          request.resource.data.get('ready', false) == true &&
-          request.resource.data.get('readyAt', null) == request.time
+          nd.get('ready', false) == true &&
+          nd.get('readyAt', null) == request.time
         ) || (
-          resource.data.get('status', '') == 'preparing' &&
-          resource.data.get('courierId', '') != '' &&
+          st == 'preparing' &&
+          cid != '' &&
           k.hasOnly(['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
-          !('courierId' in request.resource.data) &&
-          !('deliveryMode' in request.resource.data) &&
+          !('courierId' in nd) &&
+          !('deliveryMode' in nd) &&
           // إعادة إتاحة الطلب لا تتم إلا مع إعادة بناء الـ feed المطابق في نفس العملية.
           feedMatchesOrder(orderId, request.resource.data)
         ) || (
           // إلغاء إداري أثناء التجهيز: إغلاق الطلب وإزالة إسناد المندوب في نفس التحديث.
-          resource.data.get('status', '') == 'preparing' &&
-          request.resource.data.get('status', '') == 'cancelled' &&
+          st == 'preparing' &&
+          nst == 'cancelled' &&
           k.hasOnly(['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode']) &&
-          !('courierId' in request.resource.data) &&
-          !('deliveryMode' in request.resource.data) &&
+          !('courierId' in nd) &&
+          !('deliveryMode' in nd) &&
           historyGate(orderId, k)
         ) || (
           // إغلاق طلب في الطريق لا يسمح به إلا بعد توثيق رجوعه فعليًا للمحل.
-          resource.data.get('status', '') == 'on_the_way' &&
-          request.resource.data.get('status', '') == 'cancelled' &&
-          resource.data.get('activeDeliveryIssueId', '') is string &&
-          resource.data.get('activeDeliveryIssueId', '').size() > 0 &&
-          get(/databases/$(database)/documents/delivery_issues/$(resource.data.get('activeDeliveryIssueId', ''))).data.get('status', '') == 'store_confirmed_return' &&
+          st == 'on_the_way' &&
+          nst == 'cancelled' &&
+          oai is string &&
+          oai.size() > 0 &&
+          issueNowStatus(oai) == 'store_confirmed_return' &&
           k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
-          !('activeDeliveryIssueId' in request.resource.data) &&
-          request.resource.data.get('lastDeliveryIssueId', '') == resource.data.get('activeDeliveryIssueId', '') &&
+          !('activeDeliveryIssueId' in nd) &&
+          nd.get('lastDeliveryIssueId', '') == oai &&
           historyGate(orderId, k)
         ) || (
           k.hasOnly(['status', 'pickedUpAt', 'courierId', 'courierName',
@@ -734,13 +791,13 @@ service cloud.firestore {
                      'courierEarning', 'finalDeliveryFee']) &&
           validFinalFee(k) &&
           pricingApprovalWindow(k) &&
-          validStatus(request.resource.data.get('status', '')) &&
+          validStatus(nst) &&
           validVerification(k) &&
-          deliveryStampOk(resource.data.get('courierId', ''), k) &&
+          deliveryStampOk(cid, k) &&
           stampRequired(k) &&
           (!('courierId' in k) ||
-            (resource.data.get('courierId', '') == '' &&
-             validCourierForOrder(request.resource.data.get('courierId', ''), resource.data.get('storeId', ''), request.resource.data.get('deliveryMode', '')) &&
+            (cid == '' &&
+             validCourierForOrder(nd.get('courierId', ''), sid, nd.get('deliveryMode', '')) &&
              // يمنع إعادة تعيين مندوب فوق إسناد قائم أو بقاء نسخة قديمة في القائمة.
              !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId)))) &&
           adminMoveOk(k) &&
@@ -749,14 +806,16 @@ service cloud.firestore {
       }
 
       function evalOrderUpdate() {
+        let cid = resource.data.get('courierId', '');
+        let sid = resource.data.get('storeId', '');
         let k = request.resource.data.diff(resource.data).affectedKeys();
         return (resource.data.get('userId', '') == request.auth.uid &&
             ((k.hasOnly(['customerHidden']) && request.resource.data.get('customerHidden', false) == true) || canCustomerUpdate(k))) ||
-          ((resource.data.get('courierId', '') == request.auth.uid ||
-            resource.data.get('courierId', '') == '') &&
+          ((cid == request.auth.uid ||
+            cid == '') &&
             isCourier() && canCourierUpdate(k)) ||
-          (resource.data.get('storeId', '') != '' &&
-            isStoreOwner(resource.data.get('storeId', '')) && canOwnerUpdate(k)) ||
+          (sid != '' &&
+            isStoreOwner(sid) && canOwnerUpdate(k)) ||
           (isAdmin() && canAdminUpdate(k));
       }
 
