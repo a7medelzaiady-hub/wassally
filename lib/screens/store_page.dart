@@ -315,7 +315,11 @@ class _StorePageState extends State<StorePage> {
         _voicePath = null;
       });
       if (sentVoicePath != null) {
-        unawaited(File(sentVoicePath).delete().catchError((_) {}));
+        unawaited(() async {
+          try {
+            await File(sentVoicePath).delete();
+          } catch (_) {}
+        }());
       }
       _say('تم إرسال الطلب الخاص للمحل.');
     } catch (e) {
