@@ -36,22 +36,19 @@ class _PromoBannersState extends State<PromoBanners> {
 
   List<_Slide> get _fallback => [
     _Slide(
-      title: 'توصيل لحد باب بيتك',
-      subtitle: 'اطلب من محلات بلدك في دقايق',
-      colors: [Brand.greenDark, Brand.green],
-      icon: Icons.delivery_dining_rounded,
+      image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1100&q=80',
+      title: 'كل اللي بتحبه.. أقرب ليك',
+      subtitle: 'اكتشف أحلى المحلات والعروض حواليك',
     ),
     _Slide(
-      title: 'عروض النهاردة',
-      subtitle: 'خصومات من أحلى المطاعم والمحلات',
-      colors: [Brand.goldDeep, Brand.gold],
-      icon: Icons.local_offer_rounded,
+      image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1100&q=80',
+      title: 'كل احتياجات بيتك',
+      subtitle: 'اختار طلبك وسيبه علينا',
     ),
     _Slide(
-      title: 'أكلك سخن وبسرعة',
-      subtitle: 'من المطبخ لحد بابك',
-      colors: [Brand.green, Brand.greenLight],
-      icon: Icons.restaurant_rounded,
+      image: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=1100&q=80',
+      title: 'لحظتك الحلوة تبدأ هنا',
+      subtitle: 'مشروبات ومذاق يوصلك لحد عندك',
     ),
   ];
 
@@ -118,106 +115,136 @@ class _PromoBannersState extends State<PromoBanners> {
   }
 
   Widget _slideView(_Slide s) {
+    final title = s.title.isEmpty ? 'كل اللي بتحبه.. أقرب ليك' : s.title;
+    final subtitle =
+        s.subtitle.isEmpty ? 'اكتشف محلات وعروض قريبة منك' : s.subtitle;
+
     if (s.image != null) {
-      return Image.network(
-        s.image!,
-        fit: BoxFit.cover,
-        width: double.infinity,
-        height: double.infinity,
-        loadingBuilder: (context, child, progress) => progress == null
-            ? child
-            : Container(
-                color: Brand.green.withValues(alpha: 0.10),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: Brand.green,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-        errorBuilder: (_, _, _) => Container(
-          color: Brand.green.withValues(alpha: 0.10),
-          child: Icon(
-            Icons.image_not_supported_outlined,
-            color: Brand.green,
-            size: 32,
-          ),
-        ),
-      );
-    }
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: s.colors ?? [Brand.green, Brand.greenLight],
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-        ),
-      ),
-      child: Stack(
+      return Stack(
+        fit: StackFit.expand,
         children: [
-          Positioned(
-            left: -30,
-            bottom: -40,
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.10),
+          Image.network(
+            s.image!,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            errorBuilder: (_, _, _) => DecoratedBox(
+              decoration: BoxDecoration(gradient: Brand.headerGradient),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerRight,
+                end: Alignment.centerLeft,
+                colors: [
+                  Brand.greenDark.withValues(alpha: 0.88),
+                  Brand.greenDark.withValues(alpha: 0.48),
+                  Colors.transparent,
+                ],
+                stops: const [0, 0.56, 1],
               ),
             ),
           ),
-          Positioned(
-            left: 50,
-            top: -30,
+          PositionedDirectional(
+            start: 18,
+            top: 14,
             child: Container(
-              width: 80,
-              height: 80,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(20),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Icon(
-                  s.icon,
-                  size: 62,
-                  color: Colors.white.withValues(alpha: 0.92),
+              child: Text(
+                'وصّلي • اكتشف',
+                style: TextStyle(
+                  color: Brand.greenDark,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w900,
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        s.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        s.subtitle,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+              ),
+            ),
+          ),
+          PositionedDirectional(
+            end: 18,
+            top: 0,
+            bottom: 0,
+            child: SizedBox(
+              width: 220,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      height: 1.2,
+                      fontWeight: FontWeight.w900,
+                      shadows: [Shadow(color: Colors.black38, blurRadius: 8)],
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 7),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.96),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 11),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 9,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      'اكتشف دلوقتي',
+                      style: TextStyle(
+                        color: Brand.greenDark,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(gradient: Brand.headerGradient),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      child: Text(
+        '$title\n$subtitle',
+        textAlign: TextAlign.right,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 18,
+          height: 1.5,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
