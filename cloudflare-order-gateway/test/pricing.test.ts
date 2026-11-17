@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -261,5 +261,25 @@ describe("public order contact sanitization", () => {
       status: "preparing",
       total: 125,
     });
+  });
+});
+
+
+describe("image upload rate limiting", () => {
+  it("uses the verified UID as the limiter key", async () => {
+    let receivedKey = "";
+    const limiter = {
+      limit: async ({ key }: { key: string }) => {
+        receivedKey = key;
+        return { success: true };
+      },
+    };
+    await expect(isUploadRateLimited(limiter, "user-123")).resolves.toBe(false);
+    expect(receivedKey).toBe("user-123");
+  });
+
+  it("rejects uploads when Cloudflare reports the per-user limit exceeded", async () => {
+    const limiter = { limit: async (_: { key: string }) => ({ success: false }) };
+    await expect(isUploadRateLimited(limiter, "user-123")).resolves.toBe(true);
   });
 });
