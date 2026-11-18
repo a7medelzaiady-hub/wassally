@@ -164,6 +164,10 @@ flutter build appbundle          # ملف للرفع على Google Play
 الـworkflow اليدوي موجود في `.github/workflows/release-aab.yml` ويُشغَّل من Actions ← **Signed Google Play AAB** ← Run workflow. قبل تشغيله أضف الأسرار الأربعة التالية في Settings ← Secrets and variables ← Actions:
 
 - `KEYSTORE_BASE64`: ملف upload keystore بصيغة Base64.
+  في Windows PowerShell يمكن توليده محليًا بالأمر التالي (عدّل المسار فقط)، وانسخ الناتج مباشرة إلى GitHub Secret دون إرساله في المحادثة:
+  ```powershell
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes('H:\\keys\\wasally-release.jks'))
+  ```
 - `KEYSTORE_PASSWORD`: كلمة مرور ملف keystore.
 - `KEY_ALIAS`: اسم alias الخاص بمفتاح الرفع.
 - `KEY_PASSWORD`: كلمة مرور المفتاح.
