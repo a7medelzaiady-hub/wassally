@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 
-const env = {
+const envConfig = {
   FIREBASE_PROJECT_ID: "wasally-test",
   FIREBASE_SERVICE_ACCOUNT_EMAIL: "worker-test@wasally-test.iam.gserviceaccount.com",
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "not-used-for-invalid-token-tests",
-} as never;
+};
+const env = envConfig as never;
 
 describe("Worker order gateway route hardening", () => {
   it("exposes a minimal health response without leaking configuration", async () => {
@@ -70,7 +71,7 @@ describe("Worker order gateway route hardening", () => {
         },
         body: "{}",
       }),
-      { ...env, ALLOWED_ORIGINS: "https://wasally.example" } as never,
+      { ...envConfig, ALLOWED_ORIGINS: "https://wasally.example" } as never,
     );
     expect(response.status).toBe(403);
   });
