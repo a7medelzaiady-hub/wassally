@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, deleteCloudinarySpecialRequestAssets, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -574,6 +574,55 @@ describe("account deletion HTTP authentication guard", () => {
 
       expect(response.status).toBe(401);
       expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+
+describe("Cloudinary account deletion", () => {
+  it("sends prefix deletion parameters in the DELETE form body and follows pagination", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partial: true,
+        next_cursor: "cursor-page-2",
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partial: false,
+        deleted: { "special_requests/test": "deleted" },
+      }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    try {
+      await deleteCloudinarySpecialRequestAssets({
+        FIREBASE_PROJECT_ID: "wasally-test",
+        FIREBASE_SERVICE_ACCOUNT_EMAIL: "test-only@wasally.invalid",
+        FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "test-only-not-a-secret",
+        CLOUDINARY_CLOUD_NAME: "test-cloud",
+        CLOUDINARY_API_KEY: "test-key",
+        CLOUDINARY_API_SECRET: "test-secret",
+        UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
+      }, "customer-uid-123");
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      for (const [input, init] of fetchSpy.mock.calls) {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        expect(url.pathname).toBe("/v1_1/test-cloud/resources/image/upload");
+        expect(url.search).toBe("");
+        expect(init?.method).toBe("DELETE");
+        expect(new Headers(init?.headers).get("content-type"))
+          .toBe("application/x-www-form-urlencoded");
+      }
+
+      const firstBody = new URLSearchParams(String(fetchSpy.mock.calls[0][1]?.body));
+      expect(firstBody.get("prefix")).toMatch(/^special_requests\/[a-f0-9]{64}$/);
+      expect(firstBody.get("invalidate")).toBe("true");
+      expect(firstBody.has("next_cursor")).toBe(false);
+
+      const secondBody = new URLSearchParams(String(fetchSpy.mock.calls[1][1]?.body));
+      expect(secondBody.get("prefix")).toBe(firstBody.get("prefix"));
+      expect(secondBody.get("invalidate")).toBe("true");
+      expect(secondBody.get("next_cursor")).toBe("cursor-page-2");
     } finally {
       fetchSpy.mockRestore();
     }
