@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
@@ -111,7 +112,7 @@ class _AdminStoreOwnersPageState extends State<AdminStoreOwnersPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('أصحاب المحلات')),
+      appBar: AppBar(title: const Text('أصحاب المحلات'), actions: const [HomeActionButton()]),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _stores,
         builder: (context, storesSnap) {
