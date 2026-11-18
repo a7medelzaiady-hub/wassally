@@ -1,13 +1,15 @@
 name: Maestro Android UI Smoke
 
 on:
+  # Run once for pull requests; run on push only after changes reach main.
+  # Avoid duplicate emulator jobs for a feature-branch push plus its pull_request event.
   push:
-    branches: [ main, hardening/server-orders-gateway-ci ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
 concurrency:
-  group: maestro-${{ github.ref }}
+  group: maestro-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
