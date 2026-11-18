@@ -4,7 +4,7 @@ on:
   # Run once for pull requests; run on push only after changes reach main.
   # Also run the dedicated Maestro fix PR against the server-orders PR branch.
   push:
-    branches: [ main ]
+    branches: [ main, 'ci/**' ]
   pull_request:
     branches: [ main, hardening/server-orders-gateway-ci ]
 
