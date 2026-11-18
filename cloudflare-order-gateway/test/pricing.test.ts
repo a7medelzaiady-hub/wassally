@@ -93,6 +93,17 @@ describe("trusted catalog option pricing", () => {
     })).toThrow();
   });
 
+  it("rejects non-string option labels and non-numeric client totals", () => {
+    expect(() => resolveCatalogOptions(product, {
+      options: [123],
+      optionsTotal: 0,
+    })).toThrow();
+    expect(() => resolveCatalogOptions(product, {
+      options: ["سادة"],
+      optionsTotal: "0",
+    })).toThrow();
+  });
+
   it("rejects client-forged option totals and malformed catalog prices", () => {
     expect(() => resolveCatalogOptions(product, {
       options: ["زيادة"],
