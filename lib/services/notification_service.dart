@@ -77,6 +77,22 @@ class NotificationService {
     await _registerGrantedDevice();
   }
 
+  /// Keeps the public courier topic aligned with the authenticated account's
+  /// verified active roles. The Worker sends available-order pushes to this topic.
+  static Future<void> syncCourierTopic({required bool isCourier}) async {
+    if (!_supported || !await hasPermission()) return;
+    try {
+      final messaging = FirebaseMessaging.instance;
+      if (isCourier) {
+        await messaging.subscribeToTopic('couriers');
+      } else {
+        await messaging.unsubscribeFromTopic('couriers');
+      }
+    } catch (e) {
+      debugPrint('تعذر مزامنة اشتراك إشعارات المندوب: $e');
+    }
+  }
+
   static Future<void> _registerGrantedDevice() async {
     final user = FirebaseAuth.instance.currentUser;
     if (!_supported || user == null) return;
