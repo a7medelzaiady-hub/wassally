@@ -82,7 +82,8 @@ class UpdateService {
 
   @visibleForTesting
   static bool shouldRefreshOnResume(DateTime? lastCheck, DateTime now) =>
-      lastCheck == null || now.difference(lastCheck) >= const Duration(hours: 6);
+      lastCheck == null ||
+      now.difference(lastCheck) >= const Duration(hours: 6);
 
   @visibleForTesting
   static bool shouldShowResumeReminder({
@@ -145,7 +146,10 @@ class UpdateService {
   static Future<void> _snooze() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_snoozeKey, snoozeUntil(DateTime.now()).millisecondsSinceEpoch);
+      await prefs.setInt(
+        _snoozeKey,
+        snoozeUntil(DateTime.now()).millisecondsSinceEpoch,
+      );
     } catch (_) {}
   }
 
@@ -265,7 +269,6 @@ class UpdateService {
                 TextButton(
                   onPressed: () {
                     _snooze();
-                    _bannerShownThisSession = true;
                     Navigator.of(dialogContext).pop();
                   },
                   child: const Text('لاحقاً'),
