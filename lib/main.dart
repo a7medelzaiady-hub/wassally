@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
+import 'services/e2e_support.dart';
 import 'services/error_guard.dart';
 import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
@@ -31,6 +32,7 @@ Future<void> _bootstrap() async {
       defaultTargetPlatform == TargetPlatform.macOS)) {
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
   }
+  await E2eSupport.connectEmulators();
   await PerformanceMonitor.configure();
   await _activateAppCheck();
   await ThemeController.instance.load();

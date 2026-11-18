@@ -1,0 +1,17 @@
+appId: com.wassally.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible: "دخول تجريبي: مندوب"
+    timeout: 60000
+- tapOn: "دخول تجريبي: مندوب"
+- extendedWaitUntil:
+    visible: "استلم الطلب"
+    timeout: 90000
+- tapOn: "استلم الطلب"
+- extendedWaitUntil:
+    visible: ".*وصلت إلى عنوان العميل.*"
+    timeout: 60000

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../legal/legal_content.dart';
 import '../services/auth_service.dart';
+import '../services/e2e_support.dart';
 import 'legal_page.dart';
 import '../theme/app_theme.dart';
 
@@ -176,6 +177,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('المتابعة بحساب جوجل'),
                           ),
                   ),
+                  if (E2eSupport.enabled) ...[
+                    const SizedBox(height: 10),
+                    for (final r in const [
+                      ('customer', 'عميل'),
+                      ('owner', 'صاحب محل'),
+                      ('courier', 'مندوب'),
+                    ])
+                      TextButton(
+                        onPressed: () => E2eSupport.signInAs(
+                          'sub-${r.$1}',
+                          '${r.$1}@e2e.test',
+                        ),
+                        child: Text(
+                          'دخول تجريبي: ${r.$2}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 14),
                   Wrap(
                     alignment: WrapAlignment.center,
