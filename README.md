@@ -122,14 +122,14 @@ flutter test
 
 ## أندرويد
 
-- اسم الحزمة: `com.wasally.app` (في `android/app/build.gradle.kts`). لازم يكون فريد على Google Play.
+- اسم الحزمة: `com.wassally.app` (في `android/app/build.gradle.kts`). لازم يكون فريد على Google Play.
 - بناء Release يتوقف إذا لم يوجد `android/key.properties` ومفتاح توقيع خاص؛ لا يستخدم مفتاح Debug تلقائيًا.
 - ملفات `*.jks` و`key.properties` متترفعش على GitHub (موجودة في `.gitignore`).
 - أيقونة التطبيق في `android/app/src/main/res/mipmap-*`، ونسخة 512 لـ Google Play في `store-assets/icon-512.png`.
 
 ### تسجيل التطبيق في Firebase
 1. Firebase Console ← Project settings ← **Add app** ← Android.
-2. اسم الحزمة: `com.wasally.app`، وحط بصمة **SHA-1** (وSHA-256 لو ظاهرة).
+2. اسم الحزمة: `com.wassally.app`، وحط بصمة **SHA-1** (وSHA-256 لو ظاهرة).
 3. نزّل `google-services.json` وحطه في `android/app/` مكان القديم.
 4. افعل Google من Authentication ← Sign-in method (لو مش مفعّل).
 
@@ -158,6 +158,17 @@ flutter run                      # تجربة على موبايل متوصل ب�
 flutter build apk --release      # ملف APK تبعته لأصحابك
 flutter build appbundle          # ملف للرفع على Google Play
 ```
+
+### بناء AAB موقّع من GitHub Actions
+
+الـworkflow اليدوي موجود في `.github/workflows/release-aab.yml` ويُشغَّل من Actions ← **Signed Google Play AAB** ← Run workflow. قبل تشغيله أضف الأسرار الأربعة التالية في Settings ← Secrets and variables ← Actions:
+
+- `KEYSTORE_BASE64`: ملف upload keystore بصيغة Base64.
+- `KEYSTORE_PASSWORD`: كلمة مرور ملف keystore.
+- `KEY_ALIAS`: اسم alias الخاص بمفتاح الرفع.
+- `KEY_PASSWORD`: كلمة مرور المفتاح.
+
+لا ترفع ملف `.jks` أو `key.properties` إلى المستودع، ولا ترسل كلمات المرور في المحادثة. الـworkflow يبني AAB موقّعًا، يتحقق من سلامة الأرشيف، ويرفعه كـartifact لمدة 7 أيام، ثم يحذف ملفات التوقيع من runner. لا يرفع التطبيق تلقائيًا إلى Google Play. تأكد أن شهادة مفتاح الرفع هي المسجلة في Play Console قبل إرسال الملف.
 
 
 ## الإشعارات (خطة Firebase Spark)
