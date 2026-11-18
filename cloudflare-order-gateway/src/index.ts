@@ -858,7 +858,38 @@ async function resolveItems(
   if (lines.length < 1 || lines.length > Number(env.MAX_ORDER_LINES ?? 100)) {
     throw new HttpError(400, "عدد الأصناف خارج الحدود المسموحة.");
   }
-  const productIds = [...new Set(lines.map((line: any) => String(line?.productId ?? "").trim()).filter(Boolean))];
+  // Validate every line before batchGet so malformed requests cannot trigger needless Firestore reads.
+  for (const line of lines) {
+    if (!line || typeof line !== "object" || Array.isArray(line)) {
+      throw new HttpError(400, "بيانات أحد الأصناف غير صحيحة.");
+    }
+    if (typeof line.qty !== "number" || !Number.isInteger(line.qty) ||
+        line.qty < 1 || line.qty > Number(env.MAX_LINE_QTY ?? 50)) {
+      throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
+    }
+    if (typeof line.expectedPrice !== "number" || !Number.isFinite(line.expectedPrice) ||
+        line.expectedPrice <= 0) {
+      throw new HttpError(400, "سعر الصنف المرسل غير صالح.");
+    }
+    if (line.productId !== undefined && typeof line.productId !== "string") {
+      throw new HttpError(400, "معرّف صنف غير صالح.");
+    }
+    if (line.options !== undefined &&
+        (!Array.isArray(line.options) || line.options.length > 200 ||
+          line.options.some((option: unknown) => typeof option !== "string"))) {
+      throw new HttpError(400, "صيغة اختيارات أحد الأصناف غير صحيحة.");
+    }
+    if (line.optionsTotal !== undefined &&
+        (typeof line.optionsTotal !== "number" || !Number.isFinite(line.optionsTotal) ||
+          line.optionsTotal < 0)) {
+      throw new HttpError(400, "قيمة إضافات أحد الأصناف غير صحيحة.");
+    }
+    if (!String(line.productId ?? "").trim() &&
+        (typeof line.name !== "string" || !line.name.trim() || line.name.length > 200)) {
+      throw new HttpError(400, "اسم الصنف غير صالح.");
+    }
+  }
+  const productIds = [...new Set(lines.map((line: any) => String(line.productId ?? "").trim()).filter(Boolean))];
   if (productIds.some((id) => id.includes("/") || id.length > 150)) {
     throw new HttpError(400, "معرّف صنف غير صالح.");
   }
