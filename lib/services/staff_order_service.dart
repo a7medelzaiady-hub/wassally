@@ -211,17 +211,47 @@ class StaffOrderService {
   }
 
   /// المندوب يسجل بلاغ التسليم فقط؛ العميل هو من يؤكد الاستلام.
+  /// نعيد قراءة الطلب وملف المندوب مرة واحدة هنا لتقديم سبب واضح قبل الكتابة،
+  /// مع إبقاء قواعد Firestore هي الحاجز الأمني النهائي.
   static Future<void> reportCustomerDelivery(AppOrder order) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) throw StateError('سجّل دخول الأول.');
-    if (order.courierId != uid) throw StateError('الطلب مش متعيّن ليك.');
-    if (order.status != OrderStatus.onTheWay ||
-        order.courierArrivedAt == null ||
-        order.activeDeliveryIssueId.isNotEmpty ||
-        order.customerDeliveryReportedAt != null) {
-      throw StateError('لا يمكن تسجيل التسليم في الحالة الحالية.');
+
+    final courierRef = FirebaseFirestore.instance.collection('couriers').doc(uid);
+    final orderRef = _orders.doc(order.id);
+    final results = await Future.wait([orderRef.get(), courierRef.get()]);
+    final orderSnapshot = results[0] as DocumentSnapshot<Map<String, dynamic>>;
+    final courierSnapshot = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+
+    if (!courierSnapshot.exists ||
+        courierSnapshot.data()?['active'] == false) {
+      throw StateError('حساب المندوب غير نشط أو غير معتمد. راجع الإدارة.');
     }
-    await _orders.doc(order.id).update({
+    final data = orderSnapshot.data();
+    if (data == null) throw StateError('الطلب غير موجود أو تم حذفه.');
+    if ((data['courierId'] ?? '').toString() != uid) {
+      throw StateError('الطلب غير معيّن لحسابك. لا يمكن تسجيل التسليم.');
+    }
+    if (data['status'] != OrderStatus.onTheWay.key) {
+      throw StateError('لازم يكون الطلب في حالة «في الطريق» قبل تسجيل التسليم.');
+    }
+    if (data['ready'] != true || data['readyAt'] is! Timestamp) {
+      throw StateError('المحل لم يؤكد جاهزية الطلب للاستلام بعد.');
+    }
+    if (data['courierArrivedAt'] is! Timestamp) {
+      throw StateError('سجّل وصولك إلى عنوان العميل أولاً.');
+    }
+    if ((data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
+      throw StateError('يوجد بلاغ توصيل مفتوح لهذا الطلب؛ لا يمكن تسجيل التسليم الآن.');
+    }
+    if (data['customerDeliveryReportedAt'] is Timestamp) {
+      throw StateError('تم تسجيل بلاغ التسليم بالفعل، انتظر تأكيد العميل.');
+    }
+    if (data['deliveryMode'] != 'store' && data['deliveryMode'] != 'external') {
+      throw StateError('نوع المندوب غير محدد على الطلب. راجع تعيين الطلب.');
+    }
+
+    await orderRef.update({
       'customerDeliveryReportedAt': FieldValue.serverTimestamp(),
       'customerDeliveryReportedBy': uid,
     });
