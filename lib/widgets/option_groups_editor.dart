@@ -120,6 +120,7 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
   }
 
   void _save() {
+    FocusManager.instance.primaryFocus?.unfocus();
     final built = <OptionGroup>[
       for (final draft in _drafts)
         if (draft.build() case final group?) group,
@@ -161,7 +162,10 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+          onPressed: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(context, rootNavigator: true).pop();
+          },
           child: const Text('إلغاء'),
         ),
         ElevatedButton(
