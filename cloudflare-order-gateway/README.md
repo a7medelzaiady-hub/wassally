@@ -7,7 +7,8 @@
 - تتحقق من Firebase ID token وتستخرج UID من الرمز الموقّع، ولا تقبل UID من جسم الطلب. كما تشترط Google provider، وتتحقق من وجود حساب Firebase Auth وعدم تعطيله وعدم إلغاء الرمز عبر Identity Toolkit `projects.accounts:lookup` (صلاحية `firebaseauth.users.get`). نتيجة الحالة تُخزّن مؤقتًا 5 ثوانٍ لكل Worker isolate لتقليل الاستدعاءات؛ لا تُضاف قراءة إلى Firestore. مسار حذف الحساب يتحقق من حد `validSince` أيضًا، ويسمح فقط بإعادة المحاولة الآمنة إذا كان الحساب حُذف بالفعل.
 - تقرأ المحل والكتالوج من Firestore مباشرةً باستخدام حساب خدمة محفوظ كـ Cloudflare Secret.
 - تستخدم سعر الكتالوج الحالي، وتتحقق من توافر الصنف والعروض وتاريخ انتهائها.
-- تستخدم السعر القادم من التطبيق كاختبار لاكتشاف تغيّر السعر فقط؛ لا تستخدمه أبدًا كسعر للطلب.
+- تتحقق من أسماء اختيارات الصنف وحدود كل مجموعة (الإجباري/الاختياري والحد الأقصى)، وتحسب الإضافات المدفوعة من `optionGroups` في الكتالوج فقط. ترفض الاختيار المفقود أو المكرر أو غير المعروف أو السعر غير المطابق.
+- تستخدم `expectedPrice` و`optionsTotal` القادمين من التطبيق لاكتشاف تغيّر السلة فقط؛ لا تستخدمهما أبدًا كمصدر للسعر المحفوظ.
 - تدعم الأصناف القديمة ذات الاسم الفريد فقط. الاسم المكرر في الكتالوج القديم يُرفض بدل تخمين الصنف.
 - تحسب الخصم ورسوم المنطقة والإجمالي على الخادم.
 - تتحقق من التقييد الإداري وفاصل 20 ثانية.
@@ -67,6 +68,7 @@ flutter build apk --release --dart-define=WASALLY_ORDER_GATEWAY_URL=https://thro
 
 - `WASALLY_ORDER_GATEWAY_URL` enables signed image uploads (and secure account deletion) through the Worker.
 - Order creation and editing remain on the Spark-compatible Firestore path by default. Only add `--dart-define=WASALLY_SERVER_ORDERS=true` after the Worker order endpoint has passed a real authenticated test **and** Firestore `app_info/security.serverOrders` has been enabled. Do not enable the build flag before both steps are complete.
+- When the server order path is enabled, the app skips its duplicate client-side preflight reads for customer restrictions, store status, and promo validity; the Worker performs the authoritative checks. This avoids paying twice for the same Firestore reads and adds no listeners.
 ```
 لا يوجد مفتاح سري داخل تطبيق Flutter؛ المصادقة تتم برمز Firebase للمستخدم. رفع الصور لن يعمل عبر النسخة الجديدة إلا بعد نشر Worker وضبط أسرار Cloudinary.
 
