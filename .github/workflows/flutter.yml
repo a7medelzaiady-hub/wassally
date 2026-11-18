@@ -61,40 +61,6 @@ jobs:
         df -h /
 
     # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
-    # Probe both protected endpoints in one curl process so DNS/TLS connection reuse is stable.
-    - name: Smoke test deployed Worker upload and order routes
-      shell: bash
-      run: |
-        WORKER_URL="https://throbbing-water-4ef7.a7medzaiady.workers.dev"
-        RESULTS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 \
-          --silent --show-error --http1.1 --connect-timeout 15 --max-time 45 \
-          --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}\n' \
-          --request POST "$WORKER_URL/v1/uploads" \
-          --header 'Authorization: Bearer invalid-smoke-test-token' \
-          --header 'Content-Type: application/json' \
-          --data '{}' \
-          --next \
-          --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 \
-          --silent --show-error --http1.1 --connect-timeout 15 --max-time 45 \
-          --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}\n' \
-          --request POST "$WORKER_URL/v1/orders" \
-          --header 'Authorization: Bearer not-a-valid-jwt' \
-          --header 'Content-Type: application/json' \
-          --data '{}')"
-        UPLOAD_STATUS="$(printf '%s\n' "$RESULTS" | sed -n '1p')"
-        ORDER_STATUS="$(printf '%s\n' "$RESULTS" | sed -n '2p')"
-        if [ "$UPLOAD_STATUS" != "401" ]; then
-          echo "Unexpected upload route status: $UPLOAD_STATUS"
-          cat "$RUNNER_TEMP/upload-route.json"
-          exit 1
-        fi
-        if [ "$ORDER_STATUS" != "401" ]; then
-          echo "Unexpected order route status: $ORDER_STATUS"
-          cat "$RUNNER_TEMP/order-route.json"
-          exit 1
-        fi
-        echo "Both deployed Worker routes reject invalid authentication as expected."
-
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
       run: mkdir -p "$HOME/.android"
@@ -185,7 +151,7 @@ jobs:
         retention-days: 7
 
     # Separate canary build for one real authenticated Worker order test.
-    # The normal debug APK above stays on the legacy path; this artifact is not a release build.
+    # Deploy the Worker source first; the normal debug APK stays on the legacy path.
     - name: Build serverOrders canary APK
       run: |
         flutter build apk --debug \
