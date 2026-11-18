@@ -356,6 +356,9 @@ class OrderService {
                     if (e.key.id.isEmpty) 'name': e.key.name,
                     'expectedPrice': e.key.price,
                     'qty': e.value,
+                    if (e.key.chosen.isNotEmpty)
+                      'options': e.key.chosen.map((option) => option.name).toList(),
+                    if (e.key.chosenTotal > 0) 'optionsTotal': e.key.chosenTotal,
                   })
               .toList(),
           if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
@@ -477,6 +480,8 @@ class OrderService {
                     if (line.productId.isEmpty) 'name': line.name,
                     'expectedPrice': line.price,
                     'qty': line.qty,
+                    if (line.options.isNotEmpty) 'options': line.options,
+                    if (line.optionsTotal > 0) 'optionsTotal': line.optionsTotal,
                   })
               .toList(),
           'contact': {
