@@ -45,6 +45,11 @@ jobs:
     - name: Run tests
       run: flutter test
 
+    # Compile-time canary only: verify the app recognizes the secure Worker order mode.
+    # The installable debug APK below remains on the legacy path until production is verified.
+    - name: Test serverOrders-enabled gateway configuration
+      run: flutter test --dart-define=WASALLY_SERVER_ORDERS=true test/services/order_gateway_test.dart
+
     # تفريغ مساحة من الأدوات غير المطلوبة قبل تنزيل NDK وبناء Android.
     - name: Free disk space before Android build
       run: |
