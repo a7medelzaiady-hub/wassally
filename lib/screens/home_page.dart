@@ -1041,7 +1041,8 @@ class _HomePageState extends State<HomePage>
           ),
         ),
         SizedBox(
-          height: 116,
+          // مساحة إضافية تمنع تجاوز النصوص وزر الاختيار أسفل الكارت.
+          height: 124,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
