@@ -136,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'في ثواني',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 30,
+                            fontSize: 26,
                             height: 1.4,
                             fontWeight: FontWeight.w800,
                           ),
