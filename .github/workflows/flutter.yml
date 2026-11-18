@@ -66,16 +66,19 @@ jobs:
       run: |
         WORKER_URL="https://throbbing-water-4ef7.a7medelzaiady.workers.dev"
         # Verify the app-critical upload route directly; older deployed Worker versions may not expose /health.
-        STATUS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}' \
+        RESULT="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}|%{remote_ip}' \
           --request POST "$WORKER_URL/v1/uploads" \
           --header 'Authorization: Bearer invalid-smoke-test-token' \
           --header 'Content-Type: application/json' \
           --data '{}')"
-        if [ "$STATUS" != "401" ]; then
-          echo "Unexpected upload route status: $STATUS"
+        STATUS="${RESULT%%|*}"
+        WORKER_IP="${RESULT##*|}"
+        if [ "$STATUS" != "401" ] || [ -z "$WORKER_IP" ]; then
+          echo "Unexpected upload route response: $RESULT"
           cat "$RUNNER_TEMP/upload-route.json"
           exit 1
         fi
+        echo "WORKER_IP=$WORKER_IP" >> "$GITHUB_ENV"
         echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
 
     # Order creation must exist in the deployed Worker and reject unauthenticated clients.
@@ -83,9 +86,9 @@ jobs:
     - name: Smoke test authenticated order gateway route
       shell: bash
       run: |
-        WORKER_URL="https://throbbing-water-4ef7.a7medzaiady.workers.dev"
-        STATUS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --silent --show-error --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}' \
-          --request POST "$WORKER_URL/v1/orders" \
+        WORKER_HOST="throbbing-water-4ef7.a7medzaiady.workers.dev"
+        STATUS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --resolve "$WORKER_HOST:443:$WORKER_IP" --silent --show-error --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}' \
+          --request POST "https://$WORKER_HOST/v1/orders" \
           --header 'Authorization: Bearer not-a-valid-jwt' \
           --header 'Content-Type: application/json' \
           --data '{}')"
