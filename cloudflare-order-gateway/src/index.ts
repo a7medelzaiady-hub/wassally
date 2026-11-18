@@ -208,7 +208,10 @@ export function resolveCatalogOptions(
       !Array.isArray(selectedRaw) || selectedRaw.length > 200) {
     throw new HttpError(409, "خيارات أحد الأصناف غير صالحة في الكتالوج.");
   }
-  const selected = selectedRaw.map((value) => String(value ?? "").trim());
+  if (selectedRaw.some((value) => typeof value !== "string")) {
+    throw new HttpError(400, "صيغة اختيارات أحد الأصناف غير صحيحة.");
+  }
+  const selected = selectedRaw.map((value) => value.trim());
   if (selected.some((name) => !name || name.length > 80) ||
       new Set(selected).size !== selected.length) {
     throw new HttpError(400, "اختيارات أحد الأصناف غير صالحة أو مكررة.");
@@ -270,7 +273,10 @@ export function resolveCatalogOptions(
     }
   }
 
-  const expectedOptionsTotal = line.optionsTotal === undefined ? 0 : Number(line.optionsTotal);
+  if (line.optionsTotal !== undefined && typeof line.optionsTotal !== "number") {
+    throw new HttpError(400, "قيمة إضافات أحد الأصناف غير صحيحة.");
+  }
+  const expectedOptionsTotal = line.optionsTotal === undefined ? 0 : line.optionsTotal;
   optionsTotal = money(optionsTotal);
   if (!Number.isFinite(expectedOptionsTotal) ||
       Math.abs(expectedOptionsTotal - optionsTotal) >= 0.01) {
@@ -865,11 +871,15 @@ async function resolveItems(
     if (!line || typeof line !== "object" || Array.isArray(line)) {
       throw new HttpError(400, "بيانات أحد الأصناف غير صحيحة.");
     }
-    const qty = Number(line.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
+    const qty = line.qty;
+    if (typeof qty !== "number" || !Number.isInteger(qty) ||
+        qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
       throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
     }
-    const productId = String(line?.productId ?? "").trim();
+    if (line.productId !== undefined && typeof line.productId !== "string") {
+      throw new HttpError(400, "معرّف صنف غير صالح.");
+    }
+    const productId = String(line.productId ?? "").trim();
     let product: JsonMap;
     let resolvedId = productId;
     let isLegacy = false;
@@ -898,7 +908,10 @@ async function resolveItems(
     );
     const resolvedOptions = resolveCatalogOptions(product, line as JsonMap);
     const price = money(basePrice + resolvedOptions.optionsTotal);
-    const expectedPrice = Number(line?.expectedPrice);
+    const expectedPrice = line.expectedPrice;
+    if (typeof expectedPrice !== "number" || !Number.isFinite(expectedPrice)) {
+      throw new HttpError(400, "سعر الصنف المرسل غير صالح.");
+    }
     // expectedPrice is only a stale-cart check; the saved price and option surcharges come from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
       throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.");
