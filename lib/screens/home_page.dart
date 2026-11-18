@@ -63,6 +63,24 @@ class _StoreItem {
   }
 }
 
+class _HomeHeaderWaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path()
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, size.height - 16)
+      ..cubicTo(size.width * 0.78, size.height + 1, size.width * 0.58,
+          size.height - 12, size.width * 0.38, size.height - 5)
+      ..cubicTo(size.width * 0.20, size.height + 2, size.width * 0.08,
+          size.height - 2, 0, size.height - 12)
+      ..close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant _HomeHeaderWaveClipper oldClipper) => false;
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -718,12 +736,11 @@ class _HomePageState extends State<HomePage>
   /// وشريط البحث جوّه الهيدر نفسه، وحافة سفلية متموّجة.
   Widget _header() {
     final top = MediaQuery.paddingOf(context).top;
-    return Container(
-      decoration: BoxDecoration(
+    return ClipPath(
+      clipper: _HomeHeaderWaveClipper(),
+      child: Container(
         color: Brand.green,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(26)),
-      ),
-      padding: EdgeInsets.fromLTRB(16, top + 10, 16, 18),
+        padding: EdgeInsets.fromLTRB(16, top + 8, 16, 24),
       child: Column(
         children: [
           Row(
@@ -740,7 +757,7 @@ class _HomePageState extends State<HomePage>
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.85),
                           fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                          fontSize: 11.5,
                         ),
                       ),
                       Row(
@@ -753,7 +770,7 @@ class _HomePageState extends State<HomePage>
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
-                                fontSize: 16,
+                                fontSize: 14.5,
                               ),
                             ),
                           ),
@@ -774,32 +791,33 @@ class _HomePageState extends State<HomePage>
               _cartButton(),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           _searchBar(),
         ],
+      ),
       ),
     );
   }
 
   Widget _searchBar() {
     return Container(
-      height: 50,
+      height: 46,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(24),
               ),
       child: TextField(
         readOnly: true,
         onTap: _openDirectory,
         textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           hintText: 'ابحث عن مطعم أو محل...',
           hintStyle: TextStyle(
             color: Colors.grey.shade600,
             fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontSize: 13.5,
           ),
           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade600),
           filled: true,
