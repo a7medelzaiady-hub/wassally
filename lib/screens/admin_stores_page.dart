@@ -258,7 +258,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
         if (!snap.hasData) {
           return Scaffold(
-            appBar: AppBar(title: const Text('المحلات والأصناف')),
+            appBar: AppBar(title: const Text('المحلات والأصناف'), actions: const [HomeActionButton()]),
             body: Center(child: CircularProgressIndicator(color: kPrimary)),
           );
         }
@@ -713,6 +713,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       appBar: AppBar(
         title: Text(isNew ? 'محل جديد' : 'تعديل المحل'),
         actions: [
+          const HomeActionButton(),
           if (!isNew)
             IconButton(
               tooltip: 'حذف المحل',
