@@ -7,6 +7,74 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:244081237486:android:82a134e150bb8f2ed4c2ff",
+        "android_client_info": {
+          "package_name": "com.wassally.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "244081237486-9v62fer7gq5tv0nudk1u5jep39uilt26.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "1d1e10df6d9c388160d6d4d19d4d03c1884080fe"
+          }
+        },
+        {
+          "client_id": "244081237486-fr07pdjlhgm7vm43nmn371ij5tbmo52s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "c6d77a7976d529b4690f7383eff7b61fc9656f85"
+          }
+        },
+        {
+          "client_id": "244081237486-r24qt129p555iv1j8b0vpkou8l712msu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "4e3e0dad5f014c58c433ae44c58debbf22a04810"
+          }
+        },
+        {
+          "client_id": "244081237486-sipp9hnjljtvmeb0rginf4dg77ue7bnq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "1c9ea8658006279a0f8c29d045973cc88b07343f"
+          }
+        },
+        {
+          "client_id": "244081237486-ohkfj9eil50s4m6d7qsem82tvb4fhrol.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiXnivMROVANPuqCE6_bBOn2ZgycbDeQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "244081237486-ohkfj9eil50s4m6d7qsem82tvb4fhrol.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "244081237486-u51am08l9jqnne9ig2fn9v5fl7u004l4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cityStore"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:244081237486:android:b97ac2f42501c855d4c2ff",
         "android_client_info": {
           "package_name": "com.example.city_store"
@@ -131,74 +199,6 @@
           "android_info": {
             "package_name": "com.wassallny.package",
             "certificate_hash": "1d1e10df6d9c388160d6d4d19d4d03c1884080fe"
-          }
-        },
-        {
-          "client_id": "244081237486-ohkfj9eil50s4m6d7qsem82tvb4fhrol.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAiXnivMROVANPuqCE6_bBOn2ZgycbDeQM"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "244081237486-ohkfj9eil50s4m6d7qsem82tvb4fhrol.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "244081237486-u51am08l9jqnne9ig2fn9v5fl7u004l4.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.example.cityStore"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:244081237486:android:82a134e150bb8f2ed4c2ff",
-        "android_client_info": {
-          "package_name": "com.wassally.app"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "244081237486-9v62fer7gq5tv0nudk1u5jep39uilt26.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wassally.app",
-            "certificate_hash": "1d1e10df6d9c388160d6d4d19d4d03c1884080fe"
-          }
-        },
-        {
-          "client_id": "244081237486-fr07pdjlhgm7vm43nmn371ij5tbmo52s.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wassally.app",
-            "certificate_hash": "c6d77a7976d529b4690f7383eff7b61fc9656f85"
-          }
-        },
-        {
-          "client_id": "244081237486-r24qt129p555iv1j8b0vpkou8l712msu.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wassally.app",
-            "certificate_hash": "4e3e0dad5f014c58c433ae44c58debbf22a04810"
-          }
-        },
-        {
-          "client_id": "244081237486-sipp9hnjljtvmeb0rginf4dg77ue7bnq.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.wassally.app",
-            "certificate_hash": "1c9ea8658006279a0f8c29d045973cc88b07343f"
           }
         },
         {
