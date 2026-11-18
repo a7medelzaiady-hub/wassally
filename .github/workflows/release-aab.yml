@@ -65,6 +65,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
           test -s android/upload-keystore.jks
           cat > android/key.properties <<EOF
