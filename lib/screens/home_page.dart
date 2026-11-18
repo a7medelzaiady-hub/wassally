@@ -603,8 +603,8 @@ class _HomePageState extends State<HomePage>
             customBorder: const CircleBorder(),
             onTap: _openNotifications,
             child: SizedBox(
-              width: 42,
-              height: 42,
+              width: 38,
+              height: 38,
               child: AnimatedBuilder(
                 animation: _bellCtrl,
                 builder: (context, child) {
@@ -660,78 +660,15 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── الهيدر ─────────────────────────
 
-  /// زر السلة (شنطة) بعدّاد، زي هيدر طلبات.
-  Widget _cartButton() {
-    return ListenableBuilder(
-      listenable: cart,
-      builder: (context, _) {
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Material(
-              color: Colors.white,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => shellTab.value = 1,
-                child: SizedBox(
-                  width: 42,
-                  height: 42,
-                  child: Icon(
-                    Icons.shopping_bag_outlined,
-                    color: Brand.ink,
-                    size: 22,
-                  ),
-                ),
-              ),
-            ),
-            if (cart.count > 0)
-              PositionedDirectional(
-                bottom: -4,
-                start: -4,
-                child: Container(
-                  constraints: const BoxConstraints(
-                    minWidth: 20,
-                    minHeight: 20,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Brand.greenDark,
-                    shape: cart.count > 9
-                        ? BoxShape.rectangle
-                        : BoxShape.circle,
-                    borderRadius: cart.count > 9
-                        ? BorderRadius.circular(10)
-                        : null,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                  child: Text(
-                    cart.count > 99 ? '99+' : '${cart.count}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
   /// الهيدر زي طلبات: لون واحد، "التوصيل إلى" فوق على جنب والسلة على الجنب التاني،
   /// وشريط البحث جوّه الهيدر نفسه، وحافة سفلية متموّجة.
   Widget _header() {
     final top = MediaQuery.paddingOf(context).top;
-    return Container(
-      decoration: BoxDecoration(
-        color: Brand.green,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(26)),
-      ),
-      padding: EdgeInsets.fromLTRB(16, top + 10, 16, 18),
+    return ClipPath(
+      clipper: _WaveBottomClipper(),
+      child: Container(
+      color: Brand.green,
+      padding: EdgeInsets.fromLTRB(16, top + 6, 16, 22),
       child: Column(
         children: [
           Row(
@@ -778,24 +715,23 @@ class _HomePageState extends State<HomePage>
               ),
               const SizedBox(width: 10),
               _bell(),
-              const SizedBox(width: 8),
-              _cartButton(),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           _searchBar(),
         ],
+      ),
       ),
     );
   }
 
   Widget _searchBar() {
     return Container(
-      height: 50,
+      height: 42,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(22),
               ),
       child: TextField(
         readOnly: true,
@@ -812,7 +748,7 @@ class _HomePageState extends State<HomePage>
           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey.shade600),
           filled: true,
           fillColor: Colors.transparent,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
           border: InputBorder.none,
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
@@ -1500,4 +1436,21 @@ class _CategoryTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _WaveBottomClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const h = 12.0;
+    final b = size.height - h;
+    return Path()
+      ..lineTo(0, b)
+      ..quadraticBezierTo(size.width * 0.25, b + h * 1.6, size.width * 0.5, b + h * 0.5)
+      ..quadraticBezierTo(size.width * 0.75, b - h * 0.6, size.width, b + h * 0.6)
+      ..lineTo(size.width, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

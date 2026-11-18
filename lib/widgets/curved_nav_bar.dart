@@ -28,7 +28,7 @@ class CurvedNavBar extends StatelessWidget {
   });
 
   static const double _top = 20; // مساحة بروز الدائرة فوق الشريط
-  static const double _barH = 62;
+  static const double _barH = 68;
   static const double _circle = 54;
 
   Widget _icon(AppNavItem it, IconData data, Color color) {
@@ -40,7 +40,6 @@ class CurvedNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    final rtl = Directionality.of(context) == TextDirection.rtl;
     final n = items.length;
     final height = _top + _barH + bottom;
 
@@ -50,7 +49,7 @@ class CurvedNavBar extends StatelessWidget {
         builder: (context, c) {
           final w = c.maxWidth;
           final itemW = w / n;
-          final cx = rtl ? w - (index + 0.5) * itemW : (index + 0.5) * itemW;
+          final cx = w / 2;
           return TweenAnimationBuilder<double>(
             tween: Tween<double>(end: cx),
             duration: const Duration(milliseconds: 300),
@@ -88,8 +87,8 @@ class CurvedNavBar extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: _icon(
-                          items[index],
-                          items[index].selectedIcon,
+                          items[n ~/ 2],
+                          items[n ~/ 2].selectedIcon,
                           Colors.white,
                         ),
                       ),
@@ -120,12 +119,12 @@ class CurvedNavBar extends StatelessWidget {
                                             Brand.palette.muted,
                                           ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   Text(
                                     items[i].label,
                                     maxLines: 1,
                                     style: TextStyle(
-                                      fontSize: 11.5,
+                                      fontSize: 11,
                                       fontWeight: i == index
                                           ? FontWeight.w800
                                           : FontWeight.w600,

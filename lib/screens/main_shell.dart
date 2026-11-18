@@ -28,7 +28,12 @@ class MainShell extends StatelessWidget {
     return ValueListenableBuilder<int>(
       valueListenable: shellTab,
       builder: (context, index, _) {
-        return Scaffold(
+        return PopScope(
+          canPop: index == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) shellTab.value = 0;
+          },
+          child: Scaffold(
           floatingActionButton: index == 3
               ? null
               : const FeedbackFab(allowOrderIssue: true),
@@ -59,25 +64,23 @@ class MainShell extends StatelessWidget {
           bottomNavigationBar: ListenableBuilder(
             listenable: cart,
             builder: (context, _) {
+              // الرئيسية بقت الصفحة الافتراضية (بدون زر)، والسلة في النص.
+              const map = [2, 1, 3];
               return CurvedNavBar(
-                index: index,
-                onTap: (i) => shellTab.value = i,
+                index: map.indexOf(index),
+                onTap: (i) =>
+                    shellTab.value = map[i] == index ? 0 : map[i],
                 items: [
                   const AppNavItem(
-                    icon: Icons.home_outlined,
-                    selectedIcon: Icons.home_rounded,
-                    label: 'الرئيسية',
+                    icon: Icons.receipt_long_outlined,
+                    selectedIcon: Icons.receipt_long,
+                    label: 'طلباتي',
                   ),
                   AppNavItem(
                     icon: Icons.shopping_cart_outlined,
                     selectedIcon: Icons.shopping_cart,
                     label: 'السلة',
                     badge: cart.count,
-                  ),
-                  const AppNavItem(
-                    icon: Icons.receipt_long_outlined,
-                    selectedIcon: Icons.receipt_long,
-                    label: 'طلباتي',
                   ),
                   const AppNavItem(
                     icon: Icons.person_outline,
@@ -88,6 +91,7 @@ class MainShell extends StatelessWidget {
               );
             },
           ),
+        ),
         );
       },
     );

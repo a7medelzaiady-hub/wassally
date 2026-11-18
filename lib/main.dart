@@ -77,9 +77,19 @@ class WasallyApp extends StatelessWidget {
         ],
         builder: (context, child) {
           // نحترم إعدادات حجم الخط وإمكانية الوصول في الجهاز دون تصغير إجباري.
-          return KeyedSubtree(
-            key: ValueKey(Brand.palette.id),
-            child: child ?? const SizedBox.shrink(),
+          // خطوط أصغر في التطبيق كله (بدل التكبير الافتراضي).
+          final mq = MediaQuery.of(context);
+          return MediaQuery(
+            data: mq.copyWith(
+              textScaler: mq.textScaler.clamp(
+                minScaleFactor: 0.8,
+                maxScaleFactor: 0.88,
+              ),
+            ),
+            child: KeyedSubtree(
+              key: ValueKey(Brand.palette.id),
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
         home: const AuthGate(),
