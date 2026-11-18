@@ -24,6 +24,7 @@ class UpdateService {
   static String _url = '';
   static DateTime? _lastCheck;
   static bool _lifecycleAttached = false;
+  static bool _bannerShownThisSession = false;
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
@@ -43,8 +44,6 @@ class UpdateService {
     if (!context.mounted) return;
     if (showDialogNow) {
       _showUpdateDialog(context, _url, _force);
-    } else {
-      _showBanner();
     }
   }
 
@@ -57,14 +56,42 @@ class UpdateService {
 
   static Future<void> _onResume() async {
     if (FirebaseAuth.instance.currentUser == null) return;
+    final now = DateTime.now();
     final last = _lastCheck;
-    if (last != null && DateTime.now().difference(last).inHours < 6) {
-      if (_available) _showBanner();
+    if (last != null && !shouldRefreshOnResume(last, now)) {
+      if (shouldShowResumeReminder(
+        available: _available,
+        force: _force,
+        snoozed: await _isSnoozedAt(now),
+        alreadyShown: _bannerShownThisSession,
+      )) {
+        _showBanner();
+      }
       return;
     }
     final result = await _fetch();
-    if (result == true) _showBanner();
+    if (result == true && shouldShowResumeReminder(
+      available: _available,
+      force: _force,
+      snoozed: await _isSnoozedAt(DateTime.now()),
+      alreadyShown: _bannerShownThisSession,
+    )) {
+      _showBanner();
+    }
   }
+
+  @visibleForTesting
+  static bool shouldRefreshOnResume(DateTime? lastCheck, DateTime now) =>
+      lastCheck == null || now.difference(lastCheck) >= const Duration(hours: 6);
+
+  @visibleForTesting
+  static bool shouldShowResumeReminder({
+    required bool available,
+    required bool force,
+    required bool snoozed,
+    required bool alreadyShown,
+  }) =>
+      available && !force && !snoozed && !alreadyShown;
 
   /// بتقرا app_info/version وتحدّث الحالة. بترجّع true لو فيه إصدار أحدث.
   static Future<bool?> _fetch() async {
@@ -99,11 +126,13 @@ class UpdateService {
     }
   }
 
-  static Future<bool> _isSnoozed() async {
+  static Future<bool> _isSnoozed() async => _isSnoozedAt(DateTime.now());
+
+  static Future<bool> _isSnoozedAt(DateTime now) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final until = prefs.getInt(_snoozeKey) ?? 0;
-      return DateTime.now().millisecondsSinceEpoch < until;
+      return now.millisecondsSinceEpoch < until;
     } catch (_) {
       return false;
     }
@@ -138,8 +167,10 @@ class UpdateService {
 
   /// شريط تذكير ثابت (بيفضل لحد ما المستخدم يقفله أو يحدّث).
   static void _showBanner() {
+    if (_bannerShownThisSession) return;
     final m = NotificationService.messengerKey.currentState;
     if (m == null) return;
+    _bannerShownThisSession = true;
     m
       ..hideCurrentMaterialBanner()
       ..showMaterialBanner(
@@ -151,7 +182,10 @@ class UpdateService {
           ),
           actions: [
             TextButton(
-              onPressed: () => m.hideCurrentMaterialBanner(),
+              onPressed: () {
+                _snooze();
+                m.hideCurrentMaterialBanner();
+              },
               child: const Text('لاحقاً'),
             ),
             FilledButton(
@@ -230,8 +264,8 @@ class UpdateService {
                 TextButton(
                   onPressed: () {
                     _snooze();
+                    _bannerShownThisSession = true;
                     Navigator.of(dialogContext).pop();
-                    _showBanner();
                   },
                   child: const Text('لاحقاً'),
                 ),
