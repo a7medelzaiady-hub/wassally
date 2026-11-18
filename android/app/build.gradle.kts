@@ -38,6 +38,18 @@ android {
     }
 
     signingConfigs {
+        // توقيع الـ debug: لو فيه keystore ثابت في ~/.android (بيستعيده CI من الـ cache) نستخدمه
+        // صراحةً. من غير كده Gradle كان بيوقّع كل APK بمفتاح جديد، فبصمة SHA-1 بتتغير مع كل بناء
+        // ومبتتطابقش مع المسجّل في Firebase، وده اللي بيبوّظ دخول جوجل.
+        getByName("debug") {
+            val stableDebugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
+            if (stableDebugKeystore.exists()) {
+                storeFile = stableDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             if (keystorePropertiesFile.exists()) {
                 keyAlias = keystoreProperties["keyAlias"] as String

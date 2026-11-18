@@ -127,6 +127,33 @@ jobs:
         test -n "$APKSIGNER"
         "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk
 
+    # لازم بصمة التوقيع الفعلية للـ APK تكون مسجّلة في Firebase، وإلا دخول جوجل (الأصلي أو
+    # عبر المتصفح) بيفشل. الفحص ده على الـ APK الناتج نفسه مش على الـ keystore بس.
+    - name: Verify APK signing certificate is registered in Firebase config
+      run: |
+        APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+        APK_SHA1="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+        echo "APK signing SHA-1: $APK_SHA1"
+        python3 - "$APK_SHA1" <<'PY'
+        import json, sys
+        sha1 = sys.argv[1].lower()
+        with open("android/app/google-services.json", encoding="utf-8") as f:
+            config = json.load(f)
+        registered = {
+            oauth.get("android_info", {}).get("certificate_hash", "").lower()
+            for client in config.get("client", [])
+            if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+            for oauth in client.get("oauth_client", [])
+            if oauth.get("client_type") == 1
+        }
+        if sha1 not in registered:
+            print("ERROR: the APK is signed with SHA-1 " + sha1 + " which is NOT registered for com.wassally.app.")
+            print("Google sign-in will fail. Add this SHA-1 in Firebase Console (Project settings > Android app),")
+            print("download the new google-services.json and commit it to android/app/.")
+            raise SystemExit(1)
+        print("OK: APK signing SHA-1 is registered in Firebase.")
+        PY
+
     - name: Upload installable debug APK
       uses: actions/upload-artifact@v4
       with:
