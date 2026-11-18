@@ -61,43 +61,39 @@ jobs:
         df -h /
 
     # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
-    - name: Smoke test signed image upload route
+    # Probe both protected endpoints in one curl process so DNS/TLS connection reuse is stable.
+    - name: Smoke test deployed Worker upload and order routes
       shell: bash
       run: |
-        WORKER_URL="https://throbbing-water-4ef7.a7medelzaiady.workers.dev"
-        # Verify the app-critical upload route directly; older deployed Worker versions may not expose /health.
-        RESULT="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}|%{remote_ip}' \
+        WORKER_URL="https://throbbing-water-4ef7.a7medzaiady.workers.dev"
+        RESULTS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 \
+          --silent --show-error --http1.1 --connect-timeout 15 --max-time 45 \
+          --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}\n' \
           --request POST "$WORKER_URL/v1/uploads" \
           --header 'Authorization: Bearer invalid-smoke-test-token' \
           --header 'Content-Type: application/json' \
-          --data '{}')"
-        STATUS="${RESULT%%|*}"
-        WORKER_IP="${RESULT##*|}"
-        if [ "$STATUS" != "401" ] || [ -z "$WORKER_IP" ]; then
-          echo "Unexpected upload route response: $RESULT"
-          cat "$RUNNER_TEMP/upload-route.json"
-          exit 1
-        fi
-        echo "WORKER_IP=$WORKER_IP" >> "$GITHUB_ENV"
-        echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
-
-    # Order creation must exist in the deployed Worker and reject unauthenticated clients.
-    # A 401 proves the route reached Firebase-token verification; 404/503 is a deployment/config failure.
-    - name: Smoke test authenticated order gateway route
-      shell: bash
-      run: |
-        WORKER_HOST="throbbing-water-4ef7.a7medzaiady.workers.dev"
-        STATUS="$(curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 --resolve "$WORKER_HOST:443:$WORKER_IP" --silent --show-error --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}' \
-          --request POST "https://$WORKER_HOST/v1/orders" \
+          --data '{}' \
+          --next \
+          --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 30 \
+          --silent --show-error --http1.1 --connect-timeout 15 --max-time 45 \
+          --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}\n' \
+          --request POST "$WORKER_URL/v1/orders" \
           --header 'Authorization: Bearer not-a-valid-jwt' \
           --header 'Content-Type: application/json' \
           --data '{}')"
-        if [ "$STATUS" != "401" ]; then
-          echo "Unexpected order route status: $STATUS"
+        UPLOAD_STATUS="$(printf '%s\n' "$RESULTS" | sed -n '1p')"
+        ORDER_STATUS="$(printf '%s\n' "$RESULTS" | sed -n '2p')"
+        if [ "$UPLOAD_STATUS" != "401" ]; then
+          echo "Unexpected upload route status: $UPLOAD_STATUS"
+          cat "$RUNNER_TEMP/upload-route.json"
+          exit 1
+        fi
+        if [ "$ORDER_STATUS" != "401" ]; then
+          echo "Unexpected order route status: $ORDER_STATUS"
           cat "$RUNNER_TEMP/order-route.json"
           exit 1
         fi
-        echo "Order creation route is deployed and rejects invalid Firebase tokens."
+        echo "Both deployed Worker routes reject invalid authentication as expected."
 
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
