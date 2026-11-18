@@ -224,7 +224,8 @@ class StaffOrderService {
     final courierSnapshot = results[1];
 
     if (!courierSnapshot.exists ||
-        courierSnapshot.data()?['active'] == false) {
+        (courierSnapshot.data()!.containsKey('active') &&
+            courierSnapshot.data()!['active'] != true)) {
       throw StateError('حساب المندوب غير نشط أو غير معتمد. راجع الإدارة.');
     }
     final data = orderSnapshot.data();
