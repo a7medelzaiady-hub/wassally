@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         final msg = e.code == 'network-request-failed'
             ? 'مفيش اتصال بالإنترنت. جرّب تاني.'
-            : 'تعذر تسجيل الدخول. حاول تاني.';
+            : 'تعذر تسجيل الدخول. رمز الخطأ: ${e.code}';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(msg)));
       }
