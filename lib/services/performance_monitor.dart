@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/foundation.dart'
@@ -64,14 +66,14 @@ class PerformanceMonitor {
   static void screenOpened(String screenName) {
     if (!_canCollect || _lastScreenName == screenName) return;
     _lastScreenName = screenName;
-    _finishScreenOpen(screenName);
+    unawaited(_finishScreenOpen(screenName));
   }
 
   static Future<void> _finishScreenOpen(String screenName) async {
     final trace = await _start('screen_open_$screenName');
     if (trace == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _stop(trace);
+      unawaited(_stop(trace));
     });
   }
 
