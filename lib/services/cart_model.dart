@@ -85,11 +85,16 @@ class CartModel extends ChangeNotifier {
       (_items.isEmpty && _specialRequest == null) || _storeId == storeId;
 
   /// بتضيف منتج. بترجع false لو السلة فيها منتجات من محل تاني.
-  bool add(Product p, {required String storeId, required String storeName}) {
+  bool add(
+    Product p, {
+    required String storeId,
+    required String storeName,
+    int qty = 1,
+  }) {
     if (!canAddFrom(storeId)) return false;
     _storeId = storeId;
     _storeName = storeName;
-    _items[p] = (_items[p] ?? 0) + 1;
+    _items[p] = (_items[p] ?? 0) + qty;
     notifyListeners();
     return true;
   }

@@ -80,10 +80,13 @@ PriceCheck checkOrderPrices(
     }
 
     final product = matches.single;
-    catalogSubtotal += product.price * line.qty;
-    if ((product.price - line.price).abs() >= 0.01) {
+    // الخيارات الإضافية بتتحقق بالاسم والسعر من خيارات الصنف في الكتالوج.
+    final optionsTotal = _catalogOptionsTotal(product, line);
+    final unit = product.price + (optionsTotal ?? 0);
+    catalogSubtotal += unit * line.qty;
+    if (optionsTotal == null || (unit - line.price).abs() >= 0.01) {
       anyDiff = true;
-      issues.add(PriceIssue(line.name, line.price, product.price));
+      issues.add(PriceIssue(line.name, line.price, unit));
     }
   }
 
@@ -95,4 +98,28 @@ PriceCheck checkOrderPrices(
       ? PriceCheckStatus.mismatch
       : PriceCheckStatus.match;
   return PriceCheck(status, expected, issues);
+}
+
+/// مجموع أسعار خيارات [line] حسب خيارات [product] في الكتالوج.
+/// بيرجع null لو اختيار مش موجود في الكتالوج أو مجموع السطر مش مطابق.
+double? _catalogOptionsTotal(Product product, OrderLine line) {
+  if (line.options.isEmpty) {
+    return line.optionsTotal.abs() < 0.01 ? 0 : null;
+  }
+  var total = 0.0;
+  for (final name in line.options) {
+    ProductOption? found;
+    for (final g in product.optionGroups) {
+      for (final o in g.options) {
+        if (o.name == name) {
+          found = o;
+          break;
+        }
+      }
+      if (found != null) break;
+    }
+    if (found == null) return null;
+    total += found.price;
+  }
+  return (total - line.optionsTotal).abs() < 0.01 ? total : null;
 }

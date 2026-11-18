@@ -799,6 +799,22 @@ test('owner: عروض الأصناف (سعر قبل الخصم، نص حر، ت�
   await assertFails(setDoc(doc(as('owner2'), 'stores/shop1/products/o8'), { ...p, offerText: 'x' }));
 });
 
+test('owner: وصف الصنف واختياراته (optionGroups) بقيم سليمة فقط', async () => {
+  const db = as('owner1');
+  const ref = (id) => doc(db, `stores/shop1/products/${id}`);
+  const p = { name: 'قهوة', price: 20, isAvailable: true, available: true, createdAt: serverTimestamp() };
+  const groups = [
+    { title: 'السكر', required: true, min: 1, max: 1, options: [{ name: 'سادة', price: 0 }, { name: 'مظبوط', price: 0 }] },
+  ];
+  await assertSucceeds(setDoc(ref('g1'), { ...p, description: 'قهوة باردة', optionGroups: groups }));
+  await assertSucceeds(setDoc(ref('g2'), { ...p, optionGroups: [] }));
+  await assertFails(setDoc(ref('g3'), { ...p, optionGroups: 'x' }));
+  await assertFails(setDoc(ref('g4'), { ...p, optionGroups: Array(11).fill(groups[0]) }));
+  await assertFails(setDoc(ref('g5'), { ...p, description: 'x'.repeat(501) }));
+  await assertFails(setDoc(ref('g6'), { ...p, description: 5 }));
+  await assertFails(setDoc(doc(as('owner2'), 'stores/shop1/products/g7'), { ...p, optionGroups: groups }));
+});
+
 test('owner: عميل عادي ما يكتبش أصناف', async () => {
   await assertFails(setDoc(doc(as('cust1'), 'stores/shop1/products/px'), { name: 'x', price: 5 }));
 });

@@ -11,6 +11,7 @@ import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
+import '../models/product.dart';
 import '../services/image_service.dart';
 import '../services/navigation.dart' show roleInfoOverride;
 import '../services/role_service.dart';
@@ -21,6 +22,7 @@ import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
+import '../widgets/option_groups_editor.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
@@ -1407,6 +1409,9 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'image': result.image,
           if (result.oldPrice != null) 'oldPrice': result.oldPrice,
           if (result.bestSeller) 'bestSeller': true,
+          if (result.description.isNotEmpty) 'description': result.description,
+          if (result.optionGroups.isNotEmpty)
+            'optionGroups': result.optionGroups.map((g) => g.toMap()).toList(),
           'isAvailable': true,
           'available': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -1420,6 +1425,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'image': result.image,
           'oldPrice': result.oldPrice ?? FieldValue.delete(),
           'bestSeller': result.bestSeller,
+          'description': result.description,
+          'optionGroups': result.optionGroups.map((g) => g.toMap()).toList(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
@@ -1731,12 +1738,16 @@ class _ProductForm {
   final String image;
   final double? oldPrice;
   final bool bestSeller;
+  final String description;
+  final List<OptionGroup> optionGroups;
   const _ProductForm(
     this.name,
     this.price,
     this.image, {
     this.oldPrice,
     this.bestSeller = false,
+    this.description = '',
+    this.optionGroups = const [],
   });
 }
 
@@ -1763,6 +1774,12 @@ class _ProductDialogState extends State<_ProductDialog> {
         ? (widget.existing!['oldPrice'] as num).toString()
         : '',
   );
+  late final TextEditingController _desc = TextEditingController(
+    text: (widget.existing?['description'] ?? '').toString(),
+  );
+  late List<OptionGroup> _groups = parseOptionGroups(
+    widget.existing?['optionGroups'],
+  );
   late bool _best = widget.existing?['bestSeller'] == true;
   late String _image = (widget.existing?['image'] ?? '').toString();
   bool _uploading = false;
@@ -1773,6 +1790,7 @@ class _ProductDialogState extends State<_ProductDialog> {
     _name.dispose();
     _price.dispose();
     _old.dispose();
+    _desc.dispose();
     super.dispose();
   }
 
@@ -1815,7 +1833,15 @@ class _ProductDialogState extends State<_ProductDialog> {
       }
     }
     Navigator.of(context).pop(
-      _ProductForm(name, price, _image, oldPrice: oldPrice, bestSeller: _best),
+      _ProductForm(
+        name,
+        price,
+        _image,
+        oldPrice: oldPrice,
+        bestSeller: _best,
+        description: _desc.text.trim(),
+        optionGroups: _groups,
+      ),
     );
   }
 
@@ -1849,6 +1875,28 @@ class _ProductDialogState extends State<_ProductDialog> {
               ),
               decoration: const InputDecoration(
                 labelText: 'السعر قبل الخصم (اختياري - لعمل عرض)',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _desc,
+              maxLength: 500,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'وصف الصنف (اختياري)',
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final res = await showOptionGroupsEditor(context, _groups);
+                if (res != null && mounted) setState(() => _groups = res);
+              },
+              icon: const Icon(Icons.tune),
+              label: Text(
+                _groups.isEmpty
+                    ? 'خيارات الصنف (سكر، إضافات...)'
+                    : 'خيارات الصنف (${_groups.length})',
               ),
             ),
             SwitchListTile(

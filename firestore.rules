@@ -389,7 +389,9 @@ service cloud.firestore {
     function validOwnerProduct(d) {
       return d.keys().hasOnly(['name', 'price', 'image', 'available', 'isAvailable',
                                'oldPrice', 'bestSeller', 'createdAt', 'updatedAt',
-                               'offerText', 'offerEndsAt']) &&
+                               'offerText', 'offerEndsAt', 'description', 'optionGroups']) &&
+        (!('description' in d) || (d.description is string && d.description.size() <= 500)) &&
+        (!('optionGroups' in d) || (d.optionGroups is list && d.optionGroups.size() <= 10)) &&
         (!('oldPrice' in d) || (d.oldPrice is number && d.oldPrice > d.price && d.oldPrice <= 20000)) &&
         (!('offerText' in d) || (d.offerText is string && d.offerText.size() > 0 && d.offerText.size() <= 120)) &&
         (!('offerEndsAt' in d) || d.offerEndsAt is timestamp) &&

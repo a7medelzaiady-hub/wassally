@@ -75,9 +75,32 @@ class OrderLine {
 
   /// معرّف الصنف في الكتالوج (لو موجود). بنحافظ عليه عند تعديل الطلب.
   final String productId;
-  const OrderLine(this.name, this.price, this.qty, [this.productId = '']);
 
-  OrderLine withQty(int q) => OrderLine(name, price, q, productId);
+  /// أسماء الخيارات اللي العميل اختارها (سكر، إضافات...) ومجموع أسعارها. السعر (price)
+  /// بيشمل الإضافات، والمقارنة بالكتالوج بتتحقق من الخيارات بالاسم والسعر.
+  final List<String> options;
+  final double optionsTotal;
+  const OrderLine(
+    this.name,
+    this.price,
+    this.qty, [
+    this.productId = '',
+    this.options = const [],
+    this.optionsTotal = 0,
+  ]);
+
+  OrderLine withQty(int q) =>
+      OrderLine(name, price, q, productId, options, optionsTotal);
+
+  /// الحقول اللي بتتخزن في مستند الطلب لهذا السطر.
+  Map<String, dynamic> toMap() => {
+    'name': name,
+    'price': price,
+    'qty': qty,
+    if (productId.isNotEmpty) 'productId': productId,
+    if (options.isNotEmpty) 'options': options,
+    if (optionsTotal > 0) 'optionsTotal': optionsTotal,
+  };
 
   double get total => price * qty;
 }
@@ -280,6 +303,11 @@ class AppOrder {
             (i['price'] as num?)?.toDouble() ?? 0,
             (i['qty'] as num?)?.toInt() ?? 1,
             (i['productId'] ?? '').toString(),
+            [
+              for (final o in (i['options'] as List? ?? const []))
+                o.toString(),
+            ],
+            (i['optionsTotal'] as num?)?.toDouble() ?? 0,
           ),
         );
       }

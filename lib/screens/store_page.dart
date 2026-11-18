@@ -26,6 +26,8 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../widgets/app_image.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/option_groups_editor.dart';
+import '../widgets/product_sheet.dart';
 import '../widgets/qty_stepper.dart';
 import 'cart_page.dart';
 
@@ -499,6 +501,8 @@ class _StorePageState extends State<StorePage> {
       offer.oldPrice,
       offer.text,
       offer.endsAt,
+      (m['description'] ?? '').toString(),
+      parseOptionGroups(m['optionGroups']),
     );
   }
 
@@ -560,7 +564,12 @@ class _StorePageState extends State<StorePage> {
             product: p,
             store: store,
             canEdit: _canEditStore && p.id.isNotEmpty,
-            onAdd: () => _add(context, p),
+            // الصنف اللي له خيارات بيفتح شاشة الاختيار؛ التاني بيتضاف مباشرة.
+            onAdd: () =>
+                p.hasOptions ? _openSheet(context, p) : _add(context, p),
+            onTap: p.hasOptions || p.description.trim().isNotEmpty
+                ? () => _openSheet(context, p)
+                : null,
             onEdit: () => _showProductDialog(context, product: p),
           );
         },
@@ -1055,6 +1064,10 @@ class _StorePageState extends State<StorePage> {
     final priceController = TextEditingController(
       text: product != null ? product.price.toString() : '',
     );
+    final descController = TextEditingController(
+      text: product?.description ?? '',
+    );
+    var optionGroups = List<OptionGroup>.of(product?.optionGroups ?? const []);
     var image = product?.imageUrl ?? '';
     var uploading = false;
 
@@ -1153,6 +1166,32 @@ class _StorePageState extends State<StorePage> {
                       decimal: true,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: descController,
+                    maxLength: 500,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'وصف الصنف (اختياري)',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final res = await showOptionGroupsEditor(
+                        dialogCtx,
+                        optionGroups,
+                      );
+                      if (res != null) setLocal(() => optionGroups = res);
+                    },
+                    icon: const Icon(Icons.tune),
+                    label: Text(
+                      optionGroups.isEmpty
+                          ? 'خيارات الصنف (سكر، إضافات...)'
+                          : 'خيارات الصنف (${optionGroups.length})',
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1181,6 +1220,12 @@ class _StorePageState extends State<StorePage> {
                               'price': price,
                               'image': image,
                               'isAvailable': true,
+                              if (descController.text.trim().isNotEmpty)
+                                'description': descController.text.trim(),
+                              if (optionGroups.isNotEmpty)
+                                'optionGroups': optionGroups
+                                    .map((g) => g.toMap())
+                                    .toList(),
                               'createdAt': FieldValue.serverTimestamp(),
                             });
                             batch.update(_storeRef, {
@@ -1193,6 +1238,10 @@ class _StorePageState extends State<StorePage> {
                               'name': name,
                               'price': price,
                               'image': image,
+                              'description': descController.text.trim(),
+                              'optionGroups': optionGroups
+                                  .map((g) => g.toMap())
+                                  .toList(),
                               'updatedAt': FieldValue.serverTimestamp(),
                             });
                           }
@@ -1215,8 +1264,18 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
-  Future<void> _add(BuildContext context, Product p) async {
-    if (cart.add(p, storeId: store.id, storeName: store.name)) return;
+  /// بيفتح شاشة الصنف (الوصف والخيارات والكمية) وبيضيف السطر المختار للسلة.
+  void _openSheet(BuildContext context, Product p) {
+    showProductSheet(
+      context,
+      product: p,
+      storeName: store.name,
+      onAdd: (line, qty) => _add(context, line, qty: qty),
+    );
+  }
+
+  Future<void> _add(BuildContext context, Product p, {int qty = 1}) async {
+    if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
 
     final startNew = await showDialog<bool>(
       context: context,
@@ -1245,7 +1304,7 @@ class _StorePageState extends State<StorePage> {
     );
     if (startNew == true) {
       cart.clear();
-      cart.add(p, storeId: store.id, storeName: store.name);
+      cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
     }
   }
 
@@ -1406,6 +1465,7 @@ class _ProductRow extends StatelessWidget {
   final Store store;
   final bool canEdit;
   final VoidCallback onAdd;
+  final VoidCallback? onTap;
   final VoidCallback onEdit;
   const _ProductRow({
     required this.product,
@@ -1413,6 +1473,7 @@ class _ProductRow extends StatelessWidget {
     required this.canEdit,
     required this.onAdd,
     required this.onEdit,
+    this.onTap,
   });
 
   Widget _fallback() => Container(
@@ -1484,11 +1545,14 @@ class _ProductRow extends StatelessWidget {
         : 0;
     return Opacity(
       opacity: product.available ? 1 : 0.5,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1504,6 +1568,15 @@ class _ProductRow extends StatelessWidget {
                       color: Brand.ink,
                     ),
                   ),
+                  if (product.description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      product.description.trim(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, height: 1.35, color: kMuted),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1590,6 +1663,7 @@ class _ProductRow extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

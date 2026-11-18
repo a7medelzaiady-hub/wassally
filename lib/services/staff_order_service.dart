@@ -660,27 +660,46 @@ class StaffOrderService {
       if (data == null) return const PriceCheck.unknown();
 
       // أصناف النظام الجديد (subcollection): بنجيب الأصناف اللي في الطلب بس.
-      final names = {for (final i in order.items) i.name}.take(30).toList();
+      // الاسم في سطر الطلب ممكن يشمل اختيارات العميل، فبنعتمد على productId لو موجود.
+      final ids = {
+        for (final i in order.items)
+          if (i.productId.isNotEmpty) i.productId,
+      }.take(30).toList();
+      final names = {
+        for (final i in order.items)
+          if (i.productId.isEmpty) i.name,
+      }.take(30).toList();
       final extra = <Product>[];
+      final col = FirebaseFirestore.instance
+          .collection('stores')
+          .doc(order.storeId)
+          .collection('products');
+      final docs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+      if (ids.isNotEmpty) {
+        docs.addAll(
+          (await col.where(FieldPath.documentId, whereIn: ids).get()).docs,
+        );
+      }
       if (names.isNotEmpty) {
-        final prods = await FirebaseFirestore.instance
-            .collection('stores')
-            .doc(order.storeId)
-            .collection('products')
-            .where('name', whereIn: names)
-            .get();
-        for (final d in prods.docs) {
-          final m = d.data();
-          final price = m['price'];
-          extra.add(
-            Product(
-              (m['name'] ?? '').toString(),
-              price is num ? price.toDouble() : 0,
-              (m['image'] ?? '').toString(),
-              d.id,
-            ),
-          );
-        }
+        docs.addAll((await col.where('name', whereIn: names).get()).docs);
+      }
+      for (final d in docs) {
+        final m = d.data();
+        final price = m['price'];
+        extra.add(
+          Product(
+            (m['name'] ?? '').toString(),
+            price is num ? price.toDouble() : 0,
+            (m['image'] ?? '').toString(),
+            d.id,
+            true,
+            0,
+            '',
+            null,
+            (m['description'] ?? '').toString(),
+            parseOptionGroups(m['optionGroups']),
+          ),
+        );
       }
       return checkOrderPrices(
         order,

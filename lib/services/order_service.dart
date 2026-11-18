@@ -294,6 +294,10 @@ class OrderService {
               'qty': e.value,
               // معرّف الصنف من الكتالوج؛ البوابة الموثوقة تستخدمه لجلب السعر الحالي.
               if (e.key.id.isNotEmpty) 'productId': e.key.id,
+              // اختيارات العميل (سكر، إضافات...) وسعرها؛ السعر أعلاه بيشملها.
+              if (e.key.chosen.isNotEmpty)
+                'options': e.key.chosen.map((o) => o.name).toList(),
+              if (e.key.chosenTotal > 0) 'optionsTotal': e.key.chosenTotal,
             },
           )
           .toList(),
@@ -450,16 +454,7 @@ class OrderService {
       if (discount >= subtotal) discount = 0;
     }
     final total = subtotal + order.deliveryFee - discount;
-    final updatedItems = lines
-        .map(
-          (l) => {
-            'name': l.name,
-            'price': l.price,
-            'qty': l.qty,
-            if (l.productId.isNotEmpty) 'productId': l.productId,
-          },
-        )
-        .toList();
+    final updatedItems = lines.map((l) => l.toMap()).toList();
 
     if (OrderGateway.serverOrdersEnabled) {
       if (!OrderGateway.isConfigured) {
