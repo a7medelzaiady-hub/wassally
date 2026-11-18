@@ -74,10 +74,7 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   // العنوان المحفوظ للعميل.
   String _address = '';
-  final GlobalKey _offersKey = GlobalKey();
 
-  // فلتر قائمة المحلات (null = الكل).
-  String? _filter;
 
   // الإشعارات.
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
@@ -109,7 +106,6 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    homeOffersRequest.addListener(_onOffersRequest);
 
     // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
@@ -138,22 +134,8 @@ class _HomePageState extends State<HomePage>
     });
   }
 
-  void _onOffersRequest() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final target = _offersKey.currentContext;
-      if (!mounted || target == null) return;
-      Scrollable.ensureVisible(
-        target,
-        duration: const Duration(milliseconds: 520),
-        curve: Curves.easeInOutCubic,
-        alignment: 0.04,
-      );
-    });
-  }
-
   @override
   void dispose() {
-    homeOffersRequest.removeListener(_onOffersRequest);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -840,7 +822,7 @@ class _HomePageState extends State<HomePage>
       child: LayoutBuilder(
         builder: (context, c) {
           const gap = 10.0;
-          final w = (c.maxWidth - gap * 2) / 3;
+          final w = (c.maxWidth - gap * 3) / 4;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -848,14 +830,15 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 126,
+                  height: 104,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
-                        ? 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=75'
+                        ? ''
                         : (kCategoryPhotos[info.category] ??
                               categoryImages[info.category] ??
                               ''),
+                    isAll: info.category == 'الكل',
                     onTap: () => _openDirectory(
                       info.category == 'الكل' ? null : info.category,
                     ),
@@ -1010,447 +993,203 @@ class _HomePageState extends State<HomePage>
     List<(_StoreItem, Map<String, dynamic>)> items, {
     bool offer = false,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 9),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: Brand.ink,
-                  ),
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(bottom: 14),
+      color: offer ? kTileBeige.withValues(alpha: 0.55) : Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Icon(
+                  offer ? Icons.local_offer_rounded : Icons.local_fire_department_rounded,
+                  color: Brand.green,
+                  size: 22,
                 ),
-              ),
-              TextButton(
-                onPressed: _openDirectory,
-                style: TextButton.styleFrom(
-                  foregroundColor: Brand.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: const Size(0, 32),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text('اكتشف المزيد', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 116,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: items.length > 12 ? 12 : items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (_, i) {
-              final (store, product) = items[i];
-              final price = (product['price'] as num?)?.toDouble() ?? 0;
-              final old = (product['oldPrice'] as num?)?.toDouble() ?? 0;
-              final image = (product['image'] ?? '').toString();
-              final name = (product['name'] ?? '').toString().trim();
-              final offerText = (product['offerText'] ?? '').toString().trim();
-              final hasDiscount = offer && old > price && old > 0;
-              return Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => _openStore(store.store),
-                  child: Container(
-                    width: 276,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Brand.palette.line),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Brand.greenDark.withValues(alpha: 0.06),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  name.isEmpty ? store.store.name : name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                    color: Brand.ink,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  store.store.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    color: Brand.palette.muted,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Row(
-                                  children: [
-                                    Text(
-                                      formatPrice(price),
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w900,
-                                        color: Brand.greenDark,
-                                      ),
-                                    ),
-                                    if (hasDiscount) ...[
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        formatPrice(old),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Brand.palette.muted,
-                                          decoration: TextDecoration.lineThrough,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 25,
-                                      height: 25,
-                                      decoration: BoxDecoration(
-                                        gradient: Brand.headerGradient,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Brand.green.withValues(alpha: 0.2),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Icon(
-                                        Icons.add_rounded,
-                                        color: Colors.white,
-                                        size: 18,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'اختار',
-                                      style: TextStyle(
-                                        color: Brand.greenDark,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 108,
-                          height: double.infinity,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              image.isEmpty
-                                  ? DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: Brand.softGradient,
-                                      ),
-                                    )
-                                  : Image.network(
-                                      thumb(image, w: 300),
-                                      cacheWidth: 300,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, _, _) => DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          gradient: Brand.softGradient,
-                                        ),
-                                      ),
-                                    ),
-                              if (hasDiscount || offerText.isNotEmpty)
-                                PositionedDirectional(
-                                  top: 6,
-                                  start: 6,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: kDanger,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      hasDiscount
-                                          ? '${((1 - price / old) * 100).round()}%-'
-                                          : offerText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: Brand.ink,
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ───────────────────────── قائمة المحلات (زي طلبات) ─────────────────────────
-
-  List<Widget> _storesSlivers(List<_StoreItem> all) {
-    final cats = <String>[];
-    for (final s in all) {
-      final c = s.store.isPharmacy ? 'صيدليات' : s.store.category;
-      if (c.trim().isNotEmpty && !cats.contains(c)) cats.add(c);
-    }
-    final visible = _filter == null
-        ? all
-        : all
-              .where(
-                (s) =>
-                    (s.store.isPharmacy ? 'صيدليات' : s.store.category) ==
-                    _filter,
-              )
-              .toList();
-    return [
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
-          child: Text(
-            'المطاعم والمحلات',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-              color: Brand.ink,
+              ],
             ),
           ),
-        ),
-      ),
-      SliverToBoxAdapter(
-        child: SizedBox(
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            children: [
-              _chip('الكل', _filter == null, () => setState(() => _filter = null)),
-              for (final c in cats)
-                _chip(c, _filter == c, () => setState(() => _filter = c)),
-            ],
+          SizedBox(
+            height: 238,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length > 12 ? 12 : items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => _offerCard(items[i], offer: offer),
+            ),
           ),
-        ),
-      ),
-      if (visible.isEmpty)
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: Text('لا توجد محلات حاليًا')),
-          ),
-        )
-      else
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          sliver: SliverList.separated(
-            itemCount: visible.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 16),
-            itemBuilder: (_, i) => _storeCard(visible[i]),
-          ),
-        ),
-    ];
-  }
-
-  Widget _chip(String label, bool selected, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        showCheckmark: false,
-        backgroundColor: Colors.white,
-        selectedColor: Brand.green,
-        side: BorderSide(color: selected ? Brand.green : kLine),
-        labelStyle: TextStyle(
-          fontWeight: FontWeight.w700,
-          color: selected ? Colors.white : Brand.ink,
-        ),
+        ],
       ),
     );
   }
 
-  /// كارت محل زي طلبات: صورة عريضة فوق، وتحتها الاسم والتقييم والوقت والتوصيل.
-  Widget _storeCard(_StoreItem item) {
-    final s = item.store;
-    final rating = item.rating;
-    final time = item.time;
+  /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
+  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+    final (s, m) = entry;
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+    final img = (m['image'] ?? '').toString();
+    final offerText = (m['offerText'] ?? '').toString().trim();
+    final hasDiscount = old > price && old > 0;
+    final badge = hasDiscount
+        ? 'خصم ${((1 - price / old) * 100).round()}%'
+        : offerText;
     final fallback = Container(
-      color: Brand.green.withValues(alpha: 0.10),
+      decoration: BoxDecoration(gradient: Brand.softGradient),
       alignment: Alignment.center,
-      child: Icon(s.icon, size: 46, color: Brand.green),
+      child: Icon(s.store.icon, color: Colors.white70, size: 40),
     );
     return GestureDetector(
-      onTap: () => _openStore(s),
+      onTap: () => _openStore(s.store),
       child: Container(
+        width: 232,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: kLine),
           boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F000000),
-              blurRadius: 10,
-              offset: Offset(0, 3),
-            ),
+            BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 3)),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 16 / 8,
+            SizedBox(
+              height: 130,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  item.image.isEmpty
+                  img.isEmpty
                       ? fallback
                       : Image.network(
-                          thumb(item.image, w: 700),
-                          cacheWidth: 700,
+                          thumb(img, w: 500),
+                          cacheWidth: 500,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => fallback,
                         ),
-                  if (time.isNotEmpty)
+                  if (badge.isNotEmpty)
                     PositionedDirectional(
-                      bottom: 10,
+                      top: 10,
                       start: 10,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
+                        constraints: const BoxConstraints(maxWidth: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
+                          color: const Color(0xFFD6F24B),
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.access_time_rounded,
-                              size: 14,
-                              color: Brand.ink,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              time,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: Brand.ink,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          badge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF1B1D22),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
                     ),
+                  PositionedDirectional(
+                    bottom: 8,
+                    end: 10,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: kLine),
+                      ),
+                      child: s.image.isEmpty
+                          ? Icon(s.store.icon, size: 20, color: Brand.green)
+                          : Image.network(
+                              thumb(s.image, w: 120),
+                              cacheWidth: 120,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  Icon(s.store.icon, size: 20, color: Brand.green),
+                            ),
+                    ),
+                  ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    (m['name'] ?? '').toString(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: Brand.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
                   Row(
                     children: [
+                      Icon(Icons.storefront_rounded, size: 14, color: kMuted),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          s.name,
+                          s.store.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            color: Brand.ink,
-                          ),
+                          style: TextStyle(fontSize: 12.5, color: kMuted),
                         ),
                       ),
-                      if (rating > 0) ...[
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Color(0xFFFFA000),
-                          size: 18,
-                        ),
-                        const SizedBox(width: 2),
+                      if (s.rating > 0) ...[
+                        const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 15),
                         Text(
-                          rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13,
-                          ),
+                          s.rating.toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                         ),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.category,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: kMuted),
-                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(
-                        Icons.delivery_dining_rounded,
-                        size: 18,
-                        color: Brand.green,
-                      ),
-                      const SizedBox(width: 4),
                       Text(
-                        'توصيل ${formatPrice(CartModel.deliveryFee)}',
+                        formatPrice(price),
                         style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Brand.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: Brand.green,
                         ),
                       ),
+                      if (offer && hasDiscount) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          formatPrice(old),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: kMuted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],
@@ -1458,6 +1197,99 @@ class _HomePageState extends State<HomePage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ───────────────────────── روابط المحلات المختصرة ─────────────────────────
+
+  /// صف دوائر المحلات (شعار + اسم) زي طلبات: دخول سريع للمحل من الرئيسية.
+  Widget _storeShortcuts(List<_StoreItem> all) {
+    final shown = all.take(14).toList();
+    if (shown.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'محلات مميزة',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                      color: Brand.ink,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _openDirectory,
+                  child: const Text('عرض الكل'),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 100,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: shown.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (_, i) {
+                final item = shown[i];
+                final fallback = Container(
+                  color: Brand.green.withValues(alpha: 0.10),
+                  alignment: Alignment.center,
+                  child: Icon(item.store.icon, color: Brand.green, size: 28),
+                );
+                return GestureDetector(
+                  onTap: () => _openStore(item.store),
+                  child: SizedBox(
+                    width: 72,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 66,
+                          height: 66,
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: kLine, width: 1.5),
+                          ),
+                          child: item.image.isEmpty
+                              ? fallback
+                              : Image.network(
+                                  thumb(item.image, w: 200),
+                                  cacheWidth: 200,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => fallback,
+                                ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.store.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: Brand.ink,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1488,22 +1320,16 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // الصفحة الرئيسية مخصصة للعروض والخصومات والأقسام.
-              SliverToBoxAdapter(
+              // الصفحة الرئيسية: بنرات، روابط المحلات، الأقسام، العروض، الأكثر مبيعًا.
+              const SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: PromoBanners(onExploreTap: () => _openDirectory()),
+                  padding: EdgeInsets.only(top: 12),
+                  child: PromoBanners(),
                 ),
               ),
 
               if (!loading && !hasError)
-                SliverToBoxAdapter(
-                  key: _offersKey,
-                  child: _highlights(
-                    all,
-                    _offersFuture ??= _loadCatalogOffers(all),
-                  ),
-                ),
+                SliverToBoxAdapter(child: _storeShortcuts(all)),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -1512,8 +1338,8 @@ class _HomePageState extends State<HomePage>
                     children: [
                       Expanded(
                         child: Text(
-                          'أقسامنا المختلفة',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Brand.ink),
+                          'تصفّح الأقسام',
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
                         ),
                       ),
                       TextButton(
@@ -1529,7 +1355,13 @@ class _HomePageState extends State<HomePage>
                 child: _categoriesRow(parsed.categoryImages),
               ),
 
-              if (!loading && !hasError) ..._storesSlivers(all),
+              if (!loading && !hasError)
+                SliverToBoxAdapter(
+                  child: _highlights(
+                    all,
+                    _offersFuture ??= _loadCatalogOffers(all),
+                  ),
+                ),
 
               if (loading)
                 const SliverToBoxAdapter(
@@ -1558,111 +1390,106 @@ class _HomePageState extends State<HomePage>
   }
 }
 
-/// بطاقة قسم فوتوغرافية؛ الصورة تملأ البطاقة والاسم فوق طبقة تدرّج مقروءة.
+/// مربع قسم بصورة حقيقية على خلفية بيج، زي تطبيقات التوصيل الكبيرة.
 class _CategoryTile extends StatelessWidget {
   final String label;
   final String imageUrl;
+  final bool isAll;
   final VoidCallback onTap;
-
   const _CategoryTile({
     required this.label,
     required this.imageUrl,
+    required this.isAll,
     required this.onTap,
   });
 
+  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
+  static String _emojiFor(String label) {
+    if (label == 'الكل') return '🛍️';
+    const map = <String, String>{
+      'مطاعم': '🍔',
+      'سوبرماركت': '🛒',
+      'بقالة': '🧺',
+      'خضار وفاكهة': '🥬',
+      'لحوم ودواجن': '🥩',
+      'مخبوزات وحلويات': '🥐',
+      'محمصات وعطارة': '🌰',
+      'كافيه ومشروبات': '☕',
+      'ورد وهدايا': '💐',
+      'أخرى': '📦',
+    };
+    final exact = map[label];
+    if (exact != null) return exact;
+    // احتياطي لو اسم القسم اتغيّر شوية.
+    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
+    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
+    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
+    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
+    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
+    if (label.contains('ورد') || label.contains('هدا')) return '💐';
+    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
+    if (label.contains('صيدل')) return '💊';
+    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
+    return '📦';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (imageUrl.isNotEmpty)
-                Image.network(
-                  thumb(imageUrl, w: 420),
-                  cacheWidth: 420,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => _fallback(),
-                )
-              else
-                _fallback(),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.02),
-                      Colors.black.withValues(alpha: 0.08),
-                      Colors.black.withValues(alpha: 0.72),
-                    ],
-                    stops: const [0, 0.42, 1],
-                  ),
-                ),
-              ),
-              PositionedDirectional(
-                start: 10,
-                end: 10,
-                bottom: 10,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black54,
-                        blurRadius: 8,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              PositionedDirectional(
-                top: 8,
-                end: 8,
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Brand.green.withValues(alpha: 0.5),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          color: kTileBeige,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Colors.transparent,
+            width: 2,
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: 62,
+                height: 62,
+                child: isAll || imageUrl.isEmpty
+                    ? _emojiBox()
+                    : Image.network(
+                        thumb(imageUrl, w: 200),
+                        cacheWidth: 200,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _emojiBox(),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: Brand.ink,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _fallback() => DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [Brand.greenLight, Brand.greenDark],
-          ),
-        ),
-        child: const SizedBox.expand(),
-      );
+  Widget _emojiBox() {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(gradient: Brand.softGradient),
+      child: Text(
+        _emojiFor(label),
+        style: const TextStyle(fontSize: 32, height: 1.1),
+      ),
+    );
+  }
 }
