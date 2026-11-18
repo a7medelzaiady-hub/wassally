@@ -32,7 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'تعذر تسجيل الدخول: ${e.message ?? e.code}'
                 : e.code == 'canceled' || e.code == 'web-context-canceled'
                     ? 'عملية تسجيل الدخول ما اكتملتش. جرّب تاني.'
-                    : 'تعذر تسجيل الدخول (' + e.code + '). حاول تاني.';
+                    : 'تعذر تسجيل الدخول (${e.code}). حاول تاني.';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(msg)));
       }
@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'اطلب أي حاجة\n',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 30,
+                            fontSize: 26,
                             height: 1.4,
                             fontWeight: FontWeight.w800,
                           ),
@@ -127,7 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'وهتوصلك ',
                           style: TextStyle(
                             color: kPrimary,
-                            fontSize: 30,
+                            fontSize: 26,
                             height: 1.4,
                             fontWeight: FontWeight.w800,
                           ),
@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ' تسوق من محلات مدينتك لحد باب بيتك',
                     style: TextStyle(
                       color: Colors.white60,
-                      fontSize: 13.5,
+                      fontSize: 13,
                       fontWeight: FontWeight.w500,
                       height: 1.5,
                     ),
@@ -157,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 28),
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: 52,
                     child: _isLoading
                         ? Center(
                             child: CircularProgressIndicator(color: kPrimary),
@@ -183,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         'بالمتابعة أنت بتوافق على ',
-                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 12),
                       ),
                       _LegalLink(
                         label: 'شروط الاستخدام',
