@@ -25,6 +25,7 @@ class UpdateService {
   static DateTime? _lastCheck;
   static bool _lifecycleAttached = false;
   static bool _bannerShownThisSession = false;
+  static bool _bannerSnoozedThisSession = false;
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
@@ -65,18 +66,39 @@ class UpdateService {
         snoozed: await _isSnoozedAt(now),
         alreadyShown: _bannerShownThisSession,
       )) {
-        _showBanner();
+        _showBanner(force: _force);
       }
       return;
     }
     final result = await _fetch();
+    final snoozed = await _isSnoozedAt(DateTime.now());
+    if (!snoozed && _bannerSnoozedThisSession) {
+      _bannerShownThisSession = false;
+      _bannerSnoozedThisSession = false;
+    }
     if (result == true && shouldShowResumeReminder(
       available: _available,
       force: _force,
-      snoozed: await _isSnoozedAt(DateTime.now()),
+      snoozed: snoozed,
+      alreadyShown: _bannerShownThisSession,
+      )) {
+        _showBanner(force: _force);
+      }
+      return;
+    }
+    final result = await _fetch();
+    final snoozed = await _isSnoozedAt(DateTime.now());
+    if (!snoozed && _bannerSnoozedThisSession) {
+      _bannerShownThisSession = false;
+      _bannerSnoozedThisSession = false;
+    }
+    if (result == true && shouldShowResumeReminder(
+      available: _available,
+      force: _force,
+      snoozed: snoozed,
       alreadyShown: _bannerShownThisSession,
     )) {
-      _showBanner();
+      _showBanner(force: _force);
     }
   }
 
@@ -92,7 +114,7 @@ class UpdateService {
     required bool snoozed,
     required bool alreadyShown,
   }) =>
-      available && !force && !snoozed && !alreadyShown;
+      available && (force || !snoozed) && (force || !alreadyShown);
 
   /// بتقرا app_info/version وتحدّث الحالة. بترجّع true لو فيه إصدار أحدث.
   static Future<bool?> _fetch() async {
@@ -171,7 +193,7 @@ class UpdateService {
   }
 
   /// شريط تذكير ثابت (بيفضل لحد ما المستخدم يقفله أو يحدّث).
-  static void _showBanner() {
+  static void _showBanner({bool force = false}) {
     if (_bannerShownThisSession) return;
     final m = NotificationService.messengerKey.currentState;
     if (m == null) return;
@@ -186,13 +208,15 @@ class UpdateService {
             'فيه تحديث جديد لوصلي. افتح Google Play وحدّث التطبيق عشان تستفيد بكل المميزات.',
           ),
           actions: [
-            TextButton(
-              onPressed: () {
-                _snooze();
-                m.hideCurrentMaterialBanner();
-              },
-              child: const Text('لاحقاً'),
-            ),
+            if (!force)
+              TextButton(
+                onPressed: () {
+                  _snooze();
+                  _bannerSnoozedThisSession = true;
+                  m.hideCurrentMaterialBanner();
+                },
+                child: const Text('لاحقاً'),
+              ),
             FilledButton(
               onPressed: _openStore,
               child: const Text('تحديث الآن'),
