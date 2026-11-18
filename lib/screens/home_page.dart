@@ -535,20 +535,28 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _openNotifications() async {
-    final enabled = await NotificationService.hasPermission();
-    if (!mounted) return;
-    if (!enabled) {
-      await _showNotificationSettingsHelp();
-      if (!mounted) return;
-    } else {
-      // لو المستخدم فعّل الإذن من إعدادات الجهاز، سجّل التوكن عند رجوعه للتطبيق.
-      await NotificationService.init();
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) await _syncBroadcastTopic(uid);
-    }
-    if (!mounted) return;
+    // افتح الصفحة فورًا؛ أي مزامنة للتوكن/الـ topics تتم في الخلفية
+    // علشان تعليق الشبكة أو FCM ما يوقفش الزر.
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    unawaited(_syncNotificationsInBackground());
+  }
+
+  Future<void> _syncNotificationsInBackground() async {
+    try {
+      final enabled = await NotificationService.hasPermission()
+          .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      if (!mounted) return;
+      if (!enabled) {
+        await _showNotificationSettingsHelp();
+        return;
+      }
+      await NotificationService.init().timeout(const Duration(seconds: 15));
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await _syncBroadcastTopic(uid);
+    } catch (e) {
+      debugPrint('Notifications background sync error: $e');
+    }
   }
 
   /// هزة الجرس + اهتزاز خفيف + صوت.

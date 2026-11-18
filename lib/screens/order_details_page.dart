@@ -212,7 +212,8 @@ class _Details extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.w800),
           ),
-          content: Column(
+          content: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (order.storeId.isNotEmpty) ...[
@@ -274,6 +275,7 @@ class _Details extends StatelessWidget {
                 ),
               ),
             ],
+          ),
           ),
           actions: [
             TextButton(
