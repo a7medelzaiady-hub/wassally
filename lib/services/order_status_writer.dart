@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/order.dart';
+import 'performance_monitor.dart';
 
 /// يغيّر حالة الطلب ويسجّل الحدث في نفس الـ batch.
 ///
@@ -60,7 +61,10 @@ class OrderStatusWriter {
 
     // نقرأ الحالة الفعلية دائمًا حتى لا نسجل انتقالًا مبنيًا على حالة قديمة
     // موجودة في الواجهة. قواعد Firestore تتحقق مرة أخرى عند تنفيذ الـ batch.
-    final snapshot = await orderRef.get();
+    final snapshot = await PerformanceMonitor.trace(
+      'firestore_order_read',
+      orderRef.get,
+    );
     if (!snapshot.exists) {
       throw StateError('الطلب غير موجود أو تم حذفه.');
     }
@@ -99,7 +103,10 @@ class OrderStatusWriter {
       if (activeIssueId.isEmpty) {
         throw StateError('لا يمكن إلغاء طلب خرج للتوصيل قبل توثيق رجوعه للمحل.');
       }
-      final issue = await db.collection('delivery_issues').doc(activeIssueId).get();
+      final issue = await PerformanceMonitor.trace(
+        'firestore_delivery_issue_read',
+        () => db.collection('delivery_issues').doc(activeIssueId).get(),
+      );
       if (issue.data()?['status'] != 'store_confirmed_return') {
         throw StateError('لازم المندوب يؤكد رجوع الطلب للمحل قبل إغلاقه.');
       }
@@ -149,8 +156,9 @@ class OrderStatusWriter {
     }
 
     // أي رفض هنا يظهر للطبقة المستدعية؛ لا نحاول تنفيذ تحديث أضعف بدونه.
-    await batch.commit();
-
-
+    await PerformanceMonitor.trace(
+      'firestore_status_write',
+      batch.commit,
+    );
   }
 }

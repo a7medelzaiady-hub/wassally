@@ -17,6 +17,7 @@ import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
+import '../services/performance_monitor.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -263,18 +264,21 @@ class _HomePageState extends State<HomePage>
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+      final pos = await PerformanceMonitor.trace(
+        'map_gps_location',
+        () => Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
         ),
       );
 
       var text =
           '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
       try {
-        final marks = await placemarkFromCoordinates(
-          pos.latitude,
-          pos.longitude,
+        final marks = await PerformanceMonitor.trace(
+          'map_reverse_geocode',
+          () => placemarkFromCoordinates(pos.latitude, pos.longitude),
         );
         if (marks.isNotEmpty) {
           final m = marks.first;

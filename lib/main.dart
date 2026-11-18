@@ -11,6 +11,7 @@ import 'screens/auth_gate.dart';
 import 'services/error_guard.dart';
 import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
+import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
 import 'theme/brand.dart';
 import 'theme/theme_controller.dart';
@@ -30,6 +31,7 @@ Future<void> _bootstrap() async {
       defaultTargetPlatform == TargetPlatform.macOS)) {
     await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
   }
+  await PerformanceMonitor.configure();
   await _activateAppCheck();
   await ThemeController.instance.load();
   runApp(const WasallyApp());

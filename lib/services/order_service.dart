@@ -13,6 +13,7 @@ import 'cart_model.dart';
 import 'order_contact_service.dart';
 import 'order_gateway.dart';
 import 'order_status_writer.dart';
+import 'performance_monitor.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
 
@@ -60,13 +61,16 @@ class OrderService {
     final active = _activePlaceOrder;
     if (active != null) return active;
 
-    final pending = _guardedPlaceOrder(
-      cart: cart,
-      name: name,
-      phone: phone,
-      address: address,
-      notes: notes,
-      courierNotes: courierNotes,
+    final pending = PerformanceMonitor.trace<String>(
+      'checkout_submit',
+      () => _guardedPlaceOrder(
+        cart: cart,
+        name: name,
+        phone: phone,
+        address: address,
+        notes: notes,
+        courierNotes: courierNotes,
+      ),
     );
     _activePlaceOrder = pending;
     return pending.whenComplete(() {
@@ -227,10 +231,13 @@ class OrderService {
       // مسار التوافق القديم فقط. في وضع Worker نتجنب تكرار قراءات
       // التقييد والمحل والكوبون؛ البوابة تنفذ التحقق الموثوق نفسه مرة واحدة.
       try {
-        final restriction = await FirebaseFirestore.instance
-            .collection('customer_restrictions')
-            .doc(user.uid)
-            .get();
+        final restriction = await PerformanceMonitor.trace(
+          'firestore_customer_check',
+          () => FirebaseFirestore.instance
+              .collection('customer_restrictions')
+              .doc(user.uid)
+              .get(),
+        );
         final restrictionData = restriction.data();
         final expiresAt = restrictionData?['expiresAt'];
         if (restrictionData?['active'] == true &&
@@ -246,10 +253,13 @@ class OrderService {
         if (error.code != 'permission-denied') rethrow;
       }
 
-      final storeDoc = await FirebaseFirestore.instance
-          .collection('stores')
-          .doc(storeId)
-          .get();
+      final storeDoc = await PerformanceMonitor.trace(
+        'firestore_store_read',
+        () => FirebaseFirestore.instance
+            .collection('stores')
+            .doc(storeId)
+            .get(),
+      );
       if (!storeDoc.exists || storeDoc.data() == null) {
         throw StateError('المحل غير موجود أو لم يعد متاحًا.');
       }
@@ -372,7 +382,10 @@ class OrderService {
       );
 
       try {
-        await batch.commit();
+        await PerformanceMonitor.trace(
+          'firestore_order_write',
+          batch.commit,
+        );
       } on FirebaseException catch (e) {
         // قد يكون السيرفر حفظ الـ Batch ثم انقطع الرد. نتحقق من نفس المستند
         // قبل إعادة المحاولة، حتى لا ننشئ طلبًا ثانيًا للشراء نفسه.
@@ -531,7 +544,10 @@ class OrderService {
       }
 
       try {
-        await batch.commit();
+        await PerformanceMonitor.trace(
+          'firestore_order_update',
+          batch.commit,
+        );
       } on FirebaseException catch (e) {
         if (kDebugMode) debugPrint('ORDER EDIT ERROR [${e.code}]');
         if (e.code == 'permission-denied') {
@@ -610,19 +626,25 @@ class OrderService {
 
     // لا نرجع لاستعلام غير محدود إذا كان الفهرس ناقصًا؛ ده ممكن يقرأ تاريخ العميل بالكامل.
     // الفهرس userId + createdAt موجود في firestore.indexes.json ويجب نشره مع التطبيق.
-    await for (final snap
-        in _orders
-            .where('userId', isEqualTo: user.uid)
-            .orderBy('createdAt', descending: true)
-            .limit(kMyOrdersLimit)
-            .snapshots()) {
+    final stream = _orders
+        .where('userId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(kMyOrdersLimit)
+        .snapshots();
+    await for (final snap in PerformanceMonitor.traceFirstEvent(
+      'order_history_initial_load',
+      stream,
+    )) {
       yield toList(snap);
     }
   }
 
   /// متابعة طلب واحد لحظيًا.
   static Stream<AppOrder?> watchOrder(String id) {
-    return _orders.doc(id).snapshots().map((s) {
+    return PerformanceMonitor.traceFirstEvent(
+      'order_tracking_initial_load',
+      _orders.doc(id).snapshots(),
+    ).map((s) {
       final data = s.data();
       return data == null ? null : AppOrder.fromMap(s.id, data);
     });
