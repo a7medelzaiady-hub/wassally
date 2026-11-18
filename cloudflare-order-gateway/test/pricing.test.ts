@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import worker from "../src/index";
 import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
@@ -523,5 +524,58 @@ describe("customer special-request image uploads", () => {
     expect(folder).toMatch(/^special_requests\/[a-f0-9]{64}$/);
     expect(folder).not.toContain("customer-uid-123");
     await expect(cloudinarySpecialRequestFolder("customer-uid-123")).resolves.toBe(folder);
+  });
+});
+
+
+describe("account deletion HTTP authentication guard", () => {
+  it("rejects a request without a bearer token before making any outbound request", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const env = {
+      FIREBASE_PROJECT_ID: "wasally-test",
+      FIREBASE_SERVICE_ACCOUNT_EMAIL: "test-only@wasally.invalid",
+      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "test-only-not-a-secret",
+      UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    };
+
+    try {
+      const response = await worker.fetch(
+        new Request("https://worker.test/v1/account/delete", { method: "POST" }),
+        env,
+      );
+
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: "سجّل الدخول من جديد.",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("rejects a request with an empty bearer token before contacting Firebase", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const env = {
+      FIREBASE_PROJECT_ID: "wasally-test",
+      FIREBASE_SERVICE_ACCOUNT_EMAIL: "test-only@wasally.invalid",
+      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "test-only-not-a-secret",
+      UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
+    };
+
+    try {
+      const response = await worker.fetch(
+        new Request("https://worker.test/v1/account/delete", {
+          method: "POST",
+          headers: { Authorization: "Bearer " },
+        }),
+        env,
+      );
+
+      expect(response.status).toBe(401);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
