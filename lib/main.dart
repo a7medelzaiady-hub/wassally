@@ -7,11 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
-import 'services/performance_monitor.dart';
 import 'screens/auth_gate.dart';
 import 'services/error_guard.dart';
 import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
+import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
 import 'theme/brand.dart';
 import 'theme/theme_controller.dart';
