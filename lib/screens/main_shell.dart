@@ -6,6 +6,7 @@ import '../services/role_service.dart';
 
 import '../services/cart_model.dart';
 import '../services/navigation.dart';
+import '../services/performance_monitor.dart';
 import '../widgets/curved_nav_bar.dart';
 import '../widgets/feedback_fab.dart';
 import 'account_page.dart';
@@ -29,6 +30,13 @@ class MainShell extends StatelessWidget {
     return ValueListenableBuilder<int>(
       valueListenable: shellTab,
       builder: (context, index, _) {
+        PerformanceMonitor.screenOpened(switch (index) {
+          0 => 'home',
+          1 => 'cart',
+          2 => 'orders',
+          3 => 'account',
+          _ => 'other',
+        });
         return PopScope(
           canPop: index == 0,
           onPopInvokedWithResult: (didPop, _) {
@@ -72,6 +80,7 @@ class MainShell extends StatelessWidget {
                 index: map.indexOf(index),
                 onTap: (i) {
                   if (map[i] == -1) {
+                    PerformanceMonitor.screenOpened('notifications');
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const NotificationsPage(),
