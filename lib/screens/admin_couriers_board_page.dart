@@ -323,7 +323,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
                 value,
                 style: TextStyle(
                   fontSize: 13.5,
-                  fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
                   color: Brand.ink,
                 ),
               ),
@@ -360,7 +360,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
                 ),
                 child: Text(
                   '${i + 1}',
-                  style: TextStyle(fontWeight: FontWeight.w900, color: medal),
+                  style: TextStyle(fontWeight: FontWeight.w800, color: medal),
                 ),
               ),
               const SizedBox(width: 10),

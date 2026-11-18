@@ -333,7 +333,7 @@ class _AdminPromosPageState extends State<AdminPromosPage> {
                             d.id,
                             textDirection: TextDirection.ltr,
                             textAlign: TextAlign.start,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                           subtitle: Text(
                             'خصم ${(d.data()['percent'] as num?)?.toStringAsFixed(0) ?? '?'}%',

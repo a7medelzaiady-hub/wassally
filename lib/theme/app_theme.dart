@@ -29,7 +29,11 @@ ThemeData buildAppTheme() {
         error: kDanger,
       );
 
-  final base = ThemeData(useMaterial3: true, colorScheme: scheme);
+  final base = ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    fontFamily: 'Tajawal',
+  );
   final text = base.textTheme.apply(
     fontFamily: 'Tajawal',
     bodyColor: kInk,

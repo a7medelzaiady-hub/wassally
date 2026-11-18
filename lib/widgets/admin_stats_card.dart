@@ -38,7 +38,7 @@ class _AdminStatsCardState extends State<AdminStatsCard> {
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
           ),
           Text(
             label,

@@ -93,7 +93,7 @@ class CategoryTile extends StatelessWidget {
                 child: Text(
                   info.category,
                   style: text.labelLarge?.copyWith(
-                    fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
                     color: selected ? kInk : kMuted,
                   ),
                 ),

@@ -123,7 +123,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
             '$oldest د',
             style: TextStyle(
               color: kDanger,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
           ),

@@ -397,7 +397,7 @@ class _RequestCardState extends State<_RequestCard> {
                 child: Text(
                   '${m['name'] ?? ''}',
                   style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     fontSize: 16,
                   ),
                 ),
@@ -1139,7 +1139,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
               Expanded(
                 child: Text(
                   'تقييم العميل: $rating / 5',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
               Chip(
@@ -1389,7 +1389,7 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
               Expanded(
                 child: Text(
                   'بلاغ تعذر التسليم',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
               Chip(

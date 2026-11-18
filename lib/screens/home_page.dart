@@ -216,7 +216,7 @@ class _HomePageState extends State<HomePage>
           ),
           title: const Text(
             'استخدام موقعك',
-            style: TextStyle(fontWeight: FontWeight.w900),
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
           content: const Text(
             'هنستخدم موقع جهازك مرة واحدة بس عشان نحدد عنوان التوصيل، '
@@ -376,7 +376,7 @@ class _HomePageState extends State<HomePage>
           ),
           title: const Text(
             'تفعيل الإشعارات',
-            style: TextStyle(fontWeight: FontWeight.w900),
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
           content: const Text(
             'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
@@ -1015,7 +1015,7 @@ class _HomePageState extends State<HomePage>
                     title,
                     style: TextStyle(
                       fontSize: 20,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
                   ),
@@ -1100,7 +1100,7 @@ class _HomePageState extends State<HomePage>
                           style: const TextStyle(
                             color: Color(0xFF1B1D22),
                             fontSize: 12,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
@@ -1142,7 +1142,7 @@ class _HomePageState extends State<HomePage>
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
                   ),
@@ -1175,7 +1175,7 @@ class _HomePageState extends State<HomePage>
                         formatPrice(price),
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           color: Brand.green,
                         ),
                       ),
@@ -1221,7 +1221,7 @@ class _HomePageState extends State<HomePage>
                     'محلات مميزة',
                     style: TextStyle(
                       fontSize: 19,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
                   ),
@@ -1339,7 +1339,7 @@ class _HomePageState extends State<HomePage>
                       Expanded(
                         child: Text(
                           'تصفّح الأقسام',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.ink),
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Brand.ink),
                         ),
                       ),
                       TextButton(

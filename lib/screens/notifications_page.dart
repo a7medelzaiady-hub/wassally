@@ -337,7 +337,7 @@ class _NotifHeader extends StatelessWidget {
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 22,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -528,7 +528,7 @@ class _NotifCardState extends State<_NotifCard> {
                                     title.isEmpty ? 'إشعار' : title,
                                     style: TextStyle(
                                       fontSize: 15.5,
-                                      fontWeight: FontWeight.w900,
+                                      fontWeight: FontWeight.w800,
                                       color: Brand.ink,
                                     ),
                                   ),
@@ -863,7 +863,7 @@ class _StepperState extends State<_Stepper>
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: i == widget.step
-                        ? FontWeight.w900
+                        ? FontWeight.w800
                         : FontWeight.w600,
                     color: i == widget.step
                         ? widget.color

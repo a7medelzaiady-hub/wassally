@@ -137,7 +137,7 @@ class _EditOrderPageState extends State<EditOrderPage> {
                   Text(
                     'الإجمالي: ${formatPrice(_total)}',
                     style: const TextStyle(
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       fontSize: 17,
                     ),
                   ),

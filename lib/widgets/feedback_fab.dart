@@ -312,7 +312,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
               Text(
                 'كلّمنا',
                 style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w900),
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
               Text(

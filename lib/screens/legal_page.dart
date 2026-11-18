@@ -40,7 +40,7 @@ class LegalPage extends StatelessWidget {
                     child: Text(
                       s.title,
                       style: text.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: kPrimary,
                       ),
                     ),

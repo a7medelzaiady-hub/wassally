@@ -477,7 +477,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     formatPrice(o.courierFee),
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: Brand.green,
                     ),
                   ),

@@ -67,7 +67,7 @@ Future<void> showPanelSwitcher(BuildContext context) async {
               'تبديل اللوحة',
               style: TextStyle(
                 fontSize: 17,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: kInk,
               ),
             ),

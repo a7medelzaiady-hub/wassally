@@ -79,7 +79,7 @@ class AboutPage extends StatelessWidget {
                         'وصلي',
                         style: TextStyle(
                           fontSize: 30,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           color: Colors.white,
                         ),
                       ),

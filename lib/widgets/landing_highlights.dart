@@ -253,7 +253,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
                 formatPrice(price),
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Brand.goldDeep,
                 ),
               ),

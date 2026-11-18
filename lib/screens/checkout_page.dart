@@ -106,7 +106,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           title: const Text(
             'هنوصّل الطلب فين؟',
-            style: TextStyle(fontWeight: FontWeight.w900),
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -215,7 +215,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               title: const Text(
                 'تم إرسال طلبك',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w900),
+                style: TextStyle(fontWeight: FontWeight.w800),
               ),
               content: const Text(
                 'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
@@ -556,7 +556,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

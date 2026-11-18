@@ -108,7 +108,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                     style: TextStyle(
                       fontSize: 22,
                       height: 1,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                       color: selected ? Colors.white : Brand.ink,
                     ),
                   ),
@@ -533,7 +533,7 @@ class _AdminOrderCard extends StatelessWidget {
                               formatPrice(order.payable),
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 color: Brand.goldDeep,
                               ),
                             ),
@@ -1203,7 +1203,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                 'تفاصيل الطلب',
                 style: TextStyle(
                   fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
               ),
@@ -1275,7 +1275,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                       formatPrice(o.payable),
                       style: TextStyle(
                         fontSize: 17,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: Brand.goldDeep,
                       ),
                     ),

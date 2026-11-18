@@ -85,7 +85,7 @@ class _PromoBannersState extends State<PromoBanners> {
 
   void _startTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _next());
+    _timer = Timer.periodic(const Duration(seconds: 7), (_) => _next());
   }
 
   void _next() {

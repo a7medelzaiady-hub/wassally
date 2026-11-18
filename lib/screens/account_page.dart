@@ -281,7 +281,7 @@ class _AccountPageState extends State<AccountPage> {
                     Text(
                       name,
                       style: text.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                     if ((user?.email ?? '').isNotEmpty)

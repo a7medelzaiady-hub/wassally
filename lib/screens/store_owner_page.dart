@@ -89,47 +89,77 @@ class StoreOwnerPage extends StatelessWidget {
           length: 3,
           child: Scaffold(
             floatingActionButton: const FeedbackFab(),
-            body: Column(
-              children: [
-                StaffHeader(
-                  title: 'لوحة المحل',
-                  subtitle: name.isEmpty ? 'حساب صاحب المحل' : 'أهلاً $name',
-                ),
-                _ShopStatusBar(storeId: storeId),
-                UnansweredOrdersAlert(orders: orders),
-                Material(
-                  color: Colors.white,
-                  child: TabBar(
-                    labelColor: kPrimary,
-                    indicatorColor: kPrimary,
-                    tabs: [
-                      Tab(text: 'الطلبات'),
-                      Tab(text: 'الأصناف والعروض'),
-                      Tab(text: 'الطلبات الخاصة'),
+            body: NestedScrollView(
+              headerSliverBuilder: (context, _) => [
+                SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      StaffHeader(
+                        title: 'لوحة المحل',
+                        subtitle: name.isEmpty
+                            ? 'حساب صاحب المحل'
+                            : 'أهلاً $name',
+                      ),
+                      _ShopStatusBar(storeId: storeId),
+                      UnansweredOrdersAlert(orders: orders),
                     ],
                   ),
                 ),
-                Expanded(
-                  child: TabBarView(
-                    children: [
-                      _OwnerOrdersTab(
-                        storeId: storeId,
-                        orders: orders,
-                        loading: !snapshot.hasData && !snapshot.hasError,
-                        error: snapshot.error,
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _TabsDelegate(
+                    TabBar(
+                      labelColor: kPrimary,
+                      unselectedLabelColor: kMuted,
+                      indicatorColor: kPrimary,
+                      labelStyle: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
                       ),
-                      _OwnerProductsTab(storeId: storeId),
-                      _OwnerSpecialRequestsTab(orders: orders),
-                    ],
+                      tabs: const [
+                        Tab(text: 'الطلبات'),
+                        Tab(text: 'الأصناف والعروض'),
+                        Tab(text: 'الطلبات الخاصة'),
+                      ],
+                    ),
                   ),
                 ),
               ],
+              body: TabBarView(
+                children: [
+                  _OwnerOrdersTab(
+                    storeId: storeId,
+                    orders: orders,
+                    loading: !snapshot.hasData && !snapshot.hasError,
+                    error: snapshot.error,
+                  ),
+                  _OwnerProductsTab(storeId: storeId),
+                  _OwnerSpecialRequestsTab(orders: orders),
+                ],
+              ),
             ),
           ),
         );
       },
     );
   }
+}
+
+class _TabsDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar bar;
+  _TabsDelegate(this.bar);
+
+  @override
+  double get minExtent => bar.preferredSize.height;
+  @override
+  double get maxExtent => bar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
+      Material(color: Colors.white, elevation: overlaps ? 2 : 0, child: bar);
+
+  @override
+  bool shouldRebuild(covariant _TabsDelegate old) => false;
 }
 
 // ─────────────────────── تجهيز المحل قبل الموافقة ───────────────────────
@@ -282,7 +312,7 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
                               Text(
                                 title,
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w800,
                                   fontSize: 16,
                                 ),
                               ),
@@ -385,51 +415,6 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
     }
   }
 
-  Future<void> _deleteStore() async {
-    if (_busy) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await confirmDialog(
-      context,
-      title: 'حذف المحل',
-      message:
-          'حذف المحل وكل أصنافه نهائيًا؟ مش هتقدر ترجّعه (لو هترجع قريب اقفله بدل ما تحذفه).',
-      confirmLabel: 'حذف المحل',
-      destructive: true,
-    );
-    if (!ok || !mounted) return;
-    setState(() => _busy = true);
-    try {
-      final store = FirebaseFirestore.instance
-          .collection('stores')
-          .doc(widget.storeId);
-      while (true) {
-        final snap = await store.collection('products').limit(400).get();
-        if (snap.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (final d in snap.docs) {
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-      }
-      // حذف المحل وربط حساب المالك في Batch واحدة؛ القواعد تتحقق من
-      // ملكية المحل والـ storeId القديم قبل إتمام العمليتين ذريًا.
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) throw StateError('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
-      final batch = FirebaseFirestore.instance.batch();
-      batch.delete(store);
-      batch.delete(FirebaseFirestore.instance.collection('storeOwners').doc(uid));
-      await batch.commit();
-      await CatalogService.bump();
-      messenger.showSnackBar(const SnackBar(content: Text('تم حذف المحل.')));
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('تعذر حذف المحل: ${_why(e)}')),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   Future<void> _setActive(bool value) async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
@@ -496,7 +481,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                                       style: TextStyle(
                                         color: kPrimary,
                                         fontSize: 22,
-                                        fontWeight: FontWeight.w900,
+                                        fontWeight: FontWeight.w800,
                                       ),
                                     ),
                                   )
@@ -535,7 +520,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                         Text(
                           shopName,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             fontSize: 16,
                           ),
                         ),
@@ -572,6 +557,14 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: kPrimary,
+                        side: BorderSide(color: kPrimary),
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
+                      ),
                       onPressed: _busy ? null : _changeImage,
                       icon: _busy
                           ? const SizedBox(
@@ -586,6 +579,14 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: kPrimary,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13.5,
+                        ),
+                      ),
                       onPressed: () =>
                           DefaultTabController.of(context).animateTo(1),
                       icon: const Icon(Icons.local_offer_outlined, size: 18),
@@ -593,12 +594,6 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                     ),
                   ),
                 ],
-              ),
-              TextButton.icon(
-                onPressed: _busy ? null : _deleteStore,
-                icon: const Icon(Icons.delete_outline, size: 18),
-                label: const Text('حذف المحل'),
-                style: TextButton.styleFrom(foregroundColor: kDanger),
               ),
             ],
           ),
@@ -1040,7 +1035,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             children: [
               Text(
                 (o.displayCustomer.isEmpty ? 'عميل' : o.displayCustomer),
-                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const Spacer(),
               if (orderTotalTimer(
@@ -1077,12 +1072,15 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                   Expanded(
                     child: Text(
                       '${line.name} × ${line.qty}',
-                      style: _unavailable.contains(line.name)
-                          ? TextStyle(
-                              color: kDanger,
-                              decoration: TextDecoration.lineThrough,
-                            )
-                          : null,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: _unavailable.contains(line.name)
+                            ? kDanger
+                            : null,
+                        decoration: _unavailable.contains(line.name)
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
                     ),
                   ),
                   Text(formatPrice(line.total)),
@@ -1110,6 +1108,10 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                 ],
               ),
             ),
+          if (o.specialRequest != null) ...[
+            const SizedBox(height: 10),
+            _SpecialRequestBox(data: o.specialRequest!),
+          ],
           if (o.notes.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text('ملاحظات العميل: ${o.notes}'),
@@ -1126,7 +1128,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                 formatPrice(o.subtotal),
                 style: text.titleMedium?.copyWith(
                   color: kPrimary,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
@@ -2287,69 +2289,148 @@ class _OwnerSpecialRequestsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final order = specialOrders[index];
         final data = order.specialRequest!;
-        final description = (data['description'] ?? '').toString().trim();
-        final imageUrl = (data['imageUrl'] ?? '').toString().trim();
-        final voiceBase64 = (data['voiceBase64'] ?? '').toString().trim();
-        final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
         final date = order.createdAt;
 
-        return Card(
-          color: Colors.white,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.receipt_long_outlined, color: kPrimary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'طلب رقم ${order.id}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0F000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      order.displayCustomer.isEmpty
+                          ? 'عميل'
+                          : order.displayCustomer,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
                       ),
                     ),
-                    OrderStatusPill(status: order.status),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  description.isEmpty ? 'طلب بدون وصف نصي' : description,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-                const SizedBox(height: 6),
-                Text('الكمية المطلوبة: $quantity'),
-                if (date != null)
-                  Text(
-                    '${date.day}/${date.month}/${date.year} • ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
-                if (imageUrl.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl,
-                      height: 150,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) =>
-                          const Text('تعذر عرض الصورة المرفقة'),
-                    ),
-                  ),
+                  OrderStatusPill(status: order.status),
                 ],
-                if (voiceBase64.isNotEmpty)
-                  _SpecialVoicePlayer(encoded: voiceBase64),
-              ],
-            ),
+              ),
+              if (date != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    formatDateTime(date),
+                    style: TextStyle(color: kMuted, fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              _SpecialRequestBox(data: data),
+            ],
           ),
         );
       },
     );
   }
 }
+
+/// بوكس «طلب خاص» واضح لصاحب المحل: الوصف + الكمية + الصورة + الصوت.
+class _SpecialRequestBox extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _SpecialRequestBox({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final description = (data['description'] ?? '').toString().trim();
+    final imageUrl = (data['imageUrl'] ?? '').toString().trim();
+    final voiceBase64 = (data['voiceBase64'] ?? '').toString().trim();
+    final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kPrimarySoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kPrimary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.star_rounded, color: kPrimary, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'طلب خاص (من خارج القائمة)',
+                  style: TextStyle(
+                    color: kPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: kPrimary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'الكمية × $quantity',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description.isEmpty ? 'بدون وصف مكتوب (شوف الصورة/الصوت)' : description,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14.5,
+              height: 1.5,
+            ),
+          ),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                imageUrl,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    const Text('تعذر عرض الصورة المرفقة'),
+              ),
+            ),
+          ],
+          if (voiceBase64.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _SpecialVoicePlayer(encoded: voiceBase64),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _SpecialVoicePlayer extends StatefulWidget {
   final String encoded;
   const _SpecialVoicePlayer({required this.encoded});

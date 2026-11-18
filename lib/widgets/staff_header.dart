@@ -49,11 +49,11 @@ class StaffHeader extends StatelessWidget {
       child: IconButton(
         tooltip: tooltip,
         icon: Icon(icon, size: 22),
-        color: color ?? Brand.gold,
+        color: color ?? Brand.greenDark,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 40, height: 40),
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.12),
+          backgroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
@@ -152,7 +152,7 @@ class StaffHeader extends StatelessWidget {
       _btn(
         tooltip: 'تسجيل خروج',
         icon: Icons.logout,
-        color: Colors.white,
+        color: const Color(0xFFD32F2F),
         onPressed: () => _logout(context),
       ),
     ];

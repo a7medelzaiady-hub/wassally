@@ -47,7 +47,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
-          title: const Text('تسوق', style: TextStyle(fontWeight: FontWeight.w900)),
+          title: const Text('تسوق', style: TextStyle(fontWeight: FontWeight.w800)),
           centerTitle: true,
         ),
         body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -162,7 +162,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                                           const SizedBox(height: 7),
                                           Row(children: [
                                             const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 19),

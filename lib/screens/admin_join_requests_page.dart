@@ -147,7 +147,7 @@ class _AdminJoinRequestsPageState extends State<AdminJoinRequestsPage> {
                           child: Icon(isStore ? Icons.storefront : Icons.delivery_dining, color: kPrimary),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17))),
+                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17))),
                         Chip(label: Text(type?.label ?? 'طلب غير معروف')),
                       ]),
                       const SizedBox(height: 10),

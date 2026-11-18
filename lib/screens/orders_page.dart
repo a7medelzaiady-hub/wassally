@@ -170,7 +170,7 @@ class _OrderCardState extends State<_OrderCard> {
                       softWrap: false,
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: Brand.goldDeep,
                       ),
                     ),

@@ -6,6 +6,7 @@ import '../services/role_service.dart';
 
 import '../services/cart_model.dart';
 import '../services/navigation.dart';
+import '../widgets/curved_nav_bar.dart';
 import '../widgets/feedback_fab.dart';
 import 'account_page.dart';
 import 'cart_page.dart';
@@ -58,39 +59,29 @@ class MainShell extends StatelessWidget {
           bottomNavigationBar: ListenableBuilder(
             listenable: cart,
             builder: (context, _) {
-              return NavigationBar(
-                backgroundColor: Colors.white,
-                surfaceTintColor: Colors.transparent,
-                indicatorColor: Colors.transparent,
-                selectedIndex: index,
-                onDestinationSelected: (i) => shellTab.value = i,
-                destinations: [
-                  const NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home_rounded),
+              return CurvedNavBar(
+                index: index,
+                onTap: (i) => shellTab.value = i,
+                items: [
+                  const AppNavItem(
+                    icon: Icons.home_outlined,
+                    selectedIcon: Icons.home_rounded,
                     label: 'الرئيسية',
                   ),
-                  NavigationDestination(
-                    icon: Badge(
-                      isLabelVisible: cart.count > 0,
-                      label: Text('${cart.count}'),
-                      child: const Icon(Icons.shopping_cart_outlined),
-                    ),
-                    selectedIcon: Badge(
-                      isLabelVisible: cart.count > 0,
-                      label: Text('${cart.count}'),
-                      child: const Icon(Icons.shopping_cart),
-                    ),
+                  AppNavItem(
+                    icon: Icons.shopping_cart_outlined,
+                    selectedIcon: Icons.shopping_cart,
                     label: 'السلة',
+                    badge: cart.count,
                   ),
-                  const NavigationDestination(
-                    icon: Icon(Icons.receipt_long_outlined),
-                    selectedIcon: Icon(Icons.receipt_long),
+                  const AppNavItem(
+                    icon: Icons.receipt_long_outlined,
+                    selectedIcon: Icons.receipt_long,
                     label: 'طلباتي',
                   ),
-                  const NavigationDestination(
-                    icon: Icon(Icons.person_outline),
-                    selectedIcon: Icon(Icons.person),
+                  const AppNavItem(
+                    icon: Icons.person_outline,
+                    selectedIcon: Icons.person,
                     label: 'حسابي',
                   ),
                 ],

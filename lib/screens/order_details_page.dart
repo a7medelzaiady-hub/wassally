@@ -210,7 +210,7 @@ class _Details extends StatelessWidget {
           title: const Text(
             'قيّم تجربتك',
             textAlign: TextAlign.center,
-            style: TextStyle(fontWeight: FontWeight.w900),
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -639,7 +639,7 @@ class _Details extends StatelessWidget {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -865,7 +865,7 @@ class _TimelineStep extends StatelessWidget {
               child: Text(
                 step.label,
                 style: TextStyle(
-                  fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                   color: reached ? kInk : kMuted,
                 ),
               ),
@@ -935,7 +935,7 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('الطلب الخاص والمرفقات',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           const SizedBox(height: 8),
           if (description.isNotEmpty) Text(description),
           Text('الكمية المطلوبة: ${widget.request['quantity'] ?? 1}'),

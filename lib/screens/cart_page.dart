@@ -50,7 +50,7 @@ class CartPage extends StatelessWidget {
                       child: Text(
                         'سلتي',
                         style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w900),
+                            ?.copyWith(fontWeight: FontWeight.w800),
                       ),
                     ),
                     ?clearButton,
@@ -131,7 +131,7 @@ class _CartBody extends StatelessWidget {
                         children: [
                           const Expanded(
                             child: Text('طلب خاص مرفق بالطلب',
-                                style: TextStyle(fontWeight: FontWeight.w900)),
+                                style: TextStyle(fontWeight: FontWeight.w800)),
                           ),
                           IconButton(
                             tooltip: 'إزالة الطلب الخاص',
@@ -283,7 +283,7 @@ class _SummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.bodyLarge;
     final style = strong
-        ? base?.copyWith(fontWeight: FontWeight.w900, fontSize: 18)
+        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 18)
         : base?.copyWith(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

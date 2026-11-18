@@ -159,7 +159,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                               p.name,
                               style: TextStyle(
                                 fontSize: 19,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 color: Brand.ink,
                               ),
                             ),
@@ -173,7 +173,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                               formatPrice(p.price),
                               style: TextStyle(
                                 fontSize: 18,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: FontWeight.w800,
                                 color: Brand.ink,
                               ),
                             ),
@@ -201,7 +201,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                       'وصف',
                       style: TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: FontWeight.w800,
                         color: Brand.ink,
                       ),
                     ),
@@ -243,11 +243,11 @@ class _ProductSheetState extends State<_ProductSheet> {
                       children: [
                         const Text(
                           'أضف للسلة',
-                          style: TextStyle(fontWeight: FontWeight.w900),
+                          style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                         Text(
                           formatPrice(_unit * _qty),
-                          style: const TextStyle(fontWeight: FontWeight.w900),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ],
                     ),
@@ -275,7 +275,7 @@ class _ProductSheetState extends State<_ProductSheet> {
           child: Text(
             '$_qty',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
         btn(Icons.remove_circle_outline, _qty > 1 ? () => setState(() => _qty--) : null),
@@ -297,7 +297,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                 group.title,
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
               ),

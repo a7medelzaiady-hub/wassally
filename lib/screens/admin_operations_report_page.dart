@@ -149,7 +149,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   value,
                   style: TextStyle(
                     color: Brand.ink,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
                     fontSize: 19,
                   ),
                 ),
@@ -169,7 +169,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
             style: TextStyle(
               color: Brand.ink,
               fontSize: 15,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const SizedBox(height: 10),

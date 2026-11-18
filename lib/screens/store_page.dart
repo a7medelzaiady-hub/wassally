@@ -361,7 +361,7 @@ class _StorePageState extends State<StorePage> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('طلب خاص / منتج غير موجود؟',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Brand.ink)),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Brand.ink)),
                 ),
                 Icon(_specialOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                     color: kMuted),
@@ -437,7 +437,7 @@ class _StorePageState extends State<StorePage> {
                     : null,
                 icon: const Icon(Icons.remove_circle_outline),
               ),
-              Text('$_specialQty', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              Text('$_specialQty', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
               IconButton(
                 onPressed: _specialQty < 99 && !_sendingSpecial
                     ? () => setState(() => _specialQty++)
@@ -455,7 +455,7 @@ class _StorePageState extends State<StorePage> {
                 ),
                 child: _sendingSpecial
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('إضافة للطلب', style: TextStyle(fontWeight: FontWeight.w900)),
+                    : const Text('إضافة للطلب', style: TextStyle(fontWeight: FontWeight.w800)),
               ),
             ],
           ),
@@ -618,7 +618,7 @@ class _StorePageState extends State<StorePage> {
           store.name,
           style: const TextStyle(
             color: Colors.white,
-            fontWeight: FontWeight.w900,
+            fontWeight: FontWeight.w800,
             fontSize: 18,
           ),
         ),
@@ -696,7 +696,7 @@ class _StorePageState extends State<StorePage> {
             store.name,
             style: TextStyle(
               fontSize: 24,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),
           ),
@@ -830,7 +830,7 @@ class _StorePageState extends State<StorePage> {
                 'المنتجات',
                 style: TextStyle(
                   fontSize: 19,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
               ),
@@ -1343,7 +1343,7 @@ class _StorePageState extends State<StorePage> {
                         formatPrice(cart.subtotal),
                         style: TextStyle(
                           color: Brand.gold,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
@@ -1390,7 +1390,7 @@ class _ColumnRow extends StatelessWidget {
               letter,
               style: TextStyle(
                 color: color,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 fontSize: 14,
               ),
             ),
@@ -1584,7 +1584,7 @@ class _ProductRow extends StatelessWidget {
                         formatPrice(product.price),
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           color: Brand.ink,
                         ),
                       ),
