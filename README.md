@@ -166,13 +166,13 @@ flutter build appbundle          # ملف للرفع على Google Play
 - `KEYSTORE_BASE64`: ملف upload keystore بصيغة Base64.
   في Windows PowerShell يمكن توليده محليًا بالأمر التالي (عدّل المسار فقط)، وانسخ الناتج مباشرة إلى GitHub Secret دون إرساله في المحادثة:
   ```powershell
-  [Convert]::ToBase64String([IO.File]::ReadAllBytes('H:\\keys\\wasally-release.jks'))
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes('H:\keys\wasally-release.jks'))
   ```
 - `KEYSTORE_PASSWORD`: كلمة مرور ملف keystore.
 - `KEY_ALIAS`: اسم alias الخاص بمفتاح الرفع.
 - `KEY_PASSWORD`: كلمة مرور المفتاح.
 
-لا ترفع ملف `.jks` أو `key.properties` إلى المستودع، ولا ترسل كلمات المرور في المحادثة. الـworkflow يبني AAB موقّعًا، يتحقق من سلامة الأرشيف، ويرفعه كـartifact لمدة 7 أيام، ثم يحذف ملفات التوقيع من runner. لا يرفع التطبيق تلقائيًا إلى Google Play. تأكد أن شهادة مفتاح الرفع هي المسجلة في Play Console قبل إرسال الملف.
+لا ترفع ملف `.jks` أو `key.properties` إلى المستودع، ولا ترسل كلمات المرور في المحادثة. الـworkflow يشترط أيضًا تأكيد نجاح اختبار طلب حقيقي موثّق عبر Worker وتفعيل `app_info/security.serverOrders=true`، ويفحص `/health` قبل بناء نسخة الإنتاج؛ لن ينتج AAB إنتاجيًا قبل هذا التأكيد. بعدها يتحقق من توقيع الأرشيف ويرفعه كـartifact لمدة 7 أيام، ثم يحذف ملفات التوقيع من runner. لا يرفع التطبيق تلقائيًا إلى Google Play. تأكد أن شهادة مفتاح الرفع هي المسجلة في Play Console قبل إرسال الملف.
 
 
 ## الإشعارات (خطة Firebase Spark)
