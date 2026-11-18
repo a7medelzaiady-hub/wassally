@@ -80,12 +80,14 @@ class NotificationService {
   /// Keeps the public courier topic aligned with the authenticated account's
   /// verified active roles. The Worker sends available-order pushes to this topic.
   static Future<void> syncCourierTopic({required bool isCourier}) async {
-    if (!_supported || !await hasPermission()) return;
+    if (!_supported) return;
     try {
       final messaging = FirebaseMessaging.instance;
       if (isCourier) {
+        if (!await hasPermission()) return;
         await messaging.subscribeToTopic('couriers');
       } else {
+        // Role revocation must clean up even if notification permission was revoked.
         await messaging.unsubscribeFromTopic('couriers');
       }
     } catch (e) {
