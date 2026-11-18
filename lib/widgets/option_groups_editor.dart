@@ -218,7 +218,7 @@ Widget _groupEditor(
           maxLines: 8,
           decoration: const InputDecoration(
             labelText: 'الاختيارات (كل اختيار في سطر)',
-            hintText: 'سادة\\nمظبوط\\nكوكيز = 90',
+            hintText: 'سادة\nمظبوط\nكوكيز = 90',
             alignLabelWithHint: true,
           ),
         ),
