@@ -185,7 +185,7 @@ class UpdateService {
 
   /// شريط تذكير ثابت (بيفضل لحد ما المستخدم يقفله أو يحدّث).
   static void _showBanner({bool force = false}) {
-    if (_bannerShownThisSession) return;
+    if (_bannerShownThisSession && !force) return;
     final m = NotificationService.messengerKey.currentState;
     if (m == null) return;
     _bannerShownThisSession = true;
