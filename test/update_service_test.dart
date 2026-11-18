@@ -63,6 +63,12 @@ void main() {
       ), isFalse);
     });
 
+    test('التحديث الإجباري يتجاوز التأجيل ولا يمكن إخفاؤه', () {
+      expect(UpdateService.shouldShowResumeReminder(
+        available: true, force: true, snoozed: true, alreadyShown: true,
+      ), isTrue);
+    });
+
     test('لا يظهر إذا لم يوجد تحديث متاح', () {
       expect(UpdateService.shouldShowResumeReminder(
         available: false, force: false, snoozed: false, alreadyShown: false,
