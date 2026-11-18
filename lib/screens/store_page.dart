@@ -359,7 +359,7 @@ class _StorePageState extends State<StorePage> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text('طلب خاص / منتج غير موجود؟',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Brand.ink)),
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Brand.ink)),
                 ),
                 Icon(_specialOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                     color: kMuted),
@@ -369,7 +369,7 @@ class _StorePageState extends State<StorePage> {
           if (_specialOpen) ...[
           const SizedBox(height: 4),
           Text('اكتب اللي محتاجه أو أرفق صورة أو رسالة صوتية وسيقوم المحل بتجهيزه لك',
-              style: TextStyle(fontSize: 15, height: 1.5, color: Brand.ink)),
+              style: TextStyle(fontSize: 14, height: 1.5, color: Brand.ink)),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(10),
@@ -380,7 +380,7 @@ class _StorePageState extends State<StorePage> {
             ),
             child: const Text(
               'تنبيه: سيتم حذف الصور والتسجيلات الصوتية المرفقة تلقائيًا من مساحة التخزين بعد تأكيد استلامك للطلب.',
-              style: TextStyle(fontSize: 12.5, height: 1.5, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: 12, height: 1.5, fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(height: 12),
@@ -435,7 +435,7 @@ class _StorePageState extends State<StorePage> {
                     : null,
                 icon: const Icon(Icons.remove_circle_outline),
               ),
-              Text('$_specialQty', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              Text('$_specialQty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               IconButton(
                 onPressed: _specialQty < 99 && !_sendingSpecial
                     ? () => setState(() => _specialQty++)
@@ -610,7 +610,7 @@ class _StorePageState extends State<StorePage> {
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
-            fontSize: 18,
+            fontSize: 17,
           ),
         ),
       ),
@@ -670,7 +670,7 @@ class _StorePageState extends State<StorePage> {
           Text(
             text,
             style: TextStyle(
-              fontSize: 12.5,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),
@@ -686,7 +686,7 @@ class _StorePageState extends State<StorePage> {
           Text(
             store.name,
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 21,
               fontWeight: FontWeight.w900,
               color: Brand.ink,
             ),
@@ -694,7 +694,7 @@ class _StorePageState extends State<StorePage> {
           const SizedBox(height: 4),
           Text(
             store.category,
-            style: TextStyle(fontSize: 13.5, color: kMuted),
+            style: TextStyle(fontSize: 13, color: kMuted),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -820,7 +820,7 @@ class _StorePageState extends State<StorePage> {
               child: Text(
                 'المنتجات',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 17.5,
                   fontWeight: FontWeight.w900,
                   color: Brand.ink,
                 ),
@@ -860,7 +860,7 @@ class _StorePageState extends State<StorePage> {
               Text(
                 'رفع أصناف من ملف',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 17.5,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -869,13 +869,13 @@ class _StorePageState extends State<StorePage> {
               Text(
                 'نوع الملف: CSV (أو TXT). لو عندك ملف Excel: '
                 'من Excel اختر حفظ باسم ثم CSV UTF-8.',
-                style: TextStyle(fontSize: 13.5, height: 1.5, color: kMuted),
+                style: TextStyle(fontSize: 13, height: 1.5, color: kMuted),
               ),
               const SizedBox(height: 16),
               Text(
                 'ترتيب الأعمدة',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -903,7 +903,7 @@ class _StorePageState extends State<StorePage> {
               Text(
                 'مثال',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -922,7 +922,7 @@ class _StorePageState extends State<StorePage> {
                     _sampleCsv,
                     style: TextStyle(
                       fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontSize: 11.5,
                       height: 1.6,
                       color: Brand.ink,
                     ),
@@ -1138,7 +1138,7 @@ class _StorePageState extends State<StorePage> {
                     image.isEmpty
                         ? 'اضغط لاختيار صورة من الجهاز'
                         : 'اضغط لتغيير الصورة',
-                    style: TextStyle(fontSize: 12, color: kMuted),
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
                   ),
                   const SizedBox(height: 14),
                   TextField(
@@ -1332,7 +1332,7 @@ class _ColumnRow extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w900,
-                fontSize: 14,
+                fontSize: 13.5,
               ),
             ),
           ),
@@ -1344,7 +1344,7 @@ class _ColumnRow extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 14.5,
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w800,
                     color: Brand.ink,
                   ),
@@ -1352,7 +1352,7 @@ class _ColumnRow extends StatelessWidget {
                 Text(
                   note,
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: required ? Brand.goldDeep : kMuted,
                   ),
@@ -1387,7 +1387,7 @@ class _Tip extends StatelessWidget {
             child: Text(
               text,
               style: TextStyle(
-                fontSize: 13.5,
+                fontSize: 13,
                 height: 1.5,
                 fontWeight: FontWeight.w600,
                 color: Brand.ink,
@@ -1498,7 +1498,7 @@ class _ProductRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15.5,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
                       height: 1.35,
                       color: Brand.ink,
@@ -1510,7 +1510,7 @@ class _ProductRow extends StatelessWidget {
                       Text(
                         formatPrice(product.price),
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w900,
                           color: Brand.ink,
                         ),
@@ -1520,7 +1520,7 @@ class _ProductRow extends StatelessWidget {
                         Text(
                           formatPrice(product.oldPrice),
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 12,
                             color: kMuted,
                             decoration: TextDecoration.lineThrough,
                           ),
@@ -1544,7 +1544,7 @@ class _ProductRow extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       'غير متاح حاليًا',
-                      style: TextStyle(fontSize: 12, color: kMuted),
+                      style: TextStyle(fontSize: 11.5, color: kMuted),
                     ),
                   ],
                 ],
@@ -1607,7 +1607,7 @@ class _ProductRow extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 11,
+        fontSize: 10.5,
         fontWeight: FontWeight.w800,
       ),
     ),
