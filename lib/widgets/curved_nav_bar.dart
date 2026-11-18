@@ -48,7 +48,6 @@ class CurvedNavBar extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, c) {
           final w = c.maxWidth;
-          final itemW = w / n;
           final cx = w / 2;
           return TweenAnimationBuilder<double>(
             tween: Tween<double>(end: cx),

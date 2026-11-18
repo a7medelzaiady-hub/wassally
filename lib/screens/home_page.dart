@@ -14,7 +14,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_role.dart';
 import '../models/store.dart';
 import '../models/product_offer.dart';
-import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
