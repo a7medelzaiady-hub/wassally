@@ -862,7 +862,10 @@ async function resolveItems(
   const items: JsonMap[] = [];
   let subtotal = 0;
   for (const line of lines) {
-    const qty = Number(line?.qty);
+    if (!line || typeof line !== "object" || Array.isArray(line)) {
+      throw new HttpError(400, "بيانات أحد الأصناف غير صحيحة.");
+    }
+    const qty = Number(line.qty);
     if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
       throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
     }
