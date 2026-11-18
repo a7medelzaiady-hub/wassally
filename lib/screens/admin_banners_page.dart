@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../services/catalog_service.dart';
 import '../services/image_service.dart';
@@ -136,6 +137,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
             title: const Text('بوسترات الرئيسية'),
             backgroundColor: Brand.green,
             foregroundColor: Colors.white,
+            actions: const [HomeActionButton()],
           ),
           floatingActionButton: FloatingActionButton.extended(
             backgroundColor: Brand.gold,
