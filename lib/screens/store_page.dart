@@ -1485,24 +1485,10 @@ class _ProductRow extends StatelessWidget {
     return Opacity(
       opacity: product.available ? 1 : 0.5,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Brand.palette.line),
-            boxShadow: [
-              BoxShadow(
-                color: Brand.greenDark.withValues(alpha: 0.055),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1512,7 +1498,7 @@ class _ProductRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 14.5,
+                      fontSize: 15.5,
                       fontWeight: FontWeight.w800,
                       height: 1.35,
                       color: Brand.ink,
@@ -1566,8 +1552,8 @@ class _ProductRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             SizedBox(
-              width: 108,
-              height: 108,
+              width: 104,
+              height: 104,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -1603,8 +1589,7 @@ class _ProductRow extends StatelessWidget {
                 ],
               ),
             ),
-            ],
-          ),
+          ],
         ),
       ),
     );
