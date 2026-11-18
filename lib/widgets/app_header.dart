@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../models/app_role.dart';
 
 import '../theme/brand.dart';
 import '../services/navigation.dart';
@@ -71,7 +70,6 @@ class InnerHeader extends StatelessWidget {
           IconButton(
             tooltip: 'الرئيسية',
             onPressed: () {
-              activePanel.value = AppRole.customer;
               shellTab.value = 0;
               Navigator.of(context).popUntil((route) => route.isFirst);
             },
