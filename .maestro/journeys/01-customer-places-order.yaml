@@ -13,6 +13,10 @@ appId: com.wassally.app
     timeout: 60000
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
+    visible: "كل المحلات"
+    timeout: 90000
+- tapOn: "كل المحلات"
+- extendedWaitUntil:
     visible: ".*متجر الاختبار.*"
     timeout: 90000
 - tapOn: ".*متجر الاختبار.*"
