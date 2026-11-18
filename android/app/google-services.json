@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "244081237486-cljh4q2l65d86h0eqgg3ashj4cb7mjuh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wassally.app",
+            "certificate_hash": "61ba65374daa3cf0ae27fd4e514bb250349578dd"
+          }
+        },
+        {
           "client_id": "244081237486-fr07pdjlhgm7vm43nmn371ij5tbmo52s.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
