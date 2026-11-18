@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../services/image_service.dart';
 import '../services/role_request_service.dart';
@@ -153,7 +154,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
     final isStore = widget.type == JoinType.storeOwner;
 
     return Scaffold(
-      appBar: AppBar(title: Text('انضم كـ ${widget.type.label}')),
+      appBar: AppBar(title: Text('انضم كـ ${widget.type.label}'), actions: const [HomeActionButton()]),
       body: Form(
         key: _form,
         child: ListView(

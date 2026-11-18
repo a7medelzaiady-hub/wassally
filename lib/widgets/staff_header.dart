@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+
 import '../screens/admin_tools_page.dart';
 import '../screens/admin_couriers_board_page.dart';
 import '../screens/admin_operations_report_page.dart';
@@ -9,11 +10,11 @@ import '../screens/admin_store_owners_page.dart';
 import '../screens/admin_stores_page.dart';
 import '../screens/support_chat_page.dart';
 import '../services/auth_service.dart';
+import '../screens/main_shell.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
 import 'panel_switcher.dart';
-import '../screens/main_shell.dart';
 
 /// هيدر شاشات المدير والمندوب: العنوان + عرض كعميل + تسجيل خروج.
 class StaffHeader extends StatelessWidget {
@@ -135,6 +136,13 @@ class StaffHeader extends StatelessWidget {
               .push(MaterialPageRoute(builder: (_) => const SupportChatPage())),
         ),
       // الأدمن: تبديل بين اللوحات. غيره: زر للرئيسية (شاشة العميل).
+      _btn(
+        tooltip: 'الصفحة الرئيسية',
+        icon: Icons.home_rounded,
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MainShell()),
+        ),
+      ),
       if (isAdmin)
         _btn(
           tooltip: 'تبديل اللوحة',

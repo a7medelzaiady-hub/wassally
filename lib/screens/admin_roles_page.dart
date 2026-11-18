@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
@@ -103,7 +104,7 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('إدارة المناديب')),
+      appBar: AppBar(title: const Text('إدارة المناديب'), actions: const [HomeActionButton()]),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [

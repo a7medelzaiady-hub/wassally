@@ -1736,7 +1736,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         ),
         PositionedDirectional(
           end: 16,
-          bottom: 16,
+          bottom: 88,
           child: FloatingActionButton.extended(
             onPressed: () => _edit(null),
             icon: const Icon(Icons.add),

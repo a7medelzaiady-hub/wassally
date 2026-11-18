@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../services/chat_service.dart';
 import '../services/customer_rating_service.dart';
@@ -25,6 +26,7 @@ class AdminInboxPage extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
+          actions: const [HomeActionButton()],
           bottom: const TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,

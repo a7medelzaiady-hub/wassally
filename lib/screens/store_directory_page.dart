@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
@@ -49,6 +50,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
           surfaceTintColor: Colors.transparent,
           title: const Text('تسوق', style: TextStyle(fontWeight: FontWeight.w800)),
           centerTitle: true,
+          actions: const [HomeActionButton()],
         ),
         body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
           future: _future,

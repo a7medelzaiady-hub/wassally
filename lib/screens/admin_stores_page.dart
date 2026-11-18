@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../widgets/app_header.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -248,7 +249,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       builder: (context, snap) {
         if (snap.hasError) {
           return Scaffold(
-            appBar: AppBar(title: const Text('المحلات والأصناف')),
+            appBar: AppBar(title: const Text('المحلات والأصناف'), actions: const [HomeActionButton()]),
             body: const Center(
               child: Text('تعذر تحميل المحلات. تحقق من الاتصال والصلاحيات.'),
             ),
@@ -257,7 +258,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
         if (!snap.hasData) {
           return Scaffold(
-            appBar: AppBar(title: const Text('المحلات والأصناف')),
+            appBar: AppBar(title: const Text('المحلات والأصناف'), actions: const [HomeActionButton()]),
             body: Center(child: CircularProgressIndicator(color: kPrimary)),
           );
         }
@@ -712,6 +713,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       appBar: AppBar(
         title: Text(isNew ? 'محل جديد' : 'تعديل المحل'),
         actions: [
+          const HomeActionButton(),
           if (!isNew)
             IconButton(
               tooltip: 'حذف المحل',

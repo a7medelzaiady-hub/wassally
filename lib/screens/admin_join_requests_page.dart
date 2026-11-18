@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../services/role_request_service.dart';
 import '../theme/app_theme.dart';
@@ -101,7 +102,7 @@ class _AdminJoinRequestsPageState extends State<AdminJoinRequestsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('طلبات الانضمام')),
+      appBar: AppBar(title: const Text('طلبات الانضمام'), actions: const [HomeActionButton()]),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: RoleRequestService.watchPending(),
         builder: (context, snapshot) {

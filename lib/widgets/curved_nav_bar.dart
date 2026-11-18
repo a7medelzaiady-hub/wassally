@@ -15,7 +15,8 @@ class AppNavItem {
   });
 }
 
-/// شريط سفلي منحني: التبويب المحدد بيطلع في زر دائري بارز جوه نتوء في الشريط.
+/// شريط سفلي ثابت: كل أيقونة داخل مساحتها فوق اسمها، بدون زر مركزي عائم
+/// يمنع ظهور أيقونة السلة وكأنها زر ثانٍ فوق تبويب السلة.
 class CurvedNavBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onTap;
@@ -27,151 +28,67 @@ class CurvedNavBar extends StatelessWidget {
     required this.items,
   });
 
-  static const double _top = 20; // مساحة بروز الدائرة فوق الشريط
-  static const double _barH = 68;
-  static const double _circle = 54;
-
-  Widget _icon(AppNavItem it, IconData data, Color color) {
-    final icon = Icon(data, color: color, size: 24);
-    if (it.badge <= 0) return icon;
-    return Badge(label: Text('${it.badge}'), child: icon);
+  Widget _icon(AppNavItem item, IconData data, Color color) {
+    final icon = Icon(data, color: color, size: 23);
+    if (item.badge <= 0) return icon;
+    return Badge(label: Text(item.badge > 99 ? '99+' : '${item.badge}'), child: icon);
   }
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    final n = items.length;
-    final height = _top + _barH + bottom;
-
-    return SizedBox(
-      height: height,
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final w = c.maxWidth;
-          final cx = w / 2;
-          return TweenAnimationBuilder<double>(
-            tween: Tween<double>(end: cx),
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            builder: (context, x, _) {
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: _BarPainter(
-                        cx: x,
-                        top: _top,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: x - _circle / 2,
-                    top: _top - 18,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: _circle,
-                        height: _circle,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: Brand.softGradient,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Brand.green.withValues(alpha: 0.40),
-                              blurRadius: 14,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: _icon(
-                          items[n ~/ 2],
-                          items[n ~/ 2].selectedIcon,
-                          Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: _top,
-                    height: _barH,
-                    child: Row(
+    return Container(
+      height: 68 + bottom,
+      padding: EdgeInsets.only(bottom: bottom),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Brand.palette.line)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x10000000), blurRadius: 10, offset: Offset(0, -3)),
+        ],
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < items.length; i++)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: i == index,
+                label: items[i].label,
+                child: InkResponse(
+                  onTap: () => onTap(i),
+                  radius: 34,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        for (var i = 0; i < n; i++)
-                          Expanded(
-                            child: InkResponse(
-                              onTap: () => onTap(i),
-                              radius: 36,
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 10),
-                                  SizedBox(
-                                    height: 26,
-                                    child: i == n ~/ 2
-                                        ? null
-                                        : _icon(
-                                            items[i],
-                                            items[i].icon,
-                                            Brand.palette.muted,
-                                          ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    items[i].label,
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: i == index
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
-                                      color: i == index
-                                          ? Brand.green
-                                          : Brand.palette.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        _icon(
+                          items[i],
+                          i == index ? items[i].selectedIcon : items[i].icon,
+                          i == index ? Brand.green : Brand.palette.muted,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          items[i].label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            height: 1.1,
+                            fontWeight: i == index ? FontWeight.w800 : FontWeight.w600,
+                            color: i == index ? Brand.green : Brand.palette.muted,
                           ),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              );
-            },
-          );
-        },
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
-}
-
-class _BarPainter extends CustomPainter {
-  final double cx;
-  final double top;
-  final Color color;
-  const _BarPainter({required this.cx, required this.top, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const r = 38.0;
-    const depth = 36.0;
-    final path = Path()
-      ..moveTo(0, top)
-      ..lineTo(cx - r - 14, top)
-      ..cubicTo(cx - r + 6, top, cx - r + 6, top + depth, cx, top + depth)
-      ..cubicTo(cx + r - 6, top + depth, cx + r - 6, top, cx + r + 14, top)
-      ..lineTo(size.width, top)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawShadow(path, Colors.black.withValues(alpha: 0.35), 8, false);
-    canvas.drawPath(path, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_BarPainter old) => old.cx != cx || old.color != color;
 }

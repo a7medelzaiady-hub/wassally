@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/app_header.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
@@ -185,6 +186,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
       appBar: AppBar(
         title: const Text('تقرير التشغيل'),
         actions: [
+          const HomeActionButton(),
           IconButton(
             tooltip: 'تحديث التقرير',
             onPressed: _refresh,

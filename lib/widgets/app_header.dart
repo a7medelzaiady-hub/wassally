@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+
 import '../theme/brand.dart';
+import '../services/navigation.dart';
 
 /// هيدر بحواف سفلية مدورة وظل خفيف. بيمتد تحت شريط الحالة.
 class AppHeader extends StatelessWidget {
@@ -40,6 +42,20 @@ class AppHeader extends StatelessWidget {
   }
 }
 
+class HomeActionButton extends StatelessWidget {
+  const HomeActionButton({super.key});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: 'الرئيسية',
+    onPressed: () {
+      shellTab.value = 0;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    },
+    icon: const Icon(Icons.home_rounded),
+  );
+}
+
 /// هيدر لصفحة داخلية: زر رجوع + عنوان (أخضر زي الصفحة الرئيسية).
 class InnerHeader extends StatelessWidget {
   final String title;
@@ -65,6 +81,7 @@ class InnerHeader extends StatelessWidget {
                   ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
             ),
           ),
+          const HomeActionButton(),
           ?trailing,
         ],
       ),
