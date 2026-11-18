@@ -11,7 +11,7 @@ import '../screens/admin_store_owners_page.dart';
 import '../screens/admin_stores_page.dart';
 import '../screens/support_chat_page.dart';
 import '../services/auth_service.dart';
-import '../services/navigation.dart';
+import '../screens/main_shell.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
@@ -140,7 +140,9 @@ class StaffHeader extends StatelessWidget {
       _btn(
         tooltip: 'الصفحة الرئيسية',
         icon: Icons.home_rounded,
-        onPressed: () => activePanel.value = AppRole.customer,
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MainShell()),
+        ),
       ),
       if (isAdmin)
         _btn(
