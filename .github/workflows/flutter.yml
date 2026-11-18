@@ -184,3 +184,19 @@ jobs:
         path: build/app/outputs/flutter-apk/app-debug.apk
         if-no-files-found: error
         retention-days: 7
+
+    # Separate canary build for one real authenticated Worker order test.
+    # The normal debug APK above stays on the legacy path; this artifact is not a release build.
+    - name: Build serverOrders canary APK
+      run: |
+        flutter build apk --debug \
+          --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medzaiady.workers.dev \
+          --dart-define=WASALLY_SERVER_ORDERS=true
+
+    - name: Upload serverOrders canary APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: wasally-server-orders-canary-apk
+        path: build/app/outputs/flutter-apk/app-debug.apk
+        if-no-files-found: error
+        retention-days: 7
