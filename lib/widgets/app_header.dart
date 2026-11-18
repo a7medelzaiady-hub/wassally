@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/brand.dart';
+import '../services/navigation.dart';
 
 /// هيدر بحواف سفلية مدورة وظل خفيف. بيمتد تحت شريط الحالة.
 class AppHeader extends StatelessWidget {
@@ -64,6 +65,14 @@ class InnerHeader extends StatelessWidget {
               style: Theme.of(context).textTheme.titleLarge
                   ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
             ),
+          ),
+          IconButton(
+            tooltip: 'الرئيسية',
+            onPressed: () {
+              shellTab.value = 0;
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
+            icon: const Icon(Icons.home_rounded, color: Colors.white),
           ),
           ?trailing,
         ],
