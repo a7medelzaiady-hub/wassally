@@ -38,10 +38,14 @@ class _AccountPageState extends State<AccountPage> {
   // فاستخدامه في أكتر من StreamBuilder كان بيرمي "Stream has already been listened to".
   UserProfile _profileData = const UserProfile();
   StreamSubscription<UserProfile>? _profileSub;
+  late final Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _joinRequestsStream;
+  late final Stream<bool> _adminStatusStream;
 
   @override
   void initState() {
     super.initState();
+    _joinRequestsStream = RoleRequestService.watchMine();
+    _adminStatusStream = _adminStream();
     _profileSub = UserService.watch().listen(
       (p) {
         if (mounted) setState(() => _profileData = p);
@@ -109,7 +113,7 @@ class _AccountPageState extends State<AccountPage> {
       return const SizedBox.shrink();
     }
     return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      stream: RoleRequestService.watchMine(),
+      stream: _joinRequestsStream,
       builder: (context, snap) {
         final requests = <String, Map<String, dynamic>>{
           for (final d in snap.data ?? const [])
@@ -391,7 +395,7 @@ class _AccountPageState extends State<AccountPage> {
                 ),
               ),
               StreamBuilder<bool>(
-                stream: _adminStream(),
+                stream: _adminStatusStream,
                 builder: (context, snapshot) {
                   if (snapshot.data != true) return const SizedBox.shrink();
                   return Container(
