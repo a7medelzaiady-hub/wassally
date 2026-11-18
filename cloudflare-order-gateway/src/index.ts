@@ -1393,7 +1393,7 @@ export async function cloudinarySpecialRequestFolder(uid: string): Promise<strin
   return `special_requests/${hash}`;
 }
 
-async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Promise<void> {
+export async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Promise<void> {
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
     throw new HttpError(503, "تعذر تنظيف صور الطلبات الخاصة من خدمة الصور.");
   }
@@ -1403,14 +1403,15 @@ async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Prom
     const url = new URL(
       `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload`,
     );
-    url.searchParams.set("prefix", prefix);
-    url.searchParams.set("invalidate", "true");
-    if (nextCursor) url.searchParams.set("next_cursor", nextCursor);
+    const params = new URLSearchParams({ prefix, invalidate: "true" });
+    if (nextCursor) params.set("next_cursor", nextCursor);
     const deleted = await fetch(url, {
       method: "DELETE",
       headers: {
         Authorization: `Basic ${btoa(`${env.CLOUDINARY_API_KEY}:${env.CLOUDINARY_API_SECRET}`)}`,
+        "content-type": "application/x-www-form-urlencoded",
       },
+      body: params.toString(),
     });
     if (!deleted.ok) {
       const detail = (await deleted.text()).slice(0, 300);
