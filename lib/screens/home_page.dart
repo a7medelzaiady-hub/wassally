@@ -1326,7 +1326,18 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
-          return scroll;
+          return Stack(
+            children: [
+              scroll,
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: MediaQuery.paddingOf(context).top,
+                child: ColoredBox(color: Brand.green),
+              ),
+            ],
+          );
         },
       ),
     );

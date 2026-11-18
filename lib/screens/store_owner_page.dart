@@ -108,6 +108,7 @@ class StoreOwnerPage extends StatelessWidget {
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _TabsDelegate(
+                    MediaQuery.paddingOf(context).top,
                     TabBar(
                       labelColor: kPrimary,
                       unselectedLabelColor: kMuted,
@@ -146,20 +147,29 @@ class StoreOwnerPage extends StatelessWidget {
 }
 
 class _TabsDelegate extends SliverPersistentHeaderDelegate {
+  final double top;
   final TabBar bar;
-  _TabsDelegate(this.bar);
+  _TabsDelegate(this.top, this.bar);
 
+  // لما الشريط يثبت فوق، بنسيب مكان لشريط الحالة.
   @override
-  double get minExtent => bar.preferredSize.height;
+  double get minExtent => bar.preferredSize.height + top;
   @override
-  double get maxExtent => bar.preferredSize.height;
+  double get maxExtent => bar.preferredSize.height + top;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlaps) =>
-      Material(color: Colors.white, elevation: overlaps ? 2 : 0, child: bar);
+      Material(
+        color: Colors.white,
+        elevation: overlaps ? 2 : 0,
+        child: Padding(
+          padding: EdgeInsets.only(top: top),
+          child: bar,
+        ),
+      );
 
   @override
-  bool shouldRebuild(covariant _TabsDelegate old) => false;
+  bool shouldRebuild(covariant _TabsDelegate old) => old.top != top;
 }
 
 // ─────────────────────── تجهيز المحل قبل الموافقة ───────────────────────
@@ -1658,16 +1668,20 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(_priceLine(m, price, available)),
+              subtitle: Text(
+                _priceLine(m, price, available),
+                style: TextStyle(color: kMuted, fontSize: 12),
+              ),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    tooltip: 'عمل عرض',
-                    icon: Icon(Icons.local_offer_outlined, color: kPrimary),
-                    onPressed: () => _offer(d),
+                  Transform.scale(
+                    scale: 0.8,
+                    child: Switch(
+                      value: available,
+                      onChanged: (v) => _toggle(d, v),
+                    ),
                   ),
-                  Switch(value: available, onChanged: (v) => _toggle(d, v)),
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'edit') _edit(d);

@@ -81,6 +81,7 @@ class _FeedbackFabState extends State<FeedbackFab> {
               : const SizedBox(width: 0, height: 0),
         ),
         GlossyFab(
+          size: 46,
           tooltip: 'شكوى أو اقتراح',
           icon: _open ? Icons.close_rounded : Icons.headset_mic_rounded,
           onPressed: () => setState(() => _open = !_open),

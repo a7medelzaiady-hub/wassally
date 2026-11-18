@@ -165,13 +165,17 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
             borderRadius: BorderRadius.circular(12),
           ),
           alignment: Alignment.center,
-          child: Text(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
             label,
+            maxLines: 1,
             style: TextStyle(
-              fontSize: 13.5,
+              fontSize: 12.5,
               fontWeight: FontWeight.w700,
               color: sel ? Colors.white : kMuted,
             ),
+          ),
           ),
         ),
       ),

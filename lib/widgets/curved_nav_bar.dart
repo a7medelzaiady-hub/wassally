@@ -110,7 +110,7 @@ class CurvedNavBar extends StatelessWidget {
                                   const SizedBox(height: 10),
                                   SizedBox(
                                     height: 26,
-                                    child: i == index
+                                    child: i == n ~/ 2
                                         ? null
                                         : _icon(
                                             items[i],
@@ -123,7 +123,7 @@ class CurvedNavBar extends StatelessWidget {
                                     items[i].label,
                                     maxLines: 1,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 10.5,
                                       fontWeight: i == index
                                           ? FontWeight.w800
                                           : FontWeight.w600,

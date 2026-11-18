@@ -104,7 +104,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'وصلي',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -118,8 +118,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'اطلب أي حاجة\n',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 40,
-                            height: 1.2,
+                            fontSize: 30,
+                            height: 1.4,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -127,18 +127,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'وهتوصلك ',
                           style: TextStyle(
                             color: kPrimary,
-                            fontSize: 40,
-                            height: 1.2,
+                            fontSize: 30,
+                            height: 1.4,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const TextSpan(
                           text: 'في ثواني',
                           style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 40,
-                            height: 1.2,
-                            fontWeight: FontWeight.w500,
+                            color: Colors.white70,
+                            fontSize: 30,
+                            height: 1.4,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ],
@@ -149,7 +149,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ' تسوق من محلات مدينتك لحد باب بيتك',
                     style: TextStyle(
                       color: Colors.white60,
-                      fontSize: 14.5,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
                       height: 1.5,
                     ),
                   ),
@@ -168,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               foregroundColor: Colors.white,
                               shape: const StadiumBorder(),
                               textStyle: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -182,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       Text(
                         'بالمتابعة أنت بتوافق على ',
-                        style: text.bodySmall?.copyWith(color: Colors.white54),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
                       ),
                       _LegalLink(
                         label: 'شروط الاستخدام',
@@ -194,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Text(
                         ' و',
-                        style: text.bodySmall?.copyWith(color: Colors.white54),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
                       ),
                       _LegalLink(
                         label: 'سياسة الخصوصية',
@@ -230,7 +231,7 @@ class _LegalLink extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w800),
+              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w800, fontSize: 11.5),
         ),
       ),
     );
