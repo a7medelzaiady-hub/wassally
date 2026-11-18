@@ -43,9 +43,10 @@ for flow in .maestro/journeys/*.yaml; do
   if ! maestro test --format junit --output "$OUT/$name.xml" --debug-output "$OUT/debug-$name" "$flow"; then
     status=1
     echo "::error::Journey failed: $name"
-    echo "--- visible texts on screen at failure:"
-    maestro hierarchy 2>/dev/null | grep -oE '"(text|accessibilityText)" ?: ?"[^"]+"' | sort -u | head -80 || true
-    adb logcat -d -v threadtime -s flutter:V 2>/dev/null | tail -40 || true
+    echo "--- visible texts on screen at failure (uiautomator):"
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 && adb pull /sdcard/ui.xml "$OUT/ui.xml" >/dev/null 2>&1 || true
+    grep -oE '(text|content-desc)="[^"]+"' "$OUT/ui.xml" 2>/dev/null | sort -u | head -80 || true
+    adb logcat -d -v threadtime -s flutter:V 2>/dev/null | grep -vE "ListTile|DecoratedBox|CRASHLYTICS|-----|Another exception|To fix this" | tail -60 || true
     echo "::endgroup::"
     break
   fi
