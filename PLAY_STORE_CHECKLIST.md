@@ -12,7 +12,7 @@
 - نافذة شرح قبل طلب إذن الموقع، وبديل كتابة العنوان يدويًا لو العميل رفض.
 - حذف الحساب من داخل التطبيق (حسابي ← حذف الحساب) + صفحة ويب legal/delete-account.html.
 - سياسة الخصوصية جوه التطبيق وعلى الويب (legal/privacy.html)، واتحدّثت بعلامة التوصيل المجاني.
-- بناء AAB موقّع بمفتاح الإصدار (build_apk.yml). لازم تتأكد إن أسرار KEYSTORE_* مضبوطة.
+- بناء AAB موقّع يدويًا من `.github/workflows/release-aab.yml` بعد ضبط أسرار GitHub Actions الأربعة: `KEYSTORE_BASE64` و`KEYSTORE_PASSWORD` و`KEY_ALIAS` و`KEY_PASSWORD`. لا يوجد رفع تلقائي إلى Play Console.
 
 ## لازم تعمله إنت في Play Console (مش بيتحل بالكود)
 1. **App content ← Privacy policy:** حط رابط legal/privacy.html المنشور (لازم يفتح من غير تسجيل دخول).
