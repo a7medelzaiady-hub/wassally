@@ -59,33 +59,24 @@ class UpdateService {
     if (FirebaseAuth.instance.currentUser == null) return;
     final now = DateTime.now();
     final last = _lastCheck;
+
     if (last != null && !shouldRefreshOnResume(last, now)) {
+      final snoozed = await _isSnoozedAt(now);
+      if (!snoozed && _bannerSnoozedThisSession) {
+        _bannerShownThisSession = false;
+        _bannerSnoozedThisSession = false;
+      }
       if (shouldShowResumeReminder(
         available: _available,
         force: _force,
-        snoozed: await _isSnoozedAt(now),
+        snoozed: snoozed,
         alreadyShown: _bannerShownThisSession,
       )) {
         _showBanner(force: _force);
       }
       return;
     }
-    final result = await _fetch();
-    final snoozed = await _isSnoozedAt(DateTime.now());
-    if (!snoozed && _bannerSnoozedThisSession) {
-      _bannerShownThisSession = false;
-      _bannerSnoozedThisSession = false;
-    }
-    if (result == true && shouldShowResumeReminder(
-      available: _available,
-      force: _force,
-      snoozed: snoozed,
-      alreadyShown: _bannerShownThisSession,
-      )) {
-        _showBanner(force: _force);
-      }
-      return;
-    }
+
     final result = await _fetch();
     final snoozed = await _isSnoozedAt(DateTime.now());
     if (!snoozed && _bannerSnoozedThisSession) {
