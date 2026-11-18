@@ -64,12 +64,12 @@ class OrderService {
     final pending = PerformanceMonitor.trace<String>(
       'checkout_submit',
       () => _guardedPlaceOrder(
-      cart: cart,
-      name: name,
-      phone: phone,
-      address: address,
-      notes: notes,
-      courierNotes: courierNotes,
+        cart: cart,
+        name: name,
+        phone: phone,
+        address: address,
+        notes: notes,
+        courierNotes: courierNotes,
       ),
     );
     _activePlaceOrder = pending;
