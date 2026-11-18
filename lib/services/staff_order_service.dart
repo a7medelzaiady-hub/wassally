@@ -235,7 +235,7 @@ class StaffOrderService {
     if (data['status'] != OrderStatus.onTheWay.key) {
       throw StateError('لازم يكون الطلب في حالة «في الطريق» قبل تسجيل التسليم.');
     }
-    if (data['ready'] != true || data['readyAt'] is! Timestamp) {
+    if (data['ready'] != true) {
       throw StateError('المحل لم يؤكد جاهزية الطلب للاستلام بعد.');
     }
     if (data['courierArrivedAt'] is! Timestamp) {
