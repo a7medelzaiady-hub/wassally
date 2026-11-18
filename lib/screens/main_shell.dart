@@ -87,18 +87,18 @@ class _WasallyBottomBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: SizedBox(
-            height: 66,
+            height: 62,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 22,
+                Icon(icon, size: 20,
                     color: selected ? _navPalette.primary : Brand.palette.muted),
                 const SizedBox(height: 3),
                 Text(
                   label,
                   maxLines: 1,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 10,
                     height: 1.1,
                     fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
                     color: selected ? _navPalette.primary : Brand.palette.muted,
@@ -117,7 +117,7 @@ class _WasallyBottomBar extends StatelessWidget {
     return SafeArea(
       top: false,
       child: SizedBox(
-        height: 112,
+        height: 104,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
@@ -127,9 +127,9 @@ class _WasallyBottomBar extends StatelessWidget {
                 PositionedDirectional(
                   start: 10,
                   end: 10,
-                  bottom: 14,
+                  bottom: 12,
                   child: Container(
-                    height: 68,
+                    height: 64,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(28),
@@ -173,10 +173,10 @@ class _WasallyBottomBar extends StatelessWidget {
                 ),
                 // الرئيسية بارزة من أعلى الشريط.
                 Positioned(
-                  left: (width - 68) / 2,
+                  left: (width - 66) / 2,
                   top: 0,
                   child: _GradientNavButton(
-                    size: 68,
+                    size: 66,
                     icon: Icons.home_rounded,
                     label: 'الرئيسية',
                     selected: index == 0,
@@ -186,12 +186,12 @@ class _WasallyBottomBar extends StatelessWidget {
                 ),
                 // السلة تتدلّى من أسفل جسم الشريط بإطار متدرج، والعداد حيّ.
                 Positioned(
-                  left: width * 0.30 - 29,
-                  bottom: 0,
+                  left: width * 0.30 - 28,
+                  bottom: 2,
                   child: ListenableBuilder(
                     listenable: cart,
                     builder: (context, _) => _GradientNavButton(
-                      size: 58,
+                      size: 56,
                       icon: Icons.shopping_bag_rounded,
                       label: 'سلتي',
                       badgeText: cart.count > 0
