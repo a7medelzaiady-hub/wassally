@@ -92,6 +92,9 @@ jobs:
           AAB="build/app/outputs/bundle/release/app-release.aab"
           test -s "$AAB"
           unzip -t "$AAB" >/dev/null
+          jarsigner -verify "$AAB" >/tmp/aab-signature-check.txt
+          grep -qi 'jar verified' /tmp/aab-signature-check.txt
+          echo "AAB archive and JAR signature verified."
           sha256sum "$AAB"
 
       - name: Upload signed AAB artifact
