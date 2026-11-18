@@ -138,13 +138,14 @@ class UpdateService {
     }
   }
 
+  @visibleForTesting
+  static DateTime snoozeUntil(DateTime now) =>
+      now.add(const Duration(hours: 24));
+
   static Future<void> _snooze() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(
-        _snoozeKey,
-        DateTime.now().add(const Duration(hours: 24)).millisecondsSinceEpoch,
-      );
+      await prefs.setInt(_snoozeKey, snoozeUntil(DateTime.now()).millisecondsSinceEpoch);
     } catch (_) {}
   }
 
