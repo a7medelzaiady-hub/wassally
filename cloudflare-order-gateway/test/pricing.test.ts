@@ -533,8 +533,8 @@ describe("account deletion HTTP authentication guard", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const env = {
       FIREBASE_PROJECT_ID: "wasally-test",
-      FIREBASE_SERVICE_ACCOUNT_EMAIL: "",
-      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "",
+      FIREBASE_SERVICE_ACCOUNT_EMAIL: "test-only@wasally.invalid",
+      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "test-only-not-a-secret",
       UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
     };
 
@@ -558,8 +558,8 @@ describe("account deletion HTTP authentication guard", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const env = {
       FIREBASE_PROJECT_ID: "wasally-test",
-      FIREBASE_SERVICE_ACCOUNT_EMAIL: "",
-      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "",
+      FIREBASE_SERVICE_ACCOUNT_EMAIL: "test-only@wasally.invalid",
+      FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "test-only-not-a-secret",
       UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
     };
 
