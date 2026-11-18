@@ -115,8 +115,8 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
 
   void _removeDraft(int index) {
     final removed = _drafts.removeAt(index);
-    removed.dispose();
     setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
   }
 
   void _save() {
