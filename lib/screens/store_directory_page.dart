@@ -105,7 +105,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                 ),
               ),
               SizedBox(
-                height: 48,
+                height: 46,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -120,9 +120,9 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                 child: visible.isEmpty
                     ? const Center(child: Text('لا توجد محلات مطابقة حاليًا'))
                     : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
                         itemCount: visible.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 14),
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           final item = visible[index];
                           final store = item.store;
@@ -137,7 +137,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                               borderRadius: BorderRadius.circular(22),
                               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StorePage(store: store))),
                               child: SizedBox(
-                                height: 154,
+                                height: 138,
                                 child: Padding(
                                   padding: const EdgeInsets.all(12),
                                   child: Row(children: [
@@ -145,7 +145,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                       borderRadius: BorderRadius.circular(17),
                                       child: SizedBox(
                                         width: 112,
-                                        height: 126,
+                                        height: 110,
                                         child: store.imageUrl.isEmpty
                                             ? Container(
                                                 color: Brand.softGradient.colors.first,
@@ -162,19 +162,19 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+                                              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800)),
                                           const SizedBox(height: 7),
                                           Row(children: [
                                             const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 19),
                                             Text(store.rating > 0 ? store.rating.toStringAsFixed(1) : 'جديد',
                                                 style: const TextStyle(fontWeight: FontWeight.w800)),
                                             if ((data['ratingCount'] as num?) != null)
-                                              Text('  (${(data['ratingCount'] as num).toInt()})', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                                              Text('  (${(data['ratingCount'] as num).toInt()})', style: TextStyle(color: Colors.grey.shade500, fontSize: 11.5)),
                                           ]),
                                           const SizedBox(height: 6),
                                           Text(store.time.isEmpty ? store.category : '${store.category} • ${store.time}',
                                               maxLines: 1, overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5)),
+                                              style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                                           const Spacer(),
                                           Row(children: [
                                             if (minOrder != null) Text('الحد الأدنى $minOrder ج', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
