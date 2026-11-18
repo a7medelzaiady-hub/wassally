@@ -1778,3 +1778,54 @@ test('courier settlements: لا يقبل مبلغًا غير صالح أو إي�
   });
   await assertFails(inconsistentUnits.commit());
 });
+
+
+// ───────── حدّ 1000 تعبير في قواعد الطلبات: مسارات الأسوأ والتهريب بين الأدوار ─────────
+// (الـ CI بيفشل كمان لو ظهر "maximum of 1000 expressions" في سجل الـ Emulator.)
+
+test('expression limit: مستخدم واحد بكل الأدوار يمرّ بكل فروع التحديث وينجح بمساره الصحيح', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'admins/multi1'), { name: 'M' });
+    await setDoc(doc(db, 'couriers/multi1'), { name: 'M', active: true });
+    await setDoc(doc(db, 'storeOwners/multi1'), { name: 'M', storeId: store, active: true });
+    await setDoc(doc(db, 'orders/om1'), { ...baseOrder('multi1'), createdAt: new Date() });
+  });
+  const db = as('multi1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/om1'), { status: 'preparing' });
+  b.set(doc(db, 'orders/om1/statusHistory/preparing'), {
+    from: 'new', to: 'preparing', actorUid: 'multi1', actorRole: 'owner', at: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+  await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { ready: true, readyAt: serverTimestamp() }));
+  // الإخفاء من سجل العميل (فرع العميل بعد مرور بقية الأدوار على نفس المستخدم).
+  await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
+});
+
+test('expression limit: لا تهريب مفاتيح بين أدوار مختلفة في تحديث واحد', async () => {
+  await seedOnWay('external');
+  // مندوب: وصول + تغيير حالة
+  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), {
+    courierArrivedAt: serverTimestamp(), status: 'delivered',
+  }));
+  // مندوب: وصول + مفتاح إداري
+  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), {
+    courierArrivedAt: serverTimestamp(), verifiedTotal: 1,
+  }));
+  // عميل: إخفاء + إلغاء
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), {
+    customerHidden: true, status: 'cancelled',
+  }));
+  // صاحب المحل: حالة + إخفاء العميل
+  await assertFails(updateDoc(doc(as('owner1'), 'orders/o1'), {
+    status: 'delivered', customerHidden: true,
+  }));
+});
+
+test('expression limit: طلب بأقصى عدد أصناف (100) ينجح و101 يُرفض', async () => {
+  const mk = (n) => Array.from({ length: n }, (_, i) => ({ name: `p${i}`, price: 10, qty: 1, productId: `p${i}` }));
+  const order = (n) => baseOrder('cust1', { items: mk(n), subtotal: 10 * n, total: 10 * n + 20 });
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/big100'), order(100)));
+  await assertFails(setDoc(doc(as('cust1'), 'orders/big101'), order(101)));
+});
