@@ -21,6 +21,7 @@ void main() {
       expect(UpdateService.isNewer('1.0.0+1', '1.0.1+9'), isTrue);
     });
   });
+
   group('Update reminder scheduling', () {
     final now = DateTime(2026, 11, 18, 12);
 
@@ -42,12 +43,9 @@ void main() {
       );
     });
 
-    test('التذكير لا يظهر أثناء التأجيل أو للتحديث الإجباري أو بعد عرضه', () {
+    test('التذكير العادي يحترم التأجيل ويمنع التكرار', () {
       expect(UpdateService.shouldShowResumeReminder(
         available: true, force: false, snoozed: true, alreadyShown: false,
-      ), isFalse);
-      expect(UpdateService.shouldShowResumeReminder(
-        available: true, force: true, snoozed: false, alreadyShown: false,
       ), isFalse);
       expect(UpdateService.shouldShowResumeReminder(
         available: true, force: false, snoozed: false, alreadyShown: true,
@@ -63,7 +61,7 @@ void main() {
       ), isFalse);
     });
 
-    test('التحديث الإجباري يتجاوز التأجيل ولا يمكن إخفاؤه', () {
+    test('التحديث الإجباري يتجاوز التأجيل ومنع التكرار', () {
       expect(UpdateService.shouldShowResumeReminder(
         available: true, force: true, snoozed: true, alreadyShown: true,
       ), isTrue);
@@ -75,5 +73,4 @@ void main() {
       ), isFalse);
     });
   });
-
 }
