@@ -1,4 +1,5 @@
 import 'package:city_store/widgets/empty_state.dart';
+import 'package:city_store/widgets/app_header.dart';
 import 'package:city_store/widgets/qty_stepper.dart';
 import 'package:city_store/widgets/curved_nav_bar.dart';
 import 'package:flutter/material.dart';
@@ -49,6 +50,39 @@ void main() {
     expect(find.byIcon(Icons.shopping_cart), findsOneWidget);
     await tester.tap(find.text('السلة'));
     expect(selected, 2);
+  });
+
+  testWidgets('زر الرئيسية يرجع من الصفحة الداخلية إلى جذر التطبيق', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(actions: const [HomeActionButton()]),
+                      body: const Text('صفحة داخلية'),
+                    ),
+                  ),
+                ),
+                child: const Text('افتح الصفحة'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('افتح الصفحة'));
+    await tester.pumpAndSettle();
+    expect(find.text('صفحة داخلية'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('الرئيسية'));
+    await tester.pumpAndSettle();
+    expect(find.text('افتح الصفحة'), findsOneWidget);
+    expect(find.text('صفحة داخلية'), findsNothing);
   });
 
   testWidgets('QtyStepper بيزوّد وينقّص', (tester) async {
