@@ -50,12 +50,12 @@ class _RoleGateState extends State<RoleGate> {
 
   /// تنبيهات الدردشة والشكاوى اللحظية (المدير بياخد تنبيهات زيادة).
   void _startAlerts(RoleInfo info) {
+    final isCourier = info.held.contains(AppRole.courier);
+    unawaited(NotificationService.syncCourierTopic(isCourier: isCourier));
     if (info.pendingStoreOwner && info.held.length == 1) {
       LiveAlerts.stop();
       return;
     }
-    final isCourier = info.held.contains(AppRole.courier);
-    unawaited(NotificationService.syncCourierTopic(isCourier: isCourier));
     LiveAlerts.start(
       isAdmin: info.held.contains(AppRole.admin),
       storeId: info.held.contains(AppRole.storeOwner) ? info.storeId : '',
