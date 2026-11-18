@@ -311,12 +311,12 @@ async function assertFirebaseUserActive(
       },
     );
     if (!lookup.ok) {
-      const detail = (await lookup.text()).slice(0, 500);
-      if (detail.includes("USER_NOT_FOUND")) {
+      const upstreamBody = await lookup.text();
+      if (upstreamBody.includes("USER_NOT_FOUND")) {
         if (options.allowMissingUser) return;
         throw new HttpError(401, "الحساب لم يعد نشطًا. سجّل الدخول من جديد.");
       }
-      console.error("Firebase Auth account lookup failed", lookup.status, detail);
+      console.error("Firebase Auth account lookup failed", lookup.status);
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
@@ -464,8 +464,8 @@ async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Pr
       body: JSON.stringify({ writes: writes.slice(offset, offset + 400) }),
     });
     if (!result.ok) {
-      const detail = (await result.text()).slice(0, 300);
-      throw new HttpError(503, `تعذر استكمال تنظيف بيانات الحساب (${result.status}): ${detail}`);
+      console.error("Firestore account cleanup commit failed", result.status);
+      throw new HttpError(503, "تعذر استكمال تنظيف بيانات الحساب حاليًا. حاول مرة أخرى.");
     }
   }
 }
@@ -518,8 +518,8 @@ async function queryAccountDocuments(
       body: JSON.stringify({ structuredQuery }),
     });
     if (!result.ok) {
-      const detail = (await result.text()).slice(0, 300);
-      throw new HttpError(503, `تعذر قراءة سجلات حذف الحساب (${result.status}): ${detail}`);
+      console.error("Firestore account cleanup query failed", result.status);
+      throw new HttpError(503, "تعذر قراءة سجلات حذف الحساب حاليًا. حاول مرة أخرى.");
     }
     const rows = await result.json() as Array<{ document?: FirestoreDoc }>;
     const page = rows.map((row) => row.document).filter((doc): doc is FirestoreDoc => Boolean(doc?.name));
@@ -773,10 +773,11 @@ async function deleteFirebaseAuthUser(env: Env, token: string, uid: string): Pro
     },
   );
   if (!result.ok) {
-    const detail = (await result.text()).slice(0, 500);
+    const upstreamBody = await result.text();
     // A retry after a lost response is successful if Firebase already deleted the user.
-    if (detail.includes("USER_NOT_FOUND")) return;
-    throw new HttpError(503, `تم تنظيف البيانات لكن تعذر حذف حساب تسجيل الدخول (${result.status}): ${detail}`);
+    if (upstreamBody.includes("USER_NOT_FOUND")) return;
+    console.error("Firebase Auth account deletion failed", result.status);
+    throw new HttpError(503, "تم تنظيف البيانات لكن تعذر حذف حساب تسجيل الدخول حاليًا. أعد المحاولة.");
   }
 }
 
