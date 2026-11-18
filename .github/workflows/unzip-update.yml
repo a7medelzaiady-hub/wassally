@@ -1,39 +1,74 @@
-name: Unzip update
+name: Safe ZIP import
 
-# تم تعطيل التشغيل التلقائي عند رفع zip (المرحلة 1): كان يستبدل المشروع كله بـ rsync --delete.
-# يعمل يدويًا فقط من تبويب Actions ← Run workflow.
+# ZIP-Import läuft ausschließlich manuell und wird als Pull Request geprüft.
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  unzip:
+  import:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract zip and replace project files
+      - name: Validate and extract archive
+        shell: bash
         run: |
-          set -e
-          zipfile=$(ls incoming/*.zip | head -n 1)
-          mkdir /tmp/x
-          unzip -q "$zipfile" -d /tmp/x
-          src=/tmp/x
-          # لو الزيب فيه مجلد واحد في الجذر (زي wasally-main) ندخل جواه
-          if [ "$(ls -A /tmp/x | wc -l)" = "1" ] && [ -d "/tmp/x/$(ls -A /tmp/x)" ]; then
-            src="/tmp/x/$(ls -A /tmp/x)"
+          set -euo pipefail
+          mapfile -t archives < <(find incoming -maxdepth 1 -type f -name '*.zip' -print | sort)
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "Expected exactly one ZIP file in incoming/, found ${#archives[@]}."
+            exit 1
           fi
-          rsync -a --delete \
-            --exclude='.git/' --exclude='.github/' --exclude='incoming/' \
-            "$src"/ ./
-          rm -f incoming/*.zip
 
-      - name: Commit and push
+          archive="${archives[0]}"
+          while IFS= read -r entry; do
+            case "/${entry}/" in
+              *"/../"*|/*"/../"*)
+                echo "Unsafe ZIP path rejected: ${entry}"
+                exit 1
+                ;;
+            esac
+            if [[ "${entry}" = /* ]]; then
+              echo "Absolute ZIP path rejected: ${entry}"
+              exit 1
+            fi
+          done < <(unzip -Z1 "${archive}")
+
+          mkdir -p /tmp/wasally-import
+          unzip -q "${archive}" -d /tmp/wasally-import
+          entries=(/tmp/wasally-import/*)
+          src=/tmp/wasally-import
+          if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
+            src="${entries[0]}"
+          fi
+
+          # Never delete repository files or replace GitHub workflow settings.
+          rsync -a \
+            --exclude='.git/' --exclude='.github/' --exclude='incoming/' \
+            "${src}/" ./
+          rm -f "${archive}"
+
+      - name: Create review branch and pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
+          set -euo pipefail
+          branch="archive-import/${GITHUB_RUN_ID}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${branch}"
           git add -A
-          git commit -m "Update project from zip" || echo "No changes"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to import."
+            exit 0
+          fi
+          git commit -m "Import reviewed project archive"
+          git push --set-upstream origin "${branch}"
+          gh pr create --base main --head "${branch}" \
+            --title "Review imported project archive" \
+            --body "Automated ZIP import. Review the complete diff and CI results before merging; main was not modified directly."
