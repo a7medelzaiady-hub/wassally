@@ -9,11 +9,11 @@ import '../screens/admin_store_owners_page.dart';
 import '../screens/admin_stores_page.dart';
 import '../screens/support_chat_page.dart';
 import '../services/auth_service.dart';
+import '../services/navigation.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
 import 'panel_switcher.dart';
-import '../screens/main_shell.dart';
 
 /// هيدر شاشات المدير والمندوب: العنوان + عرض كعميل + تسجيل خروج.
 class StaffHeader extends StatelessWidget {
@@ -135,6 +135,11 @@ class StaffHeader extends StatelessWidget {
               .push(MaterialPageRoute(builder: (_) => const SupportChatPage())),
         ),
       // الأدمن: تبديل بين اللوحات. غيره: زر للرئيسية (شاشة العميل).
+      _btn(
+        tooltip: 'الصفحة الرئيسية',
+        icon: Icons.home_rounded,
+        onPressed: () => activePanel.value = AppRole.customer,
+      ),
       if (isAdmin)
         _btn(
           tooltip: 'تبديل اللوحة',
