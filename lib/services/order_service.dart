@@ -626,12 +626,15 @@ class OrderService {
 
     // لا نرجع لاستعلام غير محدود إذا كان الفهرس ناقصًا؛ ده ممكن يقرأ تاريخ العميل بالكامل.
     // الفهرس userId + createdAt موجود في firestore.indexes.json ويجب نشره مع التطبيق.
-    await for (final snap
-        in _orders
-            .where('userId', isEqualTo: user.uid)
-            .orderBy('createdAt', descending: true)
-            .limit(kMyOrdersLimit)
-            .snapshots()) {
+    final stream = _orders
+        .where('userId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(kMyOrdersLimit)
+        .snapshots();
+    await for (final snap in PerformanceMonitor.traceFirstEvent(
+      'order_history_initial_load',
+      stream,
+    )) {
       yield toList(snap);
     }
   }
