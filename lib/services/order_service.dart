@@ -216,64 +216,61 @@ class OrderService {
       throw const OrderLimitException('أقصى كمية للصنف الواحد $kMaxLineQty.');
     }
 
-    // فحص واجهة مبكر لشرح سبب التقييد؛ قواعد Firestore تظل الحماية النهائية
-    // وتمنع الطلب حتى لو استخدم العميل إصدارًا قديمًا من التطبيق.
-    try {
-      final restriction = await FirebaseFirestore.instance
-          .collection('customer_restrictions')
-          .doc(user.uid)
-          .get();
-      final restrictionData = restriction.data();
-      final expiresAt = restrictionData?['expiresAt'];
-      if (restrictionData?['active'] == true &&
-          expiresAt is Timestamp &&
-          expiresAt.toDate().isAfter(DateTime.now())) {
-        final until = expiresAt.toDate();
-        throw StateError(
-          'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
-          '${until.day}/${until.month}/${until.year}. لو شايف إن القرار محتاج مراجعة، افتح زر الشكاوى واختر «اعتراض على تقييد».',
-        );
-      }
-    } on FirebaseException catch (error) {
-      // قبل نشر القواعد الجديدة قد لا تسمح القواعد الحالية بقراءة هذا المسار.
-      // نترك قرار السماح النهائي لقواعد إنشاء الطلب المنشورة.
-      if (error.code != 'permission-denied') rethrow;
-    }
-
-    // نتحقق من المحل من Firestore وقت إرسال الطلب، ولا نعتمد على بيانات السلة
-    // التي قد تكون قديمة أو تم تغييرها محليًا.
+    final serverOrders = OrderGateway.serverOrdersEnabled;
     final storeId = (cart.storeId ?? '').trim();
     if (storeId.isEmpty) {
       throw StateError('بيانات المحل غير مكتملة. ارجع للمحل وحاول تاني.');
     }
 
-    final storeDoc = await FirebaseFirestore.instance
-        .collection('stores')
-        .doc(storeId)
-        .get();
-
-    if (!storeDoc.exists || storeDoc.data() == null) {
-      throw StateError('المحل غير موجود أو لم يعد متاحًا.');
-    }
-
-    final store = Store.fromMap(storeDoc.id, storeDoc.data()!);
-    if (!store.active) {
-      throw StateError('المحل مغلق حاليًا ولا يمكن استقبال الطلبات.');
-    }
-    if (store.name.trim().isEmpty) {
-      throw StateError('بيانات المحل غير مكتملة. حاول مرة تانية.');
-    }
-
-    // نعيد التحقق من الكوبون وقت الإرسال: النسبة ممكن تكون اتغيّرت بعد ما العميل طبّقه،
-    // والقواعد بتقارن الخصم بالنسبة الحالية في promos/{code}.
-    if (cart.promoCode.isNotEmpty) {
-      final p = await PromoService.check(cart.promoCode);
-      if (p == null) {
-        cart.setPromo('', 0);
-        throw StateError('الكوبون لم يعد صالحًا واتشال من الطلب. راجع الإجمالي وحاول تاني.');
+    Store? store;
+    if (!serverOrders) {
+      // مسار التوافق القديم فقط. في وضع Worker نتجنب تكرار قراءات
+      // التقييد والمحل والكوبون؛ البوابة تنفذ التحقق الموثوق نفسه مرة واحدة.
+      try {
+        final restriction = await FirebaseFirestore.instance
+            .collection('customer_restrictions')
+            .doc(user.uid)
+            .get();
+        final restrictionData = restriction.data();
+        final expiresAt = restrictionData?['expiresAt'];
+        if (restrictionData?['active'] == true &&
+            expiresAt is Timestamp &&
+            expiresAt.toDate().isAfter(DateTime.now())) {
+          final until = expiresAt.toDate();
+          throw StateError(
+            'إنشاء الطلبات متوقف مؤقتًا على حسابك حتى '
+            '${until.day}/${until.month}/${until.year}. لو شايف إن القرار محتاج مراجعة، افتح زر الشكاوى واختر «اعتراض على تقييد».',
+          );
+        }
+      } on FirebaseException catch (error) {
+        if (error.code != 'permission-denied') rethrow;
       }
-      if (p.code != cart.promoCode || p.percent != cart.promoPercent) {
-        cart.setPromo(p.code, p.percent);
+
+      final storeDoc = await FirebaseFirestore.instance
+          .collection('stores')
+          .doc(storeId)
+          .get();
+      if (!storeDoc.exists || storeDoc.data() == null) {
+        throw StateError('المحل غير موجود أو لم يعد متاحًا.');
+      }
+      store = Store.fromMap(storeDoc.id, storeDoc.data()!);
+      if (!store.active) {
+        throw StateError('المحل مغلق حاليًا ولا يمكن استقبال الطلبات.');
+      }
+      if (store.name.trim().isEmpty) {
+        throw StateError('بيانات المحل غير مكتملة. حاول مرة تانية.');
+      }
+
+      // تحقق الكوبون محليًا مطلوب فقط لمسار Firestore القديم.
+      if (cart.promoCode.isNotEmpty) {
+        final p = await PromoService.check(cart.promoCode);
+        if (p == null) {
+          cart.setPromo('', 0);
+          throw StateError('الكوبون لم يعد صالحًا واتشال من الطلب. راجع الإجمالي وحاول تاني.');
+        }
+        if (p.code != cart.promoCode || p.percent != cart.promoPercent) {
+          cart.setPromo(p.code, p.percent);
+        }
       }
     }
 
@@ -284,8 +281,8 @@ class OrderService {
       // والمندوب المكلّف بالطلب.
       'customerName': _firstName(name),
       'notes': notes,
-      'storeId': store.id,
-      'storeName': store.name,
+      'storeId': storeId,
+      'storeName': store?.name ?? (cart.storeName ?? '').trim(),
       'items': cart.items.entries
           .map(
             (e) => {
@@ -343,7 +340,7 @@ class OrderService {
         idToken: idToken,
         payload: {
           'orderId': orderId,
-          'storeId': store.id,
+          'storeId': storeId,
           'customerName': _firstName(name),
           'notes': notes,
           'area': cart.area,
@@ -356,6 +353,9 @@ class OrderService {
                     if (e.key.id.isEmpty) 'name': e.key.name,
                     'expectedPrice': e.key.price,
                     'qty': e.value,
+                    if (e.key.chosen.isNotEmpty)
+                      'options': e.key.chosen.map((option) => option.name).toList(),
+                    if (e.key.chosenTotal > 0) 'optionsTotal': e.key.chosenTotal,
                   })
               .toList(),
           if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
@@ -381,7 +381,7 @@ class OrderService {
           final existing = await ref.get();
           alreadyCreated = existing.exists &&
               existing.data()?['userId'] == user.uid &&
-              existing.data()?['storeId'] == store.id &&
+              existing.data()?['storeId'] == storeId &&
               existing.data()?['total'] == cart.total;
         } catch (_) {
           // عند تعذر التحقق نحتفظ بالمفتاح ليُعاد استخدامه في المحاولة التالية.
@@ -477,6 +477,8 @@ class OrderService {
                     if (line.productId.isEmpty) 'name': line.name,
                     'expectedPrice': line.price,
                     'qty': line.qty,
+                    if (line.options.isNotEmpty) 'options': line.options,
+                    if (line.optionsTotal > 0) 'optionsTotal': line.optionsTotal,
                   })
               .toList(),
           'contact': {

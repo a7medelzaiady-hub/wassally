@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, isCloudinaryImageUrl } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -32,6 +32,100 @@ it("fails closed when a restriction document exists but is empty", () => {
   it("matches the expiry alternative even if the active flag is missing", () => {
     expect(isCustomerRestricted({ active: null, expiresAt: new Date(now - 1) }, now)).toBe(false);
     expect(isCustomerRestricted({ active: null }, now)).toBe(true);
+  });
+});
+
+describe("trusted catalog option pricing", () => {
+  const product = {
+    optionGroups: [
+      {
+        title: "السكر",
+        min: 1,
+        max: 1,
+        options: [{ name: "سادة", price: 0 }, { name: "زيادة", price: 2 }],
+      },
+      {
+        title: "الإضافات",
+        min: 0,
+        max: 2,
+        options: [{ name: "حليب", price: 3 }, { name: "كراميل", price: 4 }],
+      },
+    ],
+  };
+
+  it("calculates selected surcharges only from catalog option prices", () => {
+    expect(resolveCatalogOptions(product, {
+      options: ["زيادة", "حليب"],
+      optionsTotal: 5,
+    })).toEqual({ options: ["زيادة", "حليب"], optionsTotal: 5 });
+  });
+
+  it("rejects missing required choices and choices outside group limits", () => {
+    expect(() => resolveCatalogOptions(product, {
+      options: ["حليب"],
+      optionsTotal: 3,
+    })).toThrow();
+    expect(() => resolveCatalogOptions(product, {
+      options: ["سادة", "زيادة", "حليب"],
+      optionsTotal: 5,
+    })).toThrow();
+  });
+
+  it("rejects unknown, duplicated, or ambiguous option names", () => {
+    expect(() => resolveCatalogOptions(product, {
+      options: ["اختيار غير موجود"],
+      optionsTotal: 0,
+    })).toThrow();
+    expect(() => resolveCatalogOptions(product, {
+      options: ["حليب", "حليب"],
+      optionsTotal: 6,
+    })).toThrow();
+
+    const ambiguous = {
+      optionGroups: [
+        { title: "الأول", min: 0, max: 1, options: [{ name: "زيادة", price: 1 }] },
+        { title: "الثاني", min: 0, max: 1, options: [{ name: "زيادة", price: 2 }] },
+      ],
+    };
+    expect(() => resolveCatalogOptions(ambiguous, {
+      options: ["زيادة"],
+      optionsTotal: 1,
+    })).toThrow();
+  });
+
+  it("rejects non-string option labels and non-numeric client totals", () => {
+    expect(() => resolveCatalogOptions(product, {
+      options: [123],
+      optionsTotal: 0,
+    })).toThrow();
+    expect(() => resolveCatalogOptions(product, {
+      options: ["سادة"],
+      optionsTotal: "0",
+    })).toThrow();
+  });
+
+  it("rejects client-forged option totals and malformed catalog prices", () => {
+    expect(() => resolveCatalogOptions(product, {
+      options: ["زيادة"],
+      optionsTotal: 0,
+    })).toThrow();
+    const malformed = {
+      optionGroups: [{
+        title: "إضافات",
+        min: 0,
+        max: 1,
+        options: [{ name: "زيادة", price: -50 }],
+      }],
+    };
+    expect(() => resolveCatalogOptions(malformed, {
+      options: ["زيادة"],
+      optionsTotal: 0,
+    })).toThrow();
+  });
+
+  it("allows products without option groups when no options are selected", () => {
+    expect(resolveCatalogOptions({}, { options: [], optionsTotal: 0 }))
+      .toEqual({ options: [], optionsTotal: 0 });
   });
 });
 

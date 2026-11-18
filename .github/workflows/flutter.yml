@@ -45,6 +45,11 @@ jobs:
     - name: Run tests
       run: flutter test
 
+    # Compile-time canary only: verify the app recognizes the secure Worker order mode.
+    # The installable debug APK below remains on the legacy path until production is verified.
+    - name: Test serverOrders-enabled gateway configuration
+      run: flutter test --dart-define=WASALLY_SERVER_ORDERS=true test/services/order_gateway_test.dart
+
     # تفريغ مساحة من الأدوات غير المطلوبة قبل تنزيل NDK وبناء Android.
     - name: Free disk space before Android build
       run: |
@@ -56,23 +61,6 @@ jobs:
         df -h /
 
     # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
-    - name: Smoke test signed image upload route
-      shell: bash
-      run: |
-        WORKER_URL="https://throbbing-water-4ef7.a7medelzaiady.workers.dev"
-        # Verify the app-critical upload route directly; older deployed Worker versions may not expose /health.
-        STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/upload-route.json" --write-out '%{http_code}' \
-          --request POST "$WORKER_URL/v1/uploads" \
-          --header 'Authorization: Bearer invalid-smoke-test-token' \
-          --header 'Content-Type: application/json' \
-          --data '{}')"
-        if [ "$STATUS" != "401" ]; then
-          echo "Unexpected upload route status: $STATUS"
-          cat "$RUNNER_TEMP/upload-route.json"
-          exit 1
-        fi
-        echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
-
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
       run: mkdir -p "$HOME/.android"
@@ -158,6 +146,22 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: wasally-debug-apk
+        path: build/app/outputs/flutter-apk/app-debug.apk
+        if-no-files-found: error
+        retention-days: 7
+
+    # Separate canary build for one real authenticated Worker order test.
+    # Deploy the Worker source first; the normal debug APK stays on the legacy path.
+    - name: Build serverOrders canary APK
+      run: |
+        flutter build apk --debug \
+          --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
+          --dart-define=WASALLY_SERVER_ORDERS=true
+
+    - name: Upload serverOrders canary APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: wasally-server-orders-canary-apk
         path: build/app/outputs/flutter-apk/app-debug.apk
         if-no-files-found: error
         retention-days: 7

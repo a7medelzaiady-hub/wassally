@@ -194,6 +194,97 @@ export function effectiveCatalogPrice(product: JsonMap, now = Date.now()): numbe
   return money(base);
 }
 
+/**
+ * Resolve selected option labels against the store-owned catalog.
+ * Client-provided option prices are never trusted; optionsTotal is only a stale-cart check.
+ */
+export function resolveCatalogOptions(
+  product: JsonMap,
+  line: JsonMap,
+): { options: string[]; optionsTotal: number } {
+  const rawGroups = product.optionGroups ?? [];
+  const selectedRaw = line.options ?? [];
+  if (!Array.isArray(rawGroups) || rawGroups.length > 10 ||
+      !Array.isArray(selectedRaw) || selectedRaw.length > 200) {
+    throw new HttpError(409, "خيارات أحد الأصناف غير صالحة في الكتالوج.");
+  }
+  if (selectedRaw.some((value) => typeof value !== "string")) {
+    throw new HttpError(400, "صيغة اختيارات أحد الأصناف غير صحيحة.");
+  }
+  const selected = selectedRaw.map((value) => value.trim());
+  if (selected.some((name) => !name || name.length > 80) ||
+      new Set(selected).size !== selected.length) {
+    throw new HttpError(400, "اختيارات أحد الأصناف غير صالحة أو مكررة.");
+  }
+
+  const groups: Array<{ min: number; max: number; names: Set<string> }> = [];
+  const matches = new Map<string, number[]>();
+  const optionPrices = new Map<string, number>();
+  for (const rawGroup of rawGroups) {
+    if (!rawGroup || typeof rawGroup !== "object" || Array.isArray(rawGroup)) {
+      throw new HttpError(409, "مجموعة خيارات غير صالحة في الكتالوج.");
+    }
+    const group = rawGroup as JsonMap;
+    const rawOptions = Array.isArray(group.options) ? group.options : [];
+    if (!rawOptions.length || rawOptions.length > 20) {
+      throw new HttpError(409, "عدد اختيارات المجموعة غير صالح في الكتالوج.");
+    }
+    const min = group.min === undefined ? 0 : Number(group.min);
+    const max = group.max === undefined ? 1 : Number(group.max);
+    if (!Number.isInteger(min) || !Number.isInteger(max) ||
+        min < 0 || max < 1 || max > rawOptions.length || min > max) {
+      throw new HttpError(409, "حدود مجموعة الخيارات غير صالحة في الكتالوج.");
+    }
+    const names = new Set<string>();
+    for (const rawOption of rawOptions) {
+      if (!rawOption || typeof rawOption !== "object" || Array.isArray(rawOption)) {
+        throw new HttpError(409, "اختيار غير صالح في الكتالوج.");
+      }
+      const option = rawOption as JsonMap;
+      const name = String(option.name ?? "").trim();
+      const price = option.price === undefined ? 0 : Number(option.price);
+      if (!name || name.length > 80 || !Number.isFinite(price) || price < 0 || price > 20000 ||
+          names.has(name)) {
+        throw new HttpError(409, "اسم أو سعر اختيار غير صالح في الكتالوج.");
+      }
+      names.add(name);
+      const indexes = matches.get(name) ?? [];
+      indexes.push(groups.length);
+      matches.set(name, indexes);
+      optionPrices.set(name, price);
+    }
+    groups.push({ min, max, names });
+  }
+
+  const counts = groups.map(() => 0);
+  let optionsTotal = 0;
+  for (const name of selected) {
+    const indexes = matches.get(name) ?? [];
+    if (indexes.length !== 1) {
+      throw new HttpError(409, "أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.");
+    }
+    const groupIndex = indexes[0];
+    counts[groupIndex] += 1;
+    optionsTotal += optionPrices.get(name) ?? 0;
+  }
+  for (let i = 0; i < groups.length; i++) {
+    if (counts[i] < groups[i].min || counts[i] > groups[i].max) {
+      throw new HttpError(409, "راجع الاختيارات المطلوبة لأحد الأصناف.");
+    }
+  }
+
+  if (line.optionsTotal !== undefined && typeof line.optionsTotal !== "number") {
+    throw new HttpError(400, "قيمة إضافات أحد الأصناف غير صحيحة.");
+  }
+  const expectedOptionsTotal = line.optionsTotal === undefined ? 0 : line.optionsTotal;
+  optionsTotal = money(optionsTotal);
+  if (!Number.isFinite(expectedOptionsTotal) ||
+      Math.abs(expectedOptionsTotal - optionsTotal) >= 0.01) {
+    throw new HttpError(409, "سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.");
+  }
+  return { options: selected, optionsTotal };
+}
+
 export function isAuthTimeAfterValidSince(authTime: number, validSince: number): boolean {
   return Number.isFinite(authTime) && Number.isFinite(validSince) && authTime >= validSince;
 }
@@ -767,7 +858,38 @@ async function resolveItems(
   if (lines.length < 1 || lines.length > Number(env.MAX_ORDER_LINES ?? 100)) {
     throw new HttpError(400, "عدد الأصناف خارج الحدود المسموحة.");
   }
-  const productIds = [...new Set(lines.map((line: any) => String(line?.productId ?? "").trim()).filter(Boolean))];
+  // Validate every line before batchGet so malformed requests cannot trigger needless Firestore reads.
+  for (const line of lines) {
+    if (!line || typeof line !== "object" || Array.isArray(line)) {
+      throw new HttpError(400, "بيانات أحد الأصناف غير صحيحة.");
+    }
+    if (typeof line.qty !== "number" || !Number.isInteger(line.qty) ||
+        line.qty < 1 || line.qty > Number(env.MAX_LINE_QTY ?? 50)) {
+      throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
+    }
+    if (typeof line.expectedPrice !== "number" || !Number.isFinite(line.expectedPrice) ||
+        line.expectedPrice <= 0) {
+      throw new HttpError(400, "سعر الصنف المرسل غير صالح.");
+    }
+    if (line.productId !== undefined && typeof line.productId !== "string") {
+      throw new HttpError(400, "معرّف صنف غير صالح.");
+    }
+    if (line.options !== undefined &&
+        (!Array.isArray(line.options) || line.options.length > 200 ||
+          line.options.some((option: unknown) => typeof option !== "string"))) {
+      throw new HttpError(400, "صيغة اختيارات أحد الأصناف غير صحيحة.");
+    }
+    if (line.optionsTotal !== undefined &&
+        (typeof line.optionsTotal !== "number" || !Number.isFinite(line.optionsTotal) ||
+          line.optionsTotal < 0)) {
+      throw new HttpError(400, "قيمة إضافات أحد الأصناف غير صحيحة.");
+    }
+    if (!String(line.productId ?? "").trim() &&
+        (typeof line.name !== "string" || !line.name.trim() || line.name.length > 200)) {
+      throw new HttpError(400, "اسم الصنف غير صالح.");
+    }
+  }
+  const productIds = [...new Set(lines.map((line: any) => String(line.productId ?? "").trim()).filter(Boolean))];
   if (productIds.some((id) => id.includes("/") || id.length > 150)) {
     throw new HttpError(400, "معرّف صنف غير صالح.");
   }
@@ -777,11 +899,18 @@ async function resolveItems(
   const items: JsonMap[] = [];
   let subtotal = 0;
   for (const line of lines) {
-    const qty = Number(line?.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
+    if (!line || typeof line !== "object" || Array.isArray(line)) {
+      throw new HttpError(400, "بيانات أحد الأصناف غير صحيحة.");
+    }
+    const qty = line.qty;
+    if (typeof qty !== "number" || !Number.isInteger(qty) ||
+        qty < 1 || qty > Number(env.MAX_LINE_QTY ?? 50)) {
       throw new HttpError(400, "كمية أحد الأصناف غير صالحة.");
     }
-    const productId = String(line?.productId ?? "").trim();
+    if (line.productId !== undefined && typeof line.productId !== "string") {
+      throw new HttpError(400, "معرّف صنف غير صالح.");
+    }
+    const productId = String(line.productId ?? "").trim();
     let product: JsonMap;
     let resolvedId = productId;
     let isLegacy = false;
@@ -805,16 +934,29 @@ async function resolveItems(
     const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
     if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
     seen.add(identity);
-    const price = effectiveCatalogPrice(
+    const basePrice = effectiveCatalogPrice(
       isLegacy ? { ...product, oldPrice: 0, offerEndsAt: null } : product,
     );
-    const expectedPrice = Number(line?.expectedPrice);
-    // expectedPrice is only a stale-cart check; the saved price always comes from Firestore.
+    const resolvedOptions = resolveCatalogOptions(product, line as JsonMap);
+    const price = money(basePrice + resolvedOptions.optionsTotal);
+    const expectedPrice = line.expectedPrice;
+    if (typeof expectedPrice !== "number" || !Number.isFinite(expectedPrice)) {
+      throw new HttpError(400, "سعر الصنف المرسل غير صالح.");
+    }
+    // expectedPrice is only a stale-cart check; the saved price and option surcharges come from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
-      throw new HttpError(409, "سعر أحد الأصناف اتغير. راجع السلة قبل تأكيد الطلب.");
+      throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.");
     }
     subtotal = money(subtotal + price * qty);
-    items.push({ name, price, qty, ...(resolvedId ? { productId: resolvedId } : {}) });
+    items.push({
+      name,
+      price,
+      qty,
+      ...(resolvedId ? { productId: resolvedId } : {}),
+      ...(resolvedOptions.options.length
+        ? { options: resolvedOptions.options, optionsTotal: resolvedOptions.optionsTotal }
+        : {}),
+    });
   }
   if (!Number.isFinite(subtotal) || subtotal <= 0 || subtotal > 100000) {
     throw new HttpError(409, "إجمالي الأصناف خارج الحدود المسموحة.");
