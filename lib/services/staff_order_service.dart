@@ -241,10 +241,10 @@ class StaffOrderService {
     if (data['courierArrivedAt'] is! Timestamp) {
       throw StateError('سجّل وصولك إلى عنوان العميل أولاً.');
     }
-    if ((data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
+    if (data.containsKey('activeDeliveryIssueId')) {
       throw StateError('يوجد بلاغ توصيل مفتوح لهذا الطلب؛ لا يمكن تسجيل التسليم الآن.');
     }
-    if (data['customerDeliveryReportedAt'] is Timestamp) {
+    if (data.containsKey('customerDeliveryReportedAt')) {
       throw StateError('تم تسجيل بلاغ التسليم بالفعل، انتظر تأكيد العميل.');
     }
     if (data['deliveryMode'] != 'store' && data['deliveryMode'] != 'external') {
