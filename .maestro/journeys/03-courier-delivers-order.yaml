@@ -9,6 +9,10 @@ appId: com.wassally.app
     timeout: 60000
 - tapOn: "دخول تجريبي: مندوب"
 - extendedWaitUntil:
+    visible: "مش دلوقتي"
+    timeout: 60000
+- runFlow: _dismiss-prompts.yaml
+- extendedWaitUntil:
     visible: "استلم الطلب"
     timeout: 90000
 - tapOn: "استلم الطلب"

@@ -37,7 +37,7 @@ echo "::endgroup::"
 node e2e/seed.mjs || exit 1
 
 status=0
-for flow in .maestro/journeys/*.yaml; do
+for flow in .maestro/journeys/0*.yaml; do
   name=$(basename "$flow" .yaml)
   echo "::group::Maestro $name"
   if ! maestro test --format junit --output "$OUT/$name.xml" --debug-output "$OUT/debug-$name" "$flow"; then
