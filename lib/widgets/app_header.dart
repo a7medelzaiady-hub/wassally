@@ -42,6 +42,20 @@ class AppHeader extends StatelessWidget {
   }
 }
 
+class HomeActionButton extends StatelessWidget {
+  const HomeActionButton({super.key});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: 'الرئيسية',
+    onPressed: () {
+      shellTab.value = 0;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    },
+    icon: const Icon(Icons.home_rounded),
+  );
+}
+
 /// هيدر لصفحة داخلية: زر رجوع + عنوان (أخضر زي الصفحة الرئيسية).
 class InnerHeader extends StatelessWidget {
   final String title;
@@ -67,14 +81,7 @@ class InnerHeader extends StatelessWidget {
                   ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
             ),
           ),
-          IconButton(
-            tooltip: 'الرئيسية',
-            onPressed: () {
-              shellTab.value = 0;
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            icon: const Icon(Icons.home_rounded, color: Colors.white),
-          ),
+          const HomeActionButton(),
           ?trailing,
         ],
       ),
