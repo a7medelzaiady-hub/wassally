@@ -73,6 +73,24 @@ jobs:
         fi
         echo "Signed image upload endpoint is deployed and rejects invalid authentication as expected."
 
+    # Order creation must exist in the deployed Worker and reject unauthenticated clients.
+    # A 401 proves the route reached Firebase-token verification; 404/503 is a deployment/config failure.
+    - name: Smoke test authenticated order gateway route
+      shell: bash
+      run: |
+        WORKER_URL="https://throbbing-water-4ef7.a7medzaiady.workers.dev"
+        STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/order-route.json" --write-out '%{http_code}' \
+          --request POST "$WORKER_URL/v1/orders" \
+          --header 'Authorization: Bearer not-a-valid-jwt' \
+          --header 'Content-Type: application/json' \
+          --data '{}')"
+        if [ "$STATUS" != "401" ]; then
+          echo "Unexpected order route status: $STATUS"
+          cat "$RUNNER_TEMP/order-route.json"
+          exit 1
+        fi
+        echo "Order creation route is deployed and rejects invalid Firebase tokens."
+
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
       run: mkdir -p "$HOME/.android"
