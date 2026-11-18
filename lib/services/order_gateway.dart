@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'performance_monitor.dart';
+
 /// عنوان بوابة الطلبات الموثوقة يمرر وقت البناء، ولا يحتوي أي أسرار.
 class OrderGateway {
   const OrderGateway._();
@@ -146,10 +148,15 @@ class OrderGateway {
           'Accept': 'application/json',
         })
         ..body = jsonEncode(payload);
-      final streamed = await client
-          .send(request)
-          .timeout(const Duration(seconds: 25));
-      result = await http.Response.fromStream(streamed);
+      result = await PerformanceMonitor.trace(
+        'worker_api_request',
+        () async {
+          final streamed = await client
+              .send(request)
+              .timeout(const Duration(seconds: 25));
+          return http.Response.fromStream(streamed);
+        },
+      );
     } catch (_) {
       throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
     } finally {
