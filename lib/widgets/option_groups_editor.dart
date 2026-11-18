@@ -79,73 +79,110 @@ class _Draft {
   }
 }
 
-/// محرر مجموعات الخيارات للصنف (للمدير/صاحب المحل). بيرجع القائمة الجديدة أو null لو اتلغى.
+/// محرر مجموعات الخيارات للصنف. كل المتحكمات مملوكة لحالة Dialog مستقلة،
+/// وبتتحرر بعد إزالة عناصر TextField من الشجرة.
 Future<List<OptionGroup>?> showOptionGroupsEditor(
   BuildContext context,
   List<OptionGroup> initial,
 ) {
-  final drafts = initial.map(_Draft.from).toList();
   return showDialog<List<OptionGroup>>(
     context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setLocal) => AlertDialog(
-        title: const Text('خيارات الصنف'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'مثال: مجموعة «السكر» (اختيار واحد): سادة / مظبوط / زيادة. '
-                  'ومجموعة «إضافات» (اختياري، متعدد): كوكيز = 90',
-                  style: TextStyle(fontSize: 12, color: kMuted, height: 1.4),
-                ),
-                for (var i = 0; i < drafts.length; i++) ...[
-                  const SizedBox(height: 14),
-                  _groupEditor(ctx, setLocal, drafts, i),
-                ],
-                const SizedBox(height: 12),
-                if (drafts.length < kMaxOptionGroups)
-                  OutlinedButton.icon(
-                    onPressed: () => setLocal(() => drafts.add(_Draft())),
-                    icon: const Icon(Icons.add),
-                    label: const Text('إضافة مجموعة خيارات'),
-                  ),
+    useRootNavigator: true,
+    builder: (_) => _OptionGroupsEditorDialog(initial: initial),
+  );
+}
+
+class _OptionGroupsEditorDialog extends StatefulWidget {
+  final List<OptionGroup> initial;
+
+  const _OptionGroupsEditorDialog({required this.initial});
+
+  @override
+  State<_OptionGroupsEditorDialog> createState() =>
+      _OptionGroupsEditorDialogState();
+}
+
+class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
+  late final List<_Draft> _drafts = widget.initial.map(_Draft.from).toList();
+
+  @override
+  void dispose() {
+    for (final draft in _drafts) {
+      draft.dispose();
+    }
+    super.dispose();
+  }
+
+  void _removeDraft(int index) {
+    final removed = _drafts.removeAt(index);
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
+  }
+
+  void _save() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final built = <OptionGroup>[
+      for (final draft in _drafts)
+        if (draft.build() case final group?) group,
+    ];
+    Navigator.of(context, rootNavigator: true).pop(built);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('خيارات الصنف'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'مثال: مجموعة «السكر» (اختيار واحد): سادة / مظبوط / زيادة. '
+                'ومجموعة «إضافات» (اختياري، متعدد): كوكيز = 90',
+                style: TextStyle(fontSize: 12, color: kMuted, height: 1.4),
+              ),
+              for (var i = 0; i < _drafts.length; i++) ...[
+                const SizedBox(height: 14),
+                _groupEditor(context, _drafts, i, _removeDraft, () {
+                  setState(() {});
+                }),
               ],
-            ),
+              const SizedBox(height: 12),
+              if (_drafts.length < kMaxOptionGroups)
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _drafts.add(_Draft())),
+                  icon: const Icon(Icons.add),
+                  label: const Text('إضافة مجموعة خيارات'),
+                ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final built = [
-                for (final d in drafts)
-                  if (d.build() case final g?) g,
-              ];
-              Navigator.pop(ctx, built);
-            },
-            child: const Text('تم'),
-          ),
-        ],
       ),
-    ),
-  ).whenComplete(() {
-    for (final d in drafts) {
-      d.dispose();
-    }
-  });
+      actions: [
+        TextButton(
+          onPressed: () {
+            FocusManager.instance.primaryFocus?.unfocus();
+            Navigator.of(context, rootNavigator: true).pop();
+          },
+          child: const Text('إلغاء'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('تم'),
+        ),
+      ],
+    );
+  }
 }
 
 Widget _groupEditor(
   BuildContext ctx,
-  StateSetter setLocal,
   List<_Draft> drafts,
   int i,
+  void Function(int) removeDraft,
+  VoidCallback refresh,
 ) {
   final d = drafts[i];
   return Container(
@@ -169,7 +206,7 @@ Widget _groupEditor(
             ),
             IconButton(
               tooltip: 'حذف المجموعة',
-              onPressed: () => setLocal(() => drafts.removeAt(i).dispose()),
+              onPressed: () => removeDraft(i),
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             ),
           ],
@@ -181,7 +218,7 @@ Widget _groupEditor(
           maxLines: 8,
           decoration: const InputDecoration(
             labelText: 'الاختيارات (كل اختيار في سطر)',
-            hintText: 'سادة\nمظبوط\nكوكيز = 90',
+            hintText: 'سادة\\nمظبوط\\nكوكيز = 90',
             alignLabelWithHint: true,
           ),
         ),
@@ -190,14 +227,20 @@ Widget _groupEditor(
           dense: true,
           title: const Text('إجباري (لازم العميل يختار)'),
           value: d.required,
-          onChanged: (v) => setLocal(() => d.required = v),
+          onChanged: (v) {
+            d.required = v;
+            refresh();
+          },
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: const Text('اختيار متعدد'),
           value: d.multi,
-          onChanged: (v) => setLocal(() => d.multi = v),
+          onChanged: (v) {
+            d.multi = v;
+            refresh();
+          },
         ),
         if (d.multi)
           Row(
@@ -205,13 +248,21 @@ Widget _groupEditor(
               const Text('أقصى عدد اختيارات'),
               const Spacer(),
               IconButton(
-                onPressed: d.max > 2 ? () => setLocal(() => d.max--) : null,
+                onPressed: d.max > 2
+                    ? () {
+                        d.max--;
+                        refresh();
+                      }
+                    : null,
                 icon: const Icon(Icons.remove_circle_outline),
               ),
               Text('${d.max}', style: const TextStyle(fontWeight: FontWeight.w800)),
               IconButton(
                 onPressed: d.max < kMaxOptionsPerGroup
-                    ? () => setLocal(() => d.max++)
+                    ? () {
+                        d.max++;
+                        refresh();
+                      }
                     : null,
                 icon: const Icon(Icons.add_circle_outline),
               ),
