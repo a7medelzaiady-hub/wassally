@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'cart_model.dart';
 import 'navigation.dart';
@@ -10,28 +11,32 @@ import 'order_gateway.dart';
 class AuthService {
   const AuthService._();
 
-  /// تسجيل الدخول بجوجل عبر Firebase Auth كما كان قبل إضافة التدفق الأصلي
-  /// المعتمد على بصمة شهادة Android.
-  static Future<void> signInWithGoogle() async {
-    final provider = GoogleAuthProvider();
-    if (kIsWeb) {
-      await FirebaseAuth.instance.signInWithPopup(provider);
-    } else {
-      await _providerSignInWithRetry(provider);
-    }
-  }
+  static Future<void>? _googleSignInInitialization;
 
-  static Future<void> _providerSignInWithRetry(
-    GoogleAuthProvider provider,
-  ) async {
-    try {
-      await FirebaseAuth.instance.signInWithProvider(provider);
-    } on FirebaseAuthException catch (e) {
-      const transient = {'unknown', 'web-internal-error', 'internal-error'};
-      if (!transient.contains(e.code)) rethrow;
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      await FirebaseAuth.instance.signInWithProvider(provider);
+  /// تسجيل الدخول على Android بنافذة اختيار حساب Google الأصلية،
+  /// ثم تسليم بيانات الاعتماد إلى Firebase Auth.
+  static Future<void> signInWithGoogle() async {
+    if (kIsWeb) {
+      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      return;
     }
+
+    final googleSignIn = GoogleSignIn.instance;
+    _googleSignInInitialization ??= googleSignIn.initialize();
+    await _googleSignInInitialization;
+
+    final googleUser = await googleSignIn.authenticate();
+    final googleAuth = googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'google-sign-in-no-id-token',
+        message: 'Google sign-in did not return an ID token.',
+      );
+    }
+
+    final credential = GoogleAuthProvider.credential(idToken: idToken);
+    await FirebaseAuth.instance.signInWithCredential(credential);
   }
 
   static String errorMessage(FirebaseAuthException e) {
