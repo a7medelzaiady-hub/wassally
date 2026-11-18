@@ -381,7 +381,7 @@ class OrderService {
           final existing = await ref.get();
           alreadyCreated = existing.exists &&
               existing.data()?['userId'] == user.uid &&
-              existing.data()?['storeId'] == store.id &&
+              existing.data()?['storeId'] == storeId &&
               existing.data()?['total'] == cart.total;
         } catch (_) {
           // عند تعذر التحقق نحتفظ بالمفتاح ليُعاد استخدامه في المحاولة التالية.
