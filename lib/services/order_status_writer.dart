@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'order_gateway.dart';
+
 import '../models/order.dart';
 import 'performance_monitor.dart';
 
@@ -32,6 +34,21 @@ class OrderStatusWriter {
     };
     m.removeWhere((_, v) => v == null);
     return m;
+  }
+
+  static Future<void> _notifyStatusPush(String orderId, String status) async {
+    try {
+      try {
+        final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+        if (token == null || token.isEmpty) return;
+        await OrderGateway.notifyStatus(
+          idToken: token,
+          orderId: orderId,
+          status: status,
+        ).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // The order transition already committed; push failures are non-blocking.
+    }
   }
 
   static Future<void> change({
@@ -160,5 +177,8 @@ class OrderStatusWriter {
       'firestore_status_write',
       batch.commit,
     );
+    // The Worker verifies the committed statusHistory actor before sending FCM.
+    // Push delivery is best-effort and must never roll back a successful order action.
+    await _notifyStatusPush(normalizedOrderId, to.key);
   }
 }

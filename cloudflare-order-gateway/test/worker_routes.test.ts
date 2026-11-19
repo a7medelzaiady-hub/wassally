@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import worker from "../src/index";
+import worker, { orderStatusPushMessage } from "../src/index";
 
 const envConfig = {
   FIREBASE_PROJECT_ID: "wasally-test",
@@ -61,6 +61,33 @@ describe("Worker order gateway route hardening", () => {
     expect(response.status).toBe(401);
   });
 
+  it("requires Firebase authentication before sending order status pushes", async () => {
+    const response = await worker.fetch(
+      new Request("https://worker.test/v1/orders/order_123/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "preparing" }),
+      }),
+      env,
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects malformed authentication before processing order notification events", async () => {
+    const response = await worker.fetch(
+      new Request("https://worker.test/v1/orders/order_123/events", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer not-a-valid-jwt",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "private_contact" }),
+      }),
+      env,
+    );
+    expect(response.status).toBe(401);
+  });
+
   it("rejects disallowed browser origins before processing order requests", async () => {
     const response = await worker.fetch(
       new Request("https://worker.test/v1/orders", {
@@ -82,5 +109,28 @@ describe("Worker order gateway route hardening", () => {
       env,
     );
     expect(response.status).toBe(404);
+  });
+});
+
+describe("order status push payload", () => {
+  it("contains only navigation identifiers and status, never customer contact data", () => {
+    const payload = orderStatusPushMessage("fcm-token", "order_123", "on_the_way");
+    expect(payload.message.data).toEqual({
+      type: "status",
+      orderId: "order_123",
+      status: "on_the_way",
+    });
+    expect(JSON.stringify(payload)).not.toContain("phone");
+    expect(JSON.stringify(payload)).not.toContain("address");
+    expect(payload.message.android.priority).toBe("HIGH");
+  });
+
+  it("uses a distinct event type for newly created orders", () => {
+    const payload = orderStatusPushMessage("fcm-token", "order_456", "new_order");
+    expect(payload.message.data).toEqual({
+      type: "new_order",
+      orderId: "order_456",
+      status: "new_order",
+    });
   });
 });

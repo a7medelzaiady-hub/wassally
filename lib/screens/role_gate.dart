@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -52,10 +54,12 @@ class _RoleGateState extends State<RoleGate> {
       LiveAlerts.stop();
       return;
     }
+    final isCourier = info.held.contains(AppRole.courier);
+    unawaited(NotificationService.syncCourierTopic(isCourier: isCourier));
     LiveAlerts.start(
       isAdmin: info.held.contains(AppRole.admin),
       storeId: info.held.contains(AppRole.storeOwner) ? info.storeId : '',
-      isCourier: info.held.contains(AppRole.courier),
+      isCourier: isCourier,
     );
   }
 

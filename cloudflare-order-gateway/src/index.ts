@@ -405,6 +405,26 @@ async function assertFirebaseUserActive(
   }
 }
 
+async function verifySignedInUser(request: Request, env: Env): Promise<string> {
+  const auth = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, firebaseKeys, {
+      audience: env.FIREBASE_PROJECT_ID,
+      issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
+    }));
+  } catch {
+    throw new HttpError(401, "رمز تسجيل الدخول غير صالح أو منتهي.");
+  }
+  if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128) {
+    throw new HttpError(401, "رمز تسجيل الدخول غير صالح.");
+  }
+  await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
+  return payload.sub;
+}
+
 async function verifyCustomer(request: Request, env: Env): Promise<string> {
   await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
@@ -1097,6 +1117,415 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+
+export function orderStatusPushMessage(
+  token: string,
+  orderId: string,
+  status: string,
+) {
+  const labels: Record<string, [string, string]> = {
+    preparing: ["بدأ تجهيز طلبك", "المحل بدأ يجهّز طلبك."],
+    on_the_way: ["طلبك في الطريق", "المندوب استلم طلبك وهو في الطريق إليك."],
+    delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
+    cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
+    assigned: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    assigned_customer: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    assigned_courier: ["تم تكليفك بطلب جديد", "افتح وصّلي لمراجعة تفاصيل الطلب."],
+    new_order_staff: ["طلب جديد للمحل", "وصل طلب جديد. افتح وصّلي لمراجعته."],
+    ready: ["طلبك جاهز", "المحل جهّز طلبك وهيتسلّم للمندوب."],
+    store_pickup: ["المندوب استلم الطلب", "المندوب استلم الطلب من المحل وبدأ التوصيل."],
+    store_delivered: ["تم تسليم الطلب", "تم تأكيد تسليم الطلب للعميل."],
+    new_order: ["تم استلام طلبك", "طلبك وصلنا وهنبدأ نتابعه معاك."],
+  };
+  const [title, body] = labels[status] ?? ["تحديث على طلبك", "افتح وصّلي لمتابعة طلبك."];
+  return {
+    message: {
+      token,
+      notification: { title, body },
+      data: {
+        type: status.startsWith("new_order") ? "new_order" :
+          status.startsWith("assigned") ? "assigned" :
+          status.startsWith("store_") ? "status" : "status",
+        orderId,
+        status,
+      },
+      android: {
+        priority: "HIGH",
+        ttl: "86400s",
+        notification: { sound: "default" },
+      },
+    },
+  };
+}
+
+async function queryCollectionDocuments(
+  env: Env,
+  accessToken: string,
+  collectionId: string,
+  fieldPath?: string,
+  value?: string,
+): Promise<FirestoreDoc[]> {
+  const structuredQuery: JsonMap = {
+    from: [{ collectionId }],
+    ...(fieldPath ? {
+      where: {
+        fieldFilter: {
+          field: { fieldPath },
+          op: "EQUAL",
+          value: { stringValue: value ?? "" },
+        },
+      },
+    } : {}),
+    limit: 100,
+  };
+  const result = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  if (!result.ok) {
+    console.error("Order notification recipient lookup failed", collectionId, result.status);
+    throw new HttpError(503, "تعذر تحديد مستلمي إشعار الطلب.");
+  }
+  const rows = await result.json() as Array<{ document?: FirestoreDoc }>;
+  return rows.map((row) => row.document).filter((doc): doc is FirestoreDoc => Boolean(doc?.name));
+}
+
+async function sendOrderPushToUser(
+  env: Env,
+  accessToken: string,
+  uid: string,
+  orderId: string,
+  status: string,
+): Promise<number> {
+  if (!uid || uid === "deleted") return 0;
+  const userDoc = await getDocument(env, `users/${encodeURIComponent(uid)}`, accessToken);
+  if (!userDoc) return 0;
+  const user = decodeFields(userDoc.fields ?? {});
+  const tokens = [...new Set([
+    ...(Array.isArray(user.fcmTokens) ? user.fcmTokens : []),
+    ...(typeof user.fcmToken === "string" ? [user.fcmToken] : []),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0))];
+  let sentCount = 0;
+  for (const token of tokens.slice(0, 20)) {
+    const result = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+        body: JSON.stringify(orderStatusPushMessage(token, orderId, status)),
+      },
+    );
+    if (result.ok) {
+      sentCount++;
+    } else {
+      // Never log or return registration tokens or upstream response bodies.
+      console.error("Order status FCM delivery failed", result.status);
+    }
+  }
+  return sentCount;
+}
+
+async function createOrderPushLog(
+  env: Env,
+  accessToken: string,
+  logId: string,
+): Promise<boolean> {
+  const name = firestoreDocumentName(env, `notification_push_log/${logId}`);
+  const result = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      writes: [{
+        update: {
+          name,
+          fields: encodeFields({ status: "sending", createdAt: new Date() }),
+        },
+        currentDocument: { exists: false },
+      }],
+    }),
+  });
+  if (result.status === 409) return false;
+  if (!result.ok) {
+    const detail = await result.text();
+    if (/ALREADY_EXISTS|FAILED_PRECONDITION|already exists/i.test(detail)) return false;
+    console.error("Order push idempotency record failed", result.status);
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب حاليًا.");
+  }
+  return true;
+}
+
+async function notifyOrderAssignment(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifySignedInUser(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const courierId = String(order.courierId ?? "");
+  const storeId = String(order.storeId ?? "");
+  if (!courierId || !storeId || !(order.courierAt instanceof Date)) {
+    throw new HttpError(409, "لم يتم تعيين مندوب لهذا الطلب.");
+  }
+
+  const courierDoc = await getDocument(env, `couriers/${encodeURIComponent(courierId)}`, accessToken);
+  const courier = courierDoc ? decodeFields(courierDoc.fields ?? {}) : {};
+  const courierStoreId = String(courier.storeId ?? "").trim();
+  if (!courierDoc || courier.active === false ||
+      (courierStoreId && courierStoreId !== storeId)) {
+    throw new HttpError(409, "المندوب المعيّن غير نشط أو غير تابع للمحل.");
+  }
+
+  // Firestore rules authorize the assignment write. The Worker independently
+  // confirms that the caller is the assigned active courier, an admin, or this store's owner.
+  let authorized = uid === courierId;
+  if (!authorized) {
+    const [adminDoc, ownerDoc] = await Promise.all([
+      getDocument(env, `admins/${encodeURIComponent(uid)}`, accessToken),
+      getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, accessToken),
+    ]);
+    const admin = adminDoc ? decodeFields(adminDoc.fields ?? {}) : {};
+    const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+    authorized = Boolean(adminDoc) ||
+      (ownerDoc !== null && owner.storeId === storeId && owner.active !== false);
+  }
+  if (!authorized) throw new HttpError(403, "لا تملك صلاحية إرسال إشعار التعيين.");
+
+  const assignedAt = order.courierAt instanceof Date ? order.courierAt.getTime() : 0;
+  const logId = `assigned_${orderId}_${courierId}_${assignedAt}`
+    .replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  let sent = 0;
+  try {
+    if (typeof order.userId === "string") {
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned_customer");
+      } catch (error) {
+        console.error("Assignment customer push failed", error);
+      }
+    }
+    if (uid !== courierId) {
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned_courier");
+      } catch (error) {
+        console.error("Assignment courier push failed", error);
+      }
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: uid === courierId ? 1 : 2 });
+}
+
+async function notifyOrderCreated(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifySignedInUser(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (order.userId !== uid || order.status !== "new" || !String(order.storeId ?? "")) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار لهذا الطلب.");
+  }
+
+  const logId = `created_${orderId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  let sent = 0;
+  try {
+    const [ownerDocs, adminDocs] = await Promise.all([
+      queryCollectionDocuments(env, accessToken, "storeOwners", "storeId", String(order.storeId)),
+      queryCollectionDocuments(env, accessToken, "admins"),
+    ]);
+    const recipients = new Set<string>([uid]);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) recipients.add(ownerUid);
+    }
+    for (const doc of adminDocs) {
+      const adminUid = doc.name.split("/").pop() ?? "";
+      if (adminUid) recipients.add(adminUid);
+    }
+    sent += await sendOrderPushToUser(env, accessToken, uid, orderId, "new_order");
+    for (const recipient of recipients) {
+      if (recipient === uid) continue;
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order_staff");
+      } catch (error) {
+        console.error("Order-created recipient push failed", recipient, error);
+      }
+    }
+    // The available-order feed is intentionally public only to authenticated couriers;
+    // the push itself contains no customer name, phone, address, or notes.
+    try {
+      await notifyCouriersOfNewOrder(env, accessToken, orderId, String(order.storeName ?? ""));
+    } catch (error) {
+      console.error("Courier topic push failed for created order", error);
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: "customer_store_admin_couriers" });
+}
+
+async function notifyOrderReady(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifySignedInUser(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const storeId = String(order.storeId ?? "");
+  if (order.ready !== true || !(order.readyAt instanceof Date) || !storeId) {
+    throw new HttpError(409, "لم يتم تأكيد جاهزية الطلب.");
+  }
+  const [adminDoc, ownerDoc] = await Promise.all([
+    getDocument(env, `admins/${encodeURIComponent(uid)}`, accessToken),
+    getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, accessToken),
+  ]);
+  const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+  if (!adminDoc && !(ownerDoc && owner.storeId === storeId && owner.active !== false)) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار الجاهزية.");
+  }
+
+  const readyAt = order.readyAt.getTime();
+  const logId = `ready_${orderId}_${readyAt}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+  let sent = 0;
+  try {
+    if (typeof order.userId === "string") {
+      try {
+        sent = await sendOrderPushToUser(env, accessToken, order.userId, orderId, "ready");
+      } catch (error) {
+        console.error("Order-ready customer push failed", error);
+      }
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: 1 });
+}
+
+async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifySignedInUser(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  let input: any;
+  try {
+    input = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات الإشعار غير مفهومة.");
+  }
+  const status = String(input?.status ?? "");
+  if (input?.event === "created") {
+    return notifyOrderCreated(request, env, orderId);
+  }
+  if (input?.event === "ready") {
+    return notifyOrderReady(request, env, orderId);
+  }
+  if (input?.event === "assigned") {
+    return notifyOrderAssignment(request, env, orderId);
+  }
+  if (!["preparing", "on_the_way", "delivered", "cancelled"].includes(status)) {
+    throw new HttpError(400, "نوع تحديث الطلب غير صالح.");
+  }
+
+  const accessToken = await googleAccessToken(env);
+  const orderPath = `orders/${encodeURIComponent(orderId)}`;
+  const [orderDoc, historyDoc] = await Promise.all([
+    getDocument(env, orderPath, accessToken),
+    getDocument(env, `${orderPath}/statusHistory/${status}`, accessToken),
+  ]);
+  if (!orderDoc || !historyDoc) throw new HttpError(404, "تحديث الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const history = decodeFields(historyDoc.fields ?? {});
+  if (order.status !== status || history.to !== status || history.actorUid !== uid) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار لهذا التحديث.");
+  }
+
+  const logId = `order_${orderId}_${status}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  const recipients = new Map<string, string>();
+  if (typeof order.userId === "string") recipients.set(order.userId, status);
+  if (status === "cancelled" && typeof order.courierId === "string") {
+    recipients.set(order.courierId, status);
+  }
+  if (["on_the_way", "delivered", "cancelled"].includes(status) && typeof order.storeId === "string") {
+    const ownerDocs = await queryCollectionDocuments(env, accessToken, "storeOwners", "storeId", order.storeId);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) {
+        recipients.set(ownerUid, status === "on_the_way" ? "store_pickup" :
+          status === "delivered" ? "store_delivered" : "cancelled");
+      }
+    }
+  }
+  let sent = 0;
+  try {
+    for (const [recipient, recipientStatus] of recipients) {
+      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, recipientStatus);
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: recipients.size });
+}
+
 export function isCustomerRestricted(
   restriction: JsonMap | null,
   now = Date.now(),
@@ -1309,6 +1738,29 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
   } catch (error) {
     console.error("Courier push notification failed", error);
+  }
+  // Direct token delivery replaces the Cloud Functions order-created trigger on Spark.
+  try {
+    const [ownerDocs, adminDocs] = await Promise.all([
+      queryCollectionDocuments(env, token, "storeOwners", "storeId", storeId),
+      queryCollectionDocuments(env, token, "admins"),
+    ]);
+    const recipients = new Set<string>([uid]);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) recipients.add(ownerUid);
+    }
+    for (const doc of adminDocs) {
+      const adminUid = doc.name.split("/").pop() ?? "";
+      if (adminUid) recipients.add(adminUid);
+    }
+    for (const recipient of recipients) {
+      await sendOrderPushToUser(env, token, recipient, orderId, "new_order");
+    }
+  } catch (error) {
+    // The order is already committed; notification delivery must not fail checkout.
+    console.error("Order-created push notification failed", error);
   }
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
@@ -1815,6 +2267,13 @@ export default {
     const rawEditId = url.pathname.startsWith(editPrefix)
       ? url.pathname.slice(editPrefix.length)
       : "";
+    const eventPrefix = "/v1/orders/";
+    const eventSuffix = "/events";
+    const eventOrderId = request.method === "POST" &&
+      url.pathname.startsWith(eventPrefix) && url.pathname.endsWith(eventSuffix)
+        ? url.pathname.slice(eventPrefix.length, -eventSuffix.length)
+        : "";
+    const isOrderEvent = eventOrderId.length > 0 && !eventOrderId.includes("/");
     const cleanupPrefix = "/v1/orders/";
     const cleanupSuffix = "/cleanup-attachments";
     const cleanupOrderId = request.method === "POST" &&
@@ -1824,13 +2283,15 @@ export default {
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
-    if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
+    if (!isCreate && !isEdit && !isCleanup && !isOrderEvent) return response({ error: "Not found." }, 404, headers);
     try {
       const result = isCreate
         ? await createOrder(request, env)
         : isCleanup
           ? await cleanupConfirmedOrderAttachments(request, env, decodeURIComponent(cleanupOrderId))
-          : await updateOrder(request, env, decodeURIComponent(rawEditId));
+          : isOrderEvent
+            ? await notifyOrderStatus(request, env, decodeURIComponent(eventOrderId))
+            : await updateOrder(request, env, decodeURIComponent(rawEditId));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
       return new Response(await result.text(), {

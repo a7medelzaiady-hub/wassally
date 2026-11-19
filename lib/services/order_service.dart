@@ -119,6 +119,17 @@ class OrderService {
     }
   }
 
+  static Future<void> _notifyCreatedPush(String orderId) async {
+    try {
+        final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+        if (token == null || token.isEmpty) return;
+        await OrderGateway.notifyCreated(idToken: token, orderId: orderId)
+            .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Order creation already succeeded; push delivery is best-effort.
+    }
+  }
+
   static Future<String> _guardedPlaceOrder({
     required CartModel cart,
     required String name,
@@ -424,6 +435,8 @@ class OrderService {
         }
       }
     }
+
+    if (!serverOrders) await _notifyCreatedPush(ref.id);
 
     try {
       await _clearPendingOrderId(user.uid);
