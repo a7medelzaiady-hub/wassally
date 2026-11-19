@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +8,7 @@ import '../models/order.dart';
 import '../models/product.dart';
 import '../models/store.dart';
 import 'order_status_writer.dart';
+import 'order_gateway.dart';
 import 'price_check.dart';
 
 /// إحصائيات التسليم (للمندوب أو للمدير).
@@ -50,6 +53,18 @@ class StaffOrderService {
   };
 
   /// بيكتب إشعار في Firestore. فشله ما يوقفش العملية الأساسية.
+  static void _notifyAssignmentPush(String orderId) {
+    unawaited(Future<void>(() async {
+      try {
+        final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+        if (token == null || token.isEmpty) return;
+        await OrderGateway.notifyAssignment(idToken: token, orderId: orderId);
+      } catch (_) {
+        // The assignment is already committed; push is best-effort.
+      }
+    }));
+  }
+
   static Future<void> _notify(
     String? userId,
     String title,
@@ -200,6 +215,7 @@ class StaffOrderService {
     });
     batch.delete(db.collection('courier_available_orders').doc(order.id));
     await batch.commit(); // permission-denied = حد سبقك أو الطلب اتغيّر
+    _notifyAssignmentPush(order.id);
 
     try {
       final snap = await _orders.doc(order.id).get(); // دلوقتي مسموح لأنه متعيّن لك
@@ -886,6 +902,7 @@ class StaffOrderService {
       tx.delete(feedRef);
     });
 
+    _notifyAssignmentPush(orderId);
     try {
       final snap = await orderRef.get();
       await _notify(courier.id, 'طلب جديد ليك', 'تم تكليفك بطلب جديد.', orderId);
