@@ -105,14 +105,14 @@ service cloud.firestore {
 
     // عنصر عرض في خانة المحل بالفهرس: حقول العرض بس وبأحجام محدودة.
     function indexItemOk(m) {
-      return m is map &&
-        m.keys().hasOnly(['name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image']) &&
+      // keys() على غير خريطة = خطأ تقييم = رفض. القيم الافتراضية بتغطي الحقول الاختيارية.
+      return m.keys().hasOnly(['name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image']) &&
         m.get('name', '') is string && m.get('name', '').size() <= 120 &&
-        m.get('price', 0) is number &&
-        (!('oldPrice' in m) || m.oldPrice is number) &&
         m.get('offerText', '') is string && m.get('offerText', '').size() <= 120 &&
-        (!('offerEndsAt' in m) || m.offerEndsAt is timestamp) &&
-        m.get('image', '') is string && m.get('image', '').size() <= 500;
+        m.get('image', '') is string && m.get('image', '').size() <= 500 &&
+        m.get('price', 0) is number &&
+        m.get('oldPrice', 0) is number &&
+        m.get('offerEndsAt', request.time) is timestamp;
     }
 
     // قائمة عروض في الفهرس: 6 عناصر بالكتير، كل واحد متحقق منه (لازم يطابق CatalogSync.indexHighlightsCap).
@@ -128,26 +128,22 @@ service cloud.firestore {
 
     // خانة المحل = نسخة من حقول العرض في مستند المحل بالظبط (لازم تطابق CatalogSync.indexKeys)،
     // فصاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو الاسم. العروض بس متحقق من شكلها وحجمها.
+    // بالمقارنة المجمّعة (diff) بدل حقل حقل عشان نفضل بعيد عن حد الـ 1000 تعبير لكل طلب.
+    //   e.diff(st): added = في الخانة ومش في المحل، removed = في المحل ومش في الخانة، changed = مختلف.
     function indexEntryMatchesStore(e, st) {
+      let d = e.diff(st);
+      let free = ['imageUrl', 'offerItems', 'bestItems'];
       return e is map &&
         e.keys().hasOnly(['name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
                           'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
                           'products', 'minOrder', 'minimumOrder', 'offerItems', 'bestItems']) &&
         e.get('active', false) == true && st.get('active', false) == true &&
-        e.get('name', null) == st.get('name', null) &&
-        e.get('category', null) == st.get('category', null) &&
-        e.get('icon', null) == st.get('icon', null) &&
-        e.get('color', null) == st.get('color', null) &&
+        d.addedKeys().hasOnly(free) &&
+        d.changedKeys().hasOnly(free) &&
+        !d.removedKeys().hasAny(['name', 'category', 'icon', 'color', 'storePhone',
+                                 'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
+                                 'products', 'minOrder', 'minimumOrder']) &&
         e.get('imageUrl', null) == st.get('imageUrl', st.get('image', null)) &&
-        e.get('storePhone', null) == st.get('storePhone', null) &&
-        e.get('rating', null) == st.get('rating', null) &&
-        e.get('ratingSum', null) == st.get('ratingSum', null) &&
-        e.get('ratingCount', null) == st.get('ratingCount', null) &&
-        e.get('time', null) == st.get('time', null) &&
-        e.get('order', null) == st.get('order', null) &&
-        e.get('products', null) == st.get('products', null) &&
-        e.get('minOrder', null) == st.get('minOrder', null) &&
-        e.get('minimumOrder', null) == st.get('minimumOrder', null) &&
         indexItemsOk(e.get('offerItems', [])) &&
         indexItemsOk(e.get('bestItems', []));
     }

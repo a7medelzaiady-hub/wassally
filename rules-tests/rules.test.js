@@ -1978,6 +1978,10 @@ test('catalog store_index: صاحب المحل ما يقدرش يزوّر الت
   ]) {
     await assertFails(setDoc(ref, { s_shop1: { ...entry, ...forged } }, { merge: true }));
   }
+  // حذف حقل عرض موجود في مستند المحل (زي التقييم أو الترتيب) مرفوض برضه.
+  // (merge بيدمج الخريطة الداخلية، فالحذف لازم deleteField.)
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, rating: deleteField() } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, order: deleteField() } }, { merge: true }));
 });
 
 test('catalog store_index: قوائم العروض محدودة العدد والشكل والحجم', async () => {
