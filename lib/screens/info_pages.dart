@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
-import 'support_chat_page.dart';
 
 /// من نحن
 class AboutPage extends StatelessWidget {
@@ -121,7 +120,7 @@ class AboutPage extends StatelessWidget {
   }
 }
 
-/// تواصل معنا: الشات دايمًا موجود، والباقي (تليفون/واتساب/إيميل) من Firestore app_info/contact.
+/// وسائل التواصل الخارجية من إعدادات الاتصال، بدون مستمع Firestore مستمر.
 class ContactPage extends StatelessWidget {
   const ContactPage({super.key});
 
@@ -172,11 +171,11 @@ class ContactPage extends StatelessWidget {
         children: [
           const InnerHeader(title: 'تواصل معنا'),
           Expanded(
-            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
+            child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              future: FirebaseFirestore.instance
                   .collection('app_info')
                   .doc('contact')
-                  .snapshots(),
+                  .get(),
               builder: (context, snap) {
                 final m = snap.data?.data() ?? const <String, dynamic>{};
                 final phone = (m['phone'] ?? '').toString().trim();
@@ -185,13 +184,7 @@ class ContactPage extends StatelessWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
-                    tile(Icons.chat_bubble_outline, 'شات مع الإدارة', '', () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SupportChatPage(),
-                        ),
-                      );
-                    }),
+
                     if (phone.isNotEmpty)
                       tile(
                         Icons.call_outlined,
@@ -202,7 +195,7 @@ class ContactPage extends StatelessWidget {
                     if (wa.isNotEmpty)
                       tile(
                         Icons.message_outlined,
-                        'واتساب',
+                        'الدعم والشكاوى عبر واتساب',
                         wa,
                         () => _open(
                           'https://wa.me/${wa.replaceAll(RegExp(r'[^0-9]'), '')}',
