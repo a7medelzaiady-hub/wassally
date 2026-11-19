@@ -1416,7 +1416,10 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        await _syncCount();
+        // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+        try {
+          await _syncCount();
+        } catch (_) {}
       } else {
         await doc.reference.update({
           'name': result.name,
@@ -1579,7 +1582,10 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     if (!ok || !mounted) return;
     try {
       await doc.reference.delete();
-      await _syncCount();
+      // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+      try {
+        await _syncCount();
+      } catch (_) {}
       final ok = await _afterProductChange();
       _say(StoreHighlights.withNote('تم حذف الصنف', ok));
     } catch (_) {

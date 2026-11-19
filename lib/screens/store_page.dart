@@ -1028,6 +1028,7 @@ class _StorePageState extends State<StorePage> {
       }
 
       var uploaded = 0;
+      Object? uploadError;
       try {
         for (var start = 0; start < rows.length; start += 400) {
           final end = start + 400 > rows.length ? rows.length : start + 400;
@@ -1046,14 +1047,30 @@ class _StorePageState extends State<StorePage> {
           await batch.commit();
           uploaded += end - start;
         }
-      } finally {
-        if (uploaded > 0) {
-          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-          highlightsOk = await StoreHighlights.refresh(store.id);
-          await CatalogService.bump();
-          _load(reset: true);
+      } catch (e) {
+        uploadError = e;
+      }
+
+      if (uploaded > 0) {
+        // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+        // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+        // (refresh وbump ما بيرموش استثناءات.)
+        highlightsOk = await StoreHighlights.refresh(store.id);
+        await CatalogService.bump();
+        _load(reset: true);
+      }
+
+      if (uploadError != null) {
+        debugPrint('CSV upload error: $uploadError');
+        if (uploaded == 0) {
+          _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
+        } else {
+          _say(StoreHighlights.withNote(
+            'تم رفع $uploaded صنف قبل حدوث خطأ؛ باقي الملف ما اترفعش',
+            highlightsOk,
+          ));
         }
+        return;
       }
 
       _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));

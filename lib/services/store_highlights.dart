@@ -84,9 +84,11 @@ class StoreHighlights {
   static String withNote(String message, bool highlightsOk) =>
       highlightsOk ? message : '$message، $failedNote';
 
-  /// أقصى عدد مرشحين من كل استعلام (خصم / نص عرض / الأكثر مبيعًا).
-  /// الملخص بياخد 12 بس، فالحد ده بيسيب هامش للأصناف المتوقفة والعروض المنتهية.
-  static const int candidateLimit = 100;
+  /// حجم الصفحة لكل استعلام مرشحين، والسقف الكلي لكل استعلام.
+  /// الاستعلام بشرط (oldPrice > 0) Firestore بيرتّبه بالحقل ده، فلو وقفنا عند أول صفحة
+  /// ممكن عروض شغالة تتقطع لصالح عروض منتهية أو أصناف متوقفة؛ فبنكمّل صفحات لحد السقف.
+  static const int candidatePage = 100;
+  static const int candidateCap = 500;
 
   /// بيدمج نتايج الاستعلامات المستهدفة (من غير تكرار) ومرتبة بالاسم زي ترتيب المحل.
   static List<Map<String, dynamic>> mergeCandidates(
@@ -131,24 +133,36 @@ class StoreHighlights {
     final storeRef =
         FirebaseFirestore.instance.collection('stores').doc(storeId);
     final col = storeRef.collection('products');
-    const server = GetOptions(source: Source.server);
-    final results = await Future.wait([
-      col.where('oldPrice', isGreaterThan: 0).limit(candidateLimit).get(server),
-      col.where('offerText', isGreaterThan: '').limit(candidateLimit).get(server),
-      col.where('bestSeller', isEqualTo: true).limit(candidateLimit).get(server),
+    final groups = await Future.wait([
+      _allCandidates(col.where('oldPrice', isGreaterThan: 0)),
+      _allCandidates(col.where('offerText', isGreaterThan: '')),
+      _allCandidates(col.where('bestSeller', isEqualTo: true)),
     ]);
-    for (final r in results) {
-      ReadMeter.query('highlights:refresh', r);
-    }
-    final candidates = mergeCandidates([
-      for (final r in results)
-        r.docs.map((d) => MapEntry(d.id, d.data())),
-    ]);
+    final candidates = mergeCandidates(groups);
     final h = compute(candidates);
     await storeRef.update({
       'offerItems': h.offers,
       'bestItems': h.best,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// صفحات من الخادم لحد ما الصفحة تيجي ناقصة أو نوصل [candidateCap].
+  static Future<List<MapEntry<String, Map<String, dynamic>>>> _allCandidates(
+    Query<Map<String, dynamic>> query,
+  ) async {
+    const server = GetOptions(source: Source.server);
+    final out = <MapEntry<String, Map<String, dynamic>>>[];
+    DocumentSnapshot<Map<String, dynamic>>? last;
+    while (out.length < candidateCap) {
+      var q = query.limit(candidatePage);
+      if (last != null) q = q.startAfterDocument(last);
+      final page = await q.get(server);
+      ReadMeter.query('highlights:refresh', page);
+      out.addAll(page.docs.map((d) => MapEntry(d.id, d.data())));
+      if (page.docs.length < candidatePage) break;
+      last = page.docs.last;
+    }
+    return out;
   }
 }

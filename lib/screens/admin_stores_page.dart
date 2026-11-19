@@ -1386,7 +1386,10 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        await _syncCount();
+        // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+        try {
+          await _syncCount();
+        } catch (_) {}
       } else {
         await doc.reference.update(data);
       }
@@ -1418,7 +1421,10 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     try {
       await doc.reference.delete();
 
-      await _syncCount();
+      // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+      try {
+        await _syncCount();
+      } catch (_) {}
 
       // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
       // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.

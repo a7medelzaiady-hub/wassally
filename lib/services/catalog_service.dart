@@ -60,14 +60,22 @@ class CatalogService {
 
       final age = DateTime.now().millisecondsSinceEpoch - loadedAt;
       if (loadedVersion != null && age < _minRefresh.inMilliseconds) {
+        // بصمات آخر إصدار اتحمّل: المطابقة التامة بس هي اللي بتتقبل، فده آمن.
+        _persistedKeys =
+            CatalogCachePolicy.decode(prefs?.getStringList(_keysKey));
         return Source.cache;
       }
 
       await prefs?.setString(_verKey, '');
       await prefs?.setInt(_tsKey, DateTime.now().millisecondsSinceEpoch);
+      await prefs?.setStringList(_keysKey, const []);
+      _persistedKeys = {};
       return Source.server;
     } catch (e) {
       debugPrint('Catalog version error: $e');
+      // من غير نت: نستخدم بصمات آخر إصدار اتحمّل عشان الكاش يتقري الأول (وكمان النتايج الفاضية).
+      _persistedKeys =
+          CatalogCachePolicy.decode(prefs?.getStringList(_keysKey));
       return Source.cache;
     }
   }
@@ -103,8 +111,10 @@ class CatalogService {
     final QuerySnapshot<Map<String, dynamic>> snap;
     try {
       snap = await query.get(const GetOptions(source: Source.server));
-    } catch (e) {
-      // من غير نت: نعرض اللي في الكاش (لو فيه) بدل شاشة خطأ.
+    } on FirebaseException catch (e) {
+      // من غير نت بس: نعرض اللي في الكاش (لو فيه) بدل شاشة خطأ.
+      // أي خطأ تاني (زي permission-denied لمحل اتقفل) بيترمي عادي.
+      if (e.code != 'unavailable' && e.code != 'deadline-exceeded') rethrow;
       try {
         final cached =
             await query.get(const GetOptions(source: Source.cache));
