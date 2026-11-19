@@ -23,17 +23,19 @@ appId: com.wassally.app
 - extendedWaitUntil:
     visible: ".*منتج تجريبي.*"
     timeout: 60000
-- tapOn: ".*منتج تجريبي.*"
-- tapOn: ".*أضف للسلة.*"
-- tapOn: "السلة"
+- tapOn: "إضافة منتج تجريبي"
+- extendedWaitUntil:
+    visible: ".*عرض السلة.*"
+    timeout: 30000
+- tapOn: ".*عرض السلة.*"
 - tapOn: "كمّل الطلب"
 - extendedWaitUntil:
-    visible: "بيانات التوصيل"
+    visible: "منطقة التوصيل"
     timeout: 30000
 - tapOn: "منطقة التوصيل"
 - tapOn: ".*منطقة الاختبار.*"
 - tapOn: "تأكيد الطلب"
 - tapOn: "أيوه، ابعت الطلب"
 - extendedWaitUntil:
-    visible: ".*تم إرسال طلبك.*"
+    visible: ".*(تابع طلبي|تم إرسال طلبك).*"
     timeout: 60000
