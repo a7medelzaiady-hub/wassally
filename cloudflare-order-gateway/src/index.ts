@@ -1010,6 +1010,154 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+
+export function orderStatusPushMessage(
+  token: string,
+  orderId: string,
+  status: string,
+) {
+  const labels: Record<string, [string, string]> = {
+    preparing: ["بدأ تجهيز طلبك", "المحل بدأ يجهّز طلبك."],
+    on_the_way: ["طلبك في الطريق", "المندوب استلم طلبك وهو في الطريق إليك."],
+    delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
+    cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
+  };
+  const [title, body] = labels[status] ?? ["تحديث على طلبك", "افتح وصّلي لمتابعة طلبك."];
+  return {
+    message: {
+      token,
+      notification: { title, body },
+      data: { type: "status", orderId, status },
+      android: {
+        priority: "HIGH",
+        ttl: "86400s",
+        notification: { sound: "default" },
+      },
+    },
+  };
+}
+
+async function sendOrderPushToUser(
+  env: Env,
+  accessToken: string,
+  uid: string,
+  orderId: string,
+  status: string,
+): Promise<number> {
+  if (!uid || uid === "deleted") return 0;
+  const userDoc = await getDocument(env, `users/${encodeURIComponent(uid)}`, accessToken);
+  if (!userDoc) return 0;
+  const user = decodeFields(userDoc.fields ?? {});
+  const tokens = [...new Set([
+    ...(Array.isArray(user.fcmTokens) ? user.fcmTokens : []),
+    ...(typeof user.fcmToken === "string" ? [user.fcmToken] : []),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0))];
+  let sentCount = 0;
+  for (const token of tokens.slice(0, 20)) {
+    const result = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+        body: JSON.stringify(orderStatusPushMessage(token, orderId, status)),
+      },
+    );
+    if (result.ok) {
+      sentCount++;
+    } else {
+      // Never log or return registration tokens or upstream response bodies.
+      console.error("Order status FCM delivery failed", result.status);
+    }
+  }
+  return sentCount;
+}
+
+async function createOrderPushLog(
+  env: Env,
+  accessToken: string,
+  logId: string,
+): Promise<boolean> {
+  const name = firestoreDocumentName(env, `notification_push_log/${logId}`);
+  const result = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      writes: [{
+        update: {
+          name,
+          fields: encodeFields({ status: "sending", createdAt: new Date() }),
+        },
+        currentDocument: { exists: false },
+      }],
+    }),
+  });
+  if (result.status === 409) return false;
+  if (!result.ok) {
+    console.error("Order push idempotency record failed", result.status);
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب حاليًا.");
+  }
+  return true;
+}
+
+async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  let input: any;
+  try {
+    input = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات الإشعار غير مفهومة.");
+  }
+  const status = String(input?.status ?? "");
+  if (!["preparing", "on_the_way", "delivered", "cancelled"].includes(status)) {
+    throw new HttpError(400, "نوع تحديث الطلب غير صالح.");
+  }
+
+  const accessToken = await googleAccessToken(env);
+  const orderPath = `orders/${encodeURIComponent(orderId)}`;
+  const [orderDoc, historyDoc] = await Promise.all([
+    getDocument(env, orderPath, accessToken),
+    getDocument(env, `${orderPath}/statusHistory/${status}`, accessToken),
+  ]);
+  if (!orderDoc || !historyDoc) throw new HttpError(404, "تحديث الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const history = decodeFields(historyDoc.fields ?? {});
+  if (order.status !== status || history.to !== status || history.actorUid !== uid) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار لهذا التحديث.");
+  }
+
+  const logId = `order_${orderId}_${status}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  const recipients = new Set<string>();
+  if (typeof order.userId === "string") recipients.add(order.userId);
+  if (status === "cancelled" && typeof order.courierId === "string") {
+    recipients.add(order.courierId);
+  }
+  let sent = 0;
+  try {
+    for (const recipient of recipients) {
+      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, status);
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: recipients.size });
+}
+
 export function isCustomerRestricted(
   restriction: JsonMap | null,
   now = Date.now(),
@@ -1728,6 +1876,13 @@ export default {
     const rawEditId = url.pathname.startsWith(editPrefix)
       ? url.pathname.slice(editPrefix.length)
       : "";
+    const eventPrefix = "/v1/orders/";
+    const eventSuffix = "/events";
+    const eventOrderId = request.method === "POST" &&
+      url.pathname.startsWith(eventPrefix) && url.pathname.endsWith(eventSuffix)
+        ? url.pathname.slice(eventPrefix.length, -eventSuffix.length)
+        : "";
+    const isOrderEvent = eventOrderId.length > 0 && !eventOrderId.includes("/");
     const cleanupPrefix = "/v1/orders/";
     const cleanupSuffix = "/cleanup-attachments";
     const cleanupOrderId = request.method === "POST" &&
@@ -1737,13 +1892,15 @@ export default {
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
-    if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
+    if (!isCreate && !isEdit && !isCleanup && !isOrderEvent) return response({ error: "Not found." }, 404, headers);
     try {
       const result = isCreate
         ? await createOrder(request, env)
         : isCleanup
           ? await cleanupConfirmedOrderAttachments(request, env, decodeURIComponent(cleanupOrderId))
-          : await updateOrder(request, env, decodeURIComponent(rawEditId));
+          : isOrderEvent
+            ? await notifyOrderStatus(request, env, decodeURIComponent(eventOrderId))
+            : await updateOrder(request, env, decodeURIComponent(rawEditId));
       const mergedHeaders = new Headers(result.headers);
       headers.forEach((value, key) => mergedHeaders.set(key, value));
       return new Response(await result.text(), {
