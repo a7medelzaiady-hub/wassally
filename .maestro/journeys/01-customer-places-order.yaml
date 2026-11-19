@@ -1,0 +1,41 @@
+appId: com.wassally.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible: "دخول تجريبي: عميل"
+    timeout: 60000
+- tapOn: "دخول تجريبي: عميل"
+- extendedWaitUntil:
+    visible: "مش دلوقتي"
+    timeout: 60000
+- runFlow: _dismiss-prompts.yaml
+- extendedWaitUntil:
+    visible: "كل المحلات"
+    timeout: 90000
+- tapOn: "كل المحلات"
+- extendedWaitUntil:
+    visible: ".*متجر الاختبار.*"
+    timeout: 90000
+- tapOn: ".*متجر الاختبار.*"
+- extendedWaitUntil:
+    visible: ".*منتج تجريبي.*"
+    timeout: 60000
+- tapOn: ".*إضافة منتج تجريبي.*"
+- extendedWaitUntil:
+    visible: ".*عرض السلة.*"
+    timeout: 30000
+- tapOn: ".*عرض السلة.*"
+- tapOn: "كمّل الطلب"
+- extendedWaitUntil:
+    visible: "منطقة التوصيل"
+    timeout: 30000
+- tapOn: "منطقة التوصيل"
+- tapOn: ".*منطقة الاختبار.*"
+- tapOn: "تأكيد الطلب"
+- tapOn: "أيوه، ابعت الطلب"
+- extendedWaitUntil:
+    visible: ".*(تابع طلبي|تم إرسال طلبك).*"
+    timeout: 60000

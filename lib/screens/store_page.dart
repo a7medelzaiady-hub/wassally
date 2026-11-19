@@ -1593,13 +1593,18 @@ class _ProductRow extends StatelessWidget {
             color: Colors.white,
             elevation: 3,
             shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onAdd,
-              child: SizedBox(
-                width: 34,
-                height: 34,
-                child: Icon(Icons.add, color: Brand.green, size: 22),
+            child: Semantics(
+              container: true,
+              button: true,
+              label: 'إضافة ${product.name}',
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onAdd,
+                child: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: Icon(Icons.add, color: Brand.green, size: 22),
+                ),
               ),
             ),
           );
