@@ -1183,6 +1183,14 @@ async function notifyOrderAssignment(request: Request, env: Env, orderId: string
     throw new HttpError(409, "لم يتم تعيين مندوب لهذا الطلب.");
   }
 
+  const courierDoc = await getDocument(env, `couriers/${encodeURIComponent(courierId)}`, accessToken);
+  const courier = courierDoc ? decodeFields(courierDoc.fields ?? {}) : {};
+  const courierStoreId = String(courier.storeId ?? "").trim();
+  if (!courierDoc || courier.active === false ||
+      (courierStoreId && courierStoreId !== storeId)) {
+    throw new HttpError(409, "المندوب المعيّن غير نشط أو غير تابع للمحل.");
+  }
+
   // Firestore rules authorize the assignment write. The Worker independently
   // confirms that the caller is the assigned active courier, an admin, or this store's owner.
   let authorized = uid === courierId;
