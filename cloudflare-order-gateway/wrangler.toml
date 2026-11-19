@@ -17,7 +17,7 @@ MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"
 CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
 # App Check: ابدأ بـ "monitor" وراقب السجلات، وبعد ما تتأكد إن نسخ التطبيق كلها بتبعت الرمز حوّلها "enforce".
-APP_CHECK_MODE = "off"
+APP_CHECK_MODE = "monitor"
 FIREBASE_PROJECT_NUMBER = "244081237486"
 # معرّف مشروع Firebase مش سر، فبيتكتب هنا. لازم يفضل هنا: `wrangler deploy` بيمسح أي
 # متغير عادي (Plaintext) متسجّل من لوحة Cloudflare ومش موجود في الملف ده.
