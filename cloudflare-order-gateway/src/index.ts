@@ -1196,6 +1196,61 @@ async function notifyOrderAssignment(request: Request, env: Env, orderId: string
   return response({ orderId, sent: sent > 0, recipients: uid === courierId ? 1 : 2 });
 }
 
+async function notifyOrderCreated(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (order.userId !== uid || order.status !== "new" || !String(order.storeId ?? "")) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار لهذا الطلب.");
+  }
+
+  const logId = `created_${orderId}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  let sent = 0;
+  try {
+    const [ownerDocs, adminDocs] = await Promise.all([
+      queryCollectionDocuments(env, accessToken, "storeOwners", "storeId", String(order.storeId)),
+      queryCollectionDocuments(env, accessToken, "admins"),
+    ]);
+    const recipients = new Set<string>([uid]);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) recipients.add(ownerUid);
+    }
+    for (const doc of adminDocs) {
+      const adminUid = doc.name.split("/").pop() ?? "";
+      if (adminUid) recipients.add(adminUid);
+    }
+    for (const recipient of recipients) {
+      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order");
+    }
+    // The available-order feed is intentionally public only to authenticated couriers;
+    // the push itself contains no customer name, phone, address, or notes.
+    await notifyCouriersOfNewOrder(env, accessToken, orderId, String(order.storeName ?? ""));
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: "customer_store_admin_couriers" });
+}
+
 async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
@@ -1208,6 +1263,9 @@ async function notifyOrderStatus(request: Request, env: Env, orderId: string): P
     throw new HttpError(400, "بيانات الإشعار غير مفهومة.");
   }
   const status = String(input?.status ?? "");
+  if (input?.event === "created") {
+    return notifyOrderCreated(request, env, orderId);
+  }
   if (input?.event === "assigned") {
     return notifyOrderAssignment(request, env, orderId);
   }
