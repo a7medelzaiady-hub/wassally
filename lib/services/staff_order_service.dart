@@ -7,6 +7,7 @@ import '../models/product.dart';
 import '../models/store.dart';
 import 'order_status_writer.dart';
 import 'price_check.dart';
+import 'read_meter.dart';
 
 /// إحصائيات التسليم (للمندوب أو للمدير).
 class DeliveryStats {
@@ -89,7 +90,7 @@ class StaffOrderService {
   static Stream<List<AppOrder>> watchAll({int limit = 50}) => _orders
       .orderBy('createdAt', descending: true)
       .limit(limit)
-      .snapshots()
+      .snapshots().metered('orders:admin')
       .map(_toList);
 
   /// لصاحب المحل: آخر [limit] طلب على محله هو بس (الأحدث الأول).
@@ -101,7 +102,7 @@ class StaffOrderService {
       .where('storeId', isEqualTo: storeId)
       .orderBy('createdAt', descending: true)
       .limit(limit)
-      .snapshots()
+      .snapshots().metered('orders:store')
       .map(_toList);
 
   /// للمندوب: أحدث الطلبات المسندة إليه. القائمة محدودة لتقليل القراءات.
@@ -112,7 +113,7 @@ class StaffOrderService {
       .where('courierId', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
       .limit(limit.clamp(1, 100).toInt())
-      .snapshots()
+      .snapshots().metered('orders:courier')
       .map(_toList);
 
   /// الطلبات المتاحة للمندوبين، مع حد أقصى للقراءة في كل تحديث.
@@ -121,7 +122,7 @@ class StaffOrderService {
           .collection('courier_available_orders')
           .orderBy('createdAt', descending: true)
           .limit(limit.clamp(1, 100).toInt())
-          .snapshots()
+          .snapshots().metered('orders:courier-feed')
           .map((s) => s.docs.map((d) => AppOrder.fromMap(d.id, d.data())).toList());
 
   /// إحصائيات المندوب من Firestore Aggregation، مستقلة عن قائمة الطلبات المعروضة.

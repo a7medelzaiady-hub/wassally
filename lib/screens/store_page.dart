@@ -18,6 +18,7 @@ import '../models/product_offer.dart';
 import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
@@ -1046,6 +1047,9 @@ class _StorePageState extends State<StorePage> {
         }
       } finally {
         if (uploaded > 0) {
+          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+          await StoreHighlights.refresh(store.id);
           await CatalogService.bump();
           _load(reset: true);
         }
@@ -1246,6 +1250,9 @@ class _StorePageState extends State<StorePage> {
                             });
                           }
 
+                          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+                          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+                          await StoreHighlights.refresh(store.id);
                           await CatalogService.bump();
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);

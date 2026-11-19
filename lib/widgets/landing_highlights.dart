@@ -35,7 +35,8 @@ class _LandingHighlightsState extends State<LandingHighlights> {
 
   Future<List<_S>> _load() async {
     final snap = await CatalogService.get(
-      FirebaseFirestore.instance.collection('stores'),
+      // لازم فلتر active: قواعد Firestore بترفض استعلام المحلات من غيره للعميل.
+      FirebaseFirestore.instance.collection('stores').where('active', isEqualTo: true),
       'stores',
     );
     final out = <_S>[];

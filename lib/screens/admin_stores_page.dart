@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -593,6 +594,9 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      await StoreHighlights.refresh(id);
       await CatalogService.bump();
 
       if (!mounted) return;
@@ -1322,6 +1326,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       }
 
       await _syncCount();
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       if (!mounted) return;
@@ -1335,6 +1342,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       if (uploaded > 0) {
         try {
           await _syncCount();
+          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+          await StoreHighlights.refresh(widget.storeId);
           await CatalogService.bump();
         } catch (_) {}
 
@@ -1379,6 +1389,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         await doc.reference.update(data);
       }
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       await _load(reset: true);
@@ -1405,6 +1418,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
 
       await _syncCount();
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       if (!mounted) return;

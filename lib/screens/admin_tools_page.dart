@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
+import '../services/read_meter.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -60,6 +61,103 @@ class AdminToolsPage extends StatelessWidget {
                   'المشرفين',
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
+                ),
+                tile(
+                  Icons.speed_outlined,
+                  'عدّاد القراءات',
+                  'كل شاشة جابت كام مستند من Firestore (للقياس)',
+                  const AdminReadMeterPage(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── عدّاد القراءات ─────────────────────────
+
+/// عرض تقريبي للقراءات اللي الجهاز ده جابها من الخادم من ساعة ما اتفتح التطبيق
+/// (أو من آخر تصفير)، مقسمة حسب الشاشة/الخدمة. قراءات قواعد Firestore والـ Worker مش هنا.
+class AdminReadMeterPage extends StatefulWidget {
+  const AdminReadMeterPage({super.key});
+
+  @override
+  State<AdminReadMeterPage> createState() => _AdminReadMeterPageState();
+}
+
+class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
+  @override
+  Widget build(BuildContext context) {
+    final rows = ReadMeter.snapshot();
+    final since = ReadMeter.since;
+    return Scaffold(
+      body: Column(
+        children: [
+          const InnerHeader(title: 'عدّاد القراءات'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SwitchListTile(
+                  value: ReadMeter.enabled,
+                  onChanged: (v) => setState(() => ReadMeter.enabled = v),
+                  title: const Text(
+                    'تشغيل العدّاد على الجهاز ده',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: const Text(
+                    'شغّله، واستخدم التطبيق زي العميل/المحل، وارجع هنا تشوف الأرقام.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'الإجمالي: ${ReadMeter.total()} قراءة منذ '
+                  '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                if (rows.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text('لسه مفيش قراءات متسجلة.'),
+                  ),
+                for (final r in rows)
+                  ListTile(
+                    dense: true,
+                    title: Text(r.key, textDirection: TextDirection.ltr),
+                    trailing: Text(
+                      '${r.value}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() {}),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('تحديث'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(ReadMeter.reset),
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('تصفير'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'تقريبي: بيعدّ المستندات الجاية من الخادم بس (الكاش المحلي صفر). '
+                  'قراءات قواعد الأمان والـ Worker بتظهر في Firebase Console ← Usage.',
+                  style: TextStyle(color: kMuted, fontSize: 12),
                 ),
               ],
             ),

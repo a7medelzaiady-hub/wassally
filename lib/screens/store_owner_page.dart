@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
+import '../services/read_meter.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../models/product.dart';
@@ -389,9 +391,6 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       .doc(widget.storeId)
       .snapshots();
   bool _busy = false;
-  late final Future<RatingSummary?> _rating = RatingService.store(
-    widget.storeId,
-  );
 
   Future<void> _changeImage() async {
     if (_busy) return;
@@ -544,14 +543,11 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                             fontSize: 12.5,
                           ),
                         ),
-                        FutureBuilder<RatingSummary?>(
-                          future: _rating,
-                          builder: (context, rs) => Text(
-                            rs.data == null
-                                ? 'تقييم المحل: ...'
-                                : 'تقييم المحل: ${rs.data!.text}',
-                            style: TextStyle(color: kMuted, fontSize: 12),
-                          ),
+                        // من ratingSum/ratingCount على مستند المحل نفسه (المستمع ده): صفر قراءات،
+                        // بدل قراءة لحد 300 تقييم مع كل فتحة للوحة.
+                        Text(
+                          'تقييم المحل: ${RatingSummary.fromStore(data).text}',
+                          style: TextStyle(color: kMuted, fontSize: 12),
                         ),
                       ],
                     ),
@@ -1329,16 +1325,26 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _load() async {
+  /// [fromCache]: بعد تعديل من الجهاز ده، Firestore بيطبّق التعديل على الكاش المحلي فورًا،
+  /// فبنقرا من الكاش (صفر قراءات) بدل ما نعيد تحميل كل الأصناف من الخادم (لحد 200 قراءة).
+  /// تعديلات جهاز تاني بتظهر مع أول تحميل من الخادم (فتح الصفحة أو السحب للتحديث).
+  Future<void> _load({bool fromCache = false}) async {
     setState(() {
       _loading = true;
       _error = false;
     });
     try {
-      final snap = await _col
-          .orderBy('name')
-          .limit(_limit)
-          .get(const GetOptions(source: Source.server));
+      final query = _col.orderBy('name').limit(_limit);
+      QuerySnapshot<_Json>? cached;
+      if (fromCache) {
+        try {
+          final c = await query.get(const GetOptions(source: Source.cache));
+          if (c.docs.isNotEmpty) cached = c;
+        } catch (_) {}
+      }
+      final snap =
+          cached ?? await query.get(const GetOptions(source: Source.server));
+      ReadMeter.query('owner:products', snap);
       if (!mounted) return;
       setState(() {
         _docs = snap.docs;
@@ -1365,40 +1371,10 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   /// ملخص العروض والأكثر مبيعًا على مستند المحل (الرئيسية بتقراه من هنا).
   Future<void> _syncHighlights() async {
     try {
-      Map<String, dynamic> item(_Json m) => {
-        'name': (m['name'] ?? '').toString(),
-        'price': (m['price'] as num?) ?? 0,
-        if (m['oldPrice'] is num) 'oldPrice': m['oldPrice'],
-        if ((m['offerText'] ?? '').toString().trim().isNotEmpty)
-          'offerText': (m['offerText'] ?? '').toString().trim(),
-        if (m['offerEndsAt'] is Timestamp) 'offerEndsAt': m['offerEndsAt'],
-        'image': (m['image'] ?? '').toString(),
-      };
-      bool on(_Json m) => m['available'] != false && m['isAvailable'] != false;
-      final offers = <Map<String, dynamic>>[];
-      final best = <Map<String, dynamic>>[];
-      for (final d in _docs) {
-        final m = d.data();
-        if (!on(m)) continue;
-        final p = (m['price'] as num?) ?? 0;
-        final o = m['oldPrice'];
-        final e = m['offerEndsAt'];
-        final expired = isOfferExpired(
-          e is Timestamp ? e.toDate() : null,
-          DateTime.now(),
-        );
-        final offerText = (m['offerText'] ?? '').toString().trim();
-        final hasPriceDiscount = o is num && o > p;
-        if ((hasPriceDiscount || offerText.isNotEmpty) &&
-            !expired &&
-            offers.length < 12) {
-          offers.add(item(m));
-        }
-        if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
-      }
+      final h = StoreHighlights.compute(_docs.map((d) => d.data()));
       await _storeRef.update({
-        'offerItems': offers,
-        'bestItems': best,
+        'offerItems': h.offers,
+        'bestItems': h.best,
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await CatalogService.bump();
@@ -1443,7 +1419,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         });
       }
       await CatalogService.bump();
-      await _load();
+      await _load(fromCache: true);
       await _syncHighlights();
       _say('تم حفظ الصنف.');
     } catch (e) {
@@ -1559,7 +1535,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       update['updatedAt'] = FieldValue.serverTimestamp();
       await doc.reference.update(update);
       await CatalogService.bump();
-      await _load();
+      await _load(fromCache: true);
       await _syncHighlights();
       _say(choice.cancel ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
     } catch (e) {
@@ -1575,7 +1551,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await CatalogService.bump();
-      await _load();
+      await _load(fromCache: true);
       await _syncHighlights();
     } catch (_) {
       _say('تعذر تغيير حالة الصنف.');
@@ -1596,7 +1572,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       await doc.reference.delete();
       await _syncCount();
       await CatalogService.bump();
-      await _load();
+      await _load(fromCache: true);
       await _syncHighlights();
       _say('تم حذف الصنف.');
     } catch (_) {

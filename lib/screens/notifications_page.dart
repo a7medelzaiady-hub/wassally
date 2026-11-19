@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/empty_state.dart';
+import '../services/read_meter.dart';
 
 // ───────────────────────── أنواع الإشعارات ─────────────────────────
 
@@ -186,7 +187,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   .where('userId', isEqualTo: uid)
                   .orderBy('createdAt', descending: true)
                   .limit(_limit)
-                  .snapshots(),
+                  .snapshots().metered('notifications:list'),
               builder: (context, snap) {
                 if (snap.hasError) {
                   return _shell(

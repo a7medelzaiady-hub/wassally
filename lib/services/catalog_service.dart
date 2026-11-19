@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'read_meter.dart';
+
 class CatalogService {
   const CatalogService._();
 
@@ -22,6 +24,11 @@ class CatalogService {
   static const _verKey = 'catalog_loaded_version';
   static const _tsKey = 'catalog_loaded_at';
 
+  /// المفاتيح اللي اتجابت من الخادم بالإصدار الحالي (محفوظة على الجهاز). بتخلّي نتيجة فاضية
+  /// متخزنة تتقبل من الكاش بدل ما تتقري من الخادم في كل مرة.
+  static const _keysKey = 'catalog_fetched_keys';
+  static Set<String> _persistedKeys = {};
+
   static Future<Source> _decide() async {
     SharedPreferences? prefs;
     try {
@@ -30,6 +37,7 @@ class CatalogService {
 
     try {
       final server = await _ref.get(const GetOptions(source: Source.server));
+      ReadMeter.document('catalog:version', server);
       final serverVersion = (server.data()?['version'])?.toString();
       final loadedVersion = prefs?.getString(_verKey);
       final loadedAt = prefs?.getInt(_tsKey) ?? 0;
@@ -38,9 +46,14 @@ class CatalogService {
       // مهلة الـ 15 دقيقة تُستخدم فقط كاحتياط عند غياب رقم إصدار الخادم،
       // ولا يجوز أن تحجب تحديثًا معروفًا (مثل عرض أضافه صاحب المحل).
       if (serverVersion != null) {
-        if (loadedVersion == serverVersion) return Source.cache;
+        if (loadedVersion == serverVersion) {
+          _persistedKeys = (prefs?.getStringList(_keysKey) ?? const []).toSet();
+          return Source.cache;
+        }
         await prefs?.setString(_verKey, serverVersion);
         await prefs?.setInt(_tsKey, DateTime.now().millisecondsSinceEpoch);
+        await prefs?.setStringList(_keysKey, const []);
+        _persistedKeys = {};
         return Source.server;
       }
 
@@ -73,11 +86,13 @@ class CatalogService {
       try {
         final snap = await query.get(const GetOptions(source: Source.cache));
 
-        final complete =
-            snap.docs.isNotEmpty &&
-            (pageSize == null ||
-                snap.docs.length >= pageSize ||
-                _fetched.contains(key));
+        // اتجاب من الخادم بنفس الإصدار (في الجلسة دي أو قبلها): الكاش كامل حتى لو فاضي.
+        // قبل كده النتيجة الفاضية كانت بتتقري من الخادم في كل مرة.
+        final fetchedBefore =
+            _fetched.contains(key) || _persistedKeys.contains(key);
+        final complete = fetchedBefore ||
+            (snap.docs.isNotEmpty &&
+                (pageSize == null || snap.docs.length >= pageSize));
 
         if (complete) {
           return snap;
@@ -88,8 +103,15 @@ class CatalogService {
     }
 
     final snap = await query.get(const GetOptions(source: Source.server));
+    ReadMeter.query('catalog:${key.split('/').first}', snap);
 
     _fetched.add(key);
+    if (cacheable && _persistedKeys.add(key)) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_keysKey, _persistedKeys.toList());
+      } catch (_) {}
+    }
 
     return snap;
   }
@@ -113,11 +135,13 @@ class CatalogService {
 
     _source = null;
     _fetched.clear();
+    _persistedKeys = {};
   }
 
   /// إعادة ضبط الكاش المحلي للجلسة.
   static void invalidate() {
     _source = null;
     _fetched.clear();
+    _persistedKeys = {};
   }
 }
