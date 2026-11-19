@@ -53,16 +53,15 @@ class StaffOrderService {
   };
 
   /// بيكتب إشعار في Firestore. فشله ما يوقفش العملية الأساسية.
-  static void _notifyAssignmentPush(String orderId) {
-    unawaited(Future<void>(() async {
-      try {
+  static Future<void> _notifyAssignmentPush(String orderId) async {
+    try {
         final token = await FirebaseAuth.instance.currentUser?.getIdToken();
         if (token == null || token.isEmpty) return;
-        await OrderGateway.notifyAssignment(idToken: token, orderId: orderId);
-      } catch (_) {
-        // The assignment is already committed; push is best-effort.
-      }
-    }));
+        await OrderGateway.notifyAssignment(idToken: token, orderId: orderId)
+            .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // The assignment is already committed; push is best-effort.
+    }
   }
 
   static Future<void> _notify(
@@ -215,7 +214,7 @@ class StaffOrderService {
     });
     batch.delete(db.collection('courier_available_orders').doc(order.id));
     await batch.commit(); // permission-denied = حد سبقك أو الطلب اتغيّر
-    _notifyAssignmentPush(order.id);
+    await _notifyAssignmentPush(order.id);
 
     try {
       final snap = await _orders.doc(order.id).get(); // دلوقتي مسموح لأنه متعيّن لك
@@ -902,7 +901,7 @@ class StaffOrderService {
       tx.delete(feedRef);
     });
 
-    _notifyAssignmentPush(orderId);
+    await _notifyAssignmentPush(orderId);
     try {
       final snap = await orderRef.get();
       await _notify(courier.id, 'طلب جديد ليك', 'تم تكليفك بطلب جديد.', orderId);
