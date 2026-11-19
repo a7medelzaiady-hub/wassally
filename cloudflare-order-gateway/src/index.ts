@@ -69,7 +69,9 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
     } catch (error) {
       // تعذر جلب مفاتيح Google (شبكة/مهلة) ≠ رمز غير صالح؛ لا نلوم نسخة التطبيق على عطل خارجي.
       const code = String((error as { code?: unknown })?.code ?? "");
-      keysUnavailable = !code || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JWKS_INVALID";
+      // ERR_JOSE_GENERIC: رد غير 200 أو JSON تالف من خادم مفاتيح Google.
+      keysUnavailable = !code || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JWKS_INVALID" ||
+        code === "ERR_JOSE_GENERIC";
       failure = keysUnavailable ? "keys-unavailable" : "invalid";
     }
   }
