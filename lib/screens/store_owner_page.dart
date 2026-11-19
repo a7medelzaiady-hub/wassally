@@ -1332,7 +1332,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   /// تعديلات جهاز تاني بتظهر مع أول تحميل من الخادم (فتح الصفحة أو السحب للتحديث).
   Future<void> _load({bool fromCache = false}) async {
     // بعد 10 دقايق من آخر تحميل من الخادم نرجع للخادم، عشان تعديلات/حذف جهاز تاني
-    // ما يفضلش في الكاش ويتكتب في ملخص العروض.
+    // ما تفضلش مستخبية في الكاش. (ملخص العروض نفسه بيتحسب من الخادم مش من القائمة دي.)
     final last = _lastServerLoad;
     if (fromCache &&
         (last == null ||
@@ -1379,17 +1379,17 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     });
   }
 
-  /// ملخص العروض والأكثر مبيعًا على مستند المحل (الرئيسية بتقراه من هنا).
-  Future<void> _syncHighlights() async {
-    try {
-      final h = StoreHighlights.compute(_docs.map((d) => d.data()));
-      await _storeRef.update({
-        'offerItems': h.offers,
-        'bestItems': h.best,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await CatalogService.bump();
-    } catch (_) {}
+  /// بعد أي تعديل صنف: الترتيب مهم.
+  /// 1) تحديث ملخص العروض من الخادم، 2) بعده رفع رقم إصدار الكتالوج،
+  /// عشان العميل اللي يشوف الإصدار الجديد ياخد الملخص الجديد مش القديم.
+  /// 3) إعادة عرض القائمة من الكاش (صفر قراءات).
+  /// الإصدار بيترفع حتى لو الملخص فشل، لأن الصنف نفسه اتغيّر واتحفظ.
+  /// بيرجع true لو الملخص اتحدث.
+  Future<bool> _afterProductChange() async {
+    final ok = await StoreHighlights.refresh(widget.storeId);
+    await CatalogService.bump();
+    await _load(fromCache: true);
+    return ok;
   }
 
   Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
@@ -1429,10 +1429,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
-      await CatalogService.bump();
-      await _load(fromCache: true);
-      await _syncHighlights();
-      _say('تم حفظ الصنف.');
+      final ok = await _afterProductChange();
+      _say(StoreHighlights.withNote('تم حفظ الصنف', ok));
     } catch (e) {
       _say('تعذر حفظ الصنف: ${_why(e)}');
     }
@@ -1545,10 +1543,11 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       }
       update['updatedAt'] = FieldValue.serverTimestamp();
       await doc.reference.update(update);
-      await CatalogService.bump();
-      await _load(fromCache: true);
-      await _syncHighlights();
-      _say(choice.cancel ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
+      final ok = await _afterProductChange();
+      _say(StoreHighlights.withNote(
+        choice.cancel ? 'اتلغى العرض' : 'تم تفعيل العرض',
+        ok,
+      ));
     } catch (e) {
       _say('تعذر تفعيل العرض: ${_why(e)}');
     }
@@ -1561,9 +1560,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         'isAvailable': value,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      await CatalogService.bump();
-      await _load(fromCache: true);
-      await _syncHighlights();
+      final ok = await _afterProductChange();
+      if (!ok) _say(StoreHighlights.withNote('اتغيرت حالة الصنف', ok));
     } catch (_) {
       _say('تعذر تغيير حالة الصنف.');
     }
@@ -1582,10 +1580,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     try {
       await doc.reference.delete();
       await _syncCount();
-      await CatalogService.bump();
-      await _load(fromCache: true);
-      await _syncHighlights();
-      _say('تم حذف الصنف.');
+      final ok = await _afterProductChange();
+      _say(StoreHighlights.withNote('تم حذف الصنف', ok));
     } catch (_) {
       _say('تعذر حذف الصنف.');
     }

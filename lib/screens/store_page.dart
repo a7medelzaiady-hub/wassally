@@ -998,6 +998,7 @@ class _StorePageState extends State<StorePage> {
       var content = utf8.decode(bytes, allowMalformed: true);
       if (content.startsWith('\uFEFF')) content = content.substring(1);
 
+      var highlightsOk = true;
       final rows = <_Json>[];
       for (final line in content.split(RegExp(r'\r?\n'))) {
         if (line.trim().isEmpty) continue;
@@ -1049,13 +1050,13 @@ class _StorePageState extends State<StorePage> {
         if (uploaded > 0) {
           // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
           // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-          await StoreHighlights.refresh(store.id);
+          highlightsOk = await StoreHighlights.refresh(store.id);
           await CatalogService.bump();
           _load(reset: true);
         }
       }
 
-      _say('تم رفع $uploaded صنف بنجاح!');
+      _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));
     } catch (e) {
       debugPrint('CSV upload error: $e');
       _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
@@ -1252,11 +1253,16 @@ class _StorePageState extends State<StorePage> {
 
                           // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
                           // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-                          await StoreHighlights.refresh(store.id);
+                          final highlightsOk =
+                              await StoreHighlights.refresh(store.id);
                           await CatalogService.bump();
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);
+                          if (!highlightsOk) {
+                            _say(StoreHighlights.withNote(
+                                'تم حفظ الصنف', false));
+                          }
                         } catch (e) {
                           debugPrint('Save product error: $e');
                           _say('تعذر حفظ الصنف. تأكد أن حسابك مدير.');

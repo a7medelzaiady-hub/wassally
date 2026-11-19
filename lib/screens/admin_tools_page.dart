@@ -67,7 +67,7 @@ class AdminToolsPage extends StatelessWidget {
                 const _HighlightsRefreshCard(),
                 tile(
                   Icons.speed_outlined,
-                  'عدّاد القراءات',
+                  'عدّاد القراءات (تقديري)',
                   'كل شاشة جابت كام مستند من Firestore (للقياس)',
                   const AdminReadMeterPage(),
                 ),
@@ -94,6 +94,7 @@ class _HighlightsRefreshCard extends StatefulWidget {
 class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
   String? _cursor;
   int _total = 0;
+  int _failed = 0;
   bool _busy = false;
   bool _finished = false;
 
@@ -102,7 +103,7 @@ class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
       context,
       title: 'تحديث ملخص العروض',
       message:
-          'هيتحدث ملخص العروض لـ 50 محل في المرة (كل محل لحد 200 قراءة). '
+          'هيتحدث ملخص العروض لـ 50 محل في المرة (كل محل بيقرا أصنافه اللي عليها عروض أو الأكثر مبيعًا بس). '
           'دوس تاني للدفعة اللي بعدها. تكمل؟',
       confirmLabel: 'ابدأ',
     );
@@ -115,8 +116,12 @@ class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
       await CatalogService.bump();
       if (!mounted) return;
       setState(() {
-        if (_finished) _total = 0;
+        if (_finished) {
+          _total = 0;
+          _failed = 0;
+        }
         _total += r.done;
+        _failed += r.failed;
         _cursor = r.lastId;
         _finished = r.lastId == null;
       });
@@ -133,11 +138,12 @@ class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
 
   @override
   Widget build(BuildContext context) {
+    final failedNote = _failed == 0 ? '' : ' (فشل $_failed — شغّل التحديث تاني)';
     final status = _total == 0
         ? 'الرئيسية بتعرض العروض من الملخص ده من غير قراءة الأصناف'
         : _finished
-            ? 'خلص: اتحدث $_total محل'
-            : 'اتحدث $_total محل — دوس للدفعة الجاية';
+            ? 'خلص: اتعالج $_total محل$failedNote'
+            : 'اتعالج $_total محل$failedNote — دوس للدفعة الجاية';
     return Card(
       child: ListTile(
         leading: Icon(Icons.local_offer_outlined, color: kPrimary),
@@ -178,7 +184,7 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
     return Scaffold(
       body: Column(
         children: [
-          const InnerHeader(title: 'عدّاد القراءات'),
+          const InnerHeader(title: 'عدّاد القراءات (تقديري)'),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
@@ -196,7 +202,7 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'الإجمالي: ${ReadMeter.total()} قراءة منذ '
+                  'الإجمالي التقديري: ${ReadMeter.total()} قراءة منذ '
                   '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                 ),
@@ -238,7 +244,9 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                 const SizedBox(height: 8),
                 Text(
                   'تقريبي: بيعدّ المستندات الجاية من الخادم بس (الكاش المحلي صفر). '
-                  'قراءات قواعد الأمان والـ Worker بتظهر في Firebase Console ← Usage.',
+                  'دي قراءات تقديرية مرصودة من الجهاز ده للمقارنة بين الشاشات، '
+                  'مش فاتورة Firebase. الرقم الرسمي (ومعاه قراءات قواعد الأمان '
+                  'والـ Worker) في Firebase Console ← Usage.',
                   style: TextStyle(color: kMuted, fontSize: 12),
                 ),
               ],

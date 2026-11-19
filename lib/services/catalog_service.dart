@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'catalog_cache_policy.dart';
 import 'read_meter.dart';
 
 class CatalogService {
@@ -11,8 +12,6 @@ class CatalogService {
       FirebaseFirestore.instance.collection('app_info').doc('catalog');
 
   static Future<Source>? _source;
-
-  static final Set<String> _fetched = {};
 
   static Future<Source> source() {
     return _source ??= _decide();
@@ -24,27 +23,11 @@ class CatalogService {
   static const _verKey = 'catalog_loaded_version';
   static const _tsKey = 'catalog_loaded_at';
 
-  /// المفاتيح اللي اتجابت من الخادم بالإصدار الحالي (محفوظة على الجهاز). بتخلّي نتيجة فاضية
-  /// متخزنة تتقبل من الكاش بدل ما تتقري من الخادم في كل مرة.
+  /// بصمات نتايج الخادم بالإصدار الحالي (محفوظة على الجهاز) — شوف [CatalogCachePolicy].
   static const _keysKey = 'catalog_fetched_keys';
 
-  /// مفتاح → عدد المستندات اللي رجعت من الخادم. الكاش يتقبل بس لو فيه نفس العدد أو أكتر،
-  /// فلو Firestore شال مستندات من الكاش (مساحة/مسح) بنرجع للخادم بدل ما نعرض نتيجة ناقصة.
-  static Map<String, int> _persistedKeys = {};
-
-  static Map<String, int> _decodeKeys(List<String>? raw) {
-    final out = <String, int>{};
-    for (final entry in raw ?? const <String>[]) {
-      final i = entry.lastIndexOf('|');
-      if (i <= 0) continue;
-      final n = int.tryParse(entry.substring(i + 1));
-      if (n != null) out[entry.substring(0, i)] = n;
-    }
-    return out;
-  }
-
-  static List<String> _encodeKeys(Map<String, int> keys) =>
-      [for (final e in keys.entries) '${e.key}|${e.value}'];
+  /// مفتاح → بصمة نتيجة الخادم (عدد + hash المعرفات). الكاش يتقبل بس لو بصمته مطابقة.
+  static Map<String, String> _persistedKeys = {};
 
   static Future<Source> _decide() async {
     SharedPreferences? prefs;
@@ -64,7 +47,8 @@ class CatalogService {
       // ولا يجوز أن تحجب تحديثًا معروفًا (مثل عرض أضافه صاحب المحل).
       if (serverVersion != null) {
         if (loadedVersion == serverVersion) {
-          _persistedKeys = _decodeKeys(prefs?.getStringList(_keysKey));
+          _persistedKeys =
+              CatalogCachePolicy.decode(prefs?.getStringList(_keysKey));
           return Source.cache;
         }
         await prefs?.setString(_verKey, serverVersion);
@@ -91,28 +75,24 @@ class CatalogService {
   static Future<QuerySnapshot<Map<String, dynamic>>> get(
     Query<Map<String, dynamic>> query,
     String key, {
+    // ملحوظة: مبقاش بيأثر على قرار الكاش (البصمة أدق)؛ متساب عشان المستدعين.
     int? pageSize,
     bool cacheable = true,
   }) async {
     final src = await source();
 
     final canUseCache =
-        cacheable && (src == Source.cache || _fetched.contains(key));
+        cacheable && (src == Source.cache || _persistedKeys.containsKey(key));
 
     if (canUseCache) {
       try {
         final snap = await query.get(const GetOptions(source: Source.cache));
-
-        // اتجاب من الخادم بنفس الإصدار (في الجلسة دي أو قبلها): الكاش كامل حتى لو فاضي.
-        // قبل كده النتيجة الفاضية كانت بتتقري من الخادم في كل مرة.
-        final persistedCount = _persistedKeys[key];
-        final fetchedBefore = _fetched.contains(key) ||
-            (persistedCount != null && snap.docs.length >= persistedCount);
-        final complete = fetchedBefore ||
-            (snap.docs.isNotEmpty &&
-                (pageSize == null || snap.docs.length >= pageSize));
-
-        if (complete) {
+        // الكاش يتقبل بس لو مطابق بالظبط لآخر نتيجة خادم بنفس الإصدار
+        // (داخل الجلسة أو من جلسة قبلها). [pageSize] مبقاش يكفي لوحده.
+        if (CatalogCachePolicy.cacheIsComplete(
+          recorded: _persistedKeys[key],
+          cachedIds: snap.docs.map((d) => d.id),
+        )) {
           return snap;
         }
       } catch (e) {
@@ -120,16 +100,32 @@ class CatalogService {
       }
     }
 
-    final snap = await query.get(const GetOptions(source: Source.server));
+    final QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await query.get(const GetOptions(source: Source.server));
+    } catch (e) {
+      // من غير نت: نعرض اللي في الكاش (لو فيه) بدل شاشة خطأ.
+      try {
+        final cached =
+            await query.get(const GetOptions(source: Source.cache));
+        if (cached.docs.isNotEmpty) return cached;
+      } catch (_) {}
+      rethrow;
+    }
     ReadMeter.query('catalog:${key.split('/').first}', snap);
 
-    _fetched.add(key);
-    if (cacheable && _persistedKeys[key] != snap.docs.length) {
-      _persistedKeys[key] = snap.docs.length;
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList(_keysKey, _encodeKeys(_persistedKeys));
-      } catch (_) {}
+    if (cacheable) {
+      final mark = CatalogCachePolicy.fingerprint(snap.docs.map((d) => d.id));
+      if (_persistedKeys[key] != mark) {
+        _persistedKeys[key] = mark;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setStringList(
+            _keysKey,
+            CatalogCachePolicy.encode(_persistedKeys),
+          );
+        } catch (_) {}
+      }
     }
 
     return snap;
@@ -153,14 +149,12 @@ class CatalogService {
     } catch (_) {}
 
     _source = null;
-    _fetched.clear();
     _persistedKeys = {};
   }
 
   /// إعادة ضبط الكاش المحلي للجلسة.
   static void invalidate() {
     _source = null;
-    _fetched.clear();
     _persistedKeys = {};
   }
 }

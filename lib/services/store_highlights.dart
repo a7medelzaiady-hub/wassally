@@ -23,7 +23,7 @@ class StoreHighlights {
       };
 
   /// العروض (خصم أو نص عرض، غير منتهية) والأكثر مبيعًا من أصناف المحل المتاحة.
-  /// [products] مرتبة بالاسم زي ما صفحة صاحب المحل بتحمّلها.
+  /// [products] مرتبة بالاسم (الأول بالاسم بياخد الأولوية لو العروض أكتر من 12).
   static ({List<Map<String, dynamic>> offers, List<Map<String, dynamic>> best})
       compute(Iterable<Map<String, dynamic>> products, {DateTime? now}) {
     final at = now ?? DateTime.now();
@@ -50,9 +50,9 @@ class StoreHighlights {
   }
 
   /// المدير: تحديث ملخص العروض لدفعة من المحلات (بالترتيب حسب المعرّف) بعد [startAfterId].
-  /// كل محل بيكلف لحد 200 قراءة، فالدفعة 50 محل بالكتير عشان ما نخلصش حصة اليوم مرة واحدة.
+  /// كل محل بيكلف عدد أصنافه المرشحة (عروض/الأكثر مبيعًا) بس، والدفعة 50 محل بالكتير عشان ما نخلصش حصة اليوم مرة واحدة.
   /// بيرجع آخر معرّف اتعالج (للدفعة الجاية) أو null لو خلصوا.
-  static Future<({int done, String? lastId})> refreshBatch({
+  static Future<({int done, int failed, String? lastId})> refreshBatch({
     String? startAfterId,
     int batchSize = 50,
   }) async {
@@ -65,36 +65,90 @@ class StoreHighlights {
     }
     final page = await q.get(const GetOptions(source: Source.server));
     ReadMeter.query('highlights:batch-stores', page);
+    var failed = 0;
     for (final d in page.docs) {
-      await refresh(d.id);
+      if (!await refresh(d.id)) failed++;
     }
     final lastId = page.docs.length < batchSize || page.docs.isEmpty
         ? null
         : page.docs.last.id;
-    return (done: page.docs.length, lastId: lastId);
+    return (done: page.docs.length, failed: failed, lastId: lastId);
   }
 
-  /// إعادة حساب الملخص من أصناف المحل (بعد تعديلات المدير أو صفحة المحل).
-  /// بيقرا أصناف المحل مرة (لحد 200) — للتعديلات بس، مش للعملاء.
-  static Future<void> refresh(String storeId) async {
-    if (storeId.isEmpty) return;
-    try {
-      final storeRef =
-          FirebaseFirestore.instance.collection('stores').doc(storeId);
-      final snap = await storeRef
-          .collection('products')
-          .orderBy('name')
-          .limit(200)
-          .get(const GetOptions(source: Source.server));
-      ReadMeter.query('highlights:refresh', snap);
-      final h = compute(snap.docs.map((d) => d.data()));
-      await storeRef.update({
-        'offerItems': h.offers,
-        'bestItems': h.best,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('Store highlights refresh failed for $storeId: $e');
+  /// تنبيه موحّد لما تعديل الصنف يتحفظ لكن الملخص يفشل.
+  static const String failedNote =
+      'لكن ملخص العروض في الرئيسية ما اتحدثش (مشكلة اتصال)؛ '
+      'احفظ أي صنف تاني لما الاتصال يرجع عشان يتحدث.';
+
+  /// بيضيف التنبيه للرسالة لو الملخص فشل.
+  static String withNote(String message, bool highlightsOk) =>
+      highlightsOk ? message : '$message، $failedNote';
+
+  /// أقصى عدد مرشحين من كل استعلام (خصم / نص عرض / الأكثر مبيعًا).
+  /// الملخص بياخد 12 بس، فالحد ده بيسيب هامش للأصناف المتوقفة والعروض المنتهية.
+  static const int candidateLimit = 100;
+
+  /// بيدمج نتايج الاستعلامات المستهدفة (من غير تكرار) ومرتبة بالاسم زي ترتيب المحل.
+  static List<Map<String, dynamic>> mergeCandidates(
+    Iterable<Iterable<MapEntry<String, Map<String, dynamic>>>> groups,
+  ) {
+    final byId = <String, Map<String, dynamic>>{};
+    for (final g in groups) {
+      for (final e in g) {
+        byId.putIfAbsent(e.key, () => e.value);
+      }
     }
+    final list = byId.values.toList()
+      ..sort((a, b) => (a['name'] ?? '')
+          .toString()
+          .compareTo((b['name'] ?? '').toString()));
+    return list;
+  }
+
+  /// إعادة حساب الملخص من الخادم بعد أي تعديل صنف (مدير / صفحة المحل / صاحب المحل).
+  ///
+  /// بدل قراءة أول 200 صنف، بنقرا الأصناف المرشحة بس: اللي عليها خصم، أو نص عرض،
+  /// أو الأكثر مبيعًا. فالنتيجة صحيحة مهما كان عدد أصناف المحل، والتكلفة = عدد
+  /// المرشحين (أقل حاجة 3 قراءات) بدل 200.
+  ///
+  /// بيرجع true لو الملخص اتكتب فعلًا. عند الفشل بيعيد المحاولة مرة، وبعدها
+  /// بيرجع false من غير ما يرمي استثناء (عشان تعديل الصنف نفسه اتحفظ خلاص)،
+  /// والمستدعي لازم يبلغ إن ملخص العروض ما اتحدثش.
+  static Future<bool> refresh(String storeId) async {
+    if (storeId.isEmpty) return false;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _refreshOnce(storeId);
+        return true;
+      } catch (e) {
+        debugPrint('Store highlights refresh failed for $storeId: $e');
+      }
+    }
+    return false;
+  }
+
+  static Future<void> _refreshOnce(String storeId) async {
+    final storeRef =
+        FirebaseFirestore.instance.collection('stores').doc(storeId);
+    final col = storeRef.collection('products');
+    const server = GetOptions(source: Source.server);
+    final results = await Future.wait([
+      col.where('oldPrice', isGreaterThan: 0).limit(candidateLimit).get(server),
+      col.where('offerText', isGreaterThan: '').limit(candidateLimit).get(server),
+      col.where('bestSeller', isEqualTo: true).limit(candidateLimit).get(server),
+    ]);
+    for (final r in results) {
+      ReadMeter.query('highlights:refresh', r);
+    }
+    final candidates = mergeCandidates([
+      for (final r in results)
+        r.docs.map((d) => MapEntry(d.id, d.data())),
+    ]);
+    final h = compute(candidates);
+    await storeRef.update({
+      'offerItems': h.offers,
+      'bestItems': h.best,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }
