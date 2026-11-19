@@ -213,9 +213,16 @@ class StaffOrderService {
   /// المندوب يسجل بلاغ التسليم فقط؛ العميل هو من يؤكد الاستلام.
   /// نعيد قراءة الطلب وملف المندوب مرة واحدة هنا لتقديم سبب واضح قبل الكتابة،
   /// مع إبقاء قواعد Firestore هي الحاجز الأمني النهائي.
-  static Future<void> reportCustomerDelivery(AppOrder order) async {
+  /// [paidBy]: العميل دفع إزاي وقت الاستلام: 'cash' أو 'store_wallet' (تحويل على محفظة المحل).
+  static Future<void> reportCustomerDelivery(
+    AppOrder order, {
+    String paidBy = 'cash',
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (uid.isEmpty) throw StateError('سجّل دخول الأول.');
+    if (paidBy != 'cash' && paidBy != 'store_wallet') {
+      throw StateError('اختار الدفع كاش أو على محفظة المحل.');
+    }
 
     final courierRef = FirebaseFirestore.instance.collection('couriers').doc(uid);
     final orderRef = _orders.doc(order.id);
@@ -255,7 +262,22 @@ class StaffOrderService {
     await orderRef.update({
       'customerDeliveryReportedAt': FieldValue.serverTimestamp(),
       'customerDeliveryReportedBy': uid,
+      'paidBy': paidBy,
     });
+  }
+
+  /// رقم محفظة المحل (فودافون كاش) اللي العميل يحوّل عليه وقت الاستلام. فاضي = مفيش.
+  static Future<String> storeWalletNumber(String storeId) async {
+    if (storeId.isEmpty) return '';
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('stores')
+          .doc(storeId)
+          .get();
+      return (snap.data()?['walletNumber'] ?? '').toString().trim();
+    } catch (_) {
+      return '';
+    }
   }
 
   /// المندوب الخارجي يسجل تسليم النقدية للمحل بعد تأكيد العميل.
@@ -307,7 +329,8 @@ class StaffOrderService {
   }) => {
     'deliveredBy': courierUid,
     'deliveredAt': FieldValue.serverTimestamp(),
-    'collectedAmount': verifiedTotal ?? order.payable,
+    // محفظة المحل: المندوب ما استلمش كاش (لازم يطابق expectedCollected في القواعد).
+    'collectedAmount': order.collectFor(verifiedTotal ?? order.payable),
     'courierEarning': fee ?? order.courierFee,
   };
 

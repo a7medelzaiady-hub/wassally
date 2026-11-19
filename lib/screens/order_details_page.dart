@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
@@ -10,6 +11,7 @@ import 'edit_order_page.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
+import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -482,6 +484,8 @@ class _Details extends StatelessWidget {
               _line('رسوم التوصيل', formatPrice(order.courierFee)),
               const SizedBox(height: 8),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
+              const SizedBox(height: 8),
+              _PayOnDeliveryNote(order: order),
             ],
           ),
         ),
@@ -960,6 +964,85 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
             ),
         ],
       ),
+    );
+  }
+}
+
+/// الدفع عند الاستلام: كاش أو تحويل على محفظة المحل.
+/// قبل التسليم بنعرض رقم محفظة المحل (قراءة واحدة)، وبعده الطريقة اللي المندوب سجّلها.
+class _PayOnDeliveryNote extends StatefulWidget {
+  const _PayOnDeliveryNote({required this.order});
+
+  final AppOrder order;
+
+  @override
+  State<_PayOnDeliveryNote> createState() => _PayOnDeliveryNoteState();
+}
+
+class _PayOnDeliveryNoteState extends State<_PayOnDeliveryNote> {
+  Future<String>? _wallet;
+
+  bool get _beforeDelivery =>
+      widget.order.status == OrderStatus.preparing ||
+      widget.order.status == OrderStatus.onTheWay;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_beforeDelivery && widget.order.paidBy.isEmpty) {
+      _wallet = StaffOrderService.storeWalletNumber(widget.order.storeId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final order = widget.order;
+    if (order.paidBy.isNotEmpty) {
+      return Text(
+        order.paidToStoreWallet
+            ? 'اتدفع: تحويل على محفظة المحل'
+            : 'اتدفع: كاش للمندوب',
+        style: TextStyle(color: kMuted, fontSize: 13),
+      );
+    }
+    final future = _wallet;
+    if (future == null) {
+      return Text(
+        'الدفع عند الاستلام',
+        style: TextStyle(color: kMuted, fontSize: 13),
+      );
+    }
+    return FutureBuilder<String>(
+      future: future,
+      builder: (context, snap) {
+        final wallet = snap.data ?? '';
+        if (wallet.isEmpty) {
+          return Text(
+            'الدفع عند الاستلام: كاش للمندوب',
+            style: TextStyle(color: kMuted, fontSize: 13),
+          );
+        }
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                'الدفع عند الاستلام: كاش، أو فودافون كاش على رقم المحل $wallet',
+                style: TextStyle(color: kMuted, fontSize: 13),
+              ),
+            ),
+            IconButton(
+              tooltip: 'نسخ الرقم',
+              icon: const Icon(Icons.copy_rounded, size: 18),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: wallet));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('اتنسخ الرقم.')),
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

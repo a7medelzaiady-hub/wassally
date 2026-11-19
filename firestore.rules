@@ -193,6 +193,27 @@ service cloud.firestore {
       return ['deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning'];
     }
 
+    // ───────────── الدفع عند الاستلام: كاش أو محفظة المحل ─────────────
+    // المندوب بيسجّل وقت التسليم العميل دفع إزاي (paidBy). store_wallet = حوّل على محفظة المحل
+    // مباشرة، فالمندوب ما استلمش كاش. الطلبات/النسخ القديمة من غير paidBy = كاش.
+    function paidByOk(v) {
+      return v in ['cash', 'store_wallet'];
+    }
+
+    // المبلغ الكاش اللي المندوب حصّله فعلًا. لازم يطابق AppOrder.collectFor في lib/models/order.dart.
+    function expectedCollected(nd) {
+      return nd.get('paidBy', 'cash') == 'store_wallet'
+        ? 0
+        : nd.get('verifiedTotal', nd.get('total', -2));
+    }
+
+    // رقم محفظة المحل (فودافون كاش وغيرها): فاضي أو موبايل مصري.
+    function walletNumberOk(d) {
+      return !('walletNumber' in d) ||
+        (d.walletNumber is string &&
+          (d.walletNumber.size() == 0 || d.walletNumber.matches('^01[0125][0-9]{8}$')));
+    }
+
     // k = diff().affectedKeys() محسوب مرة واحدة في evalOrderUpdate ومتبعوت هنا (من غير ما نعيد حساب الـ diff).
     function deliveryStampOk(nd, courierUid, k) {
       let nst = nd.get('status', '');
@@ -206,8 +227,7 @@ service cloud.firestore {
         nd.get('courierEarning', -1) ==
           nd.get('finalDeliveryFee', nd.get('deliveryFee', -2)) &&
         nd.get('collectedAmount', -1) is number &&
-        nd.get('collectedAmount', -1) ==
-          nd.get('verifiedTotal', nd.get('total', -2)));
+        nd.get('collectedAmount', -1) == expectedCollected(nd));
     }
 
     // رسوم التوصيل النهائية: الأدمن بس بيحددها (لما يوافق على الطلب)، ولو ما حددهاش بتفضل الافتراضية.
@@ -546,7 +566,8 @@ service cloud.firestore {
         (isStoreOwner(storeId) &&
           changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
                                  'productCount', 'offerItems', 'bestItems',
-                                 'updatedAt']) &&
+                                 'walletNumber', 'updatedAt']) &&
+          walletNumberOk(request.resource.data) &&
           request.resource.data.get('active', true) is bool &&
           (!('active' in changedKeys()) || request.resource.data.active == false) &&
           request.resource.data.get('time', '') is string &&
@@ -568,7 +589,8 @@ service cloud.firestore {
         (isStoreApplicant(storeId) &&
           changedKeys().hasOnly(['name', 'category', 'address', 'time', 'image',
                                  'imageUrl', 'storePhone', 'productCount',
-                                 'offerItems', 'bestItems', 'updatedAt']) &&
+                                 'offerItems', 'bestItems', 'walletNumber', 'updatedAt']) &&
+          walletNumberOk(request.resource.data) &&
           request.resource.data.ownerUid == resource.data.ownerUid &&
           request.resource.data.active == false &&
           request.resource.data.approved == false &&
@@ -796,7 +818,9 @@ service cloud.firestore {
           nst == 'on_the_way' &&
           nd.get('pickedUpAt', null) == request.time &&
           historyGate(nd, orderId, k)
-        ) : k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy']) ? (
+        ) : k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy', 'paidBy']) ? (
+          'customerDeliveryReportedAt' in k &&
+          (!('paidBy' in k) || paidByOk(nd.get('paidBy', ''))) &&
           st == 'on_the_way' &&
           cid == request.auth.uid &&
           od.get('courierArrivedAt', null) is timestamp &&

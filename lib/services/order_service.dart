@@ -693,7 +693,7 @@ class OrderService {
           'customerConfirmedAt': FieldValue.serverTimestamp(),
           'deliveredBy': order.courierId,
           'deliveredAt': FieldValue.serverTimestamp(),
-          'collectedAmount': order.payable,
+          'collectedAmount': order.cashToCollect,
           'courierEarning': order.courierFee,
         },
       );

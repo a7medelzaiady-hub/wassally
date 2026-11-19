@@ -430,7 +430,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'الدفع عند الاستلام',
+                            'الدفع عند الاستلام: كاش أو فودافون كاش على محفظة المحل',
                             style: TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ),

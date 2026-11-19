@@ -1983,3 +1983,85 @@ test('catalog: صاحب طلب انضمام يدير قائمة وإصدار م�
   await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
   await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
 });
+
+// ───────────── الدفع عند الاستلام: كاش أو محفظة المحل ─────────────
+function podClose(db, collectedAmount) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    status: 'delivered', customerConfirmedAt: serverTimestamp(), deliveredBy: 'storecour1',
+    deliveredAt: serverTimestamp(), collectedAmount, courierEarning: 20,
+  });
+  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+  });
+  return b.commit();
+}
+
+test('pay on delivery: المندوب يسجّل محفظة المحل، فالمحصّل كاش = صفر', async () => {
+  await seedOnWay('store');
+  await assertFails(updateDoc(doc(as('storecour1'), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'storecour1', paidBy: 'bank',
+  }));
+  await assertSucceeds(updateDoc(doc(as('storecour1'), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'storecour1', paidBy: 'store_wallet',
+  }));
+  const db = as('cust1');
+  await assertFails(podClose(db, 40));
+  await assertSucceeds(podClose(db, 0));
+});
+
+test('pay on delivery: كاش صريح أو من غير paidBy (نسخ قديمة) = الإجمالي كامل', async () => {
+  await seedOnWay('store');
+  await assertSucceeds(updateDoc(doc(as('storecour1'), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'storecour1', paidBy: 'cash',
+  }));
+  const db = as('cust1');
+  await assertFails(podClose(db, 0));
+  await assertSucceeds(podClose(db, 40));
+});
+
+test('pay on delivery: طريقة الدفع بتتسجل مع بلاغ التسليم بس، ومحدش يغيّرها بعده', async () => {
+  await seedOnWay('store');
+  await assertFails(updateDoc(doc(as('storecour1'), 'orders/o1'), { paidBy: 'store_wallet' }));
+  await reportDelivery('storecour1');
+  await assertFails(updateDoc(doc(as('storecour1'), 'orders/o1'), { paidBy: 'store_wallet' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { paidBy: 'store_wallet' }));
+  await assertFails(updateDoc(doc(as('owner1'), 'orders/o1'), { paidBy: 'store_wallet' }));
+  // البلاغ من غير paidBy = كاش.
+  await assertFails(podClose(as('cust1'), 0));
+  await assertSucceeds(podClose(as('cust1'), 40));
+});
+
+test('pay on delivery: مندوب خارجي + محفظة المحل → صاحب المحل يقفل بمحصّل صفر', async () => {
+  await seedOnWay('external');
+  await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'cour1', paidBy: 'store_wallet',
+  }));
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), {
+    cashHandedToStoreAt: serverTimestamp(), cashHandedToStoreBy: 'cour1',
+  }));
+  const owner = as('owner1');
+  const close = (collectedAmount) => {
+    const b = writeBatch(owner);
+    b.update(doc(owner, 'orders/o1'), {
+      status: 'delivered', deliveredBy: 'cour1', deliveredAt: serverTimestamp(), collectedAmount, courierEarning: 20,
+    });
+    b.set(doc(owner, 'orders/o1/statusHistory/delivered'), {
+      from: 'on_the_way', to: 'delivered', actorUid: 'owner1', actorRole: 'storeOwner', at: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  await assertFails(close(40));
+  await assertSucceeds(close(0));
+});
+
+test('store walletNumber: صاحب المحل يحط رقم محفظة صحيح أو يفضّيه', async () => {
+  const db = as('owner1');
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { walletNumber: '01012345678' }));
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { walletNumber: '' }));
+  await assertFails(updateDoc(doc(db, 'stores/shop1'), { walletNumber: '123' }));
+  await assertFails(updateDoc(doc(db, 'stores/shop1'), { walletNumber: 1012345678 }));
+  await assertFails(updateDoc(doc(as('owner2'), 'stores/shop1'), { walletNumber: '01012345678' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'stores/shop1'), { walletNumber: '01012345678' }));
+});

@@ -587,21 +587,29 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     }
     final delivering = next == OrderStatus.delivered;
 
-    final ok = await confirmDialog(
-      context,
-      title: delivering ? 'تأكيد التسليم' : 'تأكيد الاستلام',
-      message: delivering
-          ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.payable)} من العميل؟'
-          : 'هتبدأ توصيل الطلب؟',
-      confirmLabel: delivering ? 'إبلاغ العميل بالتسليم' : 'ابدأ التوصيل',
-    );
-    if (!ok || !mounted) return;
+    // التسليم: المندوب بيسجّل العميل دفع إزاي (كاش أو تحويل على محفظة المحل).
+    String? paidBy;
+    if (delivering) {
+      paidBy = await _askPaidBy();
+      if (paidBy == null || !mounted) return;
+    } else {
+      final ok = await confirmDialog(
+        context,
+        title: 'تأكيد الاستلام',
+        message: 'هتبدأ توصيل الطلب؟',
+        confirmLabel: 'ابدأ التوصيل',
+      );
+      if (!ok || !mounted) return;
+    }
 
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       if (delivering) {
-        await StaffOrderService.reportCustomerDelivery(widget.order);
+        await StaffOrderService.reportCustomerDelivery(
+          widget.order,
+          paidBy: paidBy ?? 'cash',
+        );
       } else {
         await StaffOrderService.setStatus(
           widget.order.id,
@@ -638,13 +646,81 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     }
   }
 
+  /// العميل دفع إزاي؟ بيرجع 'cash' أو 'store_wallet'، أو null لو المندوب رجع.
+  Future<String?> _askPaidBy() async {
+    final amount = formatPrice(widget.order.payable);
+    final wallet = await StaffOrderService.storeWalletNumber(widget.order.storeId);
+    if (!mounted) return null;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد التسليم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('العميل دفع $amount إزاي؟'),
+            if (wallet.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text('رقم محفظة المحل للتحويل:'),
+              Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      wallet,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'نسخ',
+                    icon: const Icon(Icons.copy_rounded),
+                    onPressed: () =>
+                        Clipboard.setData(ClipboardData(text: wallet)),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'المحل لسه ما حطش رقم محفظة، فالدفع كاش بس.',
+                style: TextStyle(color: kMuted, fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('رجوع'),
+          ),
+          if (wallet.isNotEmpty)
+            OutlinedButton(
+              onPressed: () => Navigator.pop(ctx, 'store_wallet'),
+              child: const Text('حوّل على محفظة المحل'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'cash'),
+            child: Text('استلمت $amount كاش'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handCashToStore() async {
     if (_busy) return;
+    final walletPaid = widget.order.paidToStoreWallet;
     final ok = await confirmDialog(
       context,
-      title: 'تسليم النقدية للمحل',
-      message: 'هل سلّمت قيمة الطلب للمحل بالفعل؟',
-      confirmLabel: 'تأكيد تسليم النقدية',
+      title: walletPaid ? 'إنهاء الحساب مع المحل' : 'تسليم النقدية للمحل',
+      message: walletPaid
+          ? 'العميل حوّل على محفظة المحل، فمفيش كاش تسلّمه. أكّد إنك خلصت مع المحل.'
+          : 'هل سلّمت قيمة الطلب للمحل بالفعل؟',
+      confirmLabel: walletPaid ? 'تأكيد' : 'تأكيد تسليم النقدية',
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -1072,7 +1148,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           const SizedBox(height: 10),
           Row(
             children: [
-              _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
+              _moneyBox(
+                o.paidToStoreWallet ? 'اتدفع على محفظة المحل' : 'حصّل من العميل',
+                formatPrice(o.paidToStoreWallet ? o.payable : o.cashToCollect),
+                Brand.ink,
+              ),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
             ],

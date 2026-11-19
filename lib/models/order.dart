@@ -178,6 +178,10 @@ class AppOrder {
   /// طلب العميل الخاص ومرفقاته داخل نفس مستند الطلب.
   final Map<String, dynamic>? specialRequest;
 
+  /// العميل دفع إزاي وقت الاستلام (المندوب بيسجّلها): cash أو store_wallet (تحويل على محفظة المحل).
+  /// فاضي = لسه ما اتسجلش، والطلبات القديمة = كاش.
+  final String paidBy;
+
   const AppOrder({
     required this.id,
     required this.storeName,
@@ -222,6 +226,7 @@ class AppOrder {
     this.readyAt,
     this.unavailableItems = const [],
     this.specialRequest,
+    this.paidBy = '',
   });
 
   /// الطلب متاح للمناديب: جاهز من المحل ومحدّش خده لسه.
@@ -279,6 +284,7 @@ class AppOrder {
       readyAt: readyAt,
       unavailableItems: unavailableItems,
       specialRequest: specialRequest,
+      paidBy: paidBy,
     );
   }
 
@@ -291,6 +297,16 @@ class AppOrder {
 
   /// المبلغ المطلوب تحصيله فعليًا: الإجمالي المعتمد لو موجود، وإلا إجمالي الطلب.
   double get payable => verifiedTotal ?? total;
+
+  /// العميل حوّل على محفظة المحل وقت الاستلام (المندوب ما استلمش كاش).
+  bool get paidToStoreWallet => paidBy == 'store_wallet';
+
+  /// الكاش اللي المندوب حصّله فعلًا. لازم يطابق expectedCollected في firestore.rules.
+  double get cashToCollect => collectFor(payable);
+
+  /// نفس الحساب لإجمالي معتمد معيّن (قبل ما يتحفظ في الطلب).
+  double collectFor(double approvedTotal) =>
+      paidToStoreWallet ? 0 : approvedTotal;
 
   factory AppOrder.fromMap(String id, Map<String, dynamic> m) {
     final rawItems = (m['items'] as List?) ?? const [];
@@ -378,6 +394,7 @@ class AppOrder {
       specialRequest: m['specialRequest'] is Map
           ? Map<String, dynamic>.from(m['specialRequest'] as Map)
           : null,
+      paidBy: (m['paidBy'] ?? '').toString(),
     );
   }
 }

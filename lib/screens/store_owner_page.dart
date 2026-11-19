@@ -629,11 +629,96 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                   ),
                 ],
               ),
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _editWallet(
+                          (data['walletNumber'] ?? '').toString(),
+                        ),
+                icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+                label: Text(
+                  (data['walletNumber'] ?? '').toString().isEmpty
+                      ? 'إضافة رقم محفظة للدفع عند الاستلام'
+                      : 'محفظة المحل: ${data['walletNumber']}',
+                ),
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  /// رقم محفظة المحل (فودافون كاش): العميل يقدر يحوّل عليه وقت الاستلام بدل الكاش.
+  Future<void> _editWallet(String current) async {
+    final ctrl = TextEditingController(text: current);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('رقم محفظة المحل'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'الرقم ده هيظهر للعميل والمندوب وقت الاستلام عشان العميل يقدر يحوّل عليه '
+              'بدل الكاش. سيبه فاضي لو مش عايز.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.phone,
+              textDirection: TextDirection.ltr,
+              maxLength: 11,
+              decoration: const InputDecoration(
+                labelText: 'رقم فودافون كاش (01xxxxxxxxx)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('رجوع'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (value == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (value.isNotEmpty && !RegExp(r'^01[0125][0-9]{8}$').hasMatch(value)) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('اكتب رقم موبايل مصري صحيح (11 رقم).')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('stores')
+          .doc(widget.storeId)
+          .update({
+            'walletNumber': value,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(value.isEmpty ? 'اتشال رقم المحفظة.' : 'تم حفظ رقم المحفظة.'),
+        ),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تعذر حفظ الرقم. حاول تاني.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
