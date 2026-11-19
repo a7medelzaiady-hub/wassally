@@ -456,8 +456,16 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
           .collection('stores')
           .doc(widget.storeId)
           .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
-      await CatalogSync.storeChanged(widget.storeId);
+      final indexed = await CatalogSync.storeChanged(widget.storeId, adding: value);
       await CatalogService.bump();
+      if (!indexed) {
+        await CatalogSync.markIndexPending(widget.storeId);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('اتغيرت حالة المحل، بس ظهوره للعملاء هيتحدث لما الاتصال يتحسن.'),
+          ),
+        );
+      }
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),

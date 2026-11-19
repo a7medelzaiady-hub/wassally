@@ -309,7 +309,8 @@ void main() {
       expect(version(b), -1);
       final again = await MenuSync(b).sync(sid, productIds: ['a']);
       expect(again.status, MenuSyncStatus.big);
-      expect(b.transactions, 1); // أول بناء بس: المحاولة الكبيرة وقفت قبل المعاملة، والتعديل التالي من غير معاملة
+      // أول بناء + معاملة التعطيل؛ والتعديل التالي من غير أي معاملة.
+      expect(b.transactions, 2);
     });
   });
 
@@ -339,17 +340,27 @@ void main() {
       expect(version(b), 3);
     });
 
-    test('القائمة اتعطلت من جهاز تاني وقت التعديل: الزيادة بتترفض والنتيجة قائمة معطلة متسقة', () async {
+    test('القائمة اتعطلت من جهاز تاني وقت التعديل: المعاملة بتتعاد وتبني من الأول برقم جديد', () async {
       final b = await seeded();
       b.put(p('a'), {'name': 'عصير', 'price': 20});
       b.beforeCommit = () => MenuSync(b).disable(sid, tooBig: false).then((_) {});
       final r = await MenuSync(b).sync(sid, productIds: ['a']);
-      expect(r.status, MenuSyncStatus.disabled);
-      expect(version(b), -1);
-      // أول تعديل بعدها يبني من الأول بالسعر الصحيح.
-      await MenuSync(b).sync(sid, productIds: ['a']);
+      expect(r.status, MenuSyncStatus.updated);
+      // 1 → -1 (تعطيل) → 2: ولا رقم اتكرر.
       expect(version(b), 2);
       expect((menuItems(b)['a'] as Map)['price'], 20);
+    });
+
+    test('أرقام الإصدار ما تتكررش حتى لو الكاتب بيعدّي القواعد (زي المدير)', () async {
+      final b = await seeded();
+      final seen = <int>{version(b)!};
+      for (var i = 0; i < 3; i++) {
+        await MenuSync(b).disable(sid, tooBig: false);
+        seen.add(version(b)!.abs());
+        await MenuSync(b).sync(sid, productIds: ['a']);
+        expect(seen.contains(version(b)), isFalse);
+        seen.add(version(b)!);
+      }
     });
   });
 
@@ -385,6 +396,18 @@ void main() {
       final many = CatalogPending.merge({}, sid, [for (var i = 0; i < 30; i++) 'x$i']);
       expect(many[sid], {CatalogPending.all});
       expect(CatalogPending.decode(CatalogPending.encode(m)), m);
+    });
+
+    test('علامة الفهرس بتفضل مع الأصناف، ومش بتتحسب صنف', () async {
+      await CatalogPending.mark(sid, ['a']);
+      await CatalogPending.markIndex(sid);
+      await CatalogPending.mark(sid);
+      final pending = (await CatalogPending.load())[sid]!;
+      expect(pending, {CatalogPending.all, CatalogPending.index});
+      expect(CatalogPending.idsFor(pending), isNull);
+      expect(CatalogPending.idsFor({'a', CatalogPending.index}), {'a'});
+      await CatalogPending.clear(sid, {CatalogPending.index});
+      expect((await CatalogPending.load())[sid], {CatalogPending.all});
     });
 
     test('تعديل جديد أثناء المزامنة ما يتمسحش مع العلامة القديمة', () async {

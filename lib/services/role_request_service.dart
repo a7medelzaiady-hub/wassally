@@ -229,7 +229,7 @@ class RoleRequestService {
     if (type == JoinType.storeOwner &&
         approvedStoreId != null &&
         approvedStoreId.isNotEmpty) {
-      await CatalogSync.rebuildStoreMenu(approvedStoreId);
+      await CatalogSync.rebuildStoreMenu(approvedStoreId, adding: true);
     }
   }
 

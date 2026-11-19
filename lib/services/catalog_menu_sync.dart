@@ -181,6 +181,13 @@ class MenuSync {
     Set<String> ids,
   ) {
     return backend.runTransaction((tx) async {
+      // الإصدار بيتقرا جوه المعاملة وبيتكتب رقم صريح (|السابق|+1): المدير بيعدّي القواعد،
+      // فمن غير كده تعطيل من جهاز تاني في نفس اللحظة كان ممكن يرجّع رقم اتستخدم قبل كده.
+      final current =
+          stateOf(await tx.get(CatalogDocPaths.versions), storeId).version;
+      if (current == null || current < 1) {
+        return (status: _Targeted.needsRebuild, items: null);
+      }
       final menu = await tx.get(CatalogDocPaths.menu(storeId));
       if (menu == null) return (status: _Targeted.needsRebuild, items: null);
       final items = itemsOf(menu);
@@ -208,10 +215,9 @@ class MenuSync {
         {'items': changed, 'count': items.length, 'updatedAt': const CatalogNow()},
         mergeFields: fields,
       );
-      // زيادة بمقدار 1: القواعد بتقبل |السابق|+1 بس، فلو القائمة اتعطلت في نفس اللحظة الكتابة بتترفض.
       tx.set(
         CatalogDocPaths.versions,
-        {'m_$storeId': const CatalogInc(1), 'updatedAt': const CatalogNow()},
+        {'m_$storeId': current + 1, 'updatedAt': const CatalogNow()},
         merge: true,
       );
       return (status: _Targeted.done, items: items);
@@ -255,21 +261,23 @@ class MenuSync {
     return MenuSyncResult(tooBig ? MenuSyncStatus.big : MenuSyncStatus.disabled);
   }
 
-  /// تعطيل القائمة (العملاء على المسار القديم) من غير رقم اتستخدم قبل كده. محاولتين.
+  /// تعطيل القائمة (العملاء على المسار القديم) من غير رقم اتستخدم قبل كده. معاملة، محاولتين.
   Future<bool> disable(String storeId, {required bool tooBig}) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final current =
-            stateOf(await backend.get(CatalogDocPaths.versions), storeId).version;
-        await backend.set(
-          CatalogDocPaths.versions,
-          {
-            if (current != null && current > 0) 'm_$storeId': -current,
-            if (tooBig) 'big_$storeId': true,
-            'updatedAt': const CatalogNow(),
-          },
-          merge: true,
-        );
+        await backend.runTransaction((tx) async {
+          final current =
+              stateOf(await tx.get(CatalogDocPaths.versions), storeId).version;
+          tx.set(
+            CatalogDocPaths.versions,
+            {
+              if (current != null && current > 0) 'm_$storeId': -current,
+              if (tooBig) 'big_$storeId': true,
+              'updatedAt': const CatalogNow(),
+            },
+            merge: true,
+          );
+        });
         return true;
       } catch (e) {
         debugPrint('Could not disable menu for $storeId (try ${attempt + 1}): $e');
@@ -291,6 +299,9 @@ class CatalogPending {
 
   /// '*' = إعادة بناء كاملة.
   static const all = '*';
+
+  /// '#i' = خانة المحل في الفهرس محتاجة تتحدث.
+  static const index = '#i';
 
   static Map<String, Set<String>> decode(List<String>? raw) {
     final out = <String, Set<String>>{};
@@ -321,6 +332,7 @@ class CatalogPending {
     final out = {for (final e in pending.entries) e.key: {...e.value}};
     final ids = productIds?.where((id) => id.isNotEmpty).toSet();
     final bucket = out[storeId] ??= <String>{};
+    final hadIndex = bucket.remove(index);
     if (ids == null ||
         bucket.contains(all) ||
         bucket.length + ids.length > MenuSync.targetedLimit) {
@@ -330,11 +342,23 @@ class CatalogPending {
     } else {
       bucket.addAll(ids);
     }
+    if (hadIndex) bucket.add(index);
     return out;
   }
 
   /// null = إعادة بناء كاملة.
-  static Iterable<String>? idsFor(Set<String> ids) => ids.contains(all) ? null : ids;
+  static Iterable<String>? idsFor(Set<String> ids) =>
+      ids.contains(all) ? null : ids.difference({index});
+
+  static Future<void> markIndex(String storeId) async {
+    if (storeId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = decode(prefs.getStringList(_key));
+      (pending[storeId] ??= <String>{}).add(index);
+      await prefs.setStringList(_key, encode(pending));
+    } catch (_) {}
+  }
 
   static Future<void> mark(String storeId, [Iterable<String>? productIds]) async {
     if (storeId.isEmpty) return;

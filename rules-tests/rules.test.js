@@ -1915,7 +1915,8 @@ test('catalog store_index: صاحب المحل يحدّث خانة محله بن
   await assertFails(setDoc(ref, { s_shop1: { ...entry, category: 'مطاعم' } }, { merge: true }));
   await assertFails(setDoc(ref, { s_shop1: { ...entry, active: false } }, { merge: true }));
   await assertFails(setDoc(ref, { s_shop2: { ...entry, name: 'S2' } }, { merge: true }));
-  await assertSucceeds(setDoc(ref, { s_shop1: deleteField() }, { merge: true }));
+  // محل نشط: صاحبه ما يقدرش يخفيه من الفهرس (الشيل مسموح بس لمحل مقفول/محذوف).
+  await assertFails(setDoc(ref, { s_shop1: deleteField() }, { merge: true }));
   await assertFails(setDoc(doc(as('cust1'), 'app_info/store_index'), { s_shop1: entry }, { merge: true }));
   await assertSucceeds(setDoc(doc(as('admin1'), 'app_info/store_index'), { s_shop2: { name: 'S2', active: true } }, { merge: true }));
   await assertSucceeds(getDoc(doc(as('cust1'), 'app_info/store_index')));
@@ -1984,15 +1985,27 @@ test('catalog store_index: صاحب المحل ما يقدرش يزوّر الت
   await assertFails(setDoc(ref, { s_shop1: { ...entry, order: deleteField() } }, { merge: true }));
 });
 
-test('catalog store_index: قوائم العروض محدودة العدد والشكل والحجم', async () => {
+test('catalog store_index: العروض نص مضغوط واحد "hl" بطول محدود', async () => {
   const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
   const ref = doc(as('owner1'), 'app_info/store_index');
-  const item = { name: 'عرض', price: 10, oldPrice: 12, image: 'https://img' };
-  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, offerItems: Array(6).fill(item), bestItems: [item] } }, { merge: true }));
-  await assertFails(setDoc(ref, { s_shop1: { ...entry, offerItems: Array(7).fill(item) } }, { merge: true }));
-  await assertFails(setDoc(ref, { s_shop1: { ...entry, offerItems: [{ ...item, junk: 1 }] } }, { merge: true }));
-  await assertFails(setDoc(ref, { s_shop1: { ...entry, bestItems: [{ ...item, name: 'x'.repeat(121) }] } }, { merge: true }));
-  await assertFails(setDoc(ref, { s_shop1: { ...entry, bestItems: [{ ...item, image: 'x'.repeat(501) }] } }, { merge: true }));
+  const hl = JSON.stringify({ o: Array(4).fill({ n: 'عرض', p: 10, op: 12, i: 'https://img' }), b: [] });
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl } }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl: 'x'.repeat(1400) } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: 'x'.repeat(1401) } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: ['x'] } }, { merge: true }));
+  // الشكل القديم (قوائم) مبقاش مقبول في الفهرس.
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: deleteField(), offerItems: [] } }, { merge: true }));
+});
+
+test('catalog store_index: فوق حد الـ 250، تعديل خانة موجودة مسموح طالما العدد ما زادش', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const over = { updatedAt: new Date(), s_shop1: entry };
+  for (let i = 0; i < 260; i++) over[`s_x${i}`] = { name: `X${i}`, active: true };
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/store_index'), over);
+  });
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl: '{}' }, updatedAt: serverTimestamp() }, { merge: true }));
 });
 
 test('catalog versions: الأرقام ما تتكررش بعد التعطيل، وbig_ لمحله بس، وindexReady للمدير بس', async () => {

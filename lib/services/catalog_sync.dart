@@ -147,7 +147,7 @@ class CatalogReader {
       for (final e in data.entries) {
         final value = e.value;
         if (!e.key.startsWith('s_') || value is! Map) continue;
-        final store = Map<String, dynamic>.from(value);
+        final store = CatalogSync.decodeIndexEntry(Map<String, dynamic>.from(value));
         if (store['active'] != true) continue;
         out.add(CatalogDoc(e.key.substring(2), store));
       }
@@ -223,24 +223,25 @@ class CatalogSync {
 
   static MenuSync menuSync = MenuSync(FirestoreCatalogBackend());
 
-  /// أقصى عدد عناصر في الفهرس لكل قائمة عروض (لازم يطابق indexItemsOk في firestore.rules).
-  static const int indexHighlightsCap = 6;
+  /// عروض الفهرس لكل محل (الرئيسية بتعرض صف واحد من كل المحلات، فكام عنصر من كل محل كفاية).
+  /// القائمة الكاملة (12) فاضلة على مستند المحل.
+  static const int indexOffersCap = 4;
+  static const int indexBestCap = 3;
 
-  /// حد حجم خانة المحل في الفهرس، وأقصى عدد محلات (لازم يطابق storeIndexWriteOk في القواعد).
-  /// 250 × 3.5KB ≈ 875KB تحت حد المستند (1MiB) بهامش.
+  /// حدود الفهرس (لازم تطابق storeIndexWriteOk في القواعد):
+  ///  • العروض في الخانة نص واحد مضغوط "hl" طوله ≤ [maxHighlightsChars] (القواعد بتتحقق منه
+  ///    بتعبيرين بس، بدل فحص كل عنصر اللي كان بيعدّي حد الـ 1000 تعبير لكل طلب).
+  ///  • خانة المحل ≤ [maxIndexEntryBytes] في التطبيق، و250 محل بالكتير.
+  static const int maxHighlightsChars = 1400;
   static const int maxIndexEntryBytes = 3500;
   static const int maxIndexStores = 250;
   static const int maxIndexBytes = 900 * 1024;
 
-  /// الحقول اللي الشاشات بتستخدمها من مستند المحل. لازم تطابق storeIndexKeys في firestore.rules.
+  /// الحقول اللي الشاشات بتستخدمها من مستند المحل. لازم تطابق القواعد (indexEntryMatchesStore).
   static const List<String> indexKeys = [
     'name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
     'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
-    'products', 'minOrder', 'minimumOrder', 'offerItems', 'bestItems',
-  ];
-
-  static const _itemKeys = [
-    'name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image',
+    'products', 'minOrder', 'minimumOrder', 'hl',
   ];
 
   @visibleForTesting
@@ -256,57 +257,107 @@ class CatalogSync {
     return StoreHighlights.compute(sorted);
   }
 
-  static List<Map<String, dynamic>> _indexItems(Object? raw) {
-    if (raw is! List) return const [];
+  static Map<String, dynamic>? _packItem(Object? value) {
+    if (value is! Map) return null;
+    final end = value['offerEndsAt'];
+    final text = (value['offerText'] ?? '').toString();
+    return {
+      'n': (value['name'] ?? '').toString(),
+      'p': value['price'] is num ? value['price'] : 0,
+      if (value['oldPrice'] is num) 'op': value['oldPrice'],
+      if (text.isNotEmpty) 't': text,
+      if (end is Timestamp) 'e': end.millisecondsSinceEpoch,
+      'i': (value['image'] ?? '').toString(),
+    };
+  }
+
+  static Map<String, dynamic> _unpackItem(Map m) => {
+        'name': (m['n'] ?? '').toString(),
+        'price': m['p'] is num ? m['p'] : 0,
+        if (m['op'] is num) 'oldPrice': m['op'],
+        if ((m['t'] ?? '').toString().isNotEmpty) 'offerText': m['t'].toString(),
+        if (m['e'] is int) 'offerEndsAt': Timestamp.fromMillisecondsSinceEpoch(m['e'] as int),
+        'image': (m['i'] ?? '').toString(),
+      };
+
+  static List<Map<String, dynamic>> _packList(Object? raw, int cap) {
+    if (raw is! List) return [];
     final out = <Map<String, dynamic>>[];
-    for (final value in raw) {
-      if (value is! Map) continue;
-      final item = <String, dynamic>{};
-      for (final k in _itemKeys) {
-        if (value.containsKey(k)) item[k] = value[k];
-      }
-      out.add(item);
-      if (out.length >= indexHighlightsCap) break;
+    for (final v in raw) {
+      final item = _packItem(v);
+      if (item != null) out.add(item);
+      if (out.length >= cap) break;
     }
     return out;
   }
 
-  /// خانة المحل في الفهرس: الحقول المعروفة بس (القواعد بتطابقها مع مستند المحل)،
-  /// والصورة في imageUrl بس، وقوائم عروض مقصوصة لحد ما الخانة تبقى تحت [maxIndexEntryBytes]
-  /// (القواعد بتقبل أي عدد من 0 لـ 6، فالقص ما بيكسرش المطابقة).
+  /// العروض والأكثر مبيعًا من النص المضغوط "hl" بنفس شكل مستند المحل (offerItems/bestItems)،
+  /// عشان الشاشات تقرا من الفهرس أو من مستند المحل بنفس الكود.
+  static Map<String, dynamic> decodeIndexEntry(Map<String, dynamic> entry) {
+    final out = Map<String, dynamic>.from(entry)..remove('hl');
+    final raw = entry['hl'];
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final hl = jsonDecode(raw);
+        if (hl is Map) {
+          out['offerItems'] = [
+            for (final m in (hl['o'] as List? ?? const [])) if (m is Map) _unpackItem(m),
+          ];
+          out['bestItems'] = [
+            for (final m in (hl['b'] as List? ?? const [])) if (m is Map) _unpackItem(m),
+          ];
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  /// خانة المحل في الفهرس: الحقول المعروفة بس (القواعد بتطابقها مع مستند المحل)، والصورة
+  /// في imageUrl بس، والعروض في "hl" مقصوصة لحد ما تدخل تحت الحدود (الأكثر مبيعًا الأول).
   @visibleForTesting
   static Map<String, dynamic> indexEntry(Map<String, dynamic> store) {
     final entry = <String, dynamic>{};
     for (final k in indexKeys) {
-      if (k == 'imageUrl' || k == 'offerItems' || k == 'bestItems') continue;
+      if (k == 'imageUrl' || k == 'hl') continue;
       if (store.containsKey(k)) entry[k] = store[k];
     }
     final image = store.containsKey('imageUrl') ? store['imageUrl'] : store['image'];
     if (image != null) entry['imageUrl'] = image;
-    final offers = store.containsKey('offerItems')
-        ? [..._indexItems(store['offerItems'])]
-        : null;
-    final best = store.containsKey('bestItems')
-        ? [..._indexItems(store['bestItems'])]
-        : null;
-    void put() {
-      if (offers != null) entry['offerItems'] = offers;
-      if (best != null) entry['bestItems'] = best;
-    }
-
-    put();
-    // الأكثر مبيعًا الأول، بعدين العروض، من الآخر.
-    while (estimateBytes(entry) > maxIndexEntryBytes) {
-      if (best != null && best.isNotEmpty) {
+    final hasHighlights =
+        store.containsKey('offerItems') || store.containsKey('bestItems');
+    if (!hasHighlights) return entry;
+    final offers = _packList(store['offerItems'], indexOffersCap);
+    final best = _packList(store['bestItems'], indexBestCap);
+    String pack() => jsonEncode({'o': offers, 'b': best});
+    var hl = pack();
+    entry['hl'] = hl;
+    while (hl.length > maxHighlightsChars || estimateBytes(entry) > maxIndexEntryBytes) {
+      if (best.isNotEmpty) {
         best.removeLast();
-      } else if (offers != null && offers.isNotEmpty) {
+      } else if (offers.isNotEmpty) {
         offers.removeLast();
       } else {
         break;
       }
-      put();
+      hl = pack();
+      entry['hl'] = hl;
     }
     return entry;
+  }
+
+  /// نص ثابت للمقارنة: مفاتيح الخرائط مرتبة (Firestore ما بيحافظش على ترتيب المفاتيح
+  /// لما يرجّع البيانات)، والأوقات بالمللي ثانية، والأرقام بنفس الصيغة (5 و5.0 واحد).
+  @visibleForTesting
+  static String canonical(Object? v) {
+    if (v is Map) {
+      final keys = v.keys.map((k) => k.toString()).toList()..sort();
+      return '{${keys.map((k) => '$k:${canonical(v[k])}').join(',')}}';
+    }
+    if (v is List) return '[${v.map(canonical).join(',')}]';
+    if (v is Timestamp) return 't${v.millisecondsSinceEpoch}';
+    if (v is num) return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+    if (v == null) return 'null';
+    return jsonEncode(v.toString());
   }
 
   /// خانة لسه أكبر من الحد بعد القص (غالبًا قائمة أصناف قديمة "products" على مستند المحل):
@@ -341,13 +392,19 @@ class CatalogSync {
   static Future<void> markPending(String storeId, [Iterable<String>? productIds]) =>
       CatalogPending.mark(storeId, productIds);
 
+  /// خانة المحل في الفهرس ما اتحدثتش (هتتكمل مع resumePending).
+  static Future<void> markIndexPending(String storeId) => CatalogPending.markIndex(storeId);
+
   /// بعد أي إضافة/تعديل/حذف أصناف. الترتيب:
   ///  1) القائمة المجمّعة (معاملة؛ فشلها = تعطيل على الخادم)،
   ///  2) ملخص العروض على مستند المحل (من القائمة نفسها من غير قراءات، أو من الخادم لو القائمة مش شغالة)،
   ///  3) خانة المحل في الفهرس لو الملخص اتغير،
   ///  4) رقم إصدار الكتالوج القديم (للمسار القديم) في الآخر،
   /// عشان العميل اللي يشوف أي رقم جديد ياخد بيانات جديدة.
-  /// [productIds] = null → إعادة بناء كاملة (CSV/ترحيل). بيرجع true لو ملخص العروض اتحدث.
+  /// [productIds] = null → إعادة بناء كاملة (CSV/ترحيل).
+  /// بيرجع true لو كله اتحدث. false = حاجة ما اكتملتش (القائمة اتعطلت أو فشلت، أو الملخص،
+  /// أو الفهرس): العلامة المعلقة بتفضل والمزامنة بتتكمل أول ما صفحة الأصناف تتفتح،
+  /// والمحرر لازم يشوف تنبيه (StoreHighlights.withNote).
   static Future<bool> afterProductsChanged(
     String storeId, {
     Iterable<String>? productIds,
@@ -358,25 +415,35 @@ class CatalogSync {
 
     var highlightsOk = false;
     var highlightsChanged = false;
+    var storeActive = true;
     final items = menu.items;
     if (items != null) {
       final r = await _writeHighlights(storeId, items.values);
       highlightsOk = r.ok;
       highlightsChanged = r.changed;
+      storeActive = r.active;
     } else {
       highlightsOk = await StoreHighlights.refresh(storeId);
       highlightsChanged = highlightsOk;
     }
-    if (highlightsChanged) await storeChanged(storeId);
+    var indexOk = true;
+    // محل مقفول أو مسودة مش في الفهرس أصلًا: ما نلمسش الفهرس (وإلا كل العملاء يعيدوا تحميله).
+    if (highlightsChanged && storeActive) indexOk = await storeChanged(storeId);
     await CatalogService.bump();
 
-    if (menu.settled) {
+    final menuOk = menu.status == MenuSyncStatus.updated ||
+        menu.status == MenuSyncStatus.big;
+    final allOk = menuOk && highlightsOk && indexOk;
+    if (allOk) {
       await CatalogPending.clear(
         storeId,
         ids == null ? {CatalogPending.all} : ids,
       );
+    } else if (!indexOk) {
+      // الفهرس بس اللي فشل: نعلّم إن خانة المحل محتاجة تتحدث.
+      await CatalogPending.markIndex(storeId);
     }
-    return highlightsOk;
+    return allOk;
   }
 
   /// كمّل أي مزامنة اتقطعت (التطبيق اتقفل أو النت قطع) — من صفحة صاحب المحل/المدير.
@@ -384,7 +451,13 @@ class CatalogSync {
     final pending = await CatalogPending.load();
     for (final e in pending.entries) {
       if (onlyStoreId != null && e.key != onlyStoreId) continue;
-      await afterProductsChanged(e.key, productIds: CatalogPending.idsFor(e.value));
+      final products = e.value.difference({CatalogPending.index});
+      if (products.isNotEmpty) {
+        await afterProductsChanged(e.key, productIds: CatalogPending.idsFor(products));
+      }
+      if (e.value.contains(CatalogPending.index) && await storeChanged(e.key)) {
+        await CatalogPending.clear(e.key, {CatalogPending.index});
+      }
     }
   }
 
@@ -393,6 +466,7 @@ class CatalogSync {
     String storeId, {
     bool updateHighlights = true,
     bool syncStore = true,
+    bool adding = false,
   }) async {
     if (storeId.isEmpty) return false;
     final menu = await menuSync.sync(storeId);
@@ -401,12 +475,13 @@ class CatalogSync {
     if (items != null && updateHighlights) {
       highlightsChanged = (await _writeHighlights(storeId, items.values)).changed;
     }
-    if (syncStore || highlightsChanged) await storeChanged(storeId);
+    if (syncStore || highlightsChanged) await storeChanged(storeId, adding: adding);
     return menu.status == MenuSyncStatus.updated;
   }
 
   /// ok: الملخص على مستند المحل صحيح (اتكتب أو كان مطابق). changed: اتكتب فعلًا.
-  static Future<({bool ok, bool changed})> _writeHighlights(
+  /// active: المحل نشط (يعني له خانة في الفهرس).
+  static Future<({bool ok, bool changed, bool active})> _writeHighlights(
     String storeId,
     Iterable<Map<String, dynamic>> products,
   ) async {
@@ -416,22 +491,23 @@ class CatalogSync {
         final snap = await CatalogPaths.store(storeId)
             .get(const GetOptions(source: Source.server));
         final data = snap.data();
-        if (data == null) return (ok: false, changed: false);
-        if (data['offerItems'].toString() == h.offers.toString() &&
-            data['bestItems'].toString() == h.best.toString()) {
-          return (ok: true, changed: false);
+        if (data == null) return (ok: false, changed: false, active: false);
+        final active = data['active'] == true;
+        if (canonical(data['offerItems']) == canonical(h.offers) &&
+            canonical(data['bestItems']) == canonical(h.best)) {
+          return (ok: true, changed: false, active: active);
         }
         await CatalogPaths.store(storeId).update({
           'offerItems': h.offers,
           'bestItems': h.best,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        return (ok: true, changed: true);
+        return (ok: true, changed: true, active: active);
       } catch (e) {
         debugPrint('Highlights sync failed for $storeId: $e');
       }
     }
-    return (ok: false, changed: false);
+    return (ok: false, changed: false, active: true);
   }
 
   // ───────────────────────── الفهرس ─────────────────────────
@@ -451,8 +527,8 @@ class CatalogSync {
       final prefs = await SharedPreferences.getInstance();
       final key = 'catalog_index_rating_$storeId';
       if (prefs.getString(key) == signature) return;
-      await storeChanged(storeId);
-      await prefs.setString(key, signature);
+      // بنحفظ التوقيع بس لو التحديث نجح، عشان يتعاد المرة الجاية لو فشل.
+      if (await storeChanged(storeId)) await prefs.setString(key, signature);
     } catch (e) {
       debugPrint('Rating index refresh skipped for $storeId: $e');
     } finally {
@@ -463,13 +539,16 @@ class CatalogSync {
   /// تحديث خانة المحل في الفهرس من مستند المحل الحالي (أو شيلها لو المحل مش نشط/اتحذف).
   /// محاولة تانية عند الفشل؛ ولو فشلت كمان والمستخدم مدير، بنوقف الفهرس (المسار القديم)
   /// بدل ما العملاء يفضلوا على فهرس قديم. (صاحب المحل ما يقدرش يوقفه للكل.)
-  static Future<void> storeChanged(String storeId) async {
-    if (storeId.isEmpty) return;
+  /// [adding]: المحل بيتفعّل/بيتضاف (المدير بيعدّي القواعد، فبنتأكد إن الفهرس فيه مكان).
+  /// بيرجع true لو الخانة اتكتبت.
+  static Future<bool> storeChanged(String storeId, {bool adding = false}) async {
+    if (storeId.isEmpty) return false;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        await _writeStoreEntry(storeId);
+        // الفهرس مليان: ما بنكتبش وما بنوقفش الفهرس للكل (المتصل بيبلّغ المدير).
+        if (!await _writeStoreEntry(storeId, adding: adding)) return false;
         CatalogReader.invalidate();
-        return;
+        return true;
       } catch (e) {
         debugPrint('Store index sync failed for $storeId (try ${attempt + 1}): $e');
       }
@@ -483,13 +562,40 @@ class CatalogSync {
       // غير المدير: مسموح بس بخانة محله.
     }
     CatalogReader.invalidate();
+    return false;
+  }
+
+  /// المدير قبل تفعيل محل: هل الفهرس فيه مكان؟ (قراءة واحدة لمستند الفهرس.)
+  static Future<bool> indexHasRoom(String storeId) async {
+    try {
+      final snap = await CatalogPaths.storeIndex
+          .get(const GetOptions(source: Source.server));
+      return indexRoomFor(snap.data(), storeId);
+    } catch (_) {
+      return true; // الفهرس مش موجود/مش متاح: التفعيل ما يتمنعش (العملاء على المسار القديم).
+    }
+  }
+
+  @visibleForTesting
+  static bool indexRoomFor(Map<String, dynamic>? index, String storeId) {
+    if (index == null) return true;
+    if (index.containsKey('s_$storeId')) return true;
+    final count = index.keys.where((k) => k.startsWith('s_')).length;
+    return count < maxIndexStores;
   }
 
   /// معاملة بتقرا مستند المحل: لو اتعدّل من جهاز تاني قبل الحفظ، بتتعاد بالبيانات الجديدة.
-  static Future<void> _writeStoreEntry(String storeId) async {
-    final existed = await _db.runTransaction<bool>((tx) async {
+  /// بيرجع false لو الفهرس مليان (من غير كتابة). أي فشل تاني بيرمي استثناء.
+  static Future<bool> _writeStoreEntry(String storeId, {bool adding = false}) async {
+    final result = await _db.runTransaction<({bool existed, bool full})>((tx) async {
       final snap = await tx.get(CatalogPaths.store(storeId));
       final data = snap.data();
+      if (adding && data?['active'] == true) {
+        final index = await tx.get(CatalogPaths.storeIndex);
+        if (!indexRoomFor(index.data(), storeId)) {
+          return (existed: snap.exists, full: true);
+        }
+      }
       final key = FieldPath(['s_$storeId']);
       Object entry;
       if (snap.exists && data != null && data['active'] == true) {
@@ -511,14 +617,16 @@ class CatalogSync {
         {'stores': FieldValue.increment(1), 'updatedAt': FieldValue.serverTimestamp()},
         SetOptions(merge: true),
       );
-      return snap.exists;
+      return (existed: snap.exists, full: false);
     });
-    if (!existed) {
+    if (result.full) return false;
+    if (!result.existed) {
       // المحل اتحذف: نشيل قائمته اليتيمة (المدير بس يقدر؛ غيره بيتجاهل).
       try {
         await CatalogPaths.menu(storeId).delete();
       } catch (_) {}
     }
+    return true;
   }
 
   /// المدير: بناء الفهرس وكل القوائم من الصفر (أول تشغيل أو إصلاح).
@@ -588,3 +696,4 @@ class CatalogSync {
         ' — القوائم: $menusOk تمام${menusFailed > 0 ? '، $menusFailed على الطريقة القديمة (كبيرة أو فشلت)' : ''}';
   }
 }
+

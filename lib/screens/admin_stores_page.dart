@@ -171,6 +171,10 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
           _say('لازم صورة واضحة و5 أصناف على الأقل قبل تفعيل المحل.');
           return;
         }
+        if (!await CatalogSync.indexHasRoom(id)) {
+          _say('فهرس المحلات وصل الحد (${CatalogSync.maxIndexStores} محل). قفّل محل قبل تفعيل محل جديد.');
+          return;
+        }
       }
       await storeRef.update({
         'active': active,
@@ -180,7 +184,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
       // أول تفعيل للمحل: نبني قائمته المجمّعة؛ بعدها خانة المحل في الفهرس، وآخر حاجة رقم الإصدار.
       if (active) {
-        await CatalogSync.rebuildStoreMenu(id);
+        await CatalogSync.rebuildStoreMenu(id, adding: true);
       } else {
         await CatalogSync.storeChanged(id);
       }
@@ -519,7 +523,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       }
 
       final savedId = _id;
-      if (savedId != null) await CatalogSync.storeChanged(savedId);
+      if (savedId != null) await CatalogSync.storeChanged(savedId, adding: true);
       await CatalogService.bump();
 
       if (!mounted) return;

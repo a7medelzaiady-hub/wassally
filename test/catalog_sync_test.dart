@@ -35,7 +35,8 @@ void main() {
   });
 
   group('CatalogSync.indexEntry', () {
-    test('keeps only display fields (matching the rules) and trims highlights', () {
+    test('keeps only display fields (matching the rules) and packs a few highlights into "hl"', () {
+      final ends = Timestamp.fromMillisecondsSinceEpoch(1763550000123);
       final store = <String, dynamic>{
         'name': 'S',
         'category': 'مطاعم',
@@ -48,7 +49,15 @@ void main() {
         'ratingCount': 2,
         'offerItems': List.generate(
           10,
-          (i) => {'name': 'o$i', 'price': 5, 'image': 'x', 'junk': true},
+          (i) => {
+            'name': 'o$i',
+            'price': 5,
+            'oldPrice': 7,
+            'offerText': 'خصم',
+            'offerEndsAt': ends,
+            'image': 'x',
+            'junk': true,
+          },
         ),
         'bestItems': [
           {'name': 'b', 'price': 3},
@@ -60,12 +69,22 @@ void main() {
       expect(entry['imageUrl'], 'https://img');
       expect(entry.containsKey('image'), isFalse);
       expect(entry.containsKey('ownerUid'), isFalse);
-      expect(entry.containsKey('approvedBy'), isFalse);
+      expect(entry.containsKey('offerItems'), isFalse);
       expect(entry['ratingSum'], 9);
-      final offers = entry['offerItems'] as List;
-      expect(offers.length, CatalogSync.indexHighlightsCap);
-      expect((offers.first as Map).containsKey('junk'), isFalse);
-      expect((entry['bestItems'] as List).length, 1);
+      expect((entry['hl'] as String).length, lessThanOrEqualTo(CatalogSync.maxHighlightsChars));
+
+      // القراءة عند العميل بترجّع نفس شكل مستند المحل.
+      final decoded = CatalogSync.decodeIndexEntry(entry);
+      expect(decoded.containsKey('hl'), isFalse);
+      final offers = decoded['offerItems'] as List;
+      expect(offers.length, CatalogSync.indexOffersCap);
+      final first = offers.first as Map;
+      expect(first['name'], 'o0');
+      expect(first['oldPrice'], 7);
+      expect(first['offerText'], 'خصم');
+      expect(first['offerEndsAt'], ends);
+      expect(first.containsKey('junk'), isFalse);
+      expect((decoded['bestItems'] as List).single['name'], 'b');
       // الأصل ما يتغيرش.
       expect((store['offerItems'] as List).length, 10);
     });
@@ -78,9 +97,39 @@ void main() {
         'image': 'https://old',
       });
       expect(entry['imageUrl'], 'https://new');
-      expect(entry.containsKey('offerItems'), isFalse);
+      expect(entry.containsKey('hl'), isFalse);
       expect(entry.containsKey('rating'), isFalse);
+      expect(CatalogSync.decodeIndexEntry(entry).containsKey('offerItems'), isFalse);
     });
+  });
+
+  group('CatalogSync.canonical (هل الملخص اتغير فعلًا؟)', () {
+    test('ترتيب المفاتيح وصيغة الأرقام ما بيفرقوش', () {
+      final a = [
+        {'name': 'x', 'price': 5, 'image': 'i'},
+      ];
+      final b = [
+        {'image': 'i', 'price': 5.0, 'name': 'x'},
+      ];
+      expect(CatalogSync.canonical(a), CatalogSync.canonical(b));
+      expect(
+        CatalogSync.canonical([{'name': 'x', 'price': 6}]),
+        isNot(CatalogSync.canonical(a)),
+      );
+      expect(CatalogSync.canonical(null), isNot(CatalogSync.canonical(const [])));
+    });
+  });
+
+  test('indexRoomFor: محل موجود دايمًا ليه مكان، والجديد بس لو العدد أقل من الحد', () {
+    final full = {
+      for (var i = 0; i < CatalogSync.maxIndexStores; i++) 's_x$i': <String, dynamic>{},
+      'updatedAt': 1,
+    };
+    expect(CatalogSync.indexRoomFor(null, 'new'), isTrue);
+    expect(CatalogSync.indexRoomFor(full, 'x3'), isTrue);
+    expect(CatalogSync.indexRoomFor(full, 'new'), isFalse);
+    full.remove('s_x0');
+    expect(CatalogSync.indexRoomFor(full, 'new'), isTrue);
   });
 
   test('nextVersion never repeats a number after a disable (must match the rules)', () {
@@ -213,7 +262,7 @@ void main() {
       expect(CatalogSync.indexProblem(entries), contains('أكبر من حد الفهرس'));
     });
 
-    test('خانة كبيرة: العروض بتتقص (الأكثر مبيعًا الأول) لحد ما تدخل تحت الحد', () {
+    test('خانة كبيرة: العروض بتتقص (الأكثر مبيعًا الأول) لحد ما تدخل تحت الحدود', () {
       final longItem = {
         'name': 'ع' * 120,
         'price': 10,
@@ -225,11 +274,12 @@ void main() {
         ..['bestItems'] = List.filled(6, longItem);
       final entry = CatalogSync.indexEntry(big);
       expect(CatalogSync.estimateBytes(entry), lessThanOrEqualTo(CatalogSync.maxIndexEntryBytes));
+      expect((entry['hl'] as String).length, lessThanOrEqualTo(CatalogSync.maxHighlightsChars));
       expect(CatalogSync.indexEntryTooBig(entry), isFalse);
-      // الأكثر مبيعًا اتشالوا الأول، والعروض فضلت أكتر.
-      expect((entry['bestItems'] as List).length, lessThan(6));
-      expect((entry['offerItems'] as List).length,
-          greaterThanOrEqualTo((entry['bestItems'] as List).length));
+      final decoded = CatalogSync.decodeIndexEntry(entry);
+      // الأكثر مبيعًا اتشالوا الأول، والعروض فضلت.
+      expect((decoded['bestItems'] as List).length, 0);
+      expect((decoded['offerItems'] as List), isNotEmpty);
       // الأصل ما اتغيرش.
       expect((big['bestItems'] as List).length, 6);
     });

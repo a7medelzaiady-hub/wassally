@@ -79,7 +79,10 @@ service cloud.firestore {
       return !signedIn() ? '' :
         (exists(ownerPath) && get(ownerPath).data.get('active', true) == true)
           ? get(ownerPath).data.get('storeId', '')
-          : ((exists(requestPath) && get(requestPath).data.get('status', '') in ['pending', 'rejected'])
+          : ((exists(requestPath) &&
+              get(requestPath).data.get('status', '') in ['pending', 'rejected'] &&
+              get(/databases/$(database)/documents/stores/$(get(requestPath).data.get('storeId', '')))
+                .data.get('ownerUid', '') == request.auth.uid)
               ? get(requestPath).data.get('storeId', '')
               : '');
     }
@@ -103,40 +106,18 @@ service cloud.firestore {
         (!('stores' in k) || after.get('stores', 0) == before.get('stores', 0) + 1);
     }
 
-    // عنصر عرض في خانة المحل بالفهرس: حقول العرض بس وبأحجام محدودة.
-    function indexItemOk(m) {
-      // keys() على غير خريطة = خطأ تقييم = رفض. القيم الافتراضية بتغطي الحقول الاختيارية.
-      return m.keys().hasOnly(['name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image']) &&
-        m.get('name', '') is string && m.get('name', '').size() <= 120 &&
-        m.get('offerText', '') is string && m.get('offerText', '').size() <= 120 &&
-        m.get('image', '') is string && m.get('image', '').size() <= 500 &&
-        m.get('price', 0) is number &&
-        m.get('oldPrice', 0) is number &&
-        m.get('offerEndsAt', request.time) is timestamp;
-    }
-
-    // قائمة عروض في الفهرس: 6 عناصر بالكتير، كل واحد متحقق منه (لازم يطابق CatalogSync.indexHighlightsCap).
-    function indexItemsOk(l) {
-      return l is list && l.size() <= 6 &&
-        (l.size() < 1 || indexItemOk(l[0])) &&
-        (l.size() < 2 || indexItemOk(l[1])) &&
-        (l.size() < 3 || indexItemOk(l[2])) &&
-        (l.size() < 4 || indexItemOk(l[3])) &&
-        (l.size() < 5 || indexItemOk(l[4])) &&
-        (l.size() < 6 || indexItemOk(l[5]));
-    }
-
     // خانة المحل = نسخة من حقول العرض في مستند المحل بالظبط (لازم تطابق CatalogSync.indexKeys)،
-    // فصاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو الاسم. العروض بس متحقق من شكلها وحجمها.
-    // بالمقارنة المجمّعة (diff) بدل حقل حقل عشان نفضل بعيد عن حد الـ 1000 تعبير لكل طلب.
+    // فصاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو الاسم.
+    // العروض في نص واحد مضغوط "hl" بطول محدود (CatalogSync.maxHighlightsChars): فحص بتعبيرين
+    // بدل فحص كل عنصر، عشان نفضل بعيد عن حد الـ 1000 تعبير لكل طلب، وكمان حجم الخانة محدود.
     //   e.diff(st): added = في الخانة ومش في المحل، removed = في المحل ومش في الخانة، changed = مختلف.
     function indexEntryMatchesStore(e, st) {
       let d = e.diff(st);
-      let free = ['imageUrl', 'offerItems', 'bestItems'];
+      let free = ['imageUrl', 'hl'];
       return e is map &&
         e.keys().hasOnly(['name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
                           'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
-                          'products', 'minOrder', 'minimumOrder', 'offerItems', 'bestItems']) &&
+                          'products', 'minOrder', 'minimumOrder', 'hl']) &&
         e.get('active', false) == true && st.get('active', false) == true &&
         d.addedKeys().hasOnly(free) &&
         d.changedKeys().hasOnly(free) &&
@@ -144,8 +125,7 @@ service cloud.firestore {
                                  'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
                                  'products', 'minOrder', 'minimumOrder']) &&
         e.get('imageUrl', null) == st.get('imageUrl', st.get('image', null)) &&
-        indexItemsOk(e.get('offerItems', [])) &&
-        indexItemsOk(e.get('bestItems', []));
+        e.get('hl', '') is string && e.get('hl', '').size() <= 1400;
     }
 
     // app_info/store_index = { s_<storeId>: {حقول العرض}, updatedAt }.
@@ -158,11 +138,13 @@ service cloud.firestore {
       let k = after.diff(before).affectedKeys();
       let storePath = /databases/$(database)/documents/stores/$(sid);
       return sid is string && sid.size() > 0 &&
-        after.size() <= 251 &&
+        // فوق الحد: التعديل مسموح طالما العدد ما زادش (إضافة محل جديد بس اللي بتترفض).
+        (after.size() <= 251 || after.size() <= before.size()) &&
         k.hasOnly([key, 'updatedAt']) &&
-        (!(key in after) || (
-          exists(storePath) &&
-          indexEntryMatchesStore(after[key], get(storePath).data)));
+        ((key in after)
+          ? (exists(storePath) && indexEntryMatchesStore(after[key], get(storePath).data))
+          // شيل الخانة مسموح بس لمحل اتقفل أو اتحذف (ما يقدرش يخفي محل نشط).
+          : (!exists(storePath) || get(storePath).data.get('active', false) != true));
     }
 
     function changedKeys() {
