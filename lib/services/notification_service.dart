@@ -10,8 +10,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
 import '../screens/support_chat_page.dart';
+import '../models/app_role.dart';
 import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
+import 'role_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -64,6 +66,11 @@ class NotificationService {
       );
       if (!_isGranted(settings.authorizationStatus)) return false;
       await _registerGrantedDevice();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final role = uid == null ? null : RoleService.cachedFor(uid);
+      if (role != null) {
+        await syncCourierTopic(isCourier: role.held.contains(AppRole.courier));
+      }
       return true;
     } catch (e) {
       debugPrint('تعذر طلب إذن الإشعارات: $e');
