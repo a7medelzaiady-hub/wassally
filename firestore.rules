@@ -236,6 +236,8 @@ service cloud.firestore {
            d.get('paymentRef', '').matches('^[A-Z0-9]{4,40}$') &&
            d.get('paymentStatus', '') == 'pending' &&
            walletEnabled(d.paymentMethod) &&
+           // الحجز لازم يتعمل في نفس الـ batch (مش حجز قديم لطلب اتحذف واتعمل تاني بنفس المعرّف).
+           !exists(/databases/$(database)/documents/payment_refs/$(d.paymentMethod + '_' + d.paymentRef)) &&
            existsAfter(/databases/$(database)/documents/payment_refs/$(d.paymentMethod + '_' + d.paymentRef)) &&
            getAfter(/databases/$(database)/documents/payment_refs/$(d.paymentMethod + '_' + d.paymentRef)).data.get('orderId', '') == orderId);
     }
@@ -760,6 +762,8 @@ service cloud.firestore {
         ) : k.hasOnly(['status']) ? (
           st == 'new' &&
           nst == 'cancelled' &&
+          // طلب محفظة متأكد الدفع: الإلغاء عن طريق الدعم (عشان رد المبلغ) مش من العميل.
+          od.get('paymentStatus', '') != 'confirmed' &&
           historyGate(nd, orderId, k)
         ) : k.hasAny(['customerConfirmedAt']) ? (
           st == 'on_the_way' &&
@@ -954,11 +958,14 @@ service cloud.firestore {
         ) : (k.hasOnly(paymentKeys) && 'paymentStatus' in k) ? (
           st == 'new' &&
           isWalletMethod(od.get('paymentMethod', 'cash')) &&
-          od.get('paymentStatus', '') == 'pending' &&
           nd.get('paymentDecidedAt', null) == request.time &&
           nd.get('paymentDecidedBy', '') == request.auth.uid &&
-          ((nd.get('paymentStatus', '') == 'confirmed' && !('paymentRejectReason' in k)) ||
+          // التأكيد من pending، أو تصحيح رفض غلط (rejected → confirmed). الرفض من pending بس.
+          ((nd.get('paymentStatus', '') == 'confirmed' &&
+            od.get('paymentStatus', '') in ['pending', 'rejected'] &&
+            !('paymentRejectReason' in k)) ||
            (nd.get('paymentStatus', '') == 'rejected' &&
+            od.get('paymentStatus', '') == 'pending' &&
             nd.get('paymentRejectReason', '') is string &&
             nd.get('paymentRejectReason', '').size() >= 5 &&
             nd.get('paymentRejectReason', '').size() <= 200))
@@ -1029,7 +1036,9 @@ service cloud.firestore {
       // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
       allow delete: if signedIn() &&
         resource.data.userId == request.auth.uid &&
-        resource.data.status == 'new';
+        resource.data.status == 'new' &&
+        // طلب المحفظة ما يتحذفش (سجل التحويل لازم يفضل)؛ الإلغاء بس.
+        resource.data.get('paymentMethod', 'cash') == 'cash';
 
       function customerContactUpdateAllowed(orderId) {
         let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;

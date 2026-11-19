@@ -94,6 +94,13 @@ class PaymentService {
     }
   }
 
+  /// المدير: قراءة الإعدادات من الخادم. بترمي خطأ لو القراءة فشلت،
+  /// عشان صفحة الإعدادات ما تحفظش قيم فاضية فوق الأرقام الحقيقية.
+  static Future<PaymentSettings> loadForAdmin() async {
+    final snap = await _settingsRef.get(const GetOptions(source: Source.server));
+    return PaymentSettings.fromMap(snap.data());
+  }
+
   /// المدير: حفظ إعدادات المحافظ.
   static Future<void> saveSettings(PaymentSettings s) async {
     await _settingsRef.set({
@@ -106,16 +113,18 @@ class PaymentService {
     _cached = null;
   }
 
-  /// المدير: الطلبات اللي تحويلها مستني تأكيد (استعلام واحد بحد 50).
-  static Stream<List<AppOrder>> watchPending() => _db
+  /// المدير: طلبات جديدة تحويلها [paymentStatus] (pending = مستني تأكيد، rejected = ممكن يتصحح).
+  /// فلتر الحالة new في الاستعلام نفسه، فالطلبات الملغية ما تزاحمش الحد.
+  static Stream<List<AppOrder>> watchByStatus(String paymentStatus, {int limit = 50}) => _db
       .collection('orders')
-      .where('paymentStatus', isEqualTo: 'pending')
-      .limit(50)
+      .where('paymentStatus', isEqualTo: paymentStatus)
+      .where('status', isEqualTo: OrderStatus.newOrder.key)
+      .limit(limit)
       .snapshots()
       .map((snap) {
         final list = [
           for (final d in snap.docs) AppOrder.fromMap(d.id, d.data()),
-        ]..removeWhere((o) => o.status != OrderStatus.newOrder);
+        ];
         list.sort((a, b) {
           final aMs = a.createdAt?.millisecondsSinceEpoch ?? 0;
           final bMs = b.createdAt?.millisecondsSinceEpoch ?? 0;

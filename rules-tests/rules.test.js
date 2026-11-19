@@ -2121,3 +2121,96 @@ test('wallet: لو الإجمالي المعتمد زاد عن المدفوع، 
   });
   await assertSucceeds(b.commit());
 });
+
+test('wallet: طلب المحفظة ما يتحذفش، ولا يتعمل تاني بنفس المعرّف والحجز القديم', async () => {
+  await enableWallets();
+  const db = as('cust1');
+  await assertSucceeds(walletOrderBatch(db, 'w1').commit());
+  await assertFails(deleteDoc(doc(db, 'orders/w1')));
+  // حتى لو الطلب اختفى (بأي طريقة)، الحجز القديم ما ينفعش يتعاد استخدامه لطلب جديد بنفس المعرّف.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await deleteDoc(doc(ctx.firestore(), 'orders/w1'));
+  });
+  await assertFails(setDoc(doc(db, 'orders/w1'), baseOrder('cust1', {
+    paymentMethod: 'vodafone_cash', paymentRef: 'TX123456', paymentStatus: 'pending', subtotal: 80, total: 100,
+  })));
+  // ولا لطلب بمعرّف تاني من غير حجز.
+  await assertFails(setDoc(doc(db, 'orders/w9'), baseOrder('cust1', {
+    paymentMethod: 'vodafone_cash', paymentRef: 'TX123456', paymentStatus: 'pending',
+  })));
+});
+
+test('wallet: العميل يلغي قبل التأكيد بس، والطلب المتأكد إلغاؤه عن طريق الدعم', async () => {
+  await enableWallets();
+  await assertSucceeds(walletOrderBatch(as('cust1'), 'w1').commit());
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+  }));
+  await assertFails(changeStatus(as('cust1'), 'w1', 'new', 'cancelled', 'customer'));
+  await assertSucceeds(changeStatus(as('admin1'), 'w1', 'new', 'cancelled', 'admin'));
+});
+
+test('wallet: الإدارة تصحح رفض غلط (rejected → confirmed)، لكن ما ترفضش طلب متأكد', async () => {
+  await enableWallets();
+  await assertSucceeds(walletOrderBatch(as('cust1'), 'w1').commit());
+  const admin = as('admin1');
+  await assertSucceeds(updateDoc(doc(admin, 'orders/w1'), {
+    paymentStatus: 'rejected', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+    paymentRejectReason: 'المبلغ مش واصل',
+  }));
+  await assertFails(updateDoc(doc(admin, 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+    paymentRejectReason: 'x',
+  }));
+  await assertSucceeds(updateDoc(doc(admin, 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+  }));
+  await assertFails(updateDoc(doc(admin, 'orders/w1'), {
+    paymentStatus: 'rejected', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+    paymentRejectReason: 'رجعنا في كلامنا',
+  }));
+});
+
+test('wallet: قرار الدفع على طلب مش جديد مرفوض، والحجز لعميل تاني مرفوض', async () => {
+  await enableWallets();
+  await assertSucceeds(walletOrderBatch(as('cust1'), 'w1').commit());
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/w1'), { status: 'cancelled' });
+  });
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+  }));
+  const db = as('cust2');
+  const b = writeBatch(db);
+  b.set(doc(db, 'orders/w2'), baseOrder('cust2', {
+    paymentMethod: 'vodafone_cash', paymentRef: 'TX777777', paymentStatus: 'pending',
+  }));
+  b.set(doc(db, 'payment_refs/vodafone_cash_TX777777'), {
+    orderId: 'w2', userId: 'cust1', method: 'vodafone_cash', ref: 'TX777777', createdAt: serverTimestamp(),
+  });
+  await assertFails(b.commit());
+});
+
+test('wallet: طلب محفظة لسه مستني أو اترفض = المندوب يحصّل الإجمالي كامل', async () => {
+  await seedOnWay('store');
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/o1'), {
+      paymentMethod: 'vodafone_cash', paymentRef: 'TX123456', paymentStatus: 'pending',
+    });
+  });
+  await reportDelivery('storecour1');
+  const db = as('cust1');
+  const close = (collectedAmount) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'orders/o1'), {
+      status: 'delivered', customerConfirmedAt: serverTimestamp(), deliveredBy: 'storecour1',
+      deliveredAt: serverTimestamp(), collectedAmount, courierEarning: 20,
+    });
+    b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+      from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  await assertFails(close(0));
+  await assertSucceeds(close(40));
+});

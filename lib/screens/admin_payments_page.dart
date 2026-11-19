@@ -34,11 +34,21 @@ class _AdminPaymentSettingsPageState extends State<AdminPaymentSettingsPage> {
   bool _enabled = false;
   bool _loading = true;
   bool _saving = false;
+  bool _loadFailed = false;
 
   @override
   void initState() {
     super.initState();
-    PaymentService.settings(refresh: true).then((s) {
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
+    try {
+      final s = await PaymentService.loadForAdmin();
       if (!mounted) return;
       setState(() {
         _enabled = s.enabled;
@@ -47,7 +57,15 @@ class _AdminPaymentSettingsPageState extends State<AdminPaymentSettingsPage> {
         _note.text = s.note;
         _loading = false;
       });
-    });
+    } catch (_) {
+      // من غير الإعدادات الحالية ما نسمحش بالحفظ، عشان ما نمسحش الأرقام الحقيقية.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadFailed = true;
+        });
+      }
+    }
   }
 
   @override
@@ -91,6 +109,20 @@ class _AdminPaymentSettingsPageState extends State<AdminPaymentSettingsPage> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
+                : _loadFailed
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('تعذر تحميل الإعدادات الحالية. اتأكد من النت.'),
+                        TextButton.icon(
+                          onPressed: _loadSettings,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('إعادة المحاولة'),
+                        ),
+                      ],
+                    ),
+                  )
                 : Form(
                     key: _form,
                     child: ListView(
@@ -183,7 +215,9 @@ class AdminPendingPaymentsPage extends StatefulWidget {
 }
 
 class _AdminPendingPaymentsPageState extends State<AdminPendingPaymentsPage> {
-  late final Stream<List<AppOrder>> _stream = PaymentService.watchPending();
+  late final Stream<List<AppOrder>> _stream = PaymentService.watchByStatus('pending');
+  late final Stream<List<AppOrder>> _rejected =
+      PaymentService.watchByStatus('rejected', limit: 20);
   final Set<String> _busy = {};
 
   Future<void> _confirm(AppOrder o) async {
@@ -247,6 +281,57 @@ class _AdminPendingPaymentsPageState extends State<AdminPendingPaymentsPage> {
     }
   }
 
+  Widget _card(AppOrder o, {required bool rejectedView}) {
+    final busy = _busy.contains(o.id);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${o.storeName} — ${o.displayCustomer}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text('${PaymentMethod.labelOf(o.paymentMethod)} • ${formatPrice(o.total)}'),
+            const SizedBox(height: 4),
+            SelectableText(
+              'رقم العملية: ${o.paymentRef}',
+              style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700),
+            ),
+            if (rejectedView && o.paymentRejectReason.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('سبب الرفض: ${o.paymentRejectReason}',
+                  style: const TextStyle(fontSize: 13)),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    onPressed: busy ? null : () => _confirm(o),
+                    child: Text(rejectedView ? 'تأكيد بعد المراجعة' : 'تأكيد'),
+                  ),
+                ),
+                if (!rejectedView) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: busy ? null : () => _reject(o),
+                      child: const Text('رفض'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -263,60 +348,30 @@ class _AdminPendingPaymentsPageState extends State<AdminPendingPaymentsPage> {
                 if (!snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final list = snap.data!;
-                if (list.isEmpty) {
-                  return const Center(child: Text('مفيش تحويلات مستنية تأكيد.'));
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) {
-                    final o = list[i];
-                    final busy = _busy.contains(o.id);
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${o.storeName} — ${o.displayCustomer}',
-                              style: const TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              '${PaymentMethod.labelOf(o.paymentMethod)} • ${formatPrice(o.total)}',
-                            ),
-                            const SizedBox(height: 4),
-                            SelectableText(
-                              'رقم العملية: ${o.paymentRef}',
-                              style: TextStyle(
-                                color: kPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: FilledButton(
-                                    onPressed: busy ? null : () => _confirm(o),
-                                    child: const Text('تأكيد'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: busy ? null : () => _reject(o),
-                                    child: const Text('رفض'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                final pending = snap.data!;
+                return StreamBuilder<List<AppOrder>>(
+                  stream: _rejected,
+                  builder: (context, rejectedSnap) {
+                    final rejected = rejectedSnap.data ?? const <AppOrder>[];
+                    return ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (pending.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Center(child: Text('مفيش تحويلات مستنية تأكيد.')),
+                          ),
+                        for (final o in pending) _card(o, rejectedView: false),
+                        if (rejected.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          const Text(
+                            'تحويلات اترفضت (لو الرفض كان غلط تقدر تأكدها)',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(height: 8),
+                          for (final o in rejected) _card(o, rejectedView: true),
+                        ],
+                      ],
                     );
                   },
                 );

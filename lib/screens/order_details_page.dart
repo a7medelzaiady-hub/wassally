@@ -580,7 +580,7 @@ class _Details extends StatelessWidget {
         ],
         if ([OrderStatus.newOrder, OrderStatus.preparing].contains(order.status) &&
             order.courierId.isEmpty) ...[
-          if (order.status == OrderStatus.preparing)
+          if (order.status == OrderStatus.preparing && !order.isWalletPayment)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
@@ -606,7 +606,7 @@ class _Details extends StatelessWidget {
                     child: Text(
                       'المحل بلّغنا إن الأصناف دي مش متاحة حاليًا: '
                       '${order.unavailableItems.join('، ')}.\n'
-                      'اضغط «كمّل من غير الأصناف دي» وهنحسب الإجمالي من جديد، أو ألغي الطلب. '
+                      '${order.isWalletPayment ? 'الطلب مدفوع بالمحفظة، فتواصل مع الدعم من زر الشكاوى عشان نظبط المبلغ، أو ألغي الطلب. ' : 'اضغط «كمّل من غير الأصناف دي» وهنحسب الإجمالي من جديد، أو ألغي الطلب. '}'
                       'المحل مش هيبدأ التجهيز قبل ما تختار.',
                       style: const TextStyle(fontWeight: FontWeight.w700, height: 1.5),
                     ),
@@ -616,36 +616,47 @@ class _Details extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: Text(
-              order.hasUnavailableItems && order.status == OrderStatus.newOrder
-                  ? 'كمّل من غير الأصناف دي'
-                  : 'تعديل الطلب',
+          // طلب المحفظة: المبلغ اتدفع، فمفيش تعديل أصناف ولا حذف (الإلغاء بس قبل تأكيد التحويل).
+          if (!order.isWalletPayment) ...[
+            FilledButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: Text(
+                order.hasUnavailableItems && order.status == OrderStatus.newOrder
+                    ? 'كمّل من غير الأصناف دي'
+                    : 'تعديل الطلب',
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: onCancel,
-                  style: OutlinedButton.styleFrom(foregroundColor: kDanger),
-                  child: const Text('إلغاء الطلب'),
+            const SizedBox(height: 8),
+          ],
+          if (order.isPaymentConfirmed)
+            Text(
+              'الطلب مدفوع ومتأكد. لو محتاج تلغيه تواصل مع الدعم من زر الشكاوى عشان نرجّعلك المبلغ.',
+              style: TextStyle(color: kMuted, fontSize: 12),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onCancel,
+                    style: OutlinedButton.styleFrom(foregroundColor: kDanger),
+                    child: const Text('إلغاء الطلب'),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('حذف الطلب'),
-                  style: OutlinedButton.styleFrom(foregroundColor: kDanger),
-                ),
-              ),
-            ],
-          ),
+                if (!order.isWalletPayment) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('حذف الطلب'),
+                      style: OutlinedButton.styleFrom(foregroundColor: kDanger),
+                    ),
+                  ),
+                ],
+              ],
+            ),
         ],
       ],
     );
