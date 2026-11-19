@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'performance_monitor.dart';
@@ -16,6 +18,21 @@ class OrderGateway {
   );
 
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
+
+  /// هيدر App Check (لو متاح) لكل طلبات الـ Worker.
+  /// الفشل هنا لا يوقف الطلب أبدًا: الـ Worker هو اللي يقرر (off / monitor / enforce).
+  static Future<Map<String, String>> appCheckHeaders() async {
+    if (kIsWeb) return const {};
+    try {
+      final token = await FirebaseAppCheck.instance
+          .getToken()
+          .timeout(const Duration(seconds: 4));
+      if (token == null || token.isEmpty) return const {};
+      return {'X-Firebase-AppCheck': token};
+    } catch (_) {
+      return const {};
+    }
+  }
 
   /// Order writes stay on Firestore's Spark-compatible path until the Worker
   /// has been deployed, verified, and Firestore serverOrders is enabled.
@@ -59,11 +76,13 @@ class OrderGateway {
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw StateError('خدمة تنظيف مرفقات الطلب غير مهيأة.');
     }
+    final appCheck = await appCheckHeaders();
     final client = http.Client();
     late final http.Response result;
     try {
       final request = http.Request('POST', uri)
         ..headers.addAll({
+          ...appCheck,
           'Authorization': 'Bearer ' + idToken,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -91,12 +110,14 @@ class OrderGateway {
       throw StateError('خدمة حذف الحساب غير مهيأة. حدّث التطبيق أو تواصل مع الدعم.');
     }
 
+    final appCheck = await appCheckHeaders();
     final client = http.Client();
     late final http.Response result;
     try {
       final streamed = await client
           .send(http.Request('POST', uri)
             ..headers.addAll({
+              ...appCheck,
               'Authorization': 'Bearer $idToken',
               'Content-Type': 'application/json',
               'Accept': 'application/json',
@@ -138,11 +159,13 @@ class OrderGateway {
       throw StateError('إعداد بوابة الطلبات غير صحيح.');
     }
 
+    final appCheck = await appCheckHeaders();
     late final http.Response result;
     final client = http.Client();
     try {
       final request = http.Request(method, uri)
         ..headers.addAll({
+          ...appCheck,
           'Authorization': 'Bearer $idToken',
           'Content-Type': 'application/json',
           'Accept': 'application/json',

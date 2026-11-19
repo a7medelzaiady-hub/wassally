@@ -1470,14 +1470,23 @@ test('special_requests: يقبل مرفق صورة فقط أو صوت فقط و�
   }));
 });
 
-test('store owner: حذف المحل وفك ربط حسابه يتمان في Batch واحدة', async () => {
+test('store owner: لا يستطيع حذف مستند المحل؛ الحذف للإدارة فقط', async () => {
   const db = as('owner1');
+  await assertFails(deleteDoc(doc(db, 'stores/shop1')));
   const batch = writeBatch(db);
   batch.delete(doc(db, 'stores/shop1'));
   batch.delete(doc(db, 'storeOwners/owner1'));
-  await assertSucceeds(batch.commit());
-  const ownerLink = await assertSucceeds(getDoc(doc(db, 'storeOwners/owner1')));
-  if (ownerLink.exists()) throw new Error('Owner link should be removed with the store.');
+  await assertFails(batch.commit());
+  await assertFails(deleteDoc(doc(as('owner2'), 'stores/shop1')));
+  await assertSucceeds(deleteDoc(doc(as('admin1'), 'stores/shop1')));
+});
+
+test('account_deletions: مستند واحد لكل مستخدم وبحقول محددة', async () => {
+  const db = as('cust1');
+  await assertFails(setDoc(doc(db, 'account_deletions/random-id'), { userId: 'cust1', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', junk: 'A'.repeat(1000) }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust2'), { userId: 'cust2', reason: 'x' }));
+  await assertSucceeds(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x' }));
 });
 
 

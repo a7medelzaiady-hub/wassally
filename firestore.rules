@@ -444,7 +444,9 @@ service cloud.firestore {
         isStoreApplicant(storeId) || resource.data.get('active', true) == true;
       allow list: if isAdmin() || resource.data.get('active', true) == true;
       allow create: if isAdmin() || validStoreDraft(storeId, request.resource.data);
-      allow delete: if isAdmin() || isStoreOwner(storeId);
+      // الحذف للإدارة فقط: حذف المحل من صاحبه كان بيسيب منتجات يتيمة وطلبات جارية بتشاور على محل
+      // مش موجود. حذف حساب صاحب المحل بيتم من Worker (حساب خدمة) ومش محتاج الصلاحية دي.
+      allow delete: if isAdmin();
       allow update: if isAdmin() ||
         (isStoreOwner(storeId) &&
           changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
@@ -521,10 +523,14 @@ service cloud.firestore {
       }
     }
 
+    // مستند واحد لكل مستخدم (المعرّف = uid) وبحقول محددة، عشان مايتستخدمش لإغراق قاعدة البيانات.
+    // التطبيق الحالي ما بيكتبش هنا (الحذف من Worker)، والقاعدة فاضلة للنسخ القديمة بس.
     match /account_deletions/{id} {
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
-        && request.resource.data.reason is string
-        && request.resource.data.reason.size() <= 200;
+      allow create: if signedIn() && id == request.auth.uid
+        && request.resource.data.keys().hasOnly(['userId', 'reason', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.get('reason', '') is string
+        && request.resource.data.get('reason', '').size() <= 200;
       allow read: if isAdmin();
     }
 

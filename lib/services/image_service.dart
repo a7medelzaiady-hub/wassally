@@ -60,10 +60,12 @@ class ImageService {
     }
 
     final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+    final appCheck = await OrderGateway.appCheckHeaders();
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$root/v1/uploads'),
     )
+      ..headers.addAll(appCheck)
       ..headers['Authorization'] = 'Bearer $idToken'
       ..headers['Accept'] = 'application/json'
       ..fields['folder'] = folder
