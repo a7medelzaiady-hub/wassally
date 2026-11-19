@@ -410,6 +410,15 @@ void main() {
       expect((await CatalogPending.load())[sid], {CatalogPending.all});
     });
 
+    test('إعادة بناء كاملة ناجحة ما بتمسحش علامة فهرس لسه ما اتحدثش', () async {
+      await CatalogPending.mark(sid, ['a']);
+      await CatalogPending.markIndex(sid);
+      await CatalogPending.clear(sid, {CatalogPending.all});
+      expect((await CatalogPending.load())[sid], {CatalogPending.index});
+      await CatalogPending.clear(sid, {CatalogPending.index});
+      expect(await CatalogPending.load(), isEmpty);
+    });
+
     test('تعديل جديد أثناء المزامنة ما يتمسحش مع العلامة القديمة', () async {
       await CatalogPending.mark(sid, ['a']);
       await CatalogPending.mark(sid, ['b']);

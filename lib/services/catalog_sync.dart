@@ -1,12 +1,15 @@
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/app_role.dart';
 import 'catalog_menu_sync.dart';
 import 'catalog_service.dart';
 import 'read_meter.dart';
+import 'role_service.dart';
 import 'store_highlights.dart';
 
 /// مستند خفيف بنفس شكل QueryDocumentSnapshot (id + data()) عشان الشاشات
@@ -345,20 +348,8 @@ class CatalogSync {
     return entry;
   }
 
-  /// نص ثابت للمقارنة: مفاتيح الخرائط مرتبة (Firestore ما بيحافظش على ترتيب المفاتيح
-  /// لما يرجّع البيانات)، والأوقات بالمللي ثانية، والأرقام بنفس الصيغة (5 و5.0 واحد).
   @visibleForTesting
-  static String canonical(Object? v) {
-    if (v is Map) {
-      final keys = v.keys.map((k) => k.toString()).toList()..sort();
-      return '{${keys.map((k) => '$k:${canonical(v[k])}').join(',')}}';
-    }
-    if (v is List) return '[${v.map(canonical).join(',')}]';
-    if (v is Timestamp) return 't${v.millisecondsSinceEpoch}';
-    if (v is num) return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
-    if (v == null) return 'null';
-    return jsonEncode(v.toString());
-  }
+  static String canonical(Object? v) => StoreHighlights.canonical(v);
 
   /// خانة لسه أكبر من الحد بعد القص (غالبًا قائمة أصناف قديمة "products" على مستند المحل):
   /// ما تتكتبش، والمحل محتاج ترحيل أصنافه من لوحة المدير.
@@ -423,12 +414,22 @@ class CatalogSync {
       highlightsChanged = r.changed;
       storeActive = r.active;
     } else {
-      highlightsOk = await StoreHighlights.refresh(storeId);
-      highlightsChanged = highlightsOk;
+      final r = await StoreHighlights.refreshDetailed(storeId);
+      highlightsOk = r.ok;
+      highlightsChanged = r.changed;
+      storeActive = r.active;
     }
     var indexOk = true;
     // محل مقفول أو مسودة مش في الفهرس أصلًا: ما نلمسش الفهرس (وإلا كل العملاء يعيدوا تحميله).
-    if (highlightsChanged && storeActive) indexOk = await storeChanged(storeId);
+    // ولو فيه تحديث فهرس فاشل قبل كده على الجهاز ده، نعيده دلوقتي.
+    final indexPending =
+        (await CatalogPending.load())[storeId]?.contains(CatalogPending.index) ?? false;
+    if ((highlightsChanged && storeActive) || indexPending) {
+      indexOk = await storeChanged(storeId);
+      if (indexOk && indexPending) {
+        await CatalogPending.clear(storeId, {CatalogPending.index});
+      }
+    }
     await CatalogService.bump();
 
     final menuOk = menu.status == MenuSyncStatus.updated ||
@@ -565,6 +566,19 @@ class CatalogSync {
     return false;
   }
 
+  /// المستخدم الحالي مدير أو دوره لسه مش معروف (الاحتياط: نفحص المكان).
+  static bool _mayBypassRules() {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return false;
+      final role = RoleService.cachedFor(uid);
+      if (role == null) return true;
+      return role.role == AppRole.admin || role.roles.contains(AppRole.admin);
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// المدير قبل تفعيل محل: هل الفهرس فيه مكان؟ (قراءة واحدة لمستند الفهرس.)
   static Future<bool> indexHasRoom(String storeId) async {
     try {
@@ -590,7 +604,9 @@ class CatalogSync {
     final result = await _db.runTransaction<({bool existed, bool full})>((tx) async {
       final snap = await tx.get(CatalogPaths.store(storeId));
       final data = snap.data();
-      if (adding && data?['active'] == true) {
+      // المدير بيعدّي القواعد، فأي كتابة منه لخانة نشطة لازم تتأكد إن فيه مكان (صاحب المحل
+      // القواعد بتحدّه). نفس الكلام لتفعيل محل جديد.
+      if ((adding || _mayBypassRules()) && data?['active'] == true) {
         final index = await tx.get(CatalogPaths.storeIndex);
         if (!indexRoomFor(index.data(), storeId)) {
           return (existed: snap.exists, full: true);

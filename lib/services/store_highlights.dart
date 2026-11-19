@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
@@ -69,10 +71,12 @@ class StoreHighlights {
     ReadMeter.query('highlights:batch-stores', page);
     var failed = 0;
     for (final d in page.docs) {
-      if (await refresh(d.id)) {
-        await afterEach?.call(d.id);
-      } else {
+      final r = await refreshDetailed(d.id);
+      if (!r.ok) {
         failed++;
+      } else if (r.changed && r.active) {
+        // الفهرس بيتحدث بس لو الملخص اتغير فعلًا لمحل نشط.
+        await afterEach?.call(d.id);
       }
     }
     final lastId = page.docs.length < batchSize || page.docs.isEmpty
@@ -122,23 +126,46 @@ class StoreHighlights {
   /// بيرجع true لو الملخص اتكتب فعلًا. عند الفشل بيعيد المحاولة مرة، وبعدها
   /// بيرجع false من غير ما يرمي استثناء (عشان تعديل الصنف نفسه اتحفظ خلاص)،
   /// والمستدعي لازم يبلغ إن ملخص العروض ما اتحدثش.
-  static Future<bool> refresh(String storeId) async {
-    if (storeId.isEmpty) return false;
+  static Future<bool> refresh(String storeId) async =>
+      (await refreshDetailed(storeId)).ok;
+
+  /// زي [refresh] بس كمان بيقول هل الملخص اتغير فعلًا (اتكتب)، وهل المحل نشط،
+  /// عشان فهرس الكتالوج يتحدث بس لما يلزم.
+  static Future<({bool ok, bool changed, bool active})> refreshDetailed(
+    String storeId,
+  ) async {
+    if (storeId.isEmpty) return (ok: false, changed: false, active: false);
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        await _refreshOnce(storeId);
-        return true;
+        return await _refreshOnce(storeId);
       } catch (e) {
         debugPrint('Store highlights refresh failed for $storeId: $e');
       }
     }
-    return false;
+    return (ok: false, changed: false, active: true);
   }
 
-  static Future<void> _refreshOnce(String storeId) async {
+  /// نص ثابت للمقارنة: مفاتيح الخرائط مرتبة (Firestore ما بيحافظش على ترتيب المفاتيح
+  /// لما يرجّع البيانات)، والأوقات بالمللي ثانية، والأرقام بنفس الصيغة (5 و5.0 واحد).
+  static String canonical(Object? v) {
+    if (v is Map) {
+      final keys = v.keys.map((k) => k.toString()).toList()..sort();
+      return '{${keys.map((k) => '$k:${canonical(v[k])}').join(',')}}';
+    }
+    if (v is List) return '[${v.map(canonical).join(',')}]';
+    if (v is Timestamp) return 't${v.millisecondsSinceEpoch}';
+    if (v is num) return v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+    if (v == null) return 'null';
+    return jsonEncode(v.toString());
+  }
+
+  static Future<({bool ok, bool changed, bool active})> _refreshOnce(
+    String storeId,
+  ) async {
     final storeRef =
         FirebaseFirestore.instance.collection('stores').doc(storeId);
     final col = storeRef.collection('products');
+    const server = GetOptions(source: Source.server);
     final groups = await Future.wait([
       _allCandidates(col.where('oldPrice', isGreaterThan: 0)),
       _allCandidates(col.where('offerText', isGreaterThan: '')),
@@ -146,11 +173,21 @@ class StoreHighlights {
     ]);
     final candidates = mergeCandidates(groups);
     final h = compute(candidates);
+    final store = await storeRef.get(server);
+    ReadMeter.document('highlights:store', store);
+    final data = store.data();
+    final active = data?['active'] == true;
+    if (data != null &&
+        canonical(data['offerItems']) == canonical(h.offers) &&
+        canonical(data['bestItems']) == canonical(h.best)) {
+      return (ok: true, changed: false, active: active);
+    }
     await storeRef.update({
       'offerItems': h.offers,
       'bestItems': h.best,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+    return (ok: true, changed: true, active: active);
   }
 
   /// صفحات من الخادم لحد ما الصفحة تيجي ناقصة أو نوصل [candidateCap].

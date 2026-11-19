@@ -507,12 +507,14 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
+      // محل جديد بيتنشر على طول: لازم مكان في فهرس المحلات، وإلا بيتحفظ مقفول.
+      final hasRoom = _id != null || await CatalogSync.indexHasRoom('');
       if (_id == null) {
         final ref = await _stores.add({
           ...fields,
           'color': kPrimary.toARGB32(),
           'rating': 0,
-          'active': true,
+          'active': hasRoom,
           'order': widget.nextOrder,
           'productCount': 0,
         });
@@ -529,7 +531,9 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       if (!mounted) return;
 
       setState(() {});
-      _say('تم حفظ المحل بنجاح.');
+      _say(hasRoom
+          ? 'تم حفظ المحل بنجاح.'
+          : 'اتحفظ المحل مقفول: فهرس المحلات وصل الحد (${CatalogSync.maxIndexStores} محل).');
     } catch (e) {
       _say(_errorText(e));
     } finally {

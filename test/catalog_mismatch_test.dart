@@ -12,6 +12,11 @@ void main() {
         OrderGateway.isCatalogMismatch(status: 409, code: 'other', message: 'سعر أحد الأصناف اتغير'),
         isFalse,
       );
+      // الـ Worker الجديد بيبعت code لكل خطأ: رسالة الكوبون مع "rejected" مش mismatch.
+      expect(
+        OrderGateway.isCatalogMismatch(status: 409, code: 'rejected', message: 'الكوبون لم يعد صالحًا.'),
+        isFalse,
+      );
     });
 
     test('الـ Worker القديم: رسائل السعر/التوفر بس', () {
@@ -26,6 +31,10 @@ void main() {
         'المحل مغلق حاليًا.',
         'معرّف الطلب مستخدم بالفعل.',
         'رسوم التوصيل غير مضبوطة في إعدادات الإدارة.',
+        // فيها "لم يعد" أو "اتغير" بس مش عن الكتالوج:
+        'الكوبون لم يعد صالحًا.',
+        'رسوم التوصيل اتغيرت. راجع الطلب.',
+        'إجمالي الطلب اتغير. راجع السلة.',
       ]) {
         expect(OrderGateway.isCatalogMismatch(status: 409, message: m), isFalse, reason: m);
       }

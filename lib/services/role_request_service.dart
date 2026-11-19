@@ -169,8 +169,10 @@ class RoleRequestService {
         final products = await storeRef.collection('products').count().get();
         final storeData = storeSnapshot.data() ?? {};
         final imageUrl = (storeData['imageUrl'] ?? storeData['image'] ?? '').toString();
+        // ونشره كمان محتاج مكان في فهرس المحلات (حد 250)؛ لو مليان بيتعتمد مقفول والمدير يفعّله بعدين.
         final readyToPublish = (products.count ?? 0) >= 5 &&
-            imageUrl.startsWith('https://');
+            imageUrl.startsWith('https://') &&
+            await CatalogSync.indexHasRoom(draftId);
         batch.update(storeRef, {
           'approved': true,
           'active': readyToPublish,

@@ -386,7 +386,9 @@ class CatalogPending {
       final current = pending[storeId];
       if (current == null) return;
       if (synced.contains(all)) {
-        pending.remove(storeId);
+        // علامة الفهرس بتتشال بس لما الفهرس نفسه يتحدث (clear بـ index).
+        current.removeWhere((id) => id != index);
+        if (current.isEmpty) pending.remove(storeId);
       } else {
         current.removeAll(synced);
         if (current.isEmpty) pending.remove(storeId);

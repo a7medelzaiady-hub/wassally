@@ -1839,7 +1839,8 @@ export default {
       });
     } catch (error) {
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
-      return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      // code دايمًا موجود، فالتطبيق ما يحتاجش يخمّن من نص الرسالة.
+      return response({ error: e.message, code: e.code ?? "rejected" }, e.status, headers);
     }
   },
 };

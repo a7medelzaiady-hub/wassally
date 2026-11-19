@@ -157,10 +157,17 @@ class OrderGateway {
   }) {
     if (code != null && code.isNotEmpty) return code == 'catalog_mismatch';
     if (status != 409) return false;
-    return message.contains('اتغير') ||
-        message.contains('لم يعد') ||
-        message.contains('غير متاح');
+    // الـ Worker القديم (من غير code): الرسايل دي بالظبط بس، مش أي رسالة فيها "اتغير".
+    return _legacyMismatchMessages.contains(message.trim());
   }
+
+  static const _legacyMismatchMessages = {
+    'أحد الأصناف لم يعد موجودًا في كتالوج المحل.',
+    'أحد الأصناف غير متاح حاليًا.',
+    'سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.',
+    'سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.',
+    'أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.',
+  };
 
   static Future<void> _send({
     required String idToken,
