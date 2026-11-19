@@ -36,8 +36,8 @@ class OrderStatusWriter {
     return m;
   }
 
-  static void _notifyStatusPush(String orderId, String status) {
-    Future<void>(() async {
+  static Future<void> _notifyStatusPush(String orderId, String status) async {
+    try {
       try {
         final token = await FirebaseAuth.instance.currentUser?.getIdToken();
         if (token == null || token.isEmpty) return;
@@ -45,11 +45,10 @@ class OrderStatusWriter {
           idToken: token,
           orderId: orderId,
           status: status,
-        );
-      } catch (_) {
-        // The order transition already committed; push failures are non-blocking.
-      }
-    });
+        ).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // The order transition already committed; push failures are non-blocking.
+    }
   }
 
   static Future<void> change({
@@ -180,6 +179,6 @@ class OrderStatusWriter {
     );
     // The Worker verifies the committed statusHistory actor before sending FCM.
     // Push delivery is best-effort and must never roll back a successful order action.
-    _notifyStatusPush(normalizedOrderId, to.key);
+    await _notifyStatusPush(normalizedOrderId, to.key);
   }
 }
