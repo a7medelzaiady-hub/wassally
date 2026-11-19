@@ -1311,42 +1311,64 @@ test('customer restrictions: Fail-Closed مع مستند تقييد ناقص أ�
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/fc6'), baseOrder('cust1')));
 });
 
-test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، والمدير يقرأ الكل ويقفلها', async () => {
+test('complaints: الإنشاء موقوف (الدعم واتساب)، المستندات القديمة تتقرأ وتتقفل بس', async () => {
   const c = (over = {}) => ({
     userId: 'cust1', userEmail: 'a@x.com', userName: 'Ali', kind: 'complaint', message: 'المندوب اتأخر جدًا',
     appRole: 'customer', status: 'open', createdAt: serverTimestamp(), ...over,
   });
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c1'), c()));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c2'), c({ kind: 'order_issue', orderId: 'o1' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c8'), c({ kind: 'restriction_appeal', orderId: 'o1' })));
-  await assertSucceeds(setDoc(doc(as('admin1'), 'customer_restrictions/cust1'), {
-    customerId: 'cust1', active: true, reason: 'مراجعة واقعة موثقة',
-    sourceOrderId: 'o1', createdAt: serverTimestamp(), createdBy: 'admin1',
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c1'), c()));
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c2'), c({ kind: 'order_issue', orderId: 'o1' })));
+  await assertFails(setDoc(doc(as('admin1'), 'complaints/c3'), c()));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'complaints/old1'), {
+      userId: 'cust1', kind: 'complaint', message: 'شكوى قديمة', status: 'open', appRole: 'customer',
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('cust1'), 'complaints/old1')));
+  await assertFails(getDoc(doc(as('cust2'), 'complaints/old1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'complaints/old1')));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/old1'), { status: 'resolved', adminNote: 'تم' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'complaints/old1'), { status: 'resolved' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'complaints/old1')));
+});
+
+test('support_chats: الإنشاء والتعديل والرسائل موقوفة، القراءة القديمة فقط', async () => {
+  const chat = {
+    userId: 'cust1', userName: 'Ali', userEmail: 'a@x.com', appRole: 'customer',
+    lastMessage: 'مرحبا', lastSender: 'user', lastAt: serverTimestamp(),
+    unreadForAdmin: true, unreadForUser: false,
+  };
+  await assertFails(setDoc(doc(as('cust1'), 'support_chats/cust1'), chat));
+  await assertFails(setDoc(doc(as('admin1'), 'support_chats/cust1'), chat));
+  await assertFails(setDoc(doc(as('cust1'), 'support_chats/cust1/messages/m1'), {
+    senderId: 'cust1', senderRole: 'user', text: 'مرحبا', createdAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c9'), c({
-    kind: 'restriction_appeal', orderId: 'o1',
-  })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c11'), c({
-    kind: 'restriction_appeal', orderId: 'another-order',
-  })));
-  await assertSucceeds(getDoc(doc(as('admin1'), 'complaints/c9')));
-  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/c9'), {
-    status: 'in_progress', adminNote: 'تم استلام الاعتراض وجارٍ مراجعته.',
-  }));
-  await assertFails(setDoc(doc(as('cust2'), 'complaints/c10'), c({
-    userId: 'cust2', kind: 'restriction_appeal', orderId: 'o1',
-  })));
-  await assertFails(setDoc(doc(as('cust2'), 'complaints/c3'), c({ kind: 'order_issue', orderId: 'o1', userId: 'cust2' }))); // طلب مش بتاعه
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c4'), c({ kind: 'order_issue' }))); // من غير طلب
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c5'), c({ userId: 'cust2' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c6'), c({ message: 'ab' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c7'), c({ status: 'resolved' })));
-  await assertSucceeds(getDoc(doc(as('cust1'), 'complaints/c1')));
-  await assertFails(getDoc(doc(as('cust2'), 'complaints/c1')));
-  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/c1'), { status: 'resolved', adminNote: 'تم' }));
-  await assertFails(updateDoc(doc(as('cust1'), 'complaints/c1'), { status: 'resolved' }));
-  await assertFails(deleteDoc(doc(as('admin1'), 'complaints/c1')));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'support_chats/cust1'), { ...chat, lastAt: new Date() });
+    await setDoc(doc(ctx.firestore(), 'support_chats/cust1/messages/m0'), {
+      senderId: 'cust1', senderRole: 'user', text: 'قديمة', createdAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('cust1'), 'support_chats/cust1')));
+  await assertFails(getDoc(doc(as('cust2'), 'support_chats/cust1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'support_chats/cust1')));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'support_chats/cust1/messages/m0')));
+  await assertFails(updateDoc(doc(as('cust1'), 'support_chats/cust1'), { unreadForUser: false }));
+  await assertFails(updateDoc(doc(as('admin1'), 'support_chats/cust1'), { unreadForAdmin: false }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'support_chats/cust1')));
+});
+
+test('الكوبونات موقوفة: طلب جديد بخصم يترفض حتى لو الكود صالح، وبدون خصم يعدّي', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'promos/SAVE10'), { percent: 10, active: true });
+  });
+  const base = baseOrder('cust1');
+  const discounted = {
+    ...base, promoCode: 'SAVE10', discount: 2,
+    total: base.subtotal + base.deliveryFee - 2,
+  };
+  await assertFails(setDoc(doc(as('cust1'), 'orders/promo1'), discounted));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/promo2'), baseOrder('cust1')));
 });
 
 test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمولة بتتبعها (رسوم التوصيل الأصلية متغيرة حسب المنطقة)', async () => {
