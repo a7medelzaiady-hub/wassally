@@ -58,6 +58,17 @@ class OrderGateway {
         payload: {'status': status},
       );
 
+  /// Sends new-order pushes after the Spark Firestore batch commits.
+  static Future<void> notifyCreated({
+    required String idToken,
+    required String orderId,
+  }) => _send(
+        idToken: idToken,
+        method: 'POST',
+        path: '/v1/orders/${Uri.encodeComponent(orderId)}/events',
+        payload: {'event': 'created'},
+      );
+
   /// Sends an assignment push after Firestore confirms courierId/courierAt.
   static Future<void> notifyAssignment({
     required String idToken,
