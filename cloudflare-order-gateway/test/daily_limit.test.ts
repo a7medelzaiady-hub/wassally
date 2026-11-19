@@ -43,14 +43,14 @@ describe("daily order limit helpers", () => {
     expect(ordersCountedToday({ day: "2026-11-19", dailyCount: -3 }, "2026-11-19")).toBe(0);
   });
 
-  it("resolves the limit: valid doc value, then env, then default 10", () => {
+  it("resolves the limit: valid doc value, then env, then default 50", () => {
     expect(resolveMaxOrdersPerDay(5, "20")).toBe(5);
     expect(resolveMaxOrdersPerDay(undefined, "20")).toBe(20);
-    expect(resolveMaxOrdersPerDay(undefined, undefined)).toBe(10);
+    expect(resolveMaxOrdersPerDay(undefined, undefined)).toBe(50);
     expect(resolveMaxOrdersPerDay("5", "20")).toBe(20); // doc value must be a number
     expect(resolveMaxOrdersPerDay(0, "20")).toBe(20);
-    expect(resolveMaxOrdersPerDay(1000, undefined)).toBe(10);
-    expect(resolveMaxOrdersPerDay(2.5, "abc")).toBe(10);
+    expect(resolveMaxOrdersPerDay(1000, undefined)).toBe(50);
+    expect(resolveMaxOrdersPerDay(2.5, "abc")).toBe(50);
   });
 });
 
@@ -115,10 +115,10 @@ const post = (id: string) => new Request("https://worker.test/v1/orders", {
 const oldEnough = { timestampValue: "2026-01-01T00:00:00Z" }; // far in the past: passes the 20s spacing rule
 
 describe("daily order limit in createOrder", () => {
-  it("rejects the 11th order of today with code daily_limit and writes nothing", async () => {
+  it("rejects the 51st order of today with code daily_limit and writes nothing", async () => {
     const today = cairoDayKey(new Date());
     const sim = simulateFirebase({
-      lastAt: oldEnough, day: { stringValue: today }, dailyCount: { integerValue: "10" },
+      lastAt: oldEnough, day: { stringValue: today }, dailyCount: { integerValue: "50" },
     });
     try {
       const res = await worker.fetch(post("order_over_limit_1234567890"), env);
@@ -128,10 +128,10 @@ describe("daily order limit in createOrder", () => {
     } finally { sim.restore(); }
   });
 
-  it("accepts the 10th order and records dailyCount 10 on the same orderLimits write", async () => {
+  it("accepts the 50th order and records dailyCount 50 on the same orderLimits write", async () => {
     const today = cairoDayKey(new Date());
     const sim = simulateFirebase({
-      lastAt: oldEnough, day: { stringValue: today }, dailyCount: { integerValue: "9" },
+      lastAt: oldEnough, day: { stringValue: today }, dailyCount: { integerValue: "49" },
     });
     try {
       const res = await worker.fetch(post("order_tenth_1234567890"), env);
@@ -140,7 +140,7 @@ describe("daily order limit in createOrder", () => {
       const limitWrite = sim.commits[0].writes[2];
       expect(limitWrite.update.name).toBe(prefix + "orderLimits/" + uid);
       expect(limitWrite.update.fields).toMatchObject({
-        day: { stringValue: today }, dailyCount: { integerValue: "10" },
+        day: { stringValue: today }, dailyCount: { integerValue: "50" },
       });
       // Atomic with the order: guarded by the updateTime we read.
       expect(limitWrite.currentDocument).toEqual({ updateTime: "2026-11-19T10:00:00.000000Z" });
@@ -149,7 +149,7 @@ describe("daily order limit in createOrder", () => {
 
   it("resets the counter on a new day", async () => {
     const sim = simulateFirebase({
-      lastAt: oldEnough, day: { stringValue: "2020-01-01" }, dailyCount: { integerValue: "10" },
+      lastAt: oldEnough, day: { stringValue: "2020-01-01" }, dailyCount: { integerValue: "50" },
     });
     try {
       const res = await worker.fetch(post("order_new_day_1234567890"), env);

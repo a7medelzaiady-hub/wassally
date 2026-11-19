@@ -1099,7 +1099,7 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
-export const DEFAULT_MAX_ORDERS_PER_DAY = 10;
+export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
 const DAILY_LIMIT_CODE = "daily_limit";
 
 /** مفتاح اليوم بتوقيت القاهرة (YYYY-MM-DD)، بيراعي التوقيت الصيفي تلقائيًا. */
