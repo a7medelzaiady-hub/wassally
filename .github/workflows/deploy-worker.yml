@@ -84,7 +84,16 @@ jobs:
           err_file="$(mktemp)"
           trap 'rm -f "$err_file"' EXIT
           if ! list="$(npx wrangler secret list 2>"$err_file")"; then
-            if grep -Eqi 'authentication|unauthorized|invalid token|10000|10001' "$err_file"; then
+            # Only emit numeric Cloudflare API error codes / HTTP status, never raw stderr.
+            api_codes="$(grep -Eo '\\[[0-9]{4,6}\\]' "$err_file" | tr -d '[]' | sort -u | paste -sd ',' - || true)"
+            http_status="$(grep -Eo 'HTTP (status )?(400|401|403|404|409|429|500|502|503)' "$err_file" | head -1 || true)"
+            if [[ -n "$api_codes" ]]; then
+              echo "::notice::Cloudflare API error code(s): $api_codes"
+            fi
+            if [[ -n "$http_status" ]]; then
+              echo "::notice::Cloudflare $http_status"
+            fi
+            if grep -Eqi 'not logged in|authentication|unauthorized|invalid token|10000|10001' "$err_file"; then
               echo "::error::Cloudflare authentication failed. Verify API token validity and Workers permissions."
             elif grep -Eqi 'permission|forbidden|not authorized|9109' "$err_file"; then
               echo "::error::Cloudflare denied access. Verify token account scope and Workers permissions."
