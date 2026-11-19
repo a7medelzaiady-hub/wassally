@@ -15,6 +15,8 @@ period = 60
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"
+# الحد اليومي لطلبات العميل الواحد (بتوقيت القاهرة). ممكن يتغير من app_info/delivery_areas.maxOrdersPerDay.
+MAX_ORDERS_PER_DAY = "10"
 CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
 # App Check: ابدأ بـ "monitor" وراقب السجلات، وبعد ما تتأكد إن نسخ التطبيق كلها بتبعت الرمز حوّلها "enforce".
 APP_CHECK_MODE = "monitor"
@@ -40,6 +42,7 @@ APP_CHECK_MODE = "off"
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"
+MAX_ORDERS_PER_DAY = "10"
 
 [[env.staging.ratelimits]]
 name = "UPLOAD_RATE_LIMITER"

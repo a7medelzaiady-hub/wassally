@@ -8,6 +8,8 @@ interface Env {
   DEFAULT_DELIVERY_FEE?: string;
   MAX_ORDER_LINES?: string;
   MAX_LINE_QTY?: string;
+  // الحد الأقصى لطلبات العميل الواحد في اليوم (بتوقيت القاهرة). الافتراضي 10.
+  MAX_ORDERS_PER_DAY?: string;
   CLOUDINARY_CLOUD_NAME?: string;
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
@@ -1097,6 +1099,41 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+export const DEFAULT_MAX_ORDERS_PER_DAY = 10;
+const DAILY_LIMIT_CODE = "daily_limit";
+
+/** مفتاح اليوم بتوقيت القاهرة (YYYY-MM-DD)، بيراعي التوقيت الصيفي تلقائيًا. */
+export function cairoDayKey(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/**
+ * الحد اليومي المطبّق: قيمة app_info/delivery_areas.maxOrdersPerDay لو رقم صحيح من 1 لـ100
+ * (بدون قراءة إضافية: المستند بيتقرا أصلًا)، وإلا MAX_ORDERS_PER_DAY من الإعدادات، وإلا 10.
+ */
+export function resolveMaxOrdersPerDay(configured: unknown, envValue: unknown): number {
+  const fromDoc = Number(configured);
+  if (typeof configured === "number" && Number.isInteger(fromDoc) && fromDoc >= 1 && fromDoc <= 100) {
+    return fromDoc;
+  }
+  const fromEnv = Number(envValue);
+  if (Number.isInteger(fromEnv) && fromEnv >= 1 && fromEnv <= 100) return fromEnv;
+  return DEFAULT_MAX_ORDERS_PER_DAY;
+}
+
+/** عدد طلبات العميل المسجّلة النهارده (صفر لو آخر عدّاد من يوم تاني). */
+export function ordersCountedToday(limit: JsonMap, dayKey: string): number {
+  const count = limit.dailyCount;
+  return limit.day === dayKey && typeof count === "number" && Number.isFinite(count) && count > 0
+    ? Math.floor(count)
+    : 0;
+}
+
 export function isCustomerRestricted(
   restriction: JsonMap | null,
   now = Date.now(),
@@ -1198,6 +1235,21 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (lastAt && Date.now() - lastAt < 20_000) {
     throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.");
   }
+  // الحد اليومي: العدّاد في نفس مستند orderLimits وبيتكتب في نفس الـcommit بشرط updateTime،
+  // فطلبين متزامنين مش هيعدّوا الحد (واحد بس بينجح والتاني بياخد 409). مفيش قراءات ولا كتابات زيادة.
+  const dayKey = cairoDayKey(new Date());
+  const todaysOrders = ordersCountedToday(previousLimit, dayKey);
+  const maxPerDay = resolveMaxOrdersPerDay(
+    areasDoc ? decodeFields(areasDoc.fields ?? {}).maxOrdersPerDay : undefined,
+    env.MAX_ORDERS_PER_DAY,
+  );
+  if (todaysOrders >= maxPerDay) {
+    throw new HttpError(
+      429,
+      `وصلت للحد اليومي للطلبات (${maxPerDay} طلبات). جرّب بكرة أو تواصل مع الدعم.`,
+      DAILY_LIMIT_CODE,
+    );
+  }
 
   const rawAreas = areasDoc ? decodeFields(areasDoc.fields ?? {}).areas : null;
   const areaList = Array.isArray(rawAreas) ? rawAreas as JsonMap[] : [];
@@ -1284,7 +1336,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     {
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/orderLimits/${uid}`,
-        fields: encodeFields({ lastAt: new Date() }),
+        fields: encodeFields({ lastAt: new Date(), day: dayKey, dailyCount: todaysOrders + 1 }),
       },
       updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
       currentDocument: limitDoc?.updateTime
