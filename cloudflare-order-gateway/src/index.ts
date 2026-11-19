@@ -344,6 +344,26 @@ async function assertFirebaseUserActive(
   }
 }
 
+async function verifySignedInUser(request: Request, env: Env): Promise<string> {
+  const auth = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, firebaseKeys, {
+      audience: env.FIREBASE_PROJECT_ID,
+      issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`,
+    }));
+  } catch {
+    throw new HttpError(401, "رمز تسجيل الدخول غير صالح أو منتهي.");
+  }
+  if (typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128) {
+    throw new HttpError(401, "رمز تسجيل الدخول غير صالح.");
+  }
+  await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
+  return payload.sub;
+}
+
 async function verifyCustomer(request: Request, env: Env): Promise<string> {
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -1137,7 +1157,7 @@ async function createOrderPushLog(
 }
 
 async function notifyOrderAssignment(request: Request, env: Env, orderId: string): Promise<Response> {
-  const uid = await verifyCustomer(request, env);
+  const uid = await verifySignedInUser(request, env);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
   }
@@ -1197,7 +1217,7 @@ async function notifyOrderAssignment(request: Request, env: Env, orderId: string
 }
 
 async function notifyOrderCreated(request: Request, env: Env, orderId: string): Promise<Response> {
-  const uid = await verifyCustomer(request, env);
+  const uid = await verifySignedInUser(request, env);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
   }
@@ -1252,7 +1272,7 @@ async function notifyOrderCreated(request: Request, env: Env, orderId: string): 
 }
 
 async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
-  const uid = await verifyCustomer(request, env);
+  const uid = await verifySignedInUser(request, env);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
   }
