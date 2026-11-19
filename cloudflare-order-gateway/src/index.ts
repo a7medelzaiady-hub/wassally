@@ -1042,6 +1042,9 @@ export function orderStatusPushMessage(
     delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
     cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
     assigned: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    ready: ["طلبك جاهز", "المحل جهّز طلبك وهيتسلّم للمندوب."],
+    store_pickup: ["المندوب استلم الطلب", "المندوب استلم الطلب من المحل وبدأ التوصيل."],
+    store_delivered: ["تم تسليم الطلب", "تم تأكيد تسليم الطلب للعميل."],
     new_order: ["تم استلام طلبك", "طلبك وصلنا وهنبدأ نتابعه معاك."],
   };
   const [title, body] = labels[status] ?? ["تحديث على طلبك", "افتح وصّلي لمتابعة طلبك."];
@@ -1271,6 +1274,53 @@ async function notifyOrderCreated(request: Request, env: Env, orderId: string): 
   return response({ orderId, sent: sent > 0, recipients: "customer_store_admin_couriers" });
 }
 
+async function notifyOrderReady(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifySignedInUser(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const storeId = String(order.storeId ?? "");
+  if (order.ready !== true || !(order.readyAt instanceof Date) || !storeId) {
+    throw new HttpError(409, "لم يتم تأكيد جاهزية الطلب.");
+  }
+  const [adminDoc, ownerDoc] = await Promise.all([
+    getDocument(env, `admins/${encodeURIComponent(uid)}`, accessToken),
+    getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, accessToken),
+  ]);
+  const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+  if (!adminDoc && !(ownerDoc && owner.storeId === storeId && owner.active !== false)) {
+    throw new HttpError(403, "لا تملك صلاحية إرسال إشعار الجاهزية.");
+  }
+
+  const readyAt = order.readyAt.getTime();
+  const logId = `ready_${orderId}_${readyAt}`.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+  let sent = 0;
+  try {
+    if (typeof order.userId === "string") {
+      sent = await sendOrderPushToUser(env, accessToken, order.userId, orderId, "ready");
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: 1 });
+}
+
 async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
   const uid = await verifySignedInUser(request, env);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
@@ -1285,6 +1335,9 @@ async function notifyOrderStatus(request: Request, env: Env, orderId: string): P
   const status = String(input?.status ?? "");
   if (input?.event === "created") {
     return notifyOrderCreated(request, env, orderId);
+  }
+  if (input?.event === "ready") {
+    return notifyOrderReady(request, env, orderId);
   }
   if (input?.event === "assigned") {
     return notifyOrderAssignment(request, env, orderId);
@@ -1310,15 +1363,26 @@ async function notifyOrderStatus(request: Request, env: Env, orderId: string): P
   const claimed = await createOrderPushLog(env, accessToken, logId);
   if (!claimed) return response({ orderId, sent: false, duplicate: true });
 
-  const recipients = new Set<string>();
-  if (typeof order.userId === "string") recipients.add(order.userId);
+  const recipients = new Map<string, string>();
+  if (typeof order.userId === "string") recipients.set(order.userId, status);
   if (status === "cancelled" && typeof order.courierId === "string") {
-    recipients.add(order.courierId);
+    recipients.set(order.courierId, status);
+  }
+  if (["on_the_way", "delivered", "cancelled"].includes(status) && typeof order.storeId === "string") {
+    const ownerDocs = await queryCollectionDocuments(env, accessToken, "storeOwners", "storeId", order.storeId);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) {
+        recipients.set(ownerUid, status === "on_the_way" ? "store_pickup" :
+          status === "delivered" ? "store_delivered" : "cancelled");
+      }
+    }
   }
   let sent = 0;
   try {
-    for (const recipient of recipients) {
-      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, status);
+    for (const [recipient, recipientStatus] of recipients) {
+      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, recipientStatus);
     }
     await commitFirestoreWrites(env, accessToken, [{
       update: {
