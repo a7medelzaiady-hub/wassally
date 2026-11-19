@@ -80,7 +80,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           # بنفحص الوجود بس من غير ما نطبع أسماء الأسرار في السجلات.
-          list="$(npx wrangler secret list 2>/dev/null)"
+          # Capture Wrangler errors privately; never print raw output or secret values.
+          err_file="$(mktemp)"
+          trap 'rm -f "$err_file"' EXIT
+          if ! list="$(npx wrangler secret list 2>"$err_file")"; then
+            if grep -Eqi 'authentication|unauthorized|invalid token|10000|10001' "$err_file"; then
+              echo "::error::Cloudflare authentication failed. Verify API token validity and Workers permissions."
+            elif grep -Eqi 'permission|forbidden|not authorized|9109' "$err_file"; then
+              echo "::error::Cloudflare denied access. Verify token account scope and Workers permissions."
+            elif grep -Eqi 'account|worker|script|configuration|wrangler' "$err_file"; then
+              echo "::error::Wrangler could not access the configured Worker. Check account ID, Worker name and wrangler configuration."
+            else
+              echo "::error::Wrangler secret list failed. Inspect Cloudflare token/account configuration; raw error intentionally hidden."
+            fi
+            exit 1
+          fi
           missing=()
           for name in FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; do
             echo "$list" | grep -q "\"$name\"" || missing+=("$name")
