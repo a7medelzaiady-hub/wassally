@@ -444,7 +444,9 @@ service cloud.firestore {
         isStoreApplicant(storeId) || resource.data.get('active', true) == true;
       allow list: if isAdmin() || resource.data.get('active', true) == true;
       allow create: if isAdmin() || validStoreDraft(storeId, request.resource.data);
-      allow delete: if isAdmin() || isStoreOwner(storeId);
+      // الحذف للإدارة فقط: حذف المحل من صاحبه كان بيسيب منتجات يتيمة وطلبات جارية بتشاور على محل
+      // مش موجود. حذف حساب صاحب المحل بيتم من Worker (حساب خدمة) ومش محتاج الصلاحية دي.
+      allow delete: if isAdmin();
       allow update: if isAdmin() ||
         (isStoreOwner(storeId) &&
           changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
@@ -521,10 +523,15 @@ service cloud.firestore {
       }
     }
 
+    // مستند واحد لكل مستخدم (المعرّف = uid) وبحقول محددة، عشان مايتستخدمش لإغراق قاعدة البيانات.
+    // التطبيق الحالي ما بيكتبش هنا (الحذف من Worker)، والقاعدة فاضلة للنسخ القديمة بس.
     match /account_deletions/{id} {
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
+      allow create: if signedIn() && id == request.auth.uid
+        && request.resource.data.keys().hasOnly(['userId', 'reason', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
         && request.resource.data.reason is string
-        && request.resource.data.reason.size() <= 200;
+        && request.resource.data.reason.size() <= 200
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
       allow read: if isAdmin();
     }
 
@@ -1384,11 +1391,9 @@ service cloud.firestore {
         request.resource.data.name is string && request.resource.data.name.size() <= 80 &&
         request.resource.data.storeId is string && request.resource.data.storeId.size() > 0 &&
         request.resource.data.get('active', true) is bool;
-      // صاحب المحل يقدر يحذف ربط حسابه فقط مع حذف محله في نفس الـ batch.
-      allow delete: if isAdmin() ||
-        (signedIn() && request.auth.uid == uid &&
-         resource.data.get('storeId', '') is string &&
-         isStoreOwner(resource.data.get('storeId', '')));
+      // فك ربط صاحب المحل للإدارة فقط. حذف حساب صاحب المحل بيتم من Worker (حساب خدمة)
+      // وبيقفل المحل في نفس العملية، فمفيش محل نشط بيفضل من غير صاحب.
+      allow delete: if isAdmin();
     }
 
     // طلبات المنتجات غير الموجودة: العميل ينشئ طلبًا لمحـل نشط،

@@ -12,6 +12,10 @@ interface Env {
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
   UPLOAD_RATE_LIMITER: RateLimit;
+  // App Check: off (الافتراضي، بدون أي تغيير) | monitor (تسجيل فقط) | enforce (رفض الطلب بدون رمز صالح).
+  APP_CHECK_MODE?: string;
+  // رقم مشروع Firebase (Project number) المطلوب للتحقق من رموز App Check.
+  FIREBASE_PROJECT_NUMBER?: string;
 }
 
 type JsonMap = Record<string, unknown>;
@@ -27,6 +31,59 @@ const firebaseKeys = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
 );
 let cachedAccessToken: { token: string; expiresAt: number } | undefined;
+const appCheckKeys = createRemoteJWKSet(new URL("https://firebaseappcheck.googleapis.com/v1/jwks"));
+
+export type AppCheckMode = "off" | "monitor" | "enforce";
+
+export function appCheckMode(value: unknown): AppCheckMode {
+  const mode = String(value ?? "").trim().toLowerCase();
+  return mode === "monitor" || mode === "enforce" ? mode : "off";
+}
+
+/**
+ * يتحقق من رمز Firebase App Check في الهيدر X-Firebase-AppCheck.
+ * off: لا يفعل شيئًا. monitor: يسجّل الفشل ويكمل. enforce: يرفض الطلب.
+ */
+async function assertAppCheck(request: Request, env: Env): Promise<void> {
+  const mode = appCheckMode(env.APP_CHECK_MODE);
+  if (mode === "off") return;
+  const projectNumber = String(env.FIREBASE_PROJECT_NUMBER ?? "").trim();
+  if (!/^[0-9]{6,20}$/.test(projectNumber)) {
+    if (mode === "enforce") throw new HttpError(503, "إعدادات التحقق من التطبيق غير مكتملة.");
+    console.warn("App Check monitor skipped: FIREBASE_PROJECT_NUMBER is not configured");
+    return;
+  }
+  const token = request.headers.get("X-Firebase-AppCheck") ?? "";
+  let failure = "";
+  let keysUnavailable = false;
+  if (!token) {
+    failure = "missing";
+  } else {
+    try {
+      const { payload } = await jwtVerify(token, appCheckKeys, {
+        issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
+        audience: `projects/${projectNumber}`,
+        algorithms: ["RS256"],
+      });
+      if (typeof payload.sub !== "string" || !payload.sub) failure = "no-app-id";
+    } catch (error) {
+      // تعذر جلب مفاتيح Google (شبكة/مهلة) ≠ رمز غير صالح؛ لا نلوم نسخة التطبيق على عطل خارجي.
+      const code = String((error as { code?: unknown })?.code ?? "");
+      // ERR_JOSE_GENERIC: رد غير 200 أو JSON تالف من خادم مفاتيح Google.
+      keysUnavailable = !code || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JWKS_INVALID" ||
+        code === "ERR_JOSE_GENERIC";
+      failure = keysUnavailable ? "keys-unavailable" : "invalid";
+    }
+  }
+  if (!failure) return;
+  if (mode === "enforce") {
+    if (keysUnavailable) {
+      throw new HttpError(503, "تعذر التحقق من التطبيق حاليًا. حاول مرة أخرى بعد قليل.");
+    }
+    throw new HttpError(401, "تعذر التحقق من نسخة التطبيق. حدّث التطبيق وحاول تاني.");
+  }
+  console.warn("App Check monitor: request without a valid token", failure);
+}
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   validSince: number;
@@ -50,7 +107,7 @@ function corsHeaders(request: Request, env: Env): Headers {
   }
   if (origin && allowed.includes(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Firebase-AppCheck");
     headers.set("Access-Control-Allow-Methods", "POST, PATCH, OPTIONS");
     headers.set("Access-Control-Max-Age", "600");
   }
@@ -345,6 +402,7 @@ async function assertFirebaseUserActive(
 }
 
 async function verifyCustomer(request: Request, env: Env): Promise<string> {
+  await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
@@ -421,6 +479,7 @@ export function isRecentAuthTime(authTime: number, nowSeconds = Math.floor(Date.
 }
 
 async function verifyRecentCustomer(request: Request, env: Env): Promise<string> {
+  await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
