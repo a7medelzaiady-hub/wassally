@@ -121,6 +121,27 @@ class AboutPage extends StatelessWidget {
 }
 
 /// وسائل التواصل الخارجية من إعدادات الاتصال، بدون مستمع Firestore مستمر.
+
+/// Opens WhatsApp directly for support or complaints.
+/// The fallback number is temporary and can be changed by an admin.
+Future<void> openWasallyWhatsApp(String message) async {
+  var number = '201000197222';
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('app_info').doc('contact').get();
+    final configured = (doc.data()?['whatsapp'] ?? '').toString()
+        .replaceAll(RegExp(r'[^0-9]'), '');
+    if (configured.isNotEmpty) {
+      number = configured.startsWith('0')
+          ? '20${configured.substring(1)}' : configured;
+    }
+  } catch (_) {
+    // Fall back to the temporary number if offline.
+  }
+  final uri = Uri.https('wa.me', '/$number', {'text': message});
+  await launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
 class ContactPage extends StatelessWidget {
   const ContactPage({super.key});
 
