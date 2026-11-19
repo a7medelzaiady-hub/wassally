@@ -32,6 +32,8 @@ name = "throbbing-water-4ef7-staging"
 
 [env.staging.vars]
 CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
+# Wrangler لا يورّث متغيرات الجذر للبيئات: قبل تحويل staging لـ monitor/enforce
+# أضف FIREBASE_PROJECT_NUMBER الخاص بمشروع الاختبار هنا (بدونه: monitor يتخطى، enforce يرفض 503).
 APP_CHECK_MODE = "off"
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"

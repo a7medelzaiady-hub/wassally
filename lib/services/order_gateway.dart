@@ -26,7 +26,7 @@ class OrderGateway {
     try {
       final token = await FirebaseAppCheck.instance
           .getToken()
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 3));
       if (token == null || token.isEmpty) return const {};
       return {'X-Firebase-AppCheck': token};
     } catch (_) {

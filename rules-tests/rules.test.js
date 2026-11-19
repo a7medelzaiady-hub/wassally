@@ -1481,12 +1481,27 @@ test('store owner: لا يستطيع حذف مستند المحل؛ الحذف �
   await assertSucceeds(deleteDoc(doc(as('admin1'), 'stores/shop1')));
 });
 
+test('storeOwners: صاحب المحل لا يفك ربط حسابه بنفسه؛ الإدارة فقط', async () => {
+  await assertFails(deleteDoc(doc(as('owner1'), 'storeOwners/owner1')));
+  await assertFails(deleteDoc(doc(as('owner1'), 'storeOwners/owner2')));
+  await assertSucceeds(deleteDoc(doc(as('admin1'), 'storeOwners/owner1')));
+});
+
 test('account_deletions: مستند واحد لكل مستخدم وبحقول محددة', async () => {
   const db = as('cust1');
   await assertFails(setDoc(doc(db, 'account_deletions/random-id'), { userId: 'cust1', reason: 'x' }));
   await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', junk: 'A'.repeat(1000) }));
   await assertFails(setDoc(doc(db, 'account_deletions/cust2'), { userId: 'cust2', reason: 'x' }));
-  await assertSucceeds(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust2', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 5 }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'A'.repeat(201) }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', createdAt: 'A'.repeat(5000) }));
+  await assertSucceeds(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', createdAt: serverTimestamp() }));
+});
+
+test('account_deletions: الإنشاء بدون createdAt مسموح بحقول صحيحة', async () => {
+  await assertSucceeds(setDoc(doc(as('cust1'), 'account_deletions/cust1'), { userId: 'cust1', reason: 'x' }));
 });
 
 

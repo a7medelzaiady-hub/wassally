@@ -55,6 +55,7 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
   }
   const token = request.headers.get("X-Firebase-AppCheck") ?? "";
   let failure = "";
+  let keysUnavailable = false;
   if (!token) {
     failure = "missing";
   } else {
@@ -65,13 +66,19 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
         algorithms: ["RS256"],
       });
       if (typeof payload.sub !== "string" || !payload.sub) failure = "no-app-id";
-    } catch {
-      failure = "invalid";
+    } catch (error) {
+      // تعذر جلب مفاتيح Google (شبكة/مهلة) ≠ رمز غير صالح؛ لا نلوم نسخة التطبيق على عطل خارجي.
+      const code = String((error as { code?: unknown })?.code ?? "");
+      keysUnavailable = !code || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JWKS_INVALID";
+      failure = keysUnavailable ? "keys-unavailable" : "invalid";
     }
   }
   if (!failure) return;
   if (mode === "enforce") {
-    throw new HttpError(401, "تعذر التحقق من نسخة التطبيق. حدّث التطبيق من Google Play وحاول تاني.");
+    if (keysUnavailable) {
+      throw new HttpError(503, "تعذر التحقق من التطبيق حاليًا. حاول مرة أخرى بعد قليل.");
+    }
+    throw new HttpError(401, "تعذر التحقق من نسخة التطبيق. حدّث التطبيق وحاول تاني.");
   }
   console.warn("App Check monitor: request without a valid token", failure);
 }
