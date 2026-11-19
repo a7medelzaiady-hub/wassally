@@ -58,6 +58,17 @@ class OrderGateway {
         payload: {'status': status},
       );
 
+  /// Sends an assignment push after Firestore confirms courierId/courierAt.
+  static Future<void> notifyAssignment({
+    required String idToken,
+    required String orderId,
+  }) => _send(
+        idToken: idToken,
+        method: 'POST',
+        path: '/v1/orders/${Uri.encodeComponent(orderId)}/events',
+        payload: {'event': 'assigned'},
+      );
+
   /// Removes this order's uploaded attachments only after customer receipt confirmation.
   static Future<void> cleanupAttachments({
     required String idToken,
