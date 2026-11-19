@@ -266,10 +266,33 @@ class StaffOrderService {
     });
   }
 
-  /// رقم محفظة المحل (فودافون كاش) اللي العميل يحوّل عليه وقت الاستلام. فاضي = مفيش.
+  /// الإدارة فعّلت الدفع بمحفظة المحل عند الاستلام؟ (app_info/security.storeWalletPay)
+  /// بيتفعل بعد ما كل العملاء وأصحاب المحلات يحدّثوا التطبيق.
+  static Future<bool> storeWalletPayEnabled() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('app_info')
+          .doc('security')
+          .get();
+      return snap.data()?['storeWalletPay'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// المدير: تشغيل/إيقاف الدفع بمحفظة المحل عند الاستلام.
+  static Future<void> setStoreWalletPay(bool enabled) =>
+      FirebaseFirestore.instance.collection('app_info').doc('security').set(
+        {'storeWalletPay': enabled},
+        SetOptions(merge: true),
+      );
+
+  /// رقم محفظة المحل اللي العميل يحوّل عليه وقت الاستلام.
+  /// فاضي = مفيش رقم، أو الإدارة لسه ما فعّلتش الدفع بالمحفظة.
   static Future<String> storeWalletNumber(String storeId) async {
     if (storeId.isEmpty) return '';
     try {
+      if (!await storeWalletPayEnabled()) return '';
       final snap = await FirebaseFirestore.instance
           .collection('stores')
           .doc(storeId)

@@ -820,7 +820,11 @@ service cloud.firestore {
           historyGate(nd, orderId, k)
         ) : k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy', 'paidBy']) ? (
           'customerDeliveryReportedAt' in k &&
-          (!('paidBy' in k) || paidByOk(nd.get('paidBy', ''))) &&
+          // محفظة المحل متاحة بس بعد ما الإدارة تفعّل storeWalletPay (بعد تحديث كل النسخ):
+          // النسخ القديمة بتختم التسليم بالإجمالي كامل وكانت هتتقفل على طلب store_wallet.
+          (!('paidBy' in k) ||
+            (paidByOk(nd.get('paidBy', '')) &&
+              (nd.get('paidBy', '') == 'cash' || securityFlag('storeWalletPay')))) &&
           st == 'on_the_way' &&
           cid == request.auth.uid &&
           od.get('courierArrivedAt', null) is timestamp &&

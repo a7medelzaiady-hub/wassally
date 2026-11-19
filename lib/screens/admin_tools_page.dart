@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/catalog_sync.dart';
 import '../services/delivery_service.dart';
+import '../services/staff_order_service.dart';
 import '../services/promo_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -63,6 +64,7 @@ class AdminToolsPage extends StatelessWidget {
                   const AdminSupervisorsPage(),
                 ),
                 const _CatalogIndexCard(),
+                const _StoreWalletPayCard(),
               ],
             ),
           ),
@@ -138,6 +140,80 @@ class _CatalogIndexCardState extends State<_CatalogIndexCard> {
               )
             : const Icon(Icons.refresh),
         onTap: _busy ? null : _run,
+      ),
+    );
+  }
+}
+
+// ───────────────────────── الدفع بمحفظة المحل ─────────────────────────
+
+/// تشغيل الدفع بمحفظة المحل عند الاستلام. لازم يتفعل بعد ما كل العملاء وأصحاب المحلات
+/// يحدّثوا التطبيق: النسخ القديمة بتقفل الطلب بالإجمالي كامل والقواعد هترفضه.
+class _StoreWalletPayCard extends StatefulWidget {
+  const _StoreWalletPayCard();
+
+  @override
+  State<_StoreWalletPayCard> createState() => _StoreWalletPayCardState();
+}
+
+class _StoreWalletPayCardState extends State<_StoreWalletPayCard> {
+  bool? _enabled;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    StaffOrderService.storeWalletPayEnabled().then((v) {
+      if (mounted) setState(() => _enabled = v);
+    });
+  }
+
+  Future<void> _toggle(bool value) async {
+    if (value) {
+      final ok = await confirmDialog(
+        context,
+        title: 'تفعيل الدفع بمحفظة المحل',
+        message:
+            'فعّله بس بعد ما تخلّي التحديث إجباري (force update) وكل العملاء وأصحاب '
+            'المحلات يبقوا على النسخة الجديدة. النسخ القديمة مش هتقدر تقفل طلب اتدفع بالمحفظة.',
+        confirmLabel: 'تفعيل',
+      );
+      if (!ok || !mounted) return;
+    }
+    setState(() => _busy = true);
+    try {
+      await StaffOrderService.setStoreWalletPay(value);
+      if (mounted) setState(() => _enabled = value);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر الحفظ: ${_err(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = _enabled;
+    return Card(
+      child: SwitchListTile(
+        secondary: Icon(Icons.account_balance_wallet_outlined, color: kPrimary),
+        title: const Text(
+          'الدفع بمحفظة المحل عند الاستلام',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          enabled == null
+              ? 'جاري التحميل...'
+              : enabled
+                  ? 'شغال: المندوب يقدر يسجّل إن العميل حوّل على محفظة المحل'
+                  : 'مقفول: الدفع كاش بس (فعّله بعد تحديث كل النسخ)',
+        ),
+        value: enabled ?? false,
+        onChanged: enabled == null || _busy ? null : _toggle,
       ),
     );
   }

@@ -686,7 +686,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             ] else ...[
               const SizedBox(height: 8),
               Text(
-                'المحل لسه ما حطش رقم محفظة، فالدفع كاش بس.',
+                'الدفع بمحفظة المحل مش متاح للطلب ده، فالدفع كاش بس.',
                 style: TextStyle(color: kMuted, fontSize: 13),
               ),
             ],

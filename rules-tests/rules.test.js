@@ -1985,6 +1985,12 @@ test('catalog: صاحب طلب انضمام يدير قائمة وإصدار م�
 });
 
 // ───────────── الدفع عند الاستلام: كاش أو محفظة المحل ─────────────
+async function enableStoreWalletPay(on = true) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/security'), { storeWalletPay: on }, { merge: true });
+  });
+}
+
 function podClose(db, collectedAmount) {
   const b = writeBatch(db);
   b.update(doc(db, 'orders/o1'), {
@@ -1997,7 +2003,8 @@ function podClose(db, collectedAmount) {
   return b.commit();
 }
 
-test('pay on delivery: المندوب يسجّل محفظة المحل، فالمحصّل كاش = صفر', async () => {
+test('pay on delivery: المندوب يسجّل محفظة المحل، فالمحصّل كاش = صفر (والختم القديم بالإجمالي يترفض)', async () => {
+  await enableStoreWalletPay();
   await seedOnWay('store');
   await assertFails(updateDoc(doc(as('storecour1'), 'orders/o1'), {
     customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'storecour1', paidBy: 'bank',
@@ -2033,6 +2040,7 @@ test('pay on delivery: طريقة الدفع بتتسجل مع بلاغ التس
 });
 
 test('pay on delivery: مندوب خارجي + محفظة المحل → صاحب المحل يقفل بمحصّل صفر', async () => {
+  await enableStoreWalletPay();
   await seedOnWay('external');
   await assertSucceeds(updateDoc(doc(as('cour1'), 'orders/o1'), {
     customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'cour1', paidBy: 'store_wallet',
@@ -2064,4 +2072,17 @@ test('store walletNumber: صاحب المحل يحط رقم محفظة صحيح 
   await assertFails(updateDoc(doc(db, 'stores/shop1'), { walletNumber: 1012345678 }));
   await assertFails(updateDoc(doc(as('owner2'), 'stores/shop1'), { walletNumber: '01012345678' }));
   await assertFails(updateDoc(doc(as('cust1'), 'stores/shop1'), { walletNumber: '01012345678' }));
+});
+
+test('pay on delivery: محفظة المحل مقفولة لحد ما الإدارة تفعّلها، والكاش متاح دايمًا', async () => {
+  await seedOnWay('store');
+  const report = (paidBy) => updateDoc(doc(as('storecour1'), 'orders/o1'), {
+    customerDeliveryReportedAt: serverTimestamp(), customerDeliveryReportedBy: 'storecour1', paidBy,
+  });
+  await assertFails(report('store_wallet'));
+  await enableStoreWalletPay(false);
+  await assertFails(report('store_wallet'));
+  await assertSucceeds(report('cash'));
+  // النسخة القديمة بتختم بالإجمالي كامل، وده لسه شغال للكاش.
+  await assertSucceeds(podClose(as('cust1'), 40));
 });
