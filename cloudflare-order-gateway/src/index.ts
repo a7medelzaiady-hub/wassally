@@ -1022,13 +1022,14 @@ export function orderStatusPushMessage(
     delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
     cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
     assigned: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    new_order: ["تم استلام طلبك", "طلبك وصلنا وهنبدأ نتابعه معاك."],
   };
   const [title, body] = labels[status] ?? ["تحديث على طلبك", "افتح وصّلي لمتابعة طلبك."];
   return {
     message: {
       token,
       notification: { title, body },
-      data: { type: "status", orderId, status },
+      data: { type: status === "new_order" ? "new_order" : status === "assigned" ? "assigned" : "status", orderId, status },
       android: {
         priority: "HIGH",
         ttl: "86400s",
@@ -1036,6 +1037,39 @@ export function orderStatusPushMessage(
       },
     },
   };
+}
+
+async function queryCollectionDocuments(
+  env: Env,
+  accessToken: string,
+  collectionId: string,
+  fieldPath?: string,
+  value?: string,
+): Promise<FirestoreDoc[]> {
+  const structuredQuery: JsonMap = {
+    from: [{ collectionId }],
+    ...(fieldPath ? {
+      where: {
+        fieldFilter: {
+          field: { fieldPath },
+          op: "EQUAL",
+          value: { stringValue: value ?? "" },
+        },
+      },
+    } : {}),
+    limit: 100,
+  };
+  const result = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  if (!result.ok) {
+    console.error("Order notification recipient lookup failed", collectionId, result.status);
+    throw new HttpError(503, "تعذر تحديد مستلمي إشعار الطلب.");
+  }
+  const rows = await result.json() as Array<{ document?: FirestoreDoc }>;
+  return rows.map((row) => row.document).filter((doc): doc is FirestoreDoc => Boolean(doc?.name));
 }
 
 async function sendOrderPushToUser(
@@ -1436,6 +1470,29 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
   } catch (error) {
     console.error("Courier push notification failed", error);
+  }
+  // Direct token delivery replaces the Cloud Functions order-created trigger on Spark.
+  try {
+    const [ownerDocs, adminDocs] = await Promise.all([
+      queryCollectionDocuments(env, token, "storeOwners", "storeId", storeId),
+      queryCollectionDocuments(env, token, "admins"),
+    ]);
+    const recipients = new Set<string>([uid]);
+    for (const doc of ownerDocs) {
+      const owner = decodeFields(doc.fields ?? {});
+      const ownerUid = doc.name.split("/").pop() ?? "";
+      if (ownerUid && owner.active !== false) recipients.add(ownerUid);
+    }
+    for (const doc of adminDocs) {
+      const adminUid = doc.name.split("/").pop() ?? "";
+      if (adminUid) recipients.add(adminUid);
+    }
+    for (const recipient of recipients) {
+      await sendOrderPushToUser(env, token, recipient, orderId, "new_order");
+    }
+  } catch (error) {
+    // The order is already committed; notification delivery must not fail checkout.
+    console.error("Order-created push notification failed", error);
   }
   return response({ orderId, subtotal, deliveryFee, discount, total, items });
 }
