@@ -49,6 +49,32 @@ describe("Worker order gateway route hardening", () => {
     expect(response.status).toBe(401);
   });
 
+  it("rejects forged tokens without calling Firebase for create or edit", async () => {
+    const upstream = vi.spyOn(globalThis, "fetch");
+    try {
+      for (const [method, path] of [
+        ["POST", "/v1/orders"],
+        ["PATCH", "/v1/orders/order_123"],
+      ]) {
+        const response = await worker.fetch(
+          new Request("https://worker.test" + path, {
+            method,
+            headers: {
+              Authorization: "Bearer forged.invalid.token",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ expectedTotal: 1 }),
+          }),
+          env,
+        );
+        expect(response.status).toBe(401);
+      }
+      expect(upstream).not.toHaveBeenCalled();
+    } finally {
+      upstream.mockRestore();
+    }
+  });
+
   it("protects order editing with the same Firebase authentication gate", async () => {
     const response = await worker.fetch(
       new Request("https://worker.test/v1/orders/order_123", {
