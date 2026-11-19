@@ -825,6 +825,16 @@ test('owner: يرفع نسخة الكتالوج +1 فقط، والعميل لا'
   await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog'), v, { merge: true }));
 });
 
+test('catalog: صاحب المحل يزود الإصدار خطوة واحدة فقط، بدون تزوير وقت التحديث', async () => {
+  const ref = doc(as('owner1'), 'app_info/catalog');
+  await assertSucceeds(setDoc(ref, { version: 1, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { version: 999999, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { version: 2, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { version: increment(1), updatedAt: new Date('2020-01-01') }));
+  await assertFails(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp(), injected: true }));
+});
+
 test('owner: يبعت إشعار للعميل، وما يكتبش في storeOwners أو admins', async () => {
   const n = { userId: 'cust1', title: 't', body: 'b', orderId: 'o1', read: false, createdAt: serverTimestamp() };
   await assertSucceeds(setDoc(doc(as('owner1'), 'notifications/n9'), n));
