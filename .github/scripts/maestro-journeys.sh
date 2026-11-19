@@ -23,7 +23,7 @@ echo "::group::Start Firebase Emulators"
   export JAVA_HOME="$JAVA21_HOME"
   export PATH="$JAVA_HOME/bin:$PATH"
   cd rules-tests
-  exec npx firebase emulators:start --config ../firebase.e2e.json --only auth,firestore --project demo-wasally
+  exec npx firebase emulators:start --config ../firebase.e2e.json --only auth,firestore --project wasally-12259
 ) > "$OUT/emulators.log" 2>&1 &
 EMU_PID=$!
 for i in $(seq 1 90); do

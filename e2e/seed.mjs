@@ -1,6 +1,6 @@
 // يجهّز Firebase Emulators (Auth + Firestore) ببيانات تجريبية لرحلات Maestro.
 // بيشتغل على emulators فقط (demo-wasally). Authorization: Bearer owner بيتخطى قواعد الأمان في الـ Emulator.
-const PROJECT = 'demo-wasally';
+const PROJECT = 'wasally-12259';
 const FS = `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
 const AUTH = `http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/${PROJECT}/accounts:batchCreate`;
 const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer owner' };
