@@ -1505,6 +1505,7 @@ class _ProductRow extends StatelessWidget {
             elevation: 3,
             shape: const CircleBorder(),
             child: Semantics(
+              container: true,
               button: true,
               label: 'إضافة ${product.name}',
               child: InkWell(

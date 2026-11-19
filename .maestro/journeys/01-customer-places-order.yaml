@@ -23,7 +23,7 @@ appId: com.wassally.app
 - extendedWaitUntil:
     visible: ".*منتج تجريبي.*"
     timeout: 60000
-- tapOn: "إضافة منتج تجريبي"
+- tapOn: ".*إضافة منتج تجريبي.*"
 - extendedWaitUntil:
     visible: ".*عرض السلة.*"
     timeout: 30000
