@@ -46,6 +46,18 @@ class OrderGateway {
         payload: payload,
       );
 
+  /// Requests a trusted, idempotent FCM push after a statusHistory write commits.
+  static Future<void> notifyStatus({
+    required String idToken,
+    required String orderId,
+    required String status,
+  }) => _send(
+        idToken: idToken,
+        method: 'POST',
+        path: '/v1/orders/${Uri.encodeComponent(orderId)}/events',
+        payload: {'status': status},
+      );
+
   /// Removes this order's uploaded attachments only after customer receipt confirmation.
   static Future<void> cleanupAttachments({
     required String idToken,
