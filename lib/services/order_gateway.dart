@@ -69,6 +69,17 @@ class OrderGateway {
         payload: {'event': 'created'},
       );
 
+  /// Sends a ready-for-pickup push after the store confirms readiness.
+  static Future<void> notifyReady({
+    required String idToken,
+    required String orderId,
+  }) => _send(
+        idToken: idToken,
+        method: 'POST',
+        path: '/v1/orders/${Uri.encodeComponent(orderId)}/events',
+        payload: {'event': 'ready'},
+      );
+
   /// Sends an assignment push after Firestore confirms courierId/courierAt.
   static Future<void> notifyAssignment({
     required String idToken,
