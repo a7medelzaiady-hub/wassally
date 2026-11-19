@@ -18,6 +18,7 @@ import '../models/product_offer.dart';
 import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
@@ -997,6 +998,7 @@ class _StorePageState extends State<StorePage> {
       var content = utf8.decode(bytes, allowMalformed: true);
       if (content.startsWith('\uFEFF')) content = content.substring(1);
 
+      var highlightsOk = true;
       final rows = <_Json>[];
       for (final line in content.split(RegExp(r'\r?\n'))) {
         if (line.trim().isEmpty) continue;
@@ -1026,6 +1028,7 @@ class _StorePageState extends State<StorePage> {
       }
 
       var uploaded = 0;
+      Object? uploadError;
       try {
         for (var start = 0; start < rows.length; start += 400) {
           final end = start + 400 > rows.length ? rows.length : start + 400;
@@ -1044,14 +1047,33 @@ class _StorePageState extends State<StorePage> {
           await batch.commit();
           uploaded += end - start;
         }
-      } finally {
-        if (uploaded > 0) {
-          await CatalogService.bump();
-          _load(reset: true);
-        }
+      } catch (e) {
+        uploadError = e;
       }
 
-      _say('تم رفع $uploaded صنف بنجاح!');
+      if (uploaded > 0) {
+        // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+        // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+        // (refresh وbump ما بيرموش استثناءات.)
+        highlightsOk = await StoreHighlights.refresh(store.id);
+        await CatalogService.bump();
+        _load(reset: true);
+      }
+
+      if (uploadError != null) {
+        debugPrint('CSV upload error: $uploadError');
+        if (uploaded == 0) {
+          _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
+        } else {
+          _say(StoreHighlights.withNote(
+            'تم رفع $uploaded صنف قبل حدوث خطأ؛ باقي الملف ما اترفعش',
+            highlightsOk,
+          ));
+        }
+        return;
+      }
+
+      _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));
     } catch (e) {
       debugPrint('CSV upload error: $e');
       _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
@@ -1246,10 +1268,18 @@ class _StorePageState extends State<StorePage> {
                             });
                           }
 
+                          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+                          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+                          final highlightsOk =
+                              await StoreHighlights.refresh(store.id);
                           await CatalogService.bump();
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);
+                          if (!highlightsOk) {
+                            _say(StoreHighlights.withNote(
+                                'تم حفظ الصنف', false));
+                          }
                         } catch (e) {
                           debugPrint('Save product error: $e');
                           _say('تعذر حفظ الصنف. تأكد أن حسابك مدير.');

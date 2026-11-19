@@ -16,6 +16,7 @@ import 'order_status_writer.dart';
 import 'performance_monitor.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
+import 'read_meter.dart';
 
 /// أقصى عدد أصناف مختلفة في الطلب الواحد. لازم يطابق firestore.rules (validNewOrder: items.size() <= 100).
 const int kMaxOrderLines = 100;
@@ -630,7 +631,7 @@ class OrderService {
         .where('userId', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
         .limit(kMyOrdersLimit)
-        .snapshots();
+        .snapshots().metered('orders:customer');
     await for (final snap in PerformanceMonitor.traceFirstEvent(
       'order_history_initial_load',
       stream,
@@ -643,7 +644,7 @@ class OrderService {
   static Stream<AppOrder?> watchOrder(String id) {
     return PerformanceMonitor.traceFirstEvent(
       'order_tracking_initial_load',
-      _orders.doc(id).snapshots(),
+      _orders.doc(id).snapshots().metered('orders:customer-one'),
     ).map((s) {
       final data = s.data();
       return data == null ? null : AppOrder.fromMap(s.id, data);

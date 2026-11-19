@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
+import 'read_meter.dart';
 
 class RoleInfo {
   final AppRole role;
@@ -110,7 +111,9 @@ class RoleService {
       DocumentReference<Map<String, dynamic>> ref,
     ) async {
       try {
-        return await ref.get();
+        final snap = await ref.get();
+        ReadMeter.document('role:lookup', snap);
+        return snap;
       } catch (_) {
         lookupFailed = true;
         return null;
@@ -143,6 +146,7 @@ class RoleService {
         final claims = (await user.getIdTokenResult()).claims;
 
         final admin = await db.collection('admins').doc(user.uid).get();
+        ReadMeter.document('role:lookup', admin);
 
         adminChecked = true;
 

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/user_profile.dart';
+import 'read_meter.dart';
 
 /// بيانات المستخدم (الاسم، الموبايل، العنوان) المحفوظة في users/{uid}.
 class UserService {
@@ -16,7 +17,7 @@ class UserService {
   static Stream<UserProfile> watch() {
     final doc = _doc();
     if (doc == null) return Stream<UserProfile>.empty();
-    return doc.snapshots().map(
+    return doc.snapshots().metered('user:doc').map(
       (s) => UserProfile.fromMap(s.data() as Map<String, dynamic>?),
     );
   }

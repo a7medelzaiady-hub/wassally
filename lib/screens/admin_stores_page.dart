@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -593,6 +594,9 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      final highlightsOk = await StoreHighlights.refresh(id);
       await CatalogService.bump();
 
       if (!mounted) return;
@@ -601,7 +605,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         _products.clear();
       });
 
-      _say('تم ترحيل $total صنف بنجاح.');
+      _say(StoreHighlights.withNote('تم ترحيل $total صنف بنجاح', highlightsOk));
     } catch (e) {
       _say('تعذر إكمال الترحيل. لم يتم حذف القائمة القديمة. ${_errorText(e)}');
     } finally {
@@ -1322,11 +1326,14 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       }
 
       await _syncCount();
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       if (!mounted) return;
 
-      _say('تم رفع $uploaded صنف بنجاح.');
+      _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));
 
       _load(reset: true);
     } catch (e) {
@@ -1335,14 +1342,19 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       if (uploaded > 0) {
         try {
           await _syncCount();
-          await CatalogService.bump();
         } catch (_) {}
+        // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+        // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+        // (refresh وbump ما بيرموش استثناءات.)
+        final highlightsOk = await StoreHighlights.refresh(widget.storeId);
+        await CatalogService.bump();
 
         if (mounted) _load(reset: true);
 
         _say(
           'تم رفع $uploaded صنف قبل حدوث خطأ: ${_errorText(e)} '
-          'يمكنك إعادة رفع نفس الملف بأمان دون تكرار.',
+          'يمكنك إعادة رفع نفس الملف بأمان دون تكرار.'
+          '${highlightsOk ? '' : ' ${StoreHighlights.failedNote}'}',
         );
       } else {
         _say('حدث خطأ أثناء رفع الملف: ${_errorText(e)}');
@@ -1374,16 +1386,22 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        await _syncCount();
+        // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+        try {
+          await _syncCount();
+        } catch (_) {}
       } else {
         await doc.reference.update(data);
       }
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       await _load(reset: true);
 
-      _say('تم حفظ الصنف.');
+      _say(StoreHighlights.withNote('تم حفظ الصنف', highlightsOk));
     } catch (e) {
       _say(_errorText(e));
     }
@@ -1403,8 +1421,14 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     try {
       await doc.reference.delete();
 
-      await _syncCount();
+      // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+      try {
+        await _syncCount();
+      } catch (_) {}
 
+      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
+      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
       await CatalogService.bump();
 
       if (!mounted) return;
@@ -1413,7 +1437,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         _docs.removeWhere((item) => item.id == doc.id);
       });
 
-      _say('تم حذف الصنف.');
+      _say(StoreHighlights.withNote('تم حذف الصنف', highlightsOk));
     } catch (e) {
       _say(_errorText(e));
     }

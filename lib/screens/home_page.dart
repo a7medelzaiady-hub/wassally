@@ -15,6 +15,7 @@ import '../models/app_role.dart';
 import '../models/store.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/read_meter.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/performance_monitor.dart';
@@ -123,7 +124,7 @@ class _HomePageState extends State<HomePage>
           .where('userId', isEqualTo: uid)
           .where('read', isEqualTo: false)
           .limit(10) // العداد بيعرض 9+ أصلًا، فمفيش داعي نقرأ أكتر من كده.
-          .snapshots();
+          .snapshots().metered('home:unread-notifications');
     }
 
     _loadSavedAddress();
@@ -832,50 +833,56 @@ class _HomePageState extends State<HomePage>
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
     for (final store in stores) {
       var hasCatalog = false;
-      try {
-        Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-            .collection('stores')
-            .doc(store.store.id)
-            .collection('products')
-            .limit(200);
-        DocumentSnapshot<Map<String, dynamic>>? cursor;
-        do {
-          if (cursor != null) {
-            query = FirebaseFirestore.instance
-                .collection('stores')
-                .doc(store.store.id)
-                .collection('products')
-                .limit(200)
-                .startAfterDocument(cursor);
-          }
-          final page = await query.get();
-          if (page.docs.isNotEmpty) hasCatalog = true;
-          for (final doc in page.docs) {
-            final item = doc.data();
-            final name = (item['name'] ?? '').toString().trim();
-            final price = (item['price'] as num?)?.toDouble() ?? 0;
-            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-            final text = (item['offerText'] ?? '').toString().trim();
-            final end = item['offerEndsAt'];
-            final expired = isOfferExpired(
-              end is Timestamp ? end.toDate() : null,
-              DateTime.now(),
-            );
-            if (name.isEmpty ||
-                price <= 0 ||
-                expired ||
-                item['available'] == false ||
-                item['isAvailable'] == false ||
-                (!(old > price && old > 0) && text.isEmpty)) {
-              continue;
+      // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
+      // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
+      // مع كل فتحة للرئيسية؛ المسح بقى للمحل اللي ملخصه لسه ما اتحسبش بس.
+      if (store.data['offerItems'] is! List) {
+        try {
+          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+              .collection('stores')
+              .doc(store.store.id)
+              .collection('products')
+              .limit(200);
+          DocumentSnapshot<Map<String, dynamic>>? cursor;
+          do {
+            if (cursor != null) {
+              query = FirebaseFirestore.instance
+                  .collection('stores')
+                  .doc(store.store.id)
+                  .collection('products')
+                  .limit(200)
+                  .startAfterDocument(cursor);
             }
-            offers.add((store, item));
-          }
-          cursor = page.docs.isEmpty ? null : page.docs.last;
-          if (page.docs.length < 200) break;
-        } while (cursor != null);
-      } catch (error) {
-        debugPrint('Home offers load failed for ${store.store.id}: $error');
+            final page = await query.get();
+            ReadMeter.query('home:offers-scan', page);
+            if (page.docs.isNotEmpty) hasCatalog = true;
+            for (final doc in page.docs) {
+              final item = doc.data();
+              final name = (item['name'] ?? '').toString().trim();
+              final price = (item['price'] as num?)?.toDouble() ?? 0;
+              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+              final text = (item['offerText'] ?? '').toString().trim();
+              final end = item['offerEndsAt'];
+              final expired = isOfferExpired(
+                end is Timestamp ? end.toDate() : null,
+                DateTime.now(),
+              );
+              if (name.isEmpty ||
+                  price <= 0 ||
+                  expired ||
+                  item['available'] == false ||
+                  item['isAvailable'] == false ||
+                  (!(old > price && old > 0) && text.isEmpty)) {
+                continue;
+              }
+              offers.add((store, item));
+            }
+            cursor = page.docs.isEmpty ? null : page.docs.last;
+            if (page.docs.length < 200) break;
+          } while (cursor != null);
+        } catch (error) {
+          debugPrint('Home offers load failed for ${store.store.id}: $error');
+        }
       }
       // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
       if (!hasCatalog) {

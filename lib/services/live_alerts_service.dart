@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'feedback_service.dart';
 import 'notification_service.dart';
+import 'read_meter.dart';
 
 /// تنبيهات لحظية للدردشة والشكاوى، من غير Cloud Functions (شغّالة على الخطة المجانية).
 ///
@@ -125,7 +126,7 @@ class LiveAlerts {
       _db
           .collection('support_chats')
           .doc(uid)
-          .snapshots()
+          .snapshots().metered('alerts:my-chat')
           .listen(
             (snap) {
               if (snap.metadata.hasPendingWrites) return;
@@ -153,7 +154,7 @@ class LiveAlerts {
           .where('userId', isEqualTo: uid)
           .orderBy('createdAt', descending: true)
           .limit(100)
-          .snapshots()
+          .snapshots().metered('alerts:my-complaints')
           .listen(
             (snap) async {
               if (snap.metadata.hasPendingWrites) return;
@@ -210,7 +211,7 @@ class LiveAlerts {
           .where('unreadForAdmin', isEqualTo: true)
           .orderBy('lastAt', descending: true)
           .limit(100)
-          .snapshots()
+          .snapshots().metered('alerts:admin-chats')
           .listen(
             (snap) {
               if (snap.metadata.hasPendingWrites) return;
@@ -253,7 +254,7 @@ class LiveAlerts {
           .where('status', isEqualTo: 'open')
           .orderBy('createdAt', descending: true)
           .limit(100)
-          .snapshots()
+          .snapshots().metered('alerts:admin-complaints')
           .listen(
             (snap) {
               if (snap.metadata.hasPendingWrites) return;
@@ -298,7 +299,7 @@ class LiveAlerts {
           .where('status', isEqualTo: 'preparing')
           .orderBy('createdAt', descending: true)
           .limit(100)
-          .snapshots()
+          .snapshots().metered('alerts:courier-ready')
           .listen(
             (snap) {
               if (snap.metadata.hasPendingWrites) return;

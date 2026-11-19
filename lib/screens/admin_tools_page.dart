@@ -1,8 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../services/catalog_service.dart';
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
+import '../services/read_meter.dart';
+import '../services/store_highlights.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -60,6 +63,191 @@ class AdminToolsPage extends StatelessWidget {
                   'المشرفين',
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
+                ),
+                const _HighlightsRefreshCard(),
+                tile(
+                  Icons.speed_outlined,
+                  'عدّاد القراءات (تقديري)',
+                  'كل شاشة جابت كام مستند من Firestore (للقياس)',
+                  const AdminReadMeterPage(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── ملخص العروض ─────────────────────────
+
+/// تحديث ملخص العروض (offerItems/bestItems) لكل المحلات على دفعات من 50 محل.
+/// الرئيسية بتعرض العروض من الملخص ده، فاعمله مرة بعد التحديث أو لو عرض مش ظاهر صح.
+class _HighlightsRefreshCard extends StatefulWidget {
+  const _HighlightsRefreshCard();
+
+  @override
+  State<_HighlightsRefreshCard> createState() => _HighlightsRefreshCardState();
+}
+
+class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
+  String? _cursor;
+  int _total = 0;
+  int _failed = 0;
+  bool _busy = false;
+  bool _finished = false;
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'تحديث ملخص العروض',
+      message:
+          'هيتحدث ملخص العروض لـ 50 محل في المرة (كل محل بيقرا أصنافه اللي عليها عروض أو الأكثر مبيعًا بس). '
+          'دوس تاني للدفعة اللي بعدها. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final r = await StoreHighlights.refreshBatch(
+        startAfterId: _finished ? null : _cursor,
+      );
+      await CatalogService.bump();
+      if (!mounted) return;
+      setState(() {
+        if (_finished) {
+          _total = 0;
+          _failed = 0;
+        }
+        _total += r.done;
+        _failed += r.failed;
+        _cursor = r.lastId;
+        _finished = r.lastId == null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر التحديث: ${_err(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final failedNote = _failed == 0 ? '' : ' (فشل $_failed — شغّل التحديث تاني)';
+    final status = _total == 0
+        ? 'الرئيسية بتعرض العروض من الملخص ده من غير قراءة الأصناف'
+        : _finished
+            ? 'خلص: اتعالج $_total محل$failedNote'
+            : 'اتعالج $_total محل$failedNote — دوس للدفعة الجاية';
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.local_offer_outlined, color: kPrimary),
+        title: const Text(
+          'تحديث ملخص العروض',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(status),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
+      ),
+    );
+  }
+}
+
+// ───────────────────────── عدّاد القراءات ─────────────────────────
+
+/// عرض تقريبي للقراءات اللي الجهاز ده جابها من الخادم من ساعة ما اتفتح التطبيق
+/// (أو من آخر تصفير)، مقسمة حسب الشاشة/الخدمة. قراءات قواعد Firestore والـ Worker مش هنا.
+class AdminReadMeterPage extends StatefulWidget {
+  const AdminReadMeterPage({super.key});
+
+  @override
+  State<AdminReadMeterPage> createState() => _AdminReadMeterPageState();
+}
+
+class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
+  @override
+  Widget build(BuildContext context) {
+    final rows = ReadMeter.snapshot();
+    final since = ReadMeter.since;
+    return Scaffold(
+      body: Column(
+        children: [
+          const InnerHeader(title: 'عدّاد القراءات (تقديري)'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SwitchListTile(
+                  value: ReadMeter.enabled,
+                  onChanged: (v) => setState(() => ReadMeter.enabled = v),
+                  title: const Text(
+                    'تشغيل العدّاد على الجهاز ده',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: const Text(
+                    'شغّله، واستخدم التطبيق زي العميل/المحل، وارجع هنا تشوف الأرقام.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'الإجمالي التقديري: ${ReadMeter.total()} قراءة منذ '
+                  '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                if (rows.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text('لسه مفيش قراءات متسجلة.'),
+                  ),
+                for (final r in rows)
+                  ListTile(
+                    dense: true,
+                    title: Text(r.key, textDirection: TextDirection.ltr),
+                    trailing: Text(
+                      '${r.value}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() {}),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('تحديث'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(ReadMeter.reset),
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('تصفير'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'تقريبي: بيعدّ المستندات الجاية من الخادم بس (الكاش المحلي صفر). '
+                  'دي قراءات تقديرية مرصودة من الجهاز ده للمقارنة بين الشاشات، '
+                  'مش فاتورة Firebase. الرقم الرسمي (ومعاه قراءات قواعد الأمان '
+                  'والـ Worker) في Firebase Console ← Usage.',
+                  style: TextStyle(color: kMuted, fontSize: 12),
                 ),
               ],
             ),
