@@ -1215,10 +1215,18 @@ async function notifyOrderAssignment(request: Request, env: Env, orderId: string
   let sent = 0;
   try {
     if (typeof order.userId === "string") {
-      sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned_customer");
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned_customer");
+      } catch (error) {
+        console.error("Assignment customer push failed", error);
+      }
     }
     if (uid !== courierId) {
-      sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned_courier");
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned_courier");
+      } catch (error) {
+        console.error("Assignment courier push failed", error);
+      }
     }
     await commitFirestoreWrites(env, accessToken, [{
       update: {
@@ -1272,11 +1280,19 @@ async function notifyOrderCreated(request: Request, env: Env, orderId: string): 
     sent += await sendOrderPushToUser(env, accessToken, uid, orderId, "new_order");
     for (const recipient of recipients) {
       if (recipient === uid) continue;
-      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order_staff");
+      try {
+        sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order_staff");
+      } catch (error) {
+        console.error("Order-created recipient push failed", recipient, error);
+      }
     }
     // The available-order feed is intentionally public only to authenticated couriers;
     // the push itself contains no customer name, phone, address, or notes.
-    await notifyCouriersOfNewOrder(env, accessToken, orderId, String(order.storeName ?? ""));
+    try {
+      await notifyCouriersOfNewOrder(env, accessToken, orderId, String(order.storeName ?? ""));
+    } catch (error) {
+      console.error("Courier topic push failed for created order", error);
+    }
     await commitFirestoreWrites(env, accessToken, [{
       update: {
         name: firestoreDocumentName(env, `notification_push_log/${logId}`),
@@ -1322,7 +1338,11 @@ async function notifyOrderReady(request: Request, env: Env, orderId: string): Pr
   let sent = 0;
   try {
     if (typeof order.userId === "string") {
-      sent = await sendOrderPushToUser(env, accessToken, order.userId, orderId, "ready");
+      try {
+        sent = await sendOrderPushToUser(env, accessToken, order.userId, orderId, "ready");
+      } catch (error) {
+        console.error("Order-ready customer push failed", error);
+      }
     }
     await commitFirestoreWrites(env, accessToken, [{
       update: {
