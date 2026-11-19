@@ -20,8 +20,6 @@ import '../widgets/theme_picker.dart';
 import 'join_request_page.dart';
 import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
-import 'support_chat_page.dart';
-import 'my_complaints_page.dart';
 import 'legal_page.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
@@ -347,14 +345,14 @@ class _AccountPageState extends State<AccountPage> {
                 decoration: _card,
                 child: ListTile(
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SupportChatPage()),
+                    MaterialPageRoute(builder: (_) => const ContactPage()),
                   ),
                   leading: Icon(Icons.support_agent_outlined, color: kPrimary),
                   title: const Text(
                     'تواصل مع الإدارة',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  subtitle: const Text('اكتب لنا مباشرة وهنرد عليك'),
+                  subtitle: const Text('تواصل عبر واتساب'),
                   trailing: const Icon(Icons.chevron_left),
                 ),
               ),
@@ -434,7 +432,7 @@ class _AccountPageState extends State<AccountPage> {
                     ListTile(
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => const MyComplaintsPage(),
+                          builder: (_) => const ContactPage(),
                         ),
                       ),
                       leading: Icon(
@@ -442,7 +440,7 @@ class _AccountPageState extends State<AccountPage> {
                         color: kPrimary,
                       ),
                       title: const Text('شكاواي واقتراحاتي'),
-                      subtitle: const Text('شوف رد الإدارة'),
+                      subtitle: const Text('أرسل شكوى أو اقتراح عبر واتساب'),
                       trailing: const Icon(Icons.chevron_left),
                     ),
                     const Divider(height: 1),
