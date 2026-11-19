@@ -9,7 +9,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
-import '../screens/support_chat_page.dart';
 import 'navigation.dart' show rootNavigatorKey;
 import 'live_alerts_service.dart';
 
@@ -193,14 +192,8 @@ class NotificationService {
       unawaited(_openAppStore());
       return;
     }
-    if (type == 'support_chat') {
-      final chatUid = (message.data['chatUid'] ?? '').toString().trim();
-      if (chatUid.isEmpty) return;
-      rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
-        builder: (_) => SupportChatPage(chatUid: chatUid),
-      ));
-      return;
-    }
+    // إشعارات الشات القديمة (support_chat) اتشالت: الدعم بقى على واتساب.
+    if (type == 'support_chat') return;
     _openOrder(message);
   }
 

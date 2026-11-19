@@ -8,7 +8,7 @@ import '../screens/admin_inbox_page.dart';
 import '../screens/admin_roles_page.dart';
 import '../screens/admin_store_owners_page.dart';
 import '../screens/admin_stores_page.dart';
-import '../screens/support_chat_page.dart';
+import '../screens/info_pages.dart' show openWasallyWhatsApp;
 import '../services/auth_service.dart';
 import '../screens/main_shell.dart';
 import '../theme/brand.dart';
@@ -123,17 +123,17 @@ class StaffHeader extends StatelessWidget {
         ),
       if (isAdmin)
         _btn(
-          tooltip: 'الطلبات والشكاوى',
+          tooltip: 'طلبات الانضمام والمراجعات',
           icon: Icons.inbox_outlined,
           onPressed: () => Navigator.of(context)
               .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
         ),
       if (!isAdmin)
         _btn(
-          tooltip: 'محادثة مع الإدارة',
+          tooltip: 'تواصل مع الإدارة على واتساب',
           icon: Icons.support_agent_outlined,
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const SupportChatPage())),
+          onPressed: () =>
+              openWasallyWhatsApp('السلام عليكم، عايز أتواصل مع إدارة وصّلي'),
         ),
       // الأدمن: تبديل بين اللوحات. غيره: زر للرئيسية (شاشة العميل).
       _btn(

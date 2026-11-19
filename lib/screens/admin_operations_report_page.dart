@@ -14,7 +14,6 @@ class _OperationsReport {
   final int openDeliveryIssues;
   final int returnsAwaitingStore;
   final int returnsConfirmed;
-  final int openComplaints;
   final double collectedToday;
   final double courierEarningsToday;
   final double settlementsToday;
@@ -28,7 +27,6 @@ class _OperationsReport {
     required this.openDeliveryIssues,
     required this.returnsAwaitingStore,
     required this.returnsConfirmed,
-    required this.openComplaints,
     required this.collectedToday,
     required this.courierEarningsToday,
     required this.settlementsToday,
@@ -90,10 +88,6 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
           .where('status', isEqualTo: 'store_confirmed_return')
           .count()
           .get(),
-      db.collection('complaints')
-          .where('status', whereIn: ['open', 'in_progress'])
-          .count()
-          .get(),
       settlements.where('createdAt', isGreaterThanOrEqualTo: start)
           .aggregate(sum('amount'))
           .get(),
@@ -105,10 +99,10 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
     ]);
 
     final todayMoney = results[3];
-    final allMoney = results[9];
+    final allMoney = results[8];
     final totalCollected = _sum(allMoney, 'collectedAmount');
     final totalEarnings = _sum(allMoney, 'courierEarning');
-    final totalSettled = _sum(results[10], 'amount');
+    final totalSettled = _sum(results[9], 'amount');
 
     return _OperationsReport(
       newOrders: results[0].count ?? 0,
@@ -118,10 +112,9 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
       openDeliveryIssues: results[4].count ?? 0,
       returnsAwaitingStore: results[5].count ?? 0,
       returnsConfirmed: results[6].count ?? 0,
-      openComplaints: results[7].count ?? 0,
       collectedToday: _sum(todayMoney, 'collectedAmount'),
       courierEarningsToday: _sum(todayMoney, 'courierEarning'),
-      settlementsToday: _sum(results[8], 'amount'),
+      settlementsToday: _sum(results[7], 'amount'),
       outstanding: totalCollected - totalEarnings - totalSettled,
     );
   }
@@ -270,8 +263,6 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   _metric('مرتجعات بانتظار تأكيد المحل', '${r.returnsAwaitingStore}', Icons.inventory_2_outlined),
                   const SizedBox(height: 8),
                   _metric('مرتجعات مؤكدة وتنتظر إغلاق الطلب', '${r.returnsConfirmed}', Icons.assignment_turned_in_outlined),
-                  const SizedBox(height: 8),
-                  _metric('شكاوى لم تُغلق', '${r.openComplaints}', Icons.support_agent_outlined),
                   const SizedBox(height: 8),
                   _metric('صافي النقدية المطلوب توريده إجمالًا', outstandingText, Icons.account_balance_outlined),
                 ]),

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
@@ -139,7 +140,15 @@ Future<void> openWasallyWhatsApp(String message) async {
     // Fall back to the temporary number if offline.
   }
   final uri = Uri.https('wa.me', '/$number', {'text': message});
-  await launchUrl(uri, mode: LaunchMode.externalApplication);
+  var opened = false;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+  if (!opened) {
+    NotificationService.messengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('تعذر فتح واتساب. تأكد إنه متثبّت على جهازك.')),
+    );
+  }
 }
 
 class ContactPage extends StatelessWidget {
