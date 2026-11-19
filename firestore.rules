@@ -970,7 +970,13 @@ service cloud.firestore {
       allow write: if isAdmin() ||
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
-          request.resource.data.version is number);
+          request.resource.data.keys().hasAll(['version', 'updatedAt']) &&
+          request.resource.data.version is number &&
+          request.resource.data.updatedAt == request.time &&
+          (resource == null
+            ? request.resource.data.version == 1
+            : (resource.data.get('version', 0) is number &&
+               request.resource.data.version == resource.data.get('version', 0) + 1)));
     }
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.
