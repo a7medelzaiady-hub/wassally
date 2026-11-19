@@ -13,6 +13,10 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 
+/// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
+// ignore: prefer_const_declarations
+final bool kPromoCodesEnabled = false;
+
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
 
@@ -380,35 +384,37 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _promo,
-                          textDirection: TextDirection.ltr,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(
-                            labelText: 'كود خصم (اختياري)',
-                            prefixIcon: Icon(Icons.local_offer_outlined),
+                  if (kPromoCodesEnabled) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _promo,
+                            textDirection: TextDirection.ltr,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'كود خصم (اختياري)',
+                              prefixIcon: Icon(Icons.local_offer_outlined),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _checkingPromo ? null : _applyPromo,
-                        child: _checkingPromo
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('تطبيق'),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _checkingPromo ? null : _applyPromo,
+                          child: _checkingPromo
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('تطبيق'),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   Text(
                     'طريقة الدفع',
