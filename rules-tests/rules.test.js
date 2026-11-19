@@ -1445,39 +1445,32 @@ test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها
 });
 
 
-test('special_requests: العميل ينشئ طلبًا صالحًا وصاحب المحل المعني فقط يقرأه', async () => {
+test('special_requests: الإنشاء موقوف مؤقتًا للجميع، والقراءة للمستندات القديمة لصاحب المحل المعني والإدارة فقط', async () => {
   const request = {
     storeId: 'shop1', storeName: 'S', userId: 'cust1',
     description: 'منتج مخصوص', quantity: 2, imageUrl: '',
     voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
   };
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/sr1'), request));
-  await assertSucceeds(getDoc(doc(as('owner1'), 'special_requests/sr1')));
-  await assertFails(getDoc(doc(as('owner2'), 'special_requests/sr1')));
-  await assertFails(getDoc(doc(as('cust2'), 'special_requests/sr1')));
-  await assertFails(setDoc(doc(as('cust1'), 'special_requests/bad'), {
-    ...request, quantity: 0,
+  // لا عميل ولا صاحب محل ولا مدير يقدر ينشئ مستندًا جديدًا (التطبيق بيستخدم orders.specialRequest).
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/sr1'), request));
+  await assertFails(setDoc(doc(as('owner1'), 'special_requests/sr2'), request));
+  await assertFails(setDoc(doc(as('admin1'), 'special_requests/sr3'), request));
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/voice-big'), {
+    ...request, voiceBase64: 'A'.repeat(1000),
   }));
-});
 
-test('special_requests: يقبل مرفق صورة فقط أو صوت فقط ويرفض الصوت المتجاوز للحد', async () => {
-  const base = {
-    storeId: 'shop1', storeName: 'S', userId: 'cust1',
-    description: '', quantity: 1, imageUrl: '',
-    voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
-  };
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/image-only'), {
-    ...base,
-    imageUrl: 'https://res.cloudinary.com/example/image/upload/test.jpg',
-  }));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/voice-only'), {
-    ...base,
-    voiceBase64: 'A'.repeat(1000),
-  }));
-  await assertFails(setDoc(doc(as('cust1'), 'special_requests/voice-too-large'), {
-    ...base,
-    voiceBase64: 'A'.repeat(700001),
-  }));
+  // مستند قديم موجود: القراءة محصورة في صاحب المحل المعني والإدارة.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'special_requests/old1'), {
+      ...request, createdAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('owner1'), 'special_requests/old1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'special_requests/old1')));
+  await assertFails(getDoc(doc(as('owner2'), 'special_requests/old1')));
+  await assertFails(getDoc(doc(as('cust1'), 'special_requests/old1')));
+  await assertFails(updateDoc(doc(as('owner1'), 'special_requests/old1'), { status: 'done' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'special_requests/old1')));
 });
 
 test('store owner: لا يستطيع حذف مستند المحل؛ الحذف للإدارة فقط', async () => {
