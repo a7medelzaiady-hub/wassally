@@ -365,7 +365,8 @@ service cloud.firestore {
         d.keys().hasAll(orderKeys()) &&
         (!('freeDelivery' in d) || (d.freeDelivery == true && d.deliveryFee == 0)) &&
         d.get('area', '') is string && d.get('area', '').size() <= 60 &&
-        promoOk(d) &&
+        // الكوبونات موقوفة: أي طلب جديد لازم يكون من غير خصم (التعديل على طلب قديم فيه خصم لسه بيعدّي promoOk).
+        d.get('discount', 0) == 0 &&
         validSpecialRequest(d) &&
         customerNotRestricted(request.auth.uid) &&
         d.userId == request.auth.uid &&
@@ -1494,7 +1495,9 @@ service cloud.firestore {
     }
 
     match /complaints/{cid} {
-      allow create: if signedIn() && validComplaint(request.resource.data);
+      // موقوف: الشكاوى بقت عبر واتساب. المستندات القديمة تتقرأ وتتقفل من الإدارة فقط.
+      // للرجوع: استرجع الشرط `signedIn() && validComplaint(request.resource.data)` من تاريخ git.
+      allow create: if false;
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow update: if isAdmin() &&
         changedKeys().hasOnly(['status', 'adminNote', 'resolvedAt']) &&
@@ -1675,66 +1678,15 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
 
-      allow create: if signedIn() && request.auth.uid == uid &&
-        request.resource.data.keys().hasOnly(['userId', 'userName', 'userEmail', 'appRole',
-          'lastMessage', 'lastSender', 'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
-        request.resource.data.keys().hasAll(['userId', 'lastMessage', 'lastSender', 'lastAt',
-          'unreadForAdmin', 'unreadForUser']) &&
-        request.resource.data.userId == uid &&
-        request.resource.data.lastSender == 'user' &&
-        request.resource.data.lastAt == request.time &&
-        request.resource.data.unreadForAdmin == true &&
-        request.resource.data.unreadForUser == false &&
-        chatTextOk(request.resource.data.lastMessage) &&
-        request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
-        optStr(request.resource.data, 'userName', 80) &&
-        optStr(request.resource.data, 'appRole', 20);
-
-      allow update: if signedIn() && (
-        // صاحب المحادثة بيبعت رسالة
-        (request.auth.uid == uid &&
-          changedKeys().hasOnly(['userName', 'userEmail', 'appRole', 'lastMessage', 'lastSender',
-            'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
-          request.resource.data.lastSender == 'user' &&
-          request.resource.data.lastAt == request.time &&
-          request.resource.data.unreadForAdmin == true &&
-          request.resource.data.unreadForUser == false &&
-          chatTextOk(request.resource.data.lastMessage) &&
-          request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
-          optStr(request.resource.data, 'userName', 80) &&
-          optStr(request.resource.data, 'appRole', 20)) ||
-        // صاحب المحادثة فتحها (قرأ ردّ الإدارة)
-        (request.auth.uid == uid &&
-          changedKeys().hasOnly(['unreadForUser']) &&
-          request.resource.data.unreadForUser == false) ||
-        // المدير بيرد
-        (isAdmin() &&
-          changedKeys().hasOnly(['lastMessage', 'lastSender', 'lastAt', 'unreadForUser',
-            'unreadForAdmin']) &&
-          request.resource.data.lastSender == 'admin' &&
-          request.resource.data.lastAt == request.time &&
-          request.resource.data.unreadForUser == true &&
-          request.resource.data.unreadForAdmin == false &&
-          chatTextOk(request.resource.data.lastMessage)) ||
-        // المدير فتح المحادثة
-        (isAdmin() &&
-          changedKeys().hasOnly(['unreadForAdmin']) &&
-          request.resource.data.unreadForAdmin == false));
+      // موقوف: الدعم بقى عبر واتساب. المحادثات القديمة تتقرأ فقط (العميل بتاعه، والإدارة الكل).
+      // للرجوع: استرجع شروط الإنشاء والتعديل من تاريخ git قبل هذا التعديل.
+      allow create, update: if false;
 
       allow delete: if false;
 
       match /messages/{mid} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow create: if signedIn() &&
-          request.resource.data.keys().hasOnly(['senderId', 'senderRole', 'text', 'createdAt']) &&
-          request.resource.data.keys().hasAll(['senderId', 'senderRole', 'text', 'createdAt']) &&
-          request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.text is string &&
-          request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000 &&
-          request.resource.data.createdAt == request.time &&
-          ((request.resource.data.senderRole == 'user' && request.auth.uid == uid) ||
-           (request.resource.data.senderRole == 'admin' && isAdmin()));
-        allow update, delete: if false;
+        allow create, update, delete: if false;
       }
     }
   }

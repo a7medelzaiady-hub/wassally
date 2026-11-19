@@ -1224,19 +1224,11 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 
   const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
 
-  let discount = 0;
-  let normalizedPromo = "";
-  if (promoCode) {
-    const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
-    const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
-    const percent = typeof promo.percent === "number" ? promo.percent : 0;
-    if (promo.active !== true || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
-      throw new HttpError(409, "الكوبون لم يعد صالحًا.");
-    }
-    discount = calculateDiscount(subtotal, percent);
-    if (discount > 0 && discount < subtotal) normalizedPromo = promoCode;
-    else discount = 0;
-  }
+  // الكوبونات موقوفة: التطبيق مابقاش يبعت كود. أي كود بيوصل هنا مرفوض بدل ما يتعمله خصم.
+  // للرجوع: استرجع منطق الخصم من تاريخ git (promos/{code}).
+  if (promoCode) throw new HttpError(409, "الكوبونات غير مفعّلة حاليًا.");
+  const discount = 0;
+  const normalizedPromo = "";
   const total = money(subtotal + deliveryFee - discount);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
