@@ -8,6 +8,7 @@ import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
+import '../services/payment_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -33,6 +34,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   bool _submitting = false;
   bool _checkingPromo = false;
   List<DeliveryArea> _areas = const [];
+  PaymentSettings _payment = const PaymentSettings();
+  PaymentMethod _method = PaymentMethod.cash;
+  final _paymentRef = TextEditingController();
 
   @override
   void initState() {
@@ -46,6 +50,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
     cart.promoPercent = 0;
     DeliveryService.load().then((a) {
       if (mounted) setState(() => _areas = a);
+    });
+    PaymentService.settings().then((p) {
+      if (mounted) setState(() => _payment = p);
     });
   }
 
@@ -91,6 +98,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _notes.dispose();
     _courierNotes.dispose();
     _promo.dispose();
+    _paymentRef.dispose();
     super.dispose();
   }
 
@@ -188,6 +196,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     setState(() => _submitting = true);
     final navigator = Navigator.of(context);
+    final wallet = _method != PaymentMethod.cash;
 
     try {
       await OrderService.placeOrder(
@@ -197,6 +206,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         address: _address.text.trim(),
         notes: _notes.text.trim(),
         courierNotes: _courierNotes.text.trim(),
+        paymentMethod: _method.key,
+        paymentRef: _method == PaymentMethod.cash ? '' : _paymentRef.text,
       );
 
 
@@ -217,10 +228,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              content: const Text(
-                'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
+              content: Text(
+                wallet
+                    ? 'هنراجع التحويل ونأكده، وبعدها المحل هيبدأ يجهّز طلبك. هيوصلك إشعار، وتقدر تتابع من صفحة «طلباتي».'
+                    : 'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
                 textAlign: TextAlign.center,
-                style: TextStyle(height: 1.5),
+                style: const TextStyle(height: 1.5),
               ),
               actionsAlignment: MainAxisAlignment.center,
               actions: [
@@ -417,27 +430,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: kPrimarySoft,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: kPrimary, width: 1.5),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.payments_outlined, color: kPrimary),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'الدفع عند الاستلام',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        Icon(Icons.check_circle, color: kPrimary),
-                      ],
-                    ),
-                  ),
+                  _paymentSection(),
                   const SizedBox(height: 24),
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -551,6 +544,133 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// اختيار طريقة الدفع. المحافظ بتظهر بس لو الإدارة فعّلتها وحطت رقم/عنوان.
+  Widget _paymentSection() {
+    final methods = _payment.available;
+    if (!methods.contains(_method)) _method = PaymentMethod.cash;
+    final destination = _payment.destinationFor(_method);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final m in methods)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: _submitting ? null : () => setState(() => _method = m),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _method == m ? kPrimarySoft : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _method == m ? kPrimary : Colors.black12,
+                    width: _method == m ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      m == PaymentMethod.cash
+                          ? Icons.payments_outlined
+                          : Icons.account_balance_wallet_outlined,
+                      color: kPrimary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        m.label,
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Icon(
+                      _method == m
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: _method == m ? kPrimary : Colors.black26,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (_method != PaymentMethod.cash) ...[
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFFC107)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'حوّل ${formatPrice(cart.total)} على ${_method.label}:',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        destination,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'نسخ',
+                      icon: const Icon(Icons.copy_rounded),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: destination));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('اتنسخ.')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                if (_payment.note.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(_payment.note, style: const TextStyle(fontSize: 13)),
+                ],
+                const SizedBox(height: 6),
+                const Text(
+                  'بعد التحويل اكتب رقم العملية من رسالة التأكيد. الإدارة هتراجع التحويل، '
+                  'والمحل هيبدأ يجهّز طلبك بعد التأكيد. لو التحويل اترفض تقدر تلغي الطلب.',
+                  style: TextStyle(fontSize: 13, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _paymentRef,
+            textDirection: TextDirection.ltr,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'رقم عملية التحويل',
+              prefixIcon: Icon(Icons.receipt_long_outlined),
+            ),
+            validator: (v) {
+              if (_method == PaymentMethod.cash) return null;
+              final ref = PaymentService.normalizeRef(v ?? '');
+              if (!PaymentService.isValidRef(ref)) {
+                return 'اكتب رقم العملية (حروف إنجليزي وأرقام، من 4 لـ 40)';
+              }
+              return null;
+            },
+          ),
+        ],
+      ],
     );
   }
 

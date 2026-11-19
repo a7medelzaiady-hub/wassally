@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
+import 'admin_payments_page.dart';
 
 String _err(Object e) => e is FirebaseException
     ? (e.code == 'permission-denied'
@@ -61,6 +62,18 @@ class AdminToolsPage extends StatelessWidget {
                   'المشرفين',
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
+                ),
+                tile(
+                  Icons.account_balance_wallet_outlined,
+                  'تحويلات بانتظار التأكيد',
+                  'تأكيد أو رفض تحويلات فودافون كاش و InstaPay',
+                  const AdminPendingPaymentsPage(),
+                ),
+                tile(
+                  Icons.settings_outlined,
+                  'الدفع بالمحفظة',
+                  'تفعيل المحافظ وأرقام التحويل',
+                  const AdminPaymentSettingsPage(),
                 ),
                 const _CatalogIndexCard(),
               ],

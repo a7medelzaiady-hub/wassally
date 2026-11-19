@@ -14,6 +14,7 @@ import 'catalog_sync.dart';
 import 'order_contact_service.dart';
 import 'order_gateway.dart';
 import 'order_status_writer.dart';
+import 'payment_service.dart';
 import 'performance_monitor.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
@@ -58,6 +59,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    String paymentMethod = 'cash',
+    String paymentRef = '',
   }) {
     final active = _activePlaceOrder;
     if (active != null) return active;
@@ -71,6 +74,8 @@ class OrderService {
         address: address,
         notes: notes,
         courierNotes: courierNotes,
+        paymentMethod: paymentMethod,
+        paymentRef: paymentRef,
       ),
     );
     _activePlaceOrder = pending;
@@ -125,6 +130,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    String paymentMethod = 'cash',
+    String paymentRef = '',
   }) async {
     final wait = await cooldownRemaining();
     if (wait > Duration.zero) {
@@ -139,6 +146,8 @@ class OrderService {
       address: address,
       notes: notes,
       courierNotes: courierNotes,
+      paymentMethod: paymentMethod,
+      paymentRef: paymentRef,
     );
     await _markOrderPlaced();
     return id;
@@ -204,9 +213,21 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    String paymentMethod = 'cash',
+    String paymentRef = '',
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
+
+    final method = PaymentMethod.parse(paymentMethod);
+    final ref = method == PaymentMethod.cash
+        ? ''
+        : PaymentService.normalizeRef(paymentRef);
+    if (method != PaymentMethod.cash && !PaymentService.isValidRef(ref)) {
+      throw const OrderLimitException(
+        'اكتب رقم عملية التحويل صح (حروف إنجليزي وأرقام من 4 لـ 40).',
+      );
+    }
 
     if (cart.isEmpty) throw StateError('السلة فاضية');
     if (cart.items.isEmpty) {
@@ -316,7 +337,9 @@ class OrderService {
       if (cart.discount > 0) 'promoCode': cart.promoCode.trim().toUpperCase(),
       if (cart.discount > 0) 'discount': cart.discount,
       'total': cart.total,
-      'paymentMethod': 'cash',
+      'paymentMethod': method.key,
+      if (method != PaymentMethod.cash) 'paymentRef': ref,
+      if (method != PaymentMethod.cash) 'paymentStatus': 'pending',
       'status': OrderStatus.newOrder.key,
       'createdAt': FieldValue.serverTimestamp(),
     };
@@ -372,6 +395,8 @@ class OrderService {
                 .toList(),
             if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
             'contact': contactData,
+            'paymentMethod': method.key,
+            if (method != PaymentMethod.cash) 'paymentRef': ref,
           },
         );
       } on StateError {
@@ -388,6 +413,21 @@ class OrderService {
         FirebaseFirestore.instance.collection('orderLimits').doc(user.uid),
         {'lastAt': FieldValue.serverTimestamp()},
       );
+      if (method != PaymentMethod.cash) {
+        // حجز رقم العملية مع الطلب: نفس التحويل ما يتستخدمش لطلبين (القواعد بتمنع التكرار).
+        batch.set(
+          FirebaseFirestore.instance
+              .collection('payment_refs')
+              .doc('${method.key}_$ref'),
+          {
+            'orderId': orderId,
+            'userId': user.uid,
+            'method': method.key,
+            'ref': ref,
+            'createdAt': FieldValue.serverTimestamp(),
+          },
+        );
+      }
 
       try {
         await PerformanceMonitor.trace(
@@ -413,6 +453,12 @@ class OrderService {
         } else {
           if (kDebugMode) debugPrint('ORDER ERROR [${e.code}]');
           if (e.code == 'permission-denied') {
+            if (method != PaymentMethod.cash) {
+              throw StateError(
+                'تعذر إرسال الطلب: رقم عملية التحويل ده ممكن يكون اتستخدم قبل كده، '
+                'أو الدفع بالمحفظة اتقفل. راجع الرقم أو اختار الدفع عند الاستلام.',
+              );
+            }
             throw StateError('تعذر إرسال الطلب (${e.code}). حاول مرة تانية أو تواصل مع الدعم.');
           }
           if (e.code == 'unavailable') {
@@ -693,7 +739,7 @@ class OrderService {
           'customerConfirmedAt': FieldValue.serverTimestamp(),
           'deliveredBy': order.courierId,
           'deliveredAt': FieldValue.serverTimestamp(),
-          'collectedAmount': order.payable,
+          'collectedAmount': order.cashToCollect,
           'courierEarning': order.courierFee,
         },
       );

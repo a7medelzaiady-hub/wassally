@@ -1069,6 +1069,34 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+export const WALLET_METHODS = ["vodafone_cash", "instapay"] as const;
+
+/** تحقق من بيانات الدفع القادمة من التطبيق. يرجع الطريقة والرقم بعد التوحيد أو يرمي خطأ واضح. */
+export function normalizePayment(
+  rawMethod: unknown,
+  rawRef: unknown,
+): { method: "cash" | (typeof WALLET_METHODS)[number]; ref: string } {
+  const method = String(rawMethod ?? "cash").trim() || "cash";
+  if (method === "cash") return { method: "cash", ref: "" };
+  if (!(WALLET_METHODS as readonly string[]).includes(method)) {
+    throw new HttpError(400, "طريقة الدفع غير مدعومة.");
+  }
+  const ref = String(rawRef ?? "").toUpperCase().replace(/[\s-]/g, "");
+  if (!/^[A-Z0-9]{4,40}$/.test(ref)) {
+    throw new HttpError(400, "اكتب رقم عملية التحويل صح (حروف إنجليزي وأرقام، من 4 لـ 40).");
+  }
+  return { method: method as (typeof WALLET_METHODS)[number], ref };
+}
+
+/** إعدادات المحافظ مفعّلة وفيها رقم/عنوان للطريقة المختارة. لازم تطابق walletEnabled في القواعد. */
+export function walletEnabled(settings: JsonMap | null, method: string): boolean {
+  if (!settings || settings.enabled !== true) return false;
+  const value = method === "vodafone_cash" ? settings.vodafoneCashNumber
+    : method === "instapay" ? settings.instapayAddress
+    : "";
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export function isCustomerRestricted(
   restriction: JsonMap | null,
   now = Date.now(),
@@ -1131,6 +1159,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     };
   }
   const contact = validateContact(input.contact);
+  const payment = normalizePayment(input.paymentMethod, input.paymentRef);
 
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -1150,12 +1179,25 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
-  const [storeDoc, restrictionDoc, limitDoc, areasDoc] = await Promise.all([
+  const paymentRefPath = payment.method === "cash"
+    ? ""
+    : `payment_refs/${payment.method}_${payment.ref}`;
+  const [storeDoc, restrictionDoc, limitDoc, areasDoc, paymentDoc, paymentRefDoc] = await Promise.all([
     getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
     getDocument(env, `customer_restrictions/${uid}`, token),
     getDocument(env, `orderLimits/${uid}`, token),
     getDocument(env, "app_info/delivery_areas", token),
+    payment.method === "cash" ? Promise.resolve(null) : getDocument(env, "app_info/payment", token),
+    paymentRefPath ? getDocument(env, paymentRefPath, token) : Promise.resolve(null),
   ]);
+  if (payment.method !== "cash") {
+    if (!walletEnabled(paymentDoc ? decodeFields(paymentDoc.fields ?? {}) : null, payment.method)) {
+      throw new HttpError(409, "الدفع بالمحفظة مش متاح حاليًا. اختار الدفع عند الاستلام.");
+    }
+    if (paymentRefDoc) {
+      throw new HttpError(409, "رقم عملية التحويل ده اتستخدم قبل كده. راجع الرقم.");
+    }
+  }
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
   if (store.active !== undefined && store.active !== true) {
@@ -1228,7 +1270,8 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     subtotal,
     deliveryFee,
     total,
-    paymentMethod: "cash",
+    paymentMethod: payment.method,
+    ...(payment.method !== "cash" ? { paymentRef: payment.ref, paymentStatus: "pending" } : {}),
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
@@ -1263,6 +1306,15 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
         ? { updateTime: limitDoc.updateTime }
         : { exists: false },
     },
+    // حجز رقم العملية مع الطلب في نفس الـ commit؛ exists:false بيمنع استخدامه لطلبين حتى مع التزامن.
+    ...(paymentRefPath ? [{
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${paymentRefPath}`,
+        fields: encodeFields({ orderId, userId: uid, method: payment.method, ref: payment.ref }),
+      },
+      updateTransforms: [{ fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    }] : []),
   ];
   const committed = await fetch(
     `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
@@ -1311,6 +1363,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
   const order = decodeFields(orderDoc.fields ?? {});
   if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية تعديل هذا الطلب.");
+  if (String(order.paymentMethod ?? "cash") !== "cash") {
+    throw new HttpError(409, "الطلب مدفوع بالمحفظة، فمش ممكن تعديل أصنافه. تواصل مع الدعم لو محتاج تغيير.");
+  }
   if (!["new", "preparing"].includes(String(order.status)) || String(order.courierId ?? "") !== "") {
     throw new HttpError(409, "لم يعد ممكنًا تعديل الطلب بعد استلامه أو تغيير حالته.");
   }

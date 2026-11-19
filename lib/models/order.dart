@@ -178,6 +178,18 @@ class AppOrder {
   /// طلب العميل الخاص ومرفقاته داخل نفس مستند الطلب.
   final Map<String, dynamic>? specialRequest;
 
+  /// طريقة الدفع: cash أو vodafone_cash أو instapay (الطلبات القديمة = cash).
+  final String paymentMethod;
+
+  /// رقم عملية التحويل اللي كتبه العميل (للمحافظ فقط).
+  final String paymentRef;
+
+  /// pending / confirmed / rejected (للمحافظ فقط؛ فاضي للكاش).
+  final String paymentStatus;
+
+  /// سبب رفض التحويل (لو الإدارة رفضته).
+  final String paymentRejectReason;
+
   const AppOrder({
     required this.id,
     required this.storeName,
@@ -222,6 +234,10 @@ class AppOrder {
     this.readyAt,
     this.unavailableItems = const [],
     this.specialRequest,
+    this.paymentMethod = 'cash',
+    this.paymentRef = '',
+    this.paymentStatus = '',
+    this.paymentRejectReason = '',
   });
 
   /// الطلب متاح للمناديب: جاهز من المحل ومحدّش خده لسه.
@@ -279,6 +295,10 @@ class AppOrder {
       readyAt: readyAt,
       unavailableItems: unavailableItems,
       specialRequest: specialRequest,
+      paymentMethod: paymentMethod,
+      paymentRef: paymentRef,
+      paymentStatus: paymentStatus,
+      paymentRejectReason: paymentRejectReason,
     );
   }
 
@@ -291,6 +311,25 @@ class AppOrder {
 
   /// المبلغ المطلوب تحصيله فعليًا: الإجمالي المعتمد لو موجود، وإلا إجمالي الطلب.
   double get payable => verifiedTotal ?? total;
+
+  /// الدفع بمحفظة (فودافون كاش / InstaPay) بدل الكاش.
+  bool get isWalletPayment => paymentMethod != 'cash';
+
+  /// التحويل اتأكد من الإدارة.
+  bool get isPaymentConfirmed => isWalletPayment && paymentStatus == 'confirmed';
+
+  /// المحل يقدر يبدأ يجهّز الطلب: كاش، أو تحويل متأكد.
+  bool get paymentCleared => !isWalletPayment || isPaymentConfirmed;
+
+  /// اللي المندوب يحصّله كاش من العميل. لازم يطابق expectedCollected في firestore.rules.
+  double get cashToCollect => collectFor(payable);
+
+  /// نفس الحساب لإجمالي معتمد معيّن (قبل ما يتحفظ في الطلب).
+  double collectFor(double approvedTotal) {
+    if (!isPaymentConfirmed) return approvedTotal;
+    // المدفوع بالتحويل = إجمالي الطلب الأصلي؛ أي زيادة معتمدة بتتحصّل كاش.
+    return approvedTotal > total ? approvedTotal - total : 0;
+  }
 
   factory AppOrder.fromMap(String id, Map<String, dynamic> m) {
     final rawItems = (m['items'] as List?) ?? const [];
@@ -378,6 +417,10 @@ class AppOrder {
       specialRequest: m['specialRequest'] is Map
           ? Map<String, dynamic>.from(m['specialRequest'] as Map)
           : null,
+      paymentMethod: (m['paymentMethod'] ?? 'cash').toString(),
+      paymentRef: (m['paymentRef'] ?? '').toString(),
+      paymentStatus: (m['paymentStatus'] ?? '').toString(),
+      paymentRejectReason: (m['paymentRejectReason'] ?? '').toString(),
     );
   }
 }

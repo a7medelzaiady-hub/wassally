@@ -86,6 +86,16 @@ class OrderStatusWriter {
     }
 
     final data = snapshot.data()!;
+    // الدفع بالمحفظة: المحل/الأدمن ما يبدأش التجهيز قبل تأكيد التحويل (القواعد بتمنعه كمان).
+    if (to == OrderStatus.preparing &&
+        (data['paymentMethod'] ?? 'cash') != 'cash' &&
+        data['paymentStatus'] != 'confirmed') {
+      throw StateError(
+        data['paymentStatus'] == 'rejected'
+            ? 'التحويل بتاع الطلب ده اترفض، فمينفعش يتجهز.'
+            : 'الطلب مدفوع بالمحفظة والتحويل لسه ما اتأكدش من الإدارة. استنى التأكيد.',
+      );
+    }
     if (to == OrderStatus.delivered &&
         currentStatus == 'on_the_way' &&
         data['courierArrivedAt'] is! Timestamp) {

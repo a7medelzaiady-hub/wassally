@@ -307,7 +307,8 @@ class StaffOrderService {
   }) => {
     'deliveredBy': courierUid,
     'deliveredAt': FieldValue.serverTimestamp(),
-    'collectedAmount': verifiedTotal ?? order.payable,
+    // المحفظة المتأكدة: المندوب بيحصّل الفرق بس (لو الإجمالي المعتمد زاد).
+    'collectedAmount': order.collectFor(verifiedTotal ?? order.payable),
     'courierEarning': fee ?? order.courierFee,
   };
 

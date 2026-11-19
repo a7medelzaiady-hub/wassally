@@ -193,6 +193,53 @@ service cloud.firestore {
       return ['deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning'];
     }
 
+    // ───────────── الدفع بالمحفظة (فودافون كاش / InstaPay يدوي) ─────────────
+    function isWalletMethod(m) {
+      return m in ['vodafone_cash', 'instapay'];
+    }
+
+    // المحل يبدأ التجهيز بس لو الطلب كاش أو التحويل اتأكد من الإدارة.
+    function paymentCleared(od) {
+      return od.get('paymentMethod', 'cash') == 'cash' ||
+        od.get('paymentStatus', '') == 'confirmed';
+    }
+
+    // المبلغ اللي المندوب يحصّله كاش: الإجمالي المعتمد، أو للمحفظة المتأكدة الزيادة فقط.
+    // لازم يطابق AppOrder.collectFor في lib/models/order.dart.
+    function expectedCollected(nd) {
+      let approved = nd.get('verifiedTotal', nd.get('total', -2));
+      let paidTotal = nd.get('total', 0);
+      return (isWalletMethod(nd.get('paymentMethod', 'cash')) &&
+              nd.get('paymentStatus', '') == 'confirmed')
+        ? (approved > paidTotal ? approved - paidTotal : 0)
+        : approved;
+    }
+
+    // إعدادات الدفع: app_info/payment = { enabled, vodafoneCashNumber, instapayAddress, note }.
+    function walletEnabled(m) {
+      let p = /databases/$(database)/documents/app_info/payment;
+      return exists(p) &&
+        get(p).data.get('enabled', false) == true &&
+        ((m == 'vodafone_cash' && get(p).data.get('vodafoneCashNumber', '') is string &&
+          get(p).data.get('vodafoneCashNumber', '').size() > 0) ||
+         (m == 'instapay' && get(p).data.get('instapayAddress', '') is string &&
+          get(p).data.get('instapayAddress', '').size() > 0));
+    }
+
+    // طلب بمحفظة لازم يحجز رقم العملية في payment_refs/{method_ref} في نفس الـ batch
+    // (المستند ده create فقط، فنفس التحويل ما يتستخدمش لطلبين).
+    function validNewPayment(d, orderId) {
+      return d.paymentMethod == 'cash'
+        ? (!('paymentRef' in d) && !('paymentStatus' in d))
+        : (isWalletMethod(d.paymentMethod) &&
+           d.get('paymentRef', '') is string &&
+           d.get('paymentRef', '').matches('^[A-Z0-9]{4,40}$') &&
+           d.get('paymentStatus', '') == 'pending' &&
+           walletEnabled(d.paymentMethod) &&
+           existsAfter(/databases/$(database)/documents/payment_refs/$(d.paymentMethod + '_' + d.paymentRef)) &&
+           getAfter(/databases/$(database)/documents/payment_refs/$(d.paymentMethod + '_' + d.paymentRef)).data.get('orderId', '') == orderId);
+    }
+
     // k = diff().affectedKeys() محسوب مرة واحدة في evalOrderUpdate ومتبعوت هنا (من غير ما نعيد حساب الـ diff).
     function deliveryStampOk(nd, courierUid, k) {
       let nst = nd.get('status', '');
@@ -206,8 +253,7 @@ service cloud.firestore {
         nd.get('courierEarning', -1) ==
           nd.get('finalDeliveryFee', nd.get('deliveryFee', -2)) &&
         nd.get('collectedAmount', -1) is number &&
-        nd.get('collectedAmount', -1) ==
-          nd.get('verifiedTotal', nd.get('total', -2)));
+        nd.get('collectedAmount', -1) == expectedCollected(nd));
     }
 
     // رسوم التوصيل النهائية: الأدمن بس بيحددها (لما يوافق على الطلب)، ولو ما حددهاش بتفضل الافتراضية.
@@ -233,7 +279,7 @@ service cloud.firestore {
       let cid = od.get('courierId', '');
       return !('status' in k) ||
         (st == 'new' &&
-          nst in ['preparing', 'cancelled']) ||
+          (nst == 'cancelled' || (nst == 'preparing' && paymentCleared(od)))) ||
         (st == 'preparing' &&
           (nst == 'cancelled' ||
            (nst == 'on_the_way' &&
@@ -360,7 +406,8 @@ service cloud.firestore {
     }
 
     function validNewOrder(d) {
-      return d.keys().hasOnly(orderKeys().concat(['area', 'promoCode', 'discount', 'freeDelivery', 'specialRequest'])) &&
+      return d.keys().hasOnly(orderKeys().concat(['area', 'promoCode', 'discount', 'freeDelivery', 'specialRequest',
+                                                  'paymentRef', 'paymentStatus'])) &&
         d.keys().hasAll(orderKeys()) &&
         (!('freeDelivery' in d) || (d.freeDelivery == true && d.deliveryFee == 0)) &&
         d.get('area', '') is string && d.get('area', '').size() <= 60 &&
@@ -369,7 +416,7 @@ service cloud.firestore {
         customerNotRestricted(request.auth.uid) &&
         d.userId == request.auth.uid &&
         d.status == 'new' &&
-        d.paymentMethod == 'cash' &&
+        d.paymentMethod in ['cash', 'vodafone_cash', 'instapay'] &&
         d.createdAt == request.time &&
         d.customerName is string && d.customerName.size() >= 1 && d.customerName.size() <= 30 &&
         d.notes is string && d.notes.size() <= 500 &&
@@ -703,6 +750,7 @@ service cloud.firestore {
           'deliveredAt', 'collectedAmount', 'courierEarning'];
         return k.hasOnly(editKeys) ? (
           !securityFlag('serverOrders') &&
+          od.get('paymentMethod', 'cash') == 'cash' &&
           st in ['new', 'preparing'] &&
           cid == '' &&
           'editedAt' in k &&
@@ -828,7 +876,7 @@ service cloud.firestore {
         return k.hasOnly(['status']) ? (
           st == 'new' &&
           nst in ['preparing', 'cancelled'] &&
-          (nst == 'cancelled' || !('unavailableItems' in od)) &&
+          (nst == 'cancelled' || (!('unavailableItems' in od) && paymentCleared(od))) &&
           historyGate(nd, orderId, k)
         ) : k.hasOnly(['unavailableItems']) ? (
           st == 'new' &&
@@ -878,6 +926,7 @@ service cloud.firestore {
         let assignKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
         let cancelKeys = ['status', 'courierId', 'courierName', 'courierPhone', 'courierAt', 'deliveryMode'];
         let issueCloseKeys = ['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+        let paymentKeys = ['paymentStatus', 'paymentDecidedAt', 'paymentDecidedBy', 'paymentRejectReason'];
         let generalKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning', 'finalDeliveryFee'];
@@ -902,6 +951,17 @@ service cloud.firestore {
           !('activeDeliveryIssueId' in nd) &&
           nd.get('lastDeliveryIssueId', '') == oai &&
           historyGate(nd, orderId, k)
+        ) : (k.hasOnly(paymentKeys) && 'paymentStatus' in k) ? (
+          st == 'new' &&
+          isWalletMethod(od.get('paymentMethod', 'cash')) &&
+          od.get('paymentStatus', '') == 'pending' &&
+          nd.get('paymentDecidedAt', null) == request.time &&
+          nd.get('paymentDecidedBy', '') == request.auth.uid &&
+          ((nd.get('paymentStatus', '') == 'confirmed' && !('paymentRejectReason' in k)) ||
+           (nd.get('paymentStatus', '') == 'rejected' &&
+            nd.get('paymentRejectReason', '') is string &&
+            nd.get('paymentRejectReason', '').size() >= 5 &&
+            nd.get('paymentRejectReason', '').size() <= 200))
         ) : k.hasOnly(generalKeys) ? (
           validFinalFee(nd, k) &&
           pricingApprovalWindow(od, k) &&
@@ -939,7 +999,8 @@ service cloud.firestore {
         let adminKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning',
-          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId',
+          'paymentStatus', 'paymentDecidedAt', 'paymentDecidedBy', 'paymentRejectReason'];
         return (od.get('userId', '') == uid &&
             ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true) ||
              (k.hasAny(customerKeys) && canCustomerUpdate(nd, od, k)))) ||
@@ -960,7 +1021,8 @@ service cloud.firestore {
       );
 
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
-      allow create: if !securityFlag('serverOrders') && signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
+      allow create: if !securityFlag('serverOrders') && signedIn() && validNewOrder(request.resource.data) &&
+        validNewPayment(request.resource.data, orderId) && orderRateOk(request.auth.uid);
 
       allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);
 
@@ -1053,6 +1115,28 @@ service cloud.firestore {
               get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid));
         allow update, delete: if false;
       }
+    }
+
+    // حجز رقم عملية التحويل: المعرّف = method_ref، create فقط (التكرار = تعديل مرفوض).
+    // بيتكتب مع الطلب الجديد في نفس الـ batch، والإدارة بس اللي تقرأه.
+    match /payment_refs/{refId} {
+      allow get, list: if isAdmin();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly(['orderId', 'userId', 'method', 'ref', 'createdAt']) &&
+        request.resource.data.keys().hasAll(['orderId', 'userId', 'method', 'ref', 'createdAt']) &&
+        request.resource.data.userId == request.auth.uid &&
+        isWalletMethod(request.resource.data.method) &&
+        request.resource.data.ref is string &&
+        request.resource.data.ref.matches('^[A-Z0-9]{4,40}$') &&
+        refId == request.resource.data.method + '_' + request.resource.data.ref &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.orderId is string &&
+        !exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
+        existsAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
+        getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('userId', '') == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('paymentMethod', '') == request.resource.data.method &&
+        getAfter(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.get('paymentRef', '') == request.resource.data.ref;
+      allow update, delete: if false;
     }
 
     // بيانات المستخدم: صاحبها بس.

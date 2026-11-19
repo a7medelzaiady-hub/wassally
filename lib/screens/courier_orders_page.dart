@@ -591,7 +591,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       context,
       title: delivering ? 'تأكيد التسليم' : 'تأكيد الاستلام',
       message: delivering
-          ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.payable)} من العميل؟'
+          ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.cashToCollect)} من العميل؟'
           : 'هتبدأ توصيل الطلب؟',
       confirmLabel: delivering ? 'إبلاغ العميل بالتسليم' : 'ابدأ التوصيل',
     );
@@ -1072,7 +1072,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           const SizedBox(height: 10),
           Row(
             children: [
-              _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
+              _moneyBox(
+                o.isPaymentConfirmed ? 'حصّل من العميل (مدفوع بالمحفظة)' : 'حصّل من العميل',
+                formatPrice(o.cashToCollect),
+                Brand.ink,
+              ),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
             ],

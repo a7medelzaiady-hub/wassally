@@ -1983,3 +1983,141 @@ test('catalog: صاحب طلب انضمام يدير قائمة وإصدار م�
   await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
   await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
 });
+
+// ───────────── الدفع بالمحفظة (فودافون كاش / InstaPay يدوي) ─────────────
+async function enableWallets(over = {}) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/payment'), {
+      enabled: true, vodafoneCashNumber: '01012345678', instapayAddress: 'wasally@instapay', ...over,
+    });
+  });
+}
+
+function walletOrderBatch(db, orderId, ref = 'TX123456', method = 'vodafone_cash', over = {}) {
+  const b = writeBatch(db);
+  b.set(doc(db, `orders/${orderId}`), baseOrder('cust1', {
+    paymentMethod: method, paymentRef: ref, paymentStatus: 'pending', ...over,
+  }));
+  b.set(doc(db, `payment_refs/${method}_${ref}`), {
+    orderId, userId: 'cust1', method, ref, createdAt: serverTimestamp(),
+  });
+  return b;
+}
+
+test('wallet: طلب فودافون كاش مع حجز رقم العملية ينجح، والرقم ما يتكررش', async () => {
+  await enableWallets();
+  const db = as('cust1');
+  await assertSucceeds(walletOrderBatch(db, 'w1').commit());
+  const order = (await getDoc(doc(db, 'orders/w1'))).data();
+  assert.equal(order.paymentStatus, 'pending');
+  // نفس رقم العملية لطلب تاني = محاولة تعديل مستند الحجز → مرفوض.
+  await assertFails(walletOrderBatch(db, 'w2').commit());
+  await assertSucceeds(walletOrderBatch(db, 'w3', 'TX999999', 'instapay').commit());
+});
+
+test('wallet: بدون حجز الرقم أو بإعدادات مقفولة أو بحالة غير pending يُرفض', async () => {
+  const db = as('cust1');
+  await assertFails(walletOrderBatch(db, 'w1').commit()); // الإعدادات مش موجودة
+  await enableWallets({ enabled: false });
+  await assertFails(walletOrderBatch(db, 'w1').commit());
+  await enableWallets({ instapayAddress: '' });
+  await assertFails(walletOrderBatch(db, 'w2', 'TX123456', 'instapay').commit());
+  await enableWallets();
+  await assertFails(setDoc(doc(db, 'orders/w3'), baseOrder('cust1', {
+    paymentMethod: 'vodafone_cash', paymentRef: 'TX123456', paymentStatus: 'pending',
+  })));
+  await assertFails(walletOrderBatch(db, 'w4', 'TX123457', 'vodafone_cash', { paymentStatus: 'confirmed' }).commit());
+  await assertFails(walletOrderBatch(db, 'w5', 'tx-bad').commit());
+  await assertFails(walletOrderBatch(db, 'w6', 'TX123458', 'bank').commit());
+  await assertFails(setDoc(doc(db, 'orders/w7'), baseOrder('cust1', { paymentRef: 'TX123459' })));
+});
+
+test('wallet: حجز رقم العملية لا يُكتب لوحده ولا لطلب عميل تاني', async () => {
+  await enableWallets();
+  await assertFails(setDoc(doc(as('cust1'), 'payment_refs/vodafone_cash_TX111111'), {
+    orderId: 'o1', userId: 'cust1', method: 'vodafone_cash', ref: 'TX111111', createdAt: serverTimestamp(),
+  }));
+  await assertFails(getDoc(doc(as('cust1'), 'payment_refs/vodafone_cash_TX111111')));
+});
+
+test('wallet: المحل ما يقبلش قبل تأكيد الإدارة، والإدارة بس تأكد أو ترفض بسبب', async () => {
+  await enableWallets();
+  await assertSucceeds(walletOrderBatch(as('cust1'), 'w1').commit());
+  await assertFails(changeStatus(as('owner1'), 'w1', 'new', 'preparing', 'owner'));
+  await assertFails(changeStatus(as('admin1'), 'w1', 'new', 'preparing', 'admin'));
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'cust1',
+  }));
+  await assertFails(updateDoc(doc(as('owner1'), 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'owner1',
+  }));
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'rejected', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1', paymentRejectReason: 'x',
+  }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'confirmed', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+  }));
+  // القرار مرة واحدة.
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'rejected', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1', paymentRejectReason: 'رقم غلط',
+  }));
+  await assertSucceeds(changeStatus(as('owner1'), 'w1', 'new', 'preparing', 'owner'));
+});
+
+test('wallet: رفض التحويل بسبب واضح، والعميل ما يعدّلش أصناف طلب مدفوع', async () => {
+  await enableWallets();
+  await assertSucceeds(walletOrderBatch(as('cust1'), 'w1').commit());
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/w1'), {
+    items: [{ name: 'p', price: 10, qty: 1, productId: 'p1' }], subtotal: 10, total: 30, editedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/w1'), {
+    paymentStatus: 'rejected', paymentDecidedAt: serverTimestamp(), paymentDecidedBy: 'admin1',
+    paymentRejectReason: 'رقم العملية مش موجود',
+  }));
+  await assertFails(changeStatus(as('owner1'), 'w1', 'new', 'preparing', 'owner'));
+  await assertSucceeds(changeStatus(as('cust1'), 'w1', 'new', 'cancelled', 'customer'));
+});
+
+test('wallet: المندوب يحصّل صفر لطلب مدفوع متأكد، والإجمالي كامل للكاش', async () => {
+  await seedOnWay('store');
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/o1'), {
+      paymentMethod: 'vodafone_cash', paymentRef: 'TX123456', paymentStatus: 'confirmed',
+    });
+  });
+  await reportDelivery('storecour1');
+  const db = as('cust1');
+  const close = (collectedAmount) => {
+    const b = writeBatch(db);
+    b.update(doc(db, 'orders/o1'), {
+      status: 'delivered', customerConfirmedAt: serverTimestamp(), deliveredBy: 'storecour1',
+      deliveredAt: serverTimestamp(), collectedAmount, courierEarning: 20,
+    });
+    b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+      from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  await assertFails(close(40));
+  await assertSucceeds(close(0));
+});
+
+test('wallet: لو الإجمالي المعتمد زاد عن المدفوع، المندوب يحصّل الفرق بس', async () => {
+  await seedOnWay('store');
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/o1'), {
+      paymentMethod: 'instapay', paymentRef: 'TX123456', paymentStatus: 'confirmed', verifiedTotal: 55,
+    });
+  });
+  await reportDelivery('storecour1');
+  const db = as('cust1');
+  const b = writeBatch(db);
+  b.update(doc(db, 'orders/o1'), {
+    status: 'delivered', customerConfirmedAt: serverTimestamp(), deliveredBy: 'storecour1',
+    deliveredAt: serverTimestamp(), collectedAmount: 15, courierEarning: 20,
+  });
+  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+  });
+  await assertSucceeds(b.commit());
+});

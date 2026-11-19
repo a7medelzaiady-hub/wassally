@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import 'edit_order_page.dart';
+import '../services/payment_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
@@ -482,6 +483,31 @@ class _Details extends StatelessWidget {
               _line('رسوم التوصيل', formatPrice(order.courierFee)),
               const SizedBox(height: 8),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
+              const SizedBox(height: 8),
+              _line('طريقة الدفع', PaymentMethod.labelOf(order.paymentMethod)),
+              if (order.isWalletPayment) ...[
+                const SizedBox(height: 4),
+                _line(
+                  'حالة التحويل',
+                  switch (order.paymentStatus) {
+                    'confirmed' => 'اتأكد ✓',
+                    'rejected' => 'اترفض',
+                    _ => 'بانتظار تأكيد الإدارة',
+                  },
+                ),
+                if (order.paymentStatus == 'rejected' &&
+                    order.paymentRejectReason.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'السبب: ${order.paymentRejectReason}. تقدر تلغي الطلب وتعمل طلب جديد.',
+                    style: const TextStyle(fontSize: 13, color: Colors.red),
+                  ),
+                ],
+                if (order.isPaymentConfirmed && order.cashToCollect > 0) ...[
+                  const SizedBox(height: 4),
+                  _line('باقي يتدفع للمندوب', formatPrice(order.cashToCollect)),
+                ],
+              ],
             ],
           ),
         ),
