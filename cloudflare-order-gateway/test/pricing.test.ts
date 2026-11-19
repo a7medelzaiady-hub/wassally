@@ -130,6 +130,17 @@ describe("trusted catalog option pricing", () => {
   });
 });
 
+describe("order replay store isolation", () => {
+  it("keeps an existing order ID bound to its original store", () => {
+    // Guard the source contract: retries must never acknowledge a different-store order.
+    const source = require("node:fs").readFileSync(
+      new URL("../src/index.ts", import.meta.url), "utf8",
+    );
+    expect(source).toContain("if (old.storeId !== storeId)");
+    expect(source).toContain("return response({ orderId, reused: true })");
+  });
+});
+
 describe("trusted catalog pricing", () => {
   it("calculates percentage discounts using the same floor-to-piastre rule as the app", () => {
     expect(calculateDiscount(123.45, 10)).toBe(12.34);
