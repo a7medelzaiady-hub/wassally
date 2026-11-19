@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../services/catalog_service.dart';
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/read_meter.dart';
+import '../services/store_highlights.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -62,6 +64,7 @@ class AdminToolsPage extends StatelessWidget {
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
                 ),
+                const _HighlightsRefreshCard(),
                 tile(
                   Icons.speed_outlined,
                   'عدّاد القراءات',
@@ -72,6 +75,85 @@ class AdminToolsPage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── ملخص العروض ─────────────────────────
+
+/// تحديث ملخص العروض (offerItems/bestItems) لكل المحلات على دفعات من 50 محل.
+/// الرئيسية بتعرض العروض من الملخص ده، فاعمله مرة بعد التحديث أو لو عرض مش ظاهر صح.
+class _HighlightsRefreshCard extends StatefulWidget {
+  const _HighlightsRefreshCard();
+
+  @override
+  State<_HighlightsRefreshCard> createState() => _HighlightsRefreshCardState();
+}
+
+class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
+  String? _cursor;
+  int _total = 0;
+  bool _busy = false;
+  bool _finished = false;
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'تحديث ملخص العروض',
+      message:
+          'هيتحدث ملخص العروض لـ 50 محل في المرة (كل محل لحد 200 قراءة). '
+          'دوس تاني للدفعة اللي بعدها. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final r = await StoreHighlights.refreshBatch(
+        startAfterId: _finished ? null : _cursor,
+      );
+      await CatalogService.bump();
+      if (!mounted) return;
+      setState(() {
+        if (_finished) _total = 0;
+        _total += r.done;
+        _cursor = r.lastId;
+        _finished = r.lastId == null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر التحديث: ${_err(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _total == 0
+        ? 'الرئيسية بتعرض العروض من الملخص ده من غير قراءة الأصناف'
+        : _finished
+            ? 'خلص: اتحدث $_total محل'
+            : 'اتحدث $_total محل — دوس للدفعة الجاية';
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.local_offer_outlined, color: kPrimary),
+        title: const Text(
+          'تحديث ملخص العروض',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(status),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
       ),
     );
   }

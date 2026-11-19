@@ -1328,7 +1328,17 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   /// [fromCache]: بعد تعديل من الجهاز ده، Firestore بيطبّق التعديل على الكاش المحلي فورًا،
   /// فبنقرا من الكاش (صفر قراءات) بدل ما نعيد تحميل كل الأصناف من الخادم (لحد 200 قراءة).
   /// تعديلات جهاز تاني بتظهر مع أول تحميل من الخادم (فتح الصفحة أو السحب للتحديث).
+  DateTime? _lastServerLoad;
+
   Future<void> _load({bool fromCache = false}) async {
+    // بعد 10 دقايق من آخر تحميل من الخادم نرجع للخادم، عشان تعديلات/حذف جهاز تاني
+    // ما يفضلش في الكاش ويتكتب في ملخص العروض.
+    final last = _lastServerLoad;
+    if (fromCache &&
+        (last == null ||
+            DateTime.now().difference(last) > const Duration(minutes: 10))) {
+      fromCache = false;
+    }
     setState(() {
       _loading = true;
       _error = false;
@@ -1344,6 +1354,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       }
       final snap =
           cached ?? await query.get(const GetOptions(source: Source.server));
+      if (cached == null) _lastServerLoad = DateTime.now();
       ReadMeter.query('owner:products', snap);
       if (!mounted) return;
       setState(() {

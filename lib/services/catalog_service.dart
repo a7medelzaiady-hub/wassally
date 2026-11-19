@@ -27,7 +27,24 @@ class CatalogService {
   /// المفاتيح اللي اتجابت من الخادم بالإصدار الحالي (محفوظة على الجهاز). بتخلّي نتيجة فاضية
   /// متخزنة تتقبل من الكاش بدل ما تتقري من الخادم في كل مرة.
   static const _keysKey = 'catalog_fetched_keys';
-  static Set<String> _persistedKeys = {};
+
+  /// مفتاح → عدد المستندات اللي رجعت من الخادم. الكاش يتقبل بس لو فيه نفس العدد أو أكتر،
+  /// فلو Firestore شال مستندات من الكاش (مساحة/مسح) بنرجع للخادم بدل ما نعرض نتيجة ناقصة.
+  static Map<String, int> _persistedKeys = {};
+
+  static Map<String, int> _decodeKeys(List<String>? raw) {
+    final out = <String, int>{};
+    for (final entry in raw ?? const <String>[]) {
+      final i = entry.lastIndexOf('|');
+      if (i <= 0) continue;
+      final n = int.tryParse(entry.substring(i + 1));
+      if (n != null) out[entry.substring(0, i)] = n;
+    }
+    return out;
+  }
+
+  static List<String> _encodeKeys(Map<String, int> keys) =>
+      [for (final e in keys.entries) '${e.key}|${e.value}'];
 
   static Future<Source> _decide() async {
     SharedPreferences? prefs;
@@ -47,7 +64,7 @@ class CatalogService {
       // ولا يجوز أن تحجب تحديثًا معروفًا (مثل عرض أضافه صاحب المحل).
       if (serverVersion != null) {
         if (loadedVersion == serverVersion) {
-          _persistedKeys = (prefs?.getStringList(_keysKey) ?? const []).toSet();
+          _persistedKeys = _decodeKeys(prefs?.getStringList(_keysKey));
           return Source.cache;
         }
         await prefs?.setString(_verKey, serverVersion);
@@ -88,8 +105,9 @@ class CatalogService {
 
         // اتجاب من الخادم بنفس الإصدار (في الجلسة دي أو قبلها): الكاش كامل حتى لو فاضي.
         // قبل كده النتيجة الفاضية كانت بتتقري من الخادم في كل مرة.
-        final fetchedBefore =
-            _fetched.contains(key) || _persistedKeys.contains(key);
+        final persistedCount = _persistedKeys[key];
+        final fetchedBefore = _fetched.contains(key) ||
+            (persistedCount != null && snap.docs.length >= persistedCount);
         final complete = fetchedBefore ||
             (snap.docs.isNotEmpty &&
                 (pageSize == null || snap.docs.length >= pageSize));
@@ -106,10 +124,11 @@ class CatalogService {
     ReadMeter.query('catalog:${key.split('/').first}', snap);
 
     _fetched.add(key);
-    if (cacheable && _persistedKeys.add(key)) {
+    if (cacheable && _persistedKeys[key] != snap.docs.length) {
+      _persistedKeys[key] = snap.docs.length;
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList(_keysKey, _persistedKeys.toList());
+        await prefs.setStringList(_keysKey, _encodeKeys(_persistedKeys));
       } catch (_) {}
     }
 

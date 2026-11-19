@@ -34,14 +34,16 @@ class ReadMeter {
 
   /// مستند واحد بـ get() أو لقطة مستمع على مستند.
   static void document(String label, DocumentSnapshot<Object?> snap) {
-    if (snap.metadata.isFromCache) return;
+    if (snap.metadata.isFromCache || snap.metadata.hasPendingWrites) return;
     _add(label, 1);
   }
 
   /// لقطة من مستمع استعلام (snapshots()). أول لقطة من الخادم فيها كل المستندات كـ «added»،
   /// وبعدها التغييرات بس، فعدد docChanges قريب من اللي Firestore بيحاسب عليه.
+  /// لقطات تعديلات الجهاز نفسه (hasPendingWrites) مش قراءات من الخادم فما بتتحسبش.
+  /// وكل اشتراك في snapshots() بيفتح مستمع منفصل في Firestore، فالعدّ لكل مشترك صح.
   static void listener(String label, QuerySnapshot<Object?> snap) {
-    if (snap.metadata.isFromCache) return;
+    if (snap.metadata.isFromCache || snap.metadata.hasPendingWrites) return;
     _add(label, snap.docChanges.length);
   }
 

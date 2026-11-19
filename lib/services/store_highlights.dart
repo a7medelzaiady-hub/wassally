@@ -49,6 +49,31 @@ class StoreHighlights {
     return (offers: offers, best: best);
   }
 
+  /// المدير: تحديث ملخص العروض لدفعة من المحلات (بالترتيب حسب المعرّف) بعد [startAfterId].
+  /// كل محل بيكلف لحد 200 قراءة، فالدفعة 50 محل بالكتير عشان ما نخلصش حصة اليوم مرة واحدة.
+  /// بيرجع آخر معرّف اتعالج (للدفعة الجاية) أو null لو خلصوا.
+  static Future<({int done, String? lastId})> refreshBatch({
+    String? startAfterId,
+    int batchSize = 50,
+  }) async {
+    Query<Map<String, dynamic>> q = FirebaseFirestore.instance
+        .collection('stores')
+        .orderBy(FieldPath.documentId)
+        .limit(batchSize);
+    if (startAfterId != null && startAfterId.isNotEmpty) {
+      q = q.startAfter([startAfterId]);
+    }
+    final page = await q.get(const GetOptions(source: Source.server));
+    ReadMeter.query('highlights:batch-stores', page);
+    for (final d in page.docs) {
+      await refresh(d.id);
+    }
+    final lastId = page.docs.length < batchSize || page.docs.isEmpty
+        ? null
+        : page.docs.last.id;
+    return (done: page.docs.length, lastId: lastId);
+  }
+
   /// إعادة حساب الملخص من أصناف المحل (بعد تعديلات المدير أو صفحة المحل).
   /// بيقرا أصناف المحل مرة (لحد 200) — للتعديلات بس، مش للعملاء.
   static Future<void> refresh(String storeId) async {
