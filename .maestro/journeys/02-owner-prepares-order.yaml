@@ -10,7 +10,8 @@ appId: com.wassally.app
 - tapOn: "دخول تجريبي: صاحب محل"
 - extendedWaitUntil:
     visible: "مش دلوقتي"
-    timeout: 60000
+    timeout: 15000
+    optional: true
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
     visible: ".*ابدأ التجهيز.*"
