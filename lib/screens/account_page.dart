@@ -344,9 +344,7 @@ class _AccountPageState extends State<AccountPage> {
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
                 child: ListTile(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ContactPage()),
-                  ),
+                  onTap: () => openWasallyWhatsApp('السلام عليكم، عايز أتواصل مع إدارة وصّلي'),
                   leading: Icon(Icons.support_agent_outlined, color: kPrimary),
                   title: const Text(
                     'تواصل مع الإدارة',
@@ -430,11 +428,7 @@ class _AccountPageState extends State<AccountPage> {
                 child: Column(
                   children: [
                     ListTile(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ContactPage(),
-                        ),
-                      ),
+                      onTap: () => openWasallyWhatsApp('السلام عليكم، عندي شكوى أو اقتراح بخصوص وصّلي'),
                       leading: Icon(
                         Icons.mark_chat_read_outlined,
                         color: kPrimary,
