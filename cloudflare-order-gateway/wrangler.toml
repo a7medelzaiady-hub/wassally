@@ -19,9 +19,11 @@ CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
 # App Check: ابدأ بـ "monitor" وراقب السجلات، وبعد ما تتأكد إن نسخ التطبيق كلها بتبعت الرمز حوّلها "enforce".
 APP_CHECK_MODE = "off"
 FIREBASE_PROJECT_NUMBER = "244081237486"
+# معرّف مشروع Firebase مش سر، فبيتكتب هنا. لازم يفضل هنا: `wrangler deploy` بيمسح أي
+# متغير عادي (Plaintext) متسجّل من لوحة Cloudflare ومش موجود في الملف ده.
+FIREBASE_PROJECT_ID = "wasally-12259"
 
-# Configure secrets with: wrangler secret put FIREBASE_PROJECT_ID
-# FIREBASE_SERVICE_ACCOUNT_EMAIL
+# Configure secrets with: wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL
 # FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
 # Set ALLOWED_ORIGINS as a comma-separated secret/variable for web clients.
 # Signed image uploads also require: wrangler secret put CLOUDINARY_API_KEY
