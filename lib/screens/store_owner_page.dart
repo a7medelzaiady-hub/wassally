@@ -235,6 +235,7 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
               'imageUrl': url,
               'updatedAt': FieldValue.serverTimestamp(),
             });
+        await CatalogSync.storeChanged(widget.storeId);
         if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تحديث صورة المحل.')),
@@ -393,6 +394,26 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
   late final Future<RatingSummary?> _rating = RatingService.store(
     widget.storeId,
   );
+  StreamSubscription<DocumentSnapshot<_Json>>? _indexRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    // تقييمات العملاء بتتكتب على مستند المحل بس (العميل ما يكتبش في الفهرس)، فلما صاحب المحل
+    // يفتح لوحته بنحدّث خانة محله في الفهرس لو التقييم اتغير. نفس الاستعلام = من غير قراءات زيادة.
+    _indexRefresh = _stream.listen((snap) {
+      final data = snap.data();
+      if (data != null) {
+        CatalogSync.refreshIfRatingChanged(widget.storeId, data);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _indexRefresh?.cancel();
+    super.dispose();
+  }
 
   Future<void> _changeImage() async {
     if (_busy) return;

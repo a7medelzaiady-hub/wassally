@@ -326,16 +326,20 @@ class CatalogSync {
     String storeId, {
     required bool tooBig,
   }) async {
-    try {
-      final state = await _menuState(storeId);
-      final current = state.version;
-      await CatalogPaths.versions.set({
-        if (current != null && current > 0) 'm_$storeId': -current,
-        if (tooBig) 'big_$storeId': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Could not disable menu for $storeId: $e');
+    // محاولتين: لو جهاز تاني زوّد الإصدار في نفس اللحظة، القاعدة بترفض -القديم، فنقرا تاني.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final state = await _menuState(storeId);
+        final current = state.version;
+        await CatalogPaths.versions.set({
+          if (current != null && current > 0) 'm_$storeId': -current,
+          if (tooBig) 'big_$storeId': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return;
+      } catch (e) {
+        debugPrint('Could not disable menu for $storeId (try ${attempt + 1}): $e');
+      }
     }
   }
 
@@ -509,6 +513,30 @@ class CatalogSync {
     } catch (e) {
       debugPrint('Highlights sync failed for $storeId: $e');
       return false;
+    }
+  }
+
+  static final Set<String> _ratingRefreshing = {};
+
+  /// صاحب المحل: لو تقييم المحل اتغير من آخر مزامنة على الجهاز ده، نحدّث خانته في الفهرس.
+  static Future<void> refreshIfRatingChanged(
+    String storeId,
+    Map<String, dynamic> store,
+  ) async {
+    if (storeId.isEmpty || store['active'] != true) return;
+    if (!_ratingRefreshing.add(storeId)) return;
+    try {
+      final signature =
+          '${store['rating']}|${store['ratingSum']}|${store['ratingCount']}';
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'catalog_index_rating_$storeId';
+      if (prefs.getString(key) == signature) return;
+      await storeChanged(storeId);
+      await prefs.setString(key, signature);
+    } catch (e) {
+      debugPrint('Rating index refresh skipped for $storeId: $e');
+    } finally {
+      _ratingRefreshing.remove(storeId);
     }
   }
 
