@@ -48,6 +48,12 @@ class AdminToolsPage extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 tile(
+                  Icons.message_outlined,
+                  'رقم واتساب الدعم',
+                  'تغيير رقم التواصل والشكاوى',
+                  const AdminWhatsAppPage(),
+                ),
+                tile(
                   Icons.map_outlined,
                   'مناطق التوصيل',
                   'سعر توصيل لكل منطقة',
@@ -897,4 +903,88 @@ class _AdminSupervisorsPageState extends State<AdminSupervisorsPage> {
       ),
     );
   }
+}
+
+ 
+/// رقم دعم واحد للمحادثات والشكاوى. لا توجد مستمعات مستمرة.
+class AdminWhatsAppPage extends StatefulWidget {
+  const AdminWhatsAppPage({super.key});
+
+  @override
+  State<AdminWhatsAppPage> createState() => _AdminWhatsAppPageState();
+}
+
+class _AdminWhatsAppPageState extends State<AdminWhatsAppPage> {
+  final _number = TextEditingController(text: '01000197222');
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('app_info').doc('contact').get();
+      final saved = (snap.data()?['whatsapp'] ?? '').toString().trim();
+      if (saved.isNotEmpty) _number.text = saved;
+    } catch (e) {
+      if (mounted) _say(context, 'تعذر تحميل الرقم: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final digits = _number.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (!RegExp(r'^(01[0-9]{9}|201[0-9]{9})$').hasMatch(digits)) {
+      _say(context, 'اكتب رقم موبايل مصري صحيح');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance.collection('app_info')
+          .doc('contact').set({'whatsapp': digits}, SetOptions(merge: true));
+      if (mounted) _say(context, 'تم حفظ رقم واتساب الدعم');
+    } catch (e) {
+      if (mounted) _say(context, 'تعذر حفظ الرقم: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _number.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Column(children: [
+      const InnerHeader(title: 'رقم واتساب الدعم'),
+      Expanded(child: ListView(padding: const EdgeInsets.all(16), children: [
+        const Text('الرقم ده هيستخدمه العميل للتواصل والشكاوى عبر واتساب.'),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _number,
+          keyboardType: TextInputType.phone,
+          enabled: !_loading && !_saving,
+          decoration: const InputDecoration(
+            labelText: 'رقم واتساب',
+            hintText: '01000197222',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _loading || _saving ? null : _save,
+          child: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ الرقم'),
+        ),
+      ])),
+    ]),
+  );
 }

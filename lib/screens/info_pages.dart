@@ -2,10 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
-import 'support_chat_page.dart';
 
 /// من نحن
 class AboutPage extends StatelessWidget {
@@ -121,7 +121,36 @@ class AboutPage extends StatelessWidget {
   }
 }
 
-/// تواصل معنا: الشات دايمًا موجود، والباقي (تليفون/واتساب/إيميل) من Firestore app_info/contact.
+/// وسائل التواصل الخارجية من إعدادات الاتصال، بدون مستمع Firestore مستمر.
+
+/// Opens WhatsApp directly for support or complaints.
+/// The fallback number is temporary and can be changed by an admin.
+Future<void> openWasallyWhatsApp(String message) async {
+  var number = '201000197222';
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('app_info').doc('contact').get();
+    final configured = (doc.data()?['whatsapp'] ?? '').toString()
+        .replaceAll(RegExp(r'[^0-9]'), '');
+    if (configured.isNotEmpty) {
+      number = configured.startsWith('0')
+          ? '20${configured.substring(1)}' : configured;
+    }
+  } catch (_) {
+    // Fall back to the temporary number if offline.
+  }
+  final uri = Uri.https('wa.me', '/$number', {'text': message});
+  var opened = false;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+  if (!opened) {
+    NotificationService.messengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('تعذر فتح واتساب. تأكد إنه متثبّت على جهازك.')),
+    );
+  }
+}
+
 class ContactPage extends StatelessWidget {
   const ContactPage({super.key});
 
@@ -172,11 +201,11 @@ class ContactPage extends StatelessWidget {
         children: [
           const InnerHeader(title: 'تواصل معنا'),
           Expanded(
-            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
+            child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              future: FirebaseFirestore.instance
                   .collection('app_info')
                   .doc('contact')
-                  .snapshots(),
+                  .get(),
               builder: (context, snap) {
                 final m = snap.data?.data() ?? const <String, dynamic>{};
                 final phone = (m['phone'] ?? '').toString().trim();
@@ -185,13 +214,7 @@ class ContactPage extends StatelessWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
-                    tile(Icons.chat_bubble_outline, 'شات مع الإدارة', '', () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SupportChatPage(),
-                        ),
-                      );
-                    }),
+
                     if (phone.isNotEmpty)
                       tile(
                         Icons.call_outlined,
@@ -202,7 +225,7 @@ class ContactPage extends StatelessWidget {
                     if (wa.isNotEmpty)
                       tile(
                         Icons.message_outlined,
-                        'واتساب',
+                        'الدعم والشكاوى عبر واتساب',
                         wa,
                         () => _open(
                           'https://wa.me/${wa.replaceAll(RegExp(r'[^0-9]'), '')}',

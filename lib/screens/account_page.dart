@@ -20,8 +20,6 @@ import '../widgets/theme_picker.dart';
 import 'join_request_page.dart';
 import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
-import 'support_chat_page.dart';
-import 'my_complaints_page.dart';
 import 'legal_page.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
@@ -346,15 +344,13 @@ class _AccountPageState extends State<AccountPage> {
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
                 child: ListTile(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SupportChatPage()),
-                  ),
+                  onTap: () => openWasallyWhatsApp('السلام عليكم، عايز أتواصل مع إدارة وصّلي'),
                   leading: Icon(Icons.support_agent_outlined, color: kPrimary),
                   title: const Text(
                     'تواصل مع الإدارة',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  subtitle: const Text('اكتب لنا مباشرة وهنرد عليك'),
+                  subtitle: const Text('تواصل عبر واتساب'),
                   trailing: const Icon(Icons.chevron_left),
                 ),
               ),
@@ -432,17 +428,13 @@ class _AccountPageState extends State<AccountPage> {
                 child: Column(
                   children: [
                     ListTile(
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const MyComplaintsPage(),
-                        ),
-                      ),
+                      onTap: () => openWasallyWhatsApp('السلام عليكم، عندي شكوى أو اقتراح بخصوص وصّلي'),
                       leading: Icon(
                         Icons.mark_chat_read_outlined,
                         color: kPrimary,
                       ),
                       title: const Text('شكاواي واقتراحاتي'),
-                      subtitle: const Text('شوف رد الإدارة'),
+                      subtitle: const Text('أرسل شكوى أو اقتراح عبر واتساب'),
                       trailing: const Icon(Icons.chevron_left),
                     ),
                     const Divider(height: 1),
