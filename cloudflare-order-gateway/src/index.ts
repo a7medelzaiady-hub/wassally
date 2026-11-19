@@ -1839,8 +1839,9 @@ export default {
       });
     } catch (error) {
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
-      // code دايمًا موجود، فالتطبيق ما يحتاجش يخمّن من نص الرسالة.
-      return response({ error: e.message, code: e.code ?? "rejected" }, e.status, headers);
+      // Business rejections (409) always carry a code so the app never guesses from the text.
+      const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
+      return response(code ? { error: e.message, code } : { error: e.message }, e.status, headers);
     }
   },
 };

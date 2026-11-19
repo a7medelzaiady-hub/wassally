@@ -454,9 +454,9 @@ class CatalogSync {
       if (onlyStoreId != null && e.key != onlyStoreId) continue;
       final products = e.value.difference({CatalogPending.index});
       if (products.isNotEmpty) {
+        // بتعيد علامة الفهرس كمان لو موجودة (وبتشيلها لو نجحت).
         await afterProductsChanged(e.key, productIds: CatalogPending.idsFor(products));
-      }
-      if (e.value.contains(CatalogPending.index) && await storeChanged(e.key)) {
+      } else if (e.value.contains(CatalogPending.index) && await storeChanged(e.key)) {
         await CatalogPending.clear(e.key, {CatalogPending.index});
       }
     }
