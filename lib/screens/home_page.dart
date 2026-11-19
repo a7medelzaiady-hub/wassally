@@ -15,6 +15,7 @@ import '../models/app_role.dart';
 import '../models/store.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/performance_monitor.dart';
@@ -92,15 +93,17 @@ class _HomePageState extends State<HomePage>
   int _lastUnread = -1;
 
   // المحلات بتتحمّل مرة واحدة (من الكاش لو الكتالوج ما اتغيرش) بدل stream دايم.
-  Future<QuerySnapshot<Map<String, dynamic>>> _storesFuture = _loadStores();
+  // الفهرس المجمّع = قراءة واحدة لكل المحلات؛ لو مش جاهز بنرجع للاستعلام القديم بنفس الكاش.
+  Future<List<CatalogDoc>> _storesFuture = _loadStores();
   Future<List<(_StoreItem, Map<String, dynamic>)>>? _offersFuture;
 
-  static Future<QuerySnapshot<Map<String, dynamic>>> _loadStores() =>
-      CatalogService.get(
-        FirebaseFirestore.instance
-            .collection('stores')
-            .where('active', isEqualTo: true),
-        'stores_active',
+  static Future<List<CatalogDoc>> _loadStores() => CatalogReader.activeStores(
+        () => CatalogService.get(
+          FirebaseFirestore.instance
+              .collection('stores')
+              .where('active', isEqualTo: true),
+          'stores_active',
+        ),
       );
 
   @override
@@ -801,11 +804,11 @@ class _HomePageState extends State<HomePage>
   // ───────────────────────── تحليل البيانات ─────────────────────────
 
   ({List<_StoreItem> stores, Map<String, String> categoryImages}) _parse(
-    QuerySnapshot<Map<String, dynamic>> snap,
+    List<CatalogDoc> docs,
   ) {
     final stores = <_StoreItem>[];
     final categoryImages = <String, String>{};
-    for (final doc in snap.docs) {
+    for (final doc in docs) {
       try {
         final data = doc.data();
         final store = Store.fromMap(doc.id, data);
@@ -832,50 +835,56 @@ class _HomePageState extends State<HomePage>
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
     for (final store in stores) {
       var hasCatalog = false;
-      try {
-        Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-            .collection('stores')
-            .doc(store.store.id)
-            .collection('products')
-            .limit(200);
-        DocumentSnapshot<Map<String, dynamic>>? cursor;
-        do {
-          if (cursor != null) {
-            query = FirebaseFirestore.instance
-                .collection('stores')
-                .doc(store.store.id)
-                .collection('products')
-                .limit(200)
-                .startAfterDocument(cursor);
-          }
-          final page = await query.get();
-          if (page.docs.isNotEmpty) hasCatalog = true;
-          for (final doc in page.docs) {
-            final item = doc.data();
-            final name = (item['name'] ?? '').toString().trim();
-            final price = (item['price'] as num?)?.toDouble() ?? 0;
-            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-            final text = (item['offerText'] ?? '').toString().trim();
-            final end = item['offerEndsAt'];
-            final expired = isOfferExpired(
-              end is Timestamp ? end.toDate() : null,
-              DateTime.now(),
-            );
-            if (name.isEmpty ||
-                price <= 0 ||
-                expired ||
-                item['available'] == false ||
-                item['isAvailable'] == false ||
-                (!(old > price && old > 0) && text.isEmpty)) {
-              continue;
+      // ملخص العروض محفوظ على مستند المحل (بيتحدث مع كل تعديل صنف): من غير أي قراءة إضافية.
+      // قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات لكل فتحة للرئيسية،
+      // فالمسح الكامل بقى للمحلات القديمة اللي ملخصها لسه ما اتحسبش بس.
+      final hasSummary = store.data['offerItems'] is List;
+      if (!hasSummary) {
+        try {
+          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+              .collection('stores')
+              .doc(store.store.id)
+              .collection('products')
+              .limit(200);
+          DocumentSnapshot<Map<String, dynamic>>? cursor;
+          do {
+            if (cursor != null) {
+              query = FirebaseFirestore.instance
+                  .collection('stores')
+                  .doc(store.store.id)
+                  .collection('products')
+                  .limit(200)
+                  .startAfterDocument(cursor);
             }
-            offers.add((store, item));
-          }
-          cursor = page.docs.isEmpty ? null : page.docs.last;
-          if (page.docs.length < 200) break;
-        } while (cursor != null);
-      } catch (error) {
-        debugPrint('Home offers load failed for ${store.store.id}: $error');
+            final page = await query.get();
+            if (page.docs.isNotEmpty) hasCatalog = true;
+            for (final doc in page.docs) {
+              final item = doc.data();
+              final name = (item['name'] ?? '').toString().trim();
+              final price = (item['price'] as num?)?.toDouble() ?? 0;
+              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+              final text = (item['offerText'] ?? '').toString().trim();
+              final end = item['offerEndsAt'];
+              final expired = isOfferExpired(
+                end is Timestamp ? end.toDate() : null,
+                DateTime.now(),
+              );
+              if (name.isEmpty ||
+                  price <= 0 ||
+                  expired ||
+                  item['available'] == false ||
+                  item['isAvailable'] == false ||
+                  (!(old > price && old > 0) && text.isEmpty)) {
+                continue;
+              }
+              offers.add((store, item));
+            }
+            cursor = page.docs.isEmpty ? null : page.docs.last;
+            if (page.docs.length < 200) break;
+          } while (cursor != null);
+        } catch (error) {
+          debugPrint('Home offers load failed for ${store.store.id}: $error');
+        }
       }
       // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
       if (!hasCatalog) {
@@ -1247,7 +1256,7 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      child: FutureBuilder<List<CatalogDoc>>(
         future: _storesFuture,
         builder: (context, snapshot) {
           final loading = !snapshot.hasData && !snapshot.hasError;

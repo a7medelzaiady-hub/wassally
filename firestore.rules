@@ -71,6 +71,51 @@ service cloud.firestore {
           .data.get('active', true) == true;
     }
 
+    // ───────────── الكتالوج المجمّع (توفير القراءات) ─────────────
+    // المحل اللي المستخدم الحالي بيديره: صاحب محل نشط، أو صاحب طلب انضمام (مسودة) معلّق/مرفوض.
+    function myCatalogStoreId() {
+      let ownerPath = /databases/$(database)/documents/storeOwners/$(request.auth.uid);
+      let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      return !signedIn() ? '' :
+        (exists(ownerPath) && get(ownerPath).data.get('active', true) == true)
+          ? get(ownerPath).data.get('storeId', '')
+          : ((exists(requestPath) && get(requestPath).data.get('status', '') in ['pending', 'rejected'])
+              ? get(requestPath).data.get('storeId', '')
+              : '');
+    }
+
+    // app_info/catalog_versions = { stores, m_<storeId>, updatedAt }.
+    // صاحب المحل يزوّد إصدار محله بواحد (أو يعلّمه -1 = ارجع للمسار القديم)، وإصدار الفهرس بواحد فقط.
+    function catalogVersionsWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let mk = 'm_' + sid;
+      let k = after.diff(before).affectedKeys();
+      return sid is string && sid.size() > 0 &&
+        k.hasOnly([mk, 'stores', 'updatedAt']) &&
+        (!(mk in k) || after[mk] == before.get(mk, 0) + 1 || after[mk] == -1) &&
+        (!('stores' in k) || after.get('stores', 0) == before.get('stores', 0) + 1);
+    }
+
+    // app_info/store_index = { s_<storeId>: {نسخة من مستند المحل}, updatedAt }.
+    // صاحب المحل يعدّل خانة محله بس، والاسم والقسم والمالك لازم يطابقوا مستند المحل (منع انتحال الاسم).
+    function storeIndexWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let key = 's_' + sid;
+      let k = after.diff(before).affectedKeys();
+      let storePath = /databases/$(database)/documents/stores/$(sid);
+      return sid is string && sid.size() > 0 &&
+        k.hasOnly([key, 'updatedAt']) &&
+        (!(key in after) || (
+          after[key] is map &&
+          exists(storePath) &&
+          get(storePath).data.get('active', false) == true &&
+          after[key].get('active', false) == true &&
+          after[key].get('name', null) == get(storePath).data.get('name', null) &&
+          after[key].get('category', null) == get(storePath).data.get('category', null) &&
+          after[key].get('ownerUid', null) == get(storePath).data.get('ownerUid', null) &&
+          after[key].get('approved', null) == get(storePath).data.get('approved', null)));
+    }
+
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
@@ -511,6 +556,19 @@ service cloud.firestore {
         request.resource.data.ratingSum ==
           resource.data.get('ratingSum', 0) +
           getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
+
+      // قائمة أصناف المحل المجمّعة (قراءة واحدة للعميل). عرض فقط: البوابة بتسعّر من products.
+      match /menu/{doc} {
+        allow read: if isAdmin() || isStoreOwner(storeId) ||
+          isStoreApplicant(storeId) || isPublicStore(storeId);
+        allow create, update: if doc == 'current' &&
+          (isAdmin() || isStoreOwner(storeId) || isStoreApplicant(storeId)) &&
+          request.resource.data.keys().hasOnly(['items', 'count', 'updatedAt']) &&
+          request.resource.data.get('items', {}) is map &&
+          request.resource.data.get('items', {}).size() <= 5000 &&
+          request.resource.data.get('count', 0) is int;
+        allow delete: if isAdmin();
+      }
 
       match /products/{productId} {
         allow read: if isAdmin() || isStoreOwner(storeId) ||
@@ -971,6 +1029,14 @@ service cloud.firestore {
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
           request.resource.data.version is number);
+      allow create: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk({}, request.resource.data);
+      allow update: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk(resource.data, request.resource.data);
+      allow create: if doc == 'store_index' &&
+        storeIndexWriteOk({}, request.resource.data);
+      allow update: if doc == 'store_index' &&
+        storeIndexWriteOk(resource.data, request.resource.data);
     }
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.

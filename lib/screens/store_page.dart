@@ -18,6 +18,7 @@ import '../models/product_offer.dart';
 import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
@@ -506,6 +507,44 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
+  /// كل أصناف المحل من مستند القائمة المجمّع (للعميل فقط). null = استخدم الاستعلام المباشر.
+  List<Product>? _menuAll;
+  bool _menuUnavailable = false;
+
+  /// المدير وصاحب المحل يكملوا على الاستعلام المباشر (بيانات لحظية لأزرار التعديل).
+  /// لو الدور لسه مش معروف، الأمان إننا نستخدم الاستعلام المباشر.
+  bool get _mayEdit {
+    if (_canEditStore) return true;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    final known = RoleService.cachedFor(uid);
+    if (known == null) return true;
+    if (known.role == AppRole.admin || known.roles.contains(AppRole.admin)) {
+      return true;
+    }
+    // صاحب المحل أو صاحب طلب الانضمام لنفس المحل.
+    return known.storeId.isNotEmpty && known.storeId == store.id;
+  }
+
+  Future<List<Product>?> _menuProducts() async {
+    if (_menuAll != null) return _menuAll;
+    if (_menuUnavailable || _mayEdit) return null;
+    final docs = await CatalogReader.menu(store.id);
+    if (docs == null) {
+      _menuUnavailable = true;
+      return null;
+    }
+    final list = <Product>[];
+    for (final d in docs) {
+      try {
+        list.add(_parse(d.id, d.data()));
+      } catch (_) {}
+    }
+    list.sort((a, b) => a.name.compareTo(b.name));
+    _menuAll = list;
+    return list;
+  }
+
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       _gen++;
@@ -519,6 +558,23 @@ class _StorePageState extends State<StorePage> {
     final gen = _gen;
     setState(() => _loading = true);
     try {
+      // العميل: قراءة واحدة لكل الأصناف (أو صفر لو القائمة متخزنة)، والبحث محلي من غير قراءات.
+      final menu = await _menuProducts();
+      if (menu != null) {
+        if (!mounted || gen != _gen) return;
+        final term = _term.toLowerCase();
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(term.isEmpty
+                ? menu
+                : menu.where((p) => p.name.toLowerCase().contains(term)));
+          _hasMore = false;
+          _loading = false;
+        });
+        return;
+      }
+
       Query<_Json> q = _col.orderBy('name');
       if (_term.isNotEmpty) {
         q = q
@@ -1047,6 +1103,8 @@ class _StorePageState extends State<StorePage> {
       } finally {
         if (uploaded > 0) {
           await CatalogService.bump();
+          // رفع جماعي: إعادة بناء القائمة المجمّعة مرة واحدة بدل صنف صنف.
+          await CatalogSync.rebuildStoreMenu(store.id);
           _load(reset: true);
         }
       }
@@ -1213,9 +1271,12 @@ class _StorePageState extends State<StorePage> {
                         }
 
                         try {
+                          var savedId = product?.id ?? '';
                           if (product == null) {
                             final batch = FirebaseFirestore.instance.batch();
-                            batch.set(_col.doc(), {
+                            final newRef = _col.doc();
+                            savedId = newRef.id;
+                            batch.set(newRef, {
                               'name': name,
                               'price': price,
                               'image': image,
@@ -1247,6 +1308,7 @@ class _StorePageState extends State<StorePage> {
                           }
 
                           await CatalogService.bump();
+                          await CatalogSync.productsChanged(store.id, [savedId]);
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);

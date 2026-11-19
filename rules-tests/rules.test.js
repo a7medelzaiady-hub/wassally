@@ -1853,3 +1853,71 @@ test('expression limit: طلب بأقصى عدد أصناف (100) ينجح و101
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/big100'), order(100)));
   await assertFails(setDoc(doc(as('cust1'), 'orders/big101'), order(101)));
 });
+
+// ───────────── الكتالوج المجمّع (catalog_versions / store_index / menu) ─────────────
+test('catalog menu: صاحب المحل يكتب قائمة محله فقط، والعميل يقرأ قائمة المحل النشط', async () => {
+  const menu = { items: { p1: { name: 'p', price: 10 } }, count: 1, updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as('owner1'), 'stores/shop1/menu/current'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop2/menu/current'), menu));
+  await assertFails(setDoc(doc(as('cust1'), 'stores/shop1/menu/current'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop1/menu/other'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop1/menu/current'), { ...menu, junk: 1 }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'stores/shop1/menu/current')));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'stores/shop2/menu/current'), menu));
+  await assertFails(deleteDoc(doc(as('owner1'), 'stores/shop1/menu/current')));
+});
+
+test('catalog menu: قائمة محل غير نشط لا يقرأها العميل', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop2'), { active: false });
+    await setDoc(doc(db, 'stores/shop2/menu/current'), { items: {}, count: 0 });
+  });
+  await assertFails(getDoc(doc(as('cust1'), 'stores/shop2/menu/current')));
+  await assertSucceeds(getDoc(doc(as('owner2'), 'stores/shop2/menu/current')));
+});
+
+test('catalog versions: صاحب المحل يزوّد إصدار محله والفهرس بواحد فقط', async () => {
+  const owner = as('owner1');
+  const ref = doc(owner, 'app_info/catalog_versions');
+  await assertSucceeds(setDoc(ref, { m_shop1: increment(1), stores: increment(1), updatedAt: serverTimestamp() }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: increment(1) }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: increment(2) }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop2: increment(1) }, { merge: true }));
+  await assertFails(setDoc(ref, { stores: -1 }, { merge: true }));
+  await assertFails(setDoc(ref, { stores: increment(5) }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  // indexReady للمدير بس (بيتكتب بعد بناء الفهرس الكامل).
+  await assertFails(setDoc(ref, { indexReady: true }, { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'app_info/catalog_versions'), { stores: -1, m_shop2: 7 }, { merge: true }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'app_info/catalog_versions')));
+});
+
+test('catalog store_index: صاحب المحل يحدّث خانة محله بنفس الاسم فقط', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const owner = as('owner1');
+  const ref = doc(owner, 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: entry, updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, name: 'اسم مزيف' } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, category: 'مطاعم' } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, active: false } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop2: { ...entry, name: 'S2' } }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { s_shop1: deleteField() }, { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/store_index'), { s_shop1: entry }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'app_info/store_index'), { s_shop2: { name: 'S2', active: true } }, { merge: true }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'app_info/store_index')));
+});
+
+test('catalog store_index: محل موقوف لا يضاف للفهرس، وصاحب محل موقوف الحساب لا يكتب', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'stores/shop1'), { active: false });
+  });
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  await assertFails(setDoc(doc(as('owner1'), 'app_info/store_index'), { s_shop1: entry }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('owner1'), 'app_info/store_index'), { s_shop1: deleteField() }, { merge: true }));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'storeOwners/owner1'), { active: false });
+  });
+  await assertFails(setDoc(doc(as('owner1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
+});

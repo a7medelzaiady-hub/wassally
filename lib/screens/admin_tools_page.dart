@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../services/catalog_sync.dart';
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../theme/app_theme.dart';
@@ -61,10 +62,82 @@ class AdminToolsPage extends StatelessWidget {
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
                 ),
+                const _CatalogIndexCard(),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── فهرس الكتالوج ─────────────────────────
+
+/// بناء الفهرس المجمّع وقوائم الأصناف من الصفر: أول مرة بعد التحديث، أو للإصلاح.
+/// بيقرا كل المحلات وكل الأصناف مرة واحدة، فمش المفروض يتعمل كتير.
+class _CatalogIndexCard extends StatefulWidget {
+  const _CatalogIndexCard();
+
+  @override
+  State<_CatalogIndexCard> createState() => _CatalogIndexCardState();
+}
+
+class _CatalogIndexCardState extends State<_CatalogIndexCard> {
+  bool _busy = false;
+  String _status = '';
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'بناء فهرس الكتالوج',
+      message:
+          'هيتقرا كل المحلات وكل الأصناف مرة واحدة ويتبني منهم الفهرس اللي '
+          'بيوفّر القراءات على العملاء. اعمله مرة بعد التحديث، أو لو لاحظت محل '
+          'أو صنف مش ظاهر صح. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'جاري البناء...';
+    });
+    try {
+      final summary = await CatalogSync.rebuildAll(
+        onProgress: (step) {
+          if (mounted) setState(() => _status = step);
+        },
+      );
+      if (mounted) setState(() => _status = summary);
+    } catch (e) {
+      if (mounted) setState(() => _status = 'فشل: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.inventory_2_outlined, color: kPrimary),
+        title: const Text(
+          'بناء فهرس الكتالوج',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          _status.isEmpty
+              ? 'يقلل قراءات العملاء: المحلات في قراءة واحدة وأصناف كل محل في قراءة واحدة'
+              : _status,
+        ),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
       ),
     );
   }

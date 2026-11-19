@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -177,6 +178,12 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       });
 
       await CatalogService.bump();
+      // أول تفعيل للمحل: نبني قائمته المجمّعة؛ بعدها خانة المحل في الفهرس.
+      if (active) {
+        await CatalogSync.rebuildStoreMenu(id);
+      } else {
+        await CatalogSync.storeChanged(id);
+      }
     } catch (e) {
       _say(_errorText(e));
     }
@@ -222,6 +229,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       await _stores.doc(id).delete();
 
       await CatalogService.bump();
+      await CatalogSync.storeChanged(id);
 
       _say('تم حذف المحل.');
     } catch (e) {
@@ -510,6 +518,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       }
 
       await CatalogService.bump();
+      final savedId = _id;
+      if (savedId != null) await CatalogSync.storeChanged(savedId);
 
       if (!mounted) return;
 
@@ -594,6 +604,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       });
 
       await CatalogService.bump();
+      await CatalogSync.rebuildStoreMenu(id);
 
       if (!mounted) return;
 
@@ -692,6 +703,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
       await _stores.doc(_id).delete();
 
       await CatalogService.bump();
+      final deletedId = _id;
+      if (deletedId != null) await CatalogSync.storeChanged(deletedId);
 
       if (mounted) {
         Navigator.of(context).pop();
@@ -1323,6 +1336,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
 
       await _syncCount();
       await CatalogService.bump();
+      await CatalogSync.rebuildStoreMenu(widget.storeId);
 
       if (!mounted) return;
 
@@ -1336,6 +1350,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         try {
           await _syncCount();
           await CatalogService.bump();
+          await CatalogSync.rebuildStoreMenu(widget.storeId);
         } catch (_) {}
 
         if (mounted) _load(reset: true);
@@ -1367,8 +1382,11 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     };
 
     try {
+      var savedId = doc?.id ?? '';
       if (doc == null) {
-        await _col.doc().set({
+        final newRef = _col.doc();
+        savedId = newRef.id;
+        await newRef.set({
           ...data,
           'isAvailable': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -1380,6 +1398,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       }
 
       await CatalogService.bump();
+      await CatalogSync.productsChanged(widget.storeId, [savedId]);
 
       await _load(reset: true);
 
@@ -1406,6 +1425,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       await _syncCount();
 
       await CatalogService.bump();
+      await CatalogSync.productsChanged(widget.storeId, [doc.id]);
 
       if (!mounted) return;
 

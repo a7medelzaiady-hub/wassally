@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../models/product.dart';
@@ -412,6 +413,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
               'updatedAt': FieldValue.serverTimestamp(),
             });
         await CatalogService.bump();
+        await CatalogSync.storeChanged(widget.storeId);
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تغيير صورة المحل.')),
         );
@@ -435,6 +437,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
           .doc(widget.storeId)
           .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
       await CatalogService.bump();
+      await CatalogSync.storeChanged(widget.storeId);
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),
@@ -1403,6 +1406,24 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       });
       await CatalogService.bump();
     } catch (_) {}
+    await _syncCatalog();
+  }
+
+  /// القائمة المجمّعة للعملاء + خانة المحل في الفهرس. الأصناف محمّلة بالفعل في _docs،
+  /// فلو القائمة كاملة (أقل من الحد) بنكتبها من غير أي قراءة إضافية.
+  Future<void> _syncCatalog() async {
+    if (_docs.length < _limit) {
+      await CatalogSync.writeFullMenu(widget.storeId, {
+        for (final d in _docs) d.id: d.data(),
+      });
+    } else {
+      await CatalogSync.rebuildStoreMenu(
+        widget.storeId,
+        updateHighlights: false,
+        syncStore: false,
+      );
+    }
+    await CatalogSync.storeChanged(widget.storeId);
   }
 
   Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
