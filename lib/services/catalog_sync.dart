@@ -535,6 +535,9 @@ class CatalogSync {
   /// ما يأثرش على التقييم نفسه.
   static Future<bool> syncRating(String storeId) async {
     if (storeId.isEmpty) return false;
+    // المدير بيعدّي القواعد، فممكن يعمل خانة ناقصة لمحل مش في الفهرس؛ تقييمه بيتزامن مع
+    // أول تحديث عادي للمحل أو «بناء فهرس الكتالوج».
+    if (_mayBypassRules()) return false;
     try {
       return await _db.runTransaction<bool>((tx) async {
         final snap = await tx.get(CatalogPaths.store(storeId));
@@ -581,8 +584,12 @@ class CatalogSync {
       final prefs = await SharedPreferences.getInstance();
       final key = 'catalog_index_rating_$storeId';
       if (prefs.getString(key) == signature) return;
-      // بنحفظ التوقيع بس لو التحديث نجح، عشان يتعاد المرة الجاية لو فشل.
-      if (await storeChanged(storeId)) await prefs.setString(key, signature);
+      // إصلاح لو مزامنة التقييم عند العميل فشلت: بنكتب الخانة من غير رفع رقم إصدار الفهرس،
+      // فالعملاء ما بيعيدوش تحميله؛ التقييم بيبان مع أول تحديث طبيعي للفهرس.
+      // بنحفظ التوقيع بس لو الكتابة نجحت، عشان تتعاد المرة الجاية لو فشلت.
+      if (await storeChanged(storeId, bumpVersion: false)) {
+        await prefs.setString(key, signature);
+      }
     } catch (e) {
       debugPrint('Rating index refresh skipped for $storeId: $e');
     } finally {
@@ -595,12 +602,19 @@ class CatalogSync {
   /// بدل ما العملاء يفضلوا على فهرس قديم. (صاحب المحل ما يقدرش يوقفه للكل.)
   /// [adding]: المحل بيتفعّل/بيتضاف (المدير بيعدّي القواعد، فبنتأكد إن الفهرس فيه مكان).
   /// بيرجع true لو الخانة اتكتبت.
-  static Future<bool> storeChanged(String storeId, {bool adding = false}) async {
+  /// [bumpVersion] = false: تحديث الخانة من غير ما العملاء يعيدوا تحميل الفهرس (تقييم بس).
+  static Future<bool> storeChanged(
+    String storeId, {
+    bool adding = false,
+    bool bumpVersion = true,
+  }) async {
     if (storeId.isEmpty) return false;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         // الفهرس مليان: ما بنكتبش وما بنوقفش الفهرس للكل (المتصل بيبلّغ المدير).
-        if (!await _writeStoreEntry(storeId, adding: adding)) return false;
+        if (!await _writeStoreEntry(storeId, adding: adding, bumpVersion: bumpVersion)) {
+          return false;
+        }
         CatalogReader.invalidate();
         return true;
       } catch (e) {
@@ -653,7 +667,11 @@ class CatalogSync {
 
   /// معاملة بتقرا مستند المحل: لو اتعدّل من جهاز تاني قبل الحفظ، بتتعاد بالبيانات الجديدة.
   /// بيرجع false لو الفهرس مليان (من غير كتابة). أي فشل تاني بيرمي استثناء.
-  static Future<bool> _writeStoreEntry(String storeId, {bool adding = false}) async {
+  static Future<bool> _writeStoreEntry(
+    String storeId, {
+    bool adding = false,
+    bool bumpVersion = true,
+  }) async {
     final result = await _db.runTransaction<({bool existed, bool full})>((tx) async {
       final snap = await tx.get(CatalogPaths.store(storeId));
       final data = snap.data();
@@ -681,11 +699,13 @@ class CatalogSync {
         {'s_$storeId': entry, 'updatedAt': FieldValue.serverTimestamp()},
         SetOptions(mergeFields: [key, FieldPath(const ['updatedAt'])]),
       );
-      tx.set(
-        CatalogPaths.versions,
-        {'stores': FieldValue.increment(1), 'updatedAt': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      if (bumpVersion) {
+        tx.set(
+          CatalogPaths.versions,
+          {'stores': FieldValue.increment(1), 'updatedAt': FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+      }
       return (existed: snap.exists, full: false);
     });
     if (result.full) return false;
