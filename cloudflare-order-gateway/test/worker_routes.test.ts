@@ -73,7 +73,7 @@ describe("Worker order gateway route hardening", () => {
     expect(response.status).toBe(401);
   });
 
-  it("rejects unsupported order notification events", async () => {
+  it("rejects malformed authentication before processing order notification events", async () => {
     const response = await worker.fetch(
       new Request("https://worker.test/v1/orders/order_123/events", {
         method: "POST",
@@ -123,5 +123,14 @@ describe("order status push payload", () => {
     expect(JSON.stringify(payload)).not.toContain("phone");
     expect(JSON.stringify(payload)).not.toContain("address");
     expect(payload.message.android.priority).toBe("HIGH");
+  });
+
+  it("uses a distinct event type for newly created orders", () => {
+    const payload = orderStatusPushMessage("fcm-token", "order_456", "new_order");
+    expect(payload.message.data).toEqual({
+      type: "new_order",
+      orderId: "order_456",
+      status: "new_order",
+    });
   });
 });
