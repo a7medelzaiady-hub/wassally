@@ -1146,7 +1146,14 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const existing = await getDocument(env, orderPath, token);
   if (existing) {
     const old = decodeFields(existing.fields ?? {});
-    if (old.userId === uid) return response({ orderId, reused: true });
+    if (old.userId === uid) {
+      // A retry may reuse the same ID only for the original store.
+      // Never report a different-store submission as successfully created.
+      if (old.storeId !== storeId) {
+        throw new HttpError(409, "معرّف الطلب مرتبط بمحل مختلف. أعد إرسال الطلب.");
+      }
+      return response({ orderId, reused: true });
+    }
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
