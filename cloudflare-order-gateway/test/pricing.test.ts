@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import worker from "../src/index";
 import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, deleteCloudinarySpecialRequestAssets, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
 
@@ -133,7 +134,7 @@ describe("trusted catalog option pricing", () => {
 describe("order replay store isolation", () => {
   it("keeps an existing order ID bound to its original store", () => {
     // Guard the source contract: retries must never acknowledge a different-store order.
-    const source = require("node:fs").readFileSync(
+    const source = readFileSync(
       new URL("../src/index.ts", import.meta.url), "utf8",
     );
     expect(source).toContain("if (old.storeId !== storeId)");
