@@ -60,12 +60,27 @@ class CatalogReader {
     return _versions ??= _loadVersions();
   }
 
+  /// آخر مستند إصدارات اتقرا في الجلسة دي (من غير أي قراءة جديدة)، أو null.
+  static Map<String, dynamic>? get loadedVersions => _loaded;
+  static Map<String, dynamic>? _loaded;
+
+  /// المحلات اللي كتالوجها المجمّع متعطل (رقم سالب أو كبير) = العملاء على الطريقة القديمة.
+  static ({int disabled, int big}) disabledMenus(Map<String, dynamic> versions) {
+    var disabled = 0;
+    var big = 0;
+    for (final e in versions.entries) {
+      if (e.key.startsWith('big_') && e.value == true) big++;
+      if (e.key.startsWith('m_') && e.value is num && (e.value as num) < 1) disabled++;
+    }
+    return (disabled: disabled, big: big);
+  }
+
   static Future<Map<String, dynamic>?> _loadVersions() async {
     try {
       final snap = await CatalogPaths.versions
           .get(const GetOptions(source: Source.server));
       ReadMeter.document('catalog:versions', snap);
-      return snap.data() ?? const {};
+      return _loaded = snap.data() ?? const {};
     } catch (e) {
       debugPrint('Catalog versions unavailable: $e');
       // نسمح بإعادة المحاولة في المرة الجاية بدل ما نفضل على المسار القديم طول الجلسة.
@@ -512,6 +527,44 @@ class CatalogSync {
   }
 
   // ───────────────────────── الفهرس ─────────────────────────
+
+  /// بعد ما العميل يقيّم محل: نحدّث ratingSum/ratingCount في خانة المحل بالفهرس (قراءة + كتابة)،
+  /// من غير رفع رقم إصدار الفهرس، فالعملاء بيشوفوا التقييم الجديد مع أول تحديث طبيعي للفهرس
+  /// من غير إعادة تحميل إجبارية. معاملة على مستند المحل: لو تقييم تاني وصل قبل الحفظ، بتتعاد
+  /// بالأرقام الأحدث، والقواعد بترفض أي أرقام مش مطابقة لمستند المحل. أفضل محاولة: الفشل
+  /// ما يأثرش على التقييم نفسه.
+  static Future<bool> syncRating(String storeId) async {
+    if (storeId.isEmpty) return false;
+    try {
+      return await _db.runTransaction<bool>((tx) async {
+        final snap = await tx.get(CatalogPaths.store(storeId));
+        final data = snap.data();
+        if (data == null || data['active'] != true) return false;
+        tx.set(
+          CatalogPaths.storeIndex,
+          ratingSyncData(storeId, data),
+          SetOptions(mergeFields: [
+            FieldPath(['s_$storeId', 'ratingSum']),
+            FieldPath(['s_$storeId', 'ratingCount']),
+            FieldPath(const ['ratingSync']),
+          ]),
+        );
+        return true;
+      });
+    } catch (e) {
+      debugPrint('Rating index sync skipped for $storeId: $e');
+      return false;
+    }
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> ratingSyncData(String storeId, Map<String, dynamic> store) => {
+        's_$storeId': {
+          'ratingSum': store['ratingSum'] ?? 0,
+          'ratingCount': store['ratingCount'] ?? 0,
+        },
+        'ratingSync': storeId,
+      };
 
   static final Set<String> _ratingRefreshing = {};
 

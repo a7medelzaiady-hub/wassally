@@ -147,6 +147,26 @@ service cloud.firestore {
           : (!exists(storePath) || get(storePath).data.get('active', false) != true));
     }
 
+    // مزامنة تقييم المحل في الفهرس بعد تقييم جديد (من غير رفع رقم إصدار الفهرس):
+    // العميل اللي عمل آخر تقييم للمحل (lastReviewId) يكتب ratingSum/ratingCount بس في خانة
+    // محل موجودة أصلًا، والقيم لازم تساوي مستند المحل دلوقتي بالظبط. فما يقدرش يزوّر أرقام،
+    // وما يقدرش يلمس محل تاني أو حقول تانية، وكتابة قديمة بعد تقييم أحدث بتترفض (القيم مش هتطابق).
+    // ratingSync = معرف المحل اللي بيتزامن (القواعد ما تقدرش تطلّع المعرف من اسم الحقل).
+    function storeIndexRatingSyncOk(before, after) {
+      let sid = after.get('ratingSync', '');
+      let key = 's_' + sid;
+      let st = get(/databases/$(database)/documents/stores/$(sid)).data;
+      return signedIn() && sid is string && sid.size() > 0 &&
+        after.diff(before).affectedKeys().hasOnly([key, 'ratingSync']) &&
+        (key in before) && (key in after) &&
+        after[key].diff(before[key]).affectedKeys().hasOnly(['ratingSum', 'ratingCount']) &&
+        after[key].get('ratingSum', 0) == st.get('ratingSum', 0) &&
+        after[key].get('ratingCount', 0) == st.get('ratingCount', 0) &&
+        st.get('lastReviewId', '') is string && st.get('lastReviewId', '') != '' &&
+        get(/databases/$(database)/documents/reviews/$(st.get('lastReviewId', ''))).data.get('userId', '') ==
+          request.auth.uid;
+    }
+
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
@@ -1073,7 +1093,8 @@ service cloud.firestore {
       allow create: if doc == 'store_index' &&
         storeIndexWriteOk({}, request.resource.data);
       allow update: if doc == 'store_index' &&
-        storeIndexWriteOk(resource.data, request.resource.data);
+        (storeIndexWriteOk(resource.data, request.resource.data) ||
+         storeIndexRatingSyncOk(resource.data, request.resource.data));
     }
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.

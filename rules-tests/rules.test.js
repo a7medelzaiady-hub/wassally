@@ -1997,6 +1997,55 @@ test('catalog store_index: العروض نص مضغوط واحد "hl" بطول �
   await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: deleteField(), offerItems: [] } }, { merge: true }));
 });
 
+test('catalog rating sync: آخر عميل قيّم يحدّث رقمي التقييم في الفهرس بقيم المحل بالظبط وبس', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4, ratingSum: 5, ratingCount: 1 };
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop1'), { ratingSum: 9, ratingCount: 2, lastReviewId: 'r1' });
+    await setDoc(doc(db, 'reviews/r1'), { userId: 'cust1', storeId: 'shop1', rating: 4, orderId: 'o1' });
+    await setDoc(doc(db, 'app_info/store_index'), { s_shop1: entry, s_shop2: { name: 'S2', active: true } });
+    await setDoc(doc(db, 'app_info/catalog_versions'), { stores: 5, indexReady: true });
+  });
+  const ref = (uid) => doc(as(uid), 'app_info/store_index');
+  const sync = (sum, count, sid = 'shop1') =>
+    ({ [`s_${sid}`]: { ratingSum: sum, ratingCount: count }, ratingSync: sid });
+
+  // تزوير أرقام أو عميل تاني: مرفوض.
+  await assertFails(setDoc(ref('cust1'), sync(10, 2), { merge: true }));
+  await assertFails(setDoc(ref('cust2'), sync(9, 2), { merge: true }));
+  // حقل تاني في الخانة أو حقل في المستند غير ratingSync: مرفوض.
+  await assertFails(setDoc(ref('cust1'), { s_shop1: { ratingSum: 9, ratingCount: 2, order: 0 }, ratingSync: 'shop1' }, { merge: true }));
+  await assertFails(setDoc(ref('cust1'), { ...sync(9, 2), updatedAt: serverTimestamp() }, { merge: true }));
+  // محل تاني (آخر تقييم مش بتاعه) أو خانة مش موجودة: مرفوض.
+  await assertFails(setDoc(ref('cust1'), sync(0, 0, 'shop2'), { merge: true }));
+  await assertFails(setDoc(ref('cust1'), sync(0, 0, 'shop9'), { merge: true }));
+  // القيم الصحيحة من آخر عميل قيّم: مسموح، ورقم إصدار الفهرس ما بيتغيرش.
+  await assertSucceeds(setDoc(ref('cust1'), sync(9, 2), { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog_versions'), { stores: 6 }, { merge: true }));
+
+  // تقييم أحدث وصل: الكتابة القديمة (9/2) مرفوضة حتى من صاحبها، والأحدث بس اللي يتقبل.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop1'), { ratingSum: 14, ratingCount: 3, lastReviewId: 'r2' });
+    await setDoc(doc(db, 'reviews/r2'), { userId: 'cust2', storeId: 'shop1', rating: 5, orderId: 'o2' });
+  });
+  await assertFails(setDoc(ref('cust1'), sync(9, 2), { merge: true }));
+  await assertFails(setDoc(ref('cust1'), sync(14, 3), { merge: true }));
+  await assertSucceeds(setDoc(ref('cust2'), sync(14, 3), { merge: true }));
+
+  // تحديث صاحب المحل لخانته بعد كده (بالأرقام الجديدة) شغال عادي مع وجود ratingSync.
+  await assertSucceeds(setDoc(ref('owner1'), {
+    s_shop1: { ...entry, ratingSum: 14, ratingCount: 3 }, updatedAt: serverTimestamp(),
+  }, { merge: true }));
+  let snap;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    snap = (await getDoc(doc(ctx.firestore(), 'app_info/store_index'))).data();
+  });
+  assert.equal(snap.s_shop1.ratingSum, 14);
+  assert.equal(snap.s_shop1.ratingCount, 3);
+  assert.equal(snap.s_shop1.name, 'S');
+});
+
 test('catalog store_index: فوق حد الـ 250، تعديل خانة موجودة مسموح طالما العدد ما زادش', async () => {
   const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
   const over = { updatedAt: new Date(), s_shop1: entry };

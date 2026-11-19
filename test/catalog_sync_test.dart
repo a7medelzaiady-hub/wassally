@@ -120,6 +120,35 @@ void main() {
     });
   });
 
+  test('disabledMenus: بيعدّ الكتالوجات المتعطلة من مستند الإصدارات المتحمّل (من غير قراءة)', () {
+    final h = CatalogReader.disabledMenus({
+      'stores': 7,
+      'indexReady': true,
+      'm_a': 3,
+      'm_b': -2,
+      'm_c': -5,
+      'big_c': true,
+      'big_a': false,
+      'm_d': 0,
+    });
+    expect(h.disabled, 3);
+    expect(h.big, 1);
+  });
+
+  test('ratingSyncData: رقمي التقييم بس في خانة المحل + معرّف المحل (اللي القواعد بتتحقق منه)', () {
+    final d = CatalogSync.ratingSyncData('shop1', {
+      'name': 'S',
+      'ratingSum': 14,
+      'ratingCount': 3,
+      'rating': 4,
+    });
+    expect(d, {
+      's_shop1': {'ratingSum': 14, 'ratingCount': 3},
+      'ratingSync': 'shop1',
+    });
+    expect(CatalogSync.ratingSyncData('x', {})['s_x'], {'ratingSum': 0, 'ratingCount': 0});
+  });
+
   test('indexRoomFor: محل موجود دايمًا ليه مكان، والجديد بس لو العدد أقل من الحد', () {
     final full = {
       for (var i = 0; i < CatalogSync.maxIndexStores; i++) 's_x$i': <String, dynamic>{},

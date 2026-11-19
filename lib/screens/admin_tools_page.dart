@@ -181,6 +181,22 @@ class AdminReadMeterPage extends StatefulWidget {
 }
 
 class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
+  /// من مستند الإصدارات اللي الجلسة قرته أصلًا (من غير أي قراءة جديدة).
+  static String _catalogHealth() {
+    final v = CatalogReader.loadedVersions;
+    if (v == null) {
+      return 'حالة الكتالوج المجمّع: افتح الرئيسية مرة الأول عشان تظهر (من غير قراءة زيادة).';
+    }
+    if (v['indexReady'] != true) {
+      return 'فهرس المحلات مش جاهز: كل العملاء على الطريقة القديمة (دوس «بناء فهرس الكتالوج»).';
+    }
+    final h = CatalogReader.disabledMenus(v);
+    if (h.disabled == 0 && h.big == 0) return 'الكتالوج المجمّع: كل المحلات شغالة.';
+    return 'كتالوجات متعطلة: ${h.disabled} محل على الطريقة القديمة'
+        '${h.big > 0 ? ' (منهم ${h.big} أكبر من الحد)' : ''}. '
+        'بتتصلح تلقائيًا مع أول تعديل صنف ناجح، أو بـ «بناء فهرس الكتالوج».';
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = ReadMeter.snapshot();
@@ -209,6 +225,11 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                   'الإجمالي التقديري: ${ReadMeter.total()} قراءة منذ '
                   '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _catalogHealth(),
+                  style: TextStyle(color: kMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
                 if (rows.isEmpty)
