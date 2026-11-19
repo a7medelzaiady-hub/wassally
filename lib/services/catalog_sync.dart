@@ -180,10 +180,11 @@ class CatalogReader {
 /// الكتابة (صاحب المحل / المدير): بعد أي تعديل على صنف أو محل نحدّث المستندات المجمّعة.
 /// كل الدوال هنا "أفضل محاولة": أي فشل بيتسجّل وما بيوقفش حفظ الصنف نفسه.
 ///
-/// أرقام إصدار القائمة (m_<storeId>):
+/// أرقام إصدار القائمة (m_<storeId>) ما تتكررش أبدًا، عشان العميل بيستخدم الكاش لما الرقم يطابق:
 ///   ≥ 1  القائمة كاملة وصالحة للعملاء.
-///   0/-1 أو ناقص: القائمة مش موثوقة → العملاء على المسار القديم، وأول تعديل يعيد البناء كامل.
-///   -2   القائمة أكبر من حد المستند → المحل على المسار القديم دايمًا (من غير إعادة بناء مع كل تعديل).
+///   ≤ 0 أو ناقص: القائمة معطلة (سالب آخر إصدار صالح) → العملاء على المسار القديم،
+///         وأول تعديل يعيد البناء كامل ويكتب |السابق| + 1.
+/// big_<storeId> = true: القائمة أكبر من حد المستند → المسار القديم من غير إعادة بناء مع كل تعديل.
 class CatalogSync {
   const CatalogSync._();
 
@@ -303,25 +304,38 @@ class CatalogSync {
     return out;
   }
 
-  static Future<int?> _menuVersion(String storeId) async {
+  static Future<({int? version, bool big})> _menuState(String storeId) async {
     final snap = await CatalogPaths.versions
         .get(const GetOptions(source: Source.server));
     final v = snap.data()?['m_$storeId'];
-    return v is num ? v.toInt() : null;
+    return (
+      version: v is num ? v.toInt() : null,
+      big: snap.data()?['big_$storeId'] == true,
+    );
   }
 
-  /// الإصدار الجاي: زيادة بواحد لو القائمة صالحة، أو 1 لو كانت معطلة/جديدة.
-  static Object _nextVersion(int? current) =>
-      (current == null || current < 1) ? 1 : FieldValue.increment(1);
+  /// الإصدار الجاي (لازم يطابق القواعد): |السابق| + 1، فما يتكررش حتى بعد التعطيل.
+  @visibleForTesting
+  static Object nextVersion(int? current) {
+    if (current != null && current >= 1) return FieldValue.increment(1);
+    return (current ?? 0).abs() + 1;
+  }
 
-  static Future<void> _setMenuVersion(String storeId, int value) async {
+  /// تعطيل القائمة (العملاء يرجعوا للمسار القديم) من غير ما نرجع لرقم اتستخدم قبل كده.
+  static Future<void> _disableMenu(
+    String storeId, {
+    required bool tooBig,
+  }) async {
     try {
+      final state = await _menuState(storeId);
+      final current = state.version;
       await CatalogPaths.versions.set({
-        'm_$storeId': value,
+        if (current != null && current > 0) 'm_$storeId': -current,
+        if (tooBig) 'big_$storeId': true,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Could not mark menu $value for $storeId: $e');
+      debugPrint('Could not disable menu for $storeId: $e');
     }
   }
 
@@ -341,9 +355,10 @@ class CatalogSync {
     if (storeId.isEmpty || ids.isEmpty) return;
     Map<String, Map<String, dynamic>>? items;
     try {
-      final current = await _menuVersion(storeId);
-      // -2: القائمة أكبر من الحد؛ المحل على المسار القديم ومفيش إعادة بناء مع كل تعديل.
-      if (current == -2) return;
+      final state = await _menuState(storeId);
+      // القائمة أكبر من الحد: المحل على المسار القديم ومفيش إعادة بناء مع كل تعديل.
+      if (state.big) return;
+      final current = state.version;
       final menuRef = CatalogPaths.menu(storeId);
       final menuSnap = current != null && current >= 1
           ? await menuRef.get(const GetOptions(source: Source.server))
@@ -379,7 +394,7 @@ class CatalogSync {
         fields.add(FieldPath(['items', doc.id]));
       }
       if (estimateBytes(items) > _maxMenuBytes) {
-        await _setMenuVersion(storeId, -2);
+        await _disableMenu(storeId, tooBig: true);
         return;
       }
       final batch = _db.batch()
@@ -403,7 +418,7 @@ class CatalogSync {
       await batch.commit();
     } catch (e) {
       debugPrint('Menu sync failed for $storeId: $e');
-      await _setMenuVersion(storeId, _isTooLarge(e) ? -2 : -1);
+      await _disableMenu(storeId, tooBig: _isTooLarge(e));
       items = null;
     }
     if (updateHighlights && items != null) {
@@ -423,7 +438,7 @@ class CatalogSync {
     final items = <String, Map<String, dynamic>>{};
     var ok = false;
     try {
-      final current = await _menuVersion(storeId);
+      final state = await _menuState(storeId);
       DocumentSnapshot<Map<String, dynamic>>? cursor;
       while (true) {
         Query<Map<String, dynamic>> q = CatalogPaths.products(storeId)
@@ -438,7 +453,7 @@ class CatalogSync {
         cursor = page.docs.last;
       }
       if (estimateBytes(items) > _maxMenuBytes) {
-        await _setMenuVersion(storeId, -2);
+        await _disableMenu(storeId, tooBig: true);
       } else {
         final batch = _db.batch()
           ..set(CatalogPaths.menu(storeId), {
@@ -449,7 +464,8 @@ class CatalogSync {
           ..set(
             CatalogPaths.versions,
             {
-              'm_$storeId': _nextVersion(current),
+              'm_$storeId': nextVersion(state.version),
+              if (state.big) 'big_$storeId': false,
               'updatedAt': FieldValue.serverTimestamp(),
             },
             SetOptions(merge: true),
@@ -459,7 +475,7 @@ class CatalogSync {
       }
     } catch (e) {
       debugPrint('Menu rebuild failed for $storeId: $e');
-      await _setMenuVersion(storeId, _isTooLarge(e) ? -2 : -1);
+      await _disableMenu(storeId, tooBig: _isTooLarge(e));
     }
     var highlightsChanged = false;
     if (ok && updateHighlights) {
@@ -601,8 +617,8 @@ class CatalogSync {
       indexOk = false;
       debugPrint('Store index rebuild failed: $e');
       try {
+        // ما نرجّعش رقم الفهرس لورا (العملاء بيستخدموا الكاش لما الرقم يطابق)؛ نوقف الفهرس بس.
         await CatalogPaths.versions.set({
-          'stores': -1,
           'indexReady': false,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));

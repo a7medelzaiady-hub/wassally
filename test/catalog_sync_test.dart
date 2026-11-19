@@ -82,6 +82,14 @@ void main() {
     });
   });
 
+  test('nextVersion never repeats a number after a disable (must match the rules)', () {
+    expect(CatalogSync.nextVersion(null), 1);
+    expect(CatalogSync.nextVersion(0), 1);
+    expect(CatalogSync.nextVersion(-2), 3);
+    expect(CatalogSync.nextVersion(-7), 8);
+    expect(CatalogSync.nextVersion(4), isA<FieldValue>());
+  });
+
   test('estimateBytes grows with content', () {
     final small = CatalogSync.estimateBytes({'p1': {'name': 'a'}});
     final big = CatalogSync.estimateBytes({'p1': {'name': 'ب' * 1000}});

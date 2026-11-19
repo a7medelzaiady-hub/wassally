@@ -1886,7 +1886,9 @@ test('catalog versions: صاحب المحل يزوّد إصدار محله وا�
   await assertFails(setDoc(ref, { m_shop2: increment(1) }, { merge: true }));
   await assertFails(setDoc(ref, { stores: -1 }, { merge: true }));
   await assertFails(setDoc(ref, { stores: increment(5) }, { merge: true }));
-  await assertSucceeds(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  // التعطيل = سالب آخر إصدار صالح (الإصدار كان 2).
+  await assertFails(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -2 }, { merge: true }));
   // indexReady للمدير بس (بيتكتب بعد بناء الفهرس الكامل).
   await assertFails(setDoc(ref, { indexReady: true }, { merge: true }));
   await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
@@ -1945,14 +1947,25 @@ test('catalog store_index: قوائم العروض محدودة العدد وا�
   await assertFails(setDoc(ref, { s_shop1: { ...entry, bestItems: [{ ...item, image: 'x'.repeat(501) }] } }, { merge: true }));
 });
 
-test('catalog versions: بعد التعطيل (-1) إعادة البناء ترجّع 1 بالظبط، و-2 مسموح، وindexReady للمدير بس', async () => {
+test('catalog versions: الأرقام ما تتكررش بعد التعطيل، وbig_ لمحله بس، وindexReady للمدير بس', async () => {
   const ref = doc(as('owner1'), 'app_info/catalog_versions');
   await assertFails(setDoc(ref, { indexReady: true, m_shop1: 1 }));
-  await assertSucceeds(setDoc(ref, { m_shop1: -1 }, { merge: true }));
-  await assertFails(setDoc(ref, { m_shop1: 5 }, { merge: true }));
-  await assertSucceeds(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 1 }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 2 }, { merge: true }));
+  // تعطيل = -2 (سالب السابق)، مش أي رقم سالب.
+  await assertFails(setDoc(ref, { m_shop1: -1 }, { merge: true }));
   await assertSucceeds(setDoc(ref, { m_shop1: -2 }, { merge: true }));
-  await assertSucceeds(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  // الرجوع لازم يبقى 3 (|−2|+1)؛ 1 أو 2 اتستخدموا قبل كده والعميل ممكن يكون مخزّنهم.
+  await assertFails(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 2 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 5 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  // التعطيل من حالة معطلة أو صفر مرفوض (ما فيش سالب لسالب).
+  await assertSucceeds(setDoc(ref, { m_shop1: -3 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { big_shop1: true }, { merge: true }));
+  await assertFails(setDoc(ref, { big_shop2: true }, { merge: true }));
+  await assertFails(setDoc(ref, { big_shop1: 'yes' }, { merge: true }));
   await assertFails(setDoc(ref, { indexReady: false }, { merge: true }));
 });
 

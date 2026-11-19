@@ -84,19 +84,22 @@ service cloud.firestore {
               : '');
     }
 
-    // app_info/catalog_versions = { stores, m_<storeId>, updatedAt }.
-    // صاحب المحل يزوّد إصدار محله بواحد (أو يعلّمه -1 = ارجع للمسار القديم)، وإصدار الفهرس بواحد فقط.
+    // app_info/catalog_versions = { stores, m_<storeId>, big_<storeId>, indexReady, updatedAt }.
+    // أرقام الإصدار ما تتكررش أبدًا (العميل بيعتمد على الرقم عشان يستخدم الكاش):
+    //   الزيادة = |السابق| + 1، والتعطيل = سالب السابق (من إصدار صالح بس).
+    // big_<storeId>: القائمة أكبر من حد المستند (المحل على المسار القديم).
     function catalogVersionsWriteOk(before, after) {
       let sid = myCatalogStoreId();
       let mk = 'm_' + sid;
+      let bk = 'big_' + sid;
       let k = after.diff(before).affectedKeys();
       let prev = before.get(mk, 0);
       return sid is string && sid.size() > 0 &&
-        k.hasOnly([mk, 'stores', 'updatedAt']) &&
-        // +1 من إصدار صالح، أو 1 بعد إعادة بناء قائمة معطلة (≤0)، أو -1 (معطلة) / -2 (أكبر من الحد).
+        k.hasOnly([mk, bk, 'stores', 'updatedAt']) &&
         (!(mk in k) ||
-          after[mk] == (prev < 0 ? 0 : prev) + 1 ||
-          after[mk] == -1 || after[mk] == -2) &&
+          (after[mk] is int &&
+            (after[mk] == math.abs(prev) + 1 || (prev > 0 && after[mk] == -prev)))) &&
+        (!(bk in k) || after[bk] is bool) &&
         (!('stores' in k) || after.get('stores', 0) == before.get('stores', 0) + 1);
     }
 
