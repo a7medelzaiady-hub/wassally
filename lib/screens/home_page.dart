@@ -16,6 +16,7 @@ import '../models/store.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
 import '../services/read_meter.dart';
+import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/performance_monitor.dart';
@@ -93,15 +94,17 @@ class _HomePageState extends State<HomePage>
   int _lastUnread = -1;
 
   // المحلات بتتحمّل مرة واحدة (من الكاش لو الكتالوج ما اتغيرش) بدل stream دايم.
-  Future<QuerySnapshot<Map<String, dynamic>>> _storesFuture = _loadStores();
+  // الفهرس المجمّع = قراءة واحدة لكل المحلات؛ لو مش جاهز بنرجع للاستعلام القديم بنفس الكاش.
+  Future<List<CatalogDoc>> _storesFuture = _loadStores();
   Future<List<(_StoreItem, Map<String, dynamic>)>>? _offersFuture;
 
-  static Future<QuerySnapshot<Map<String, dynamic>>> _loadStores() =>
-      CatalogService.get(
-        FirebaseFirestore.instance
-            .collection('stores')
-            .where('active', isEqualTo: true),
-        'stores_active',
+  static Future<List<CatalogDoc>> _loadStores() => CatalogReader.activeStores(
+        () => CatalogService.get(
+          FirebaseFirestore.instance
+              .collection('stores')
+              .where('active', isEqualTo: true),
+          'stores_active',
+        ),
       );
 
   @override
@@ -802,11 +805,11 @@ class _HomePageState extends State<HomePage>
   // ───────────────────────── تحليل البيانات ─────────────────────────
 
   ({List<_StoreItem> stores, Map<String, String> categoryImages}) _parse(
-    QuerySnapshot<Map<String, dynamic>> snap,
+    List<CatalogDoc> docs,
   ) {
     final stores = <_StoreItem>[];
     final categoryImages = <String, String>{};
-    for (final doc in snap.docs) {
+    for (final doc in docs) {
       try {
         final data = doc.data();
         final store = Store.fromMap(doc.id, data);
@@ -1254,7 +1257,7 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      child: FutureBuilder<List<CatalogDoc>>(
         future: _storesFuture,
         builder: (context, snapshot) {
           final loading = !snapshot.hasData && !snapshot.hasError;

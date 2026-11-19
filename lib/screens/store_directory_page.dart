@@ -4,6 +4,7 @@ import '../widgets/app_header.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../theme/brand.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
@@ -20,7 +21,7 @@ class StoreDirectoryPage extends StatefulWidget {
 class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
   late String? _category = widget.initialCategory;
   final _search = TextEditingController();
-  late Future<QuerySnapshot<Map<String, dynamic>>> _future;
+  late Future<List<CatalogDoc>> _future;
 
   @override
   void initState() {
@@ -28,10 +29,14 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     _future = _load();
   }
 
-  Future<QuerySnapshot<Map<String, dynamic>>> _load() => CatalogService.get(
-    FirebaseFirestore.instance.collection('stores').where('active', isEqualTo: true),
-    'stores',
-  );
+  Future<List<CatalogDoc>> _load() => CatalogReader.activeStores(
+        () => CatalogService.get(
+          FirebaseFirestore.instance
+              .collection('stores')
+              .where('active', isEqualTo: true),
+          'stores',
+        ),
+      );
 
   @override
   void dispose() {
@@ -52,7 +57,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
           centerTitle: true,
           actions: const [HomeActionButton()],
         ),
-        body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        body: FutureBuilder<List<CatalogDoc>>(
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -71,7 +76,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
               );
             }
             final stores = <({Store store, Map<String, dynamic> data})>[];
-            for (final doc in snapshot.data?.docs ?? []) {
+            for (final doc in snapshot.data ?? const <CatalogDoc>[]) {
               try {
                 final data = doc.data();
                 final store = Store.fromMap(doc.id, data);

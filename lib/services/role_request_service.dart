@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'catalog_sync.dart';
+
 /// نوع طلب الانضمام. القيم لازم تطابق firestore.rules (validRoleRequest).
 enum JoinType {
   storeOwner('store_owner', 'صاحب محل'),
@@ -221,6 +223,14 @@ class RoleRequestService {
       'reviewedBy': admin,
     });
     await batch.commit();
+
+    // المحل المعتمد (لو اتنشر) يدخل الفهرس المجمّع وتتبني قائمة أصنافه.
+    final approvedStoreId = storeId;
+    if (type == JoinType.storeOwner &&
+        approvedStoreId != null &&
+        approvedStoreId.isNotEmpty) {
+      await CatalogSync.rebuildStoreMenu(approvedStoreId);
+    }
   }
 
   static Future<void> reject(

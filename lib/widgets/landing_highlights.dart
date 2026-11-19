@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/store.dart';
 import '../screens/store_page.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
@@ -34,13 +35,17 @@ class _LandingHighlightsState extends State<LandingHighlights> {
   late final Future<List<_S>> _future = _load();
 
   Future<List<_S>> _load() async {
-    final snap = await CatalogService.get(
-      // لازم فلتر active: قواعد Firestore بترفض استعلام المحلات من غيره للعميل.
-      FirebaseFirestore.instance.collection('stores').where('active', isEqualTo: true),
-      'stores',
+    // الفهرس المجمّع أولًا؛ الاستعلام القديم لازم يفلتر active عشان قواعد Firestore تسمح بيه للعميل.
+    final docs = await CatalogReader.activeStores(
+      () => CatalogService.get(
+        FirebaseFirestore.instance
+            .collection('stores')
+            .where('active', isEqualTo: true),
+        'stores',
+      ),
     );
     final out = <_S>[];
-    for (final d in snap.docs) {
+    for (final d in docs) {
       try {
         final data = d.data();
         if (data['active'] == false) continue;

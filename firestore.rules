@@ -71,6 +71,104 @@ service cloud.firestore {
           .data.get('active', true) == true;
     }
 
+    // ───────────── الكتالوج المجمّع (توفير القراءات) ─────────────
+    // المحل اللي المستخدم الحالي بيديره: صاحب محل نشط، أو صاحب طلب انضمام (مسودة) معلّق/مرفوض.
+    function myCatalogStoreId() {
+      let ownerPath = /databases/$(database)/documents/storeOwners/$(request.auth.uid);
+      let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      return !signedIn() ? '' :
+        (exists(ownerPath) && get(ownerPath).data.get('active', true) == true)
+          ? get(ownerPath).data.get('storeId', '')
+          : ((exists(requestPath) && get(requestPath).data.get('status', '') in ['pending', 'rejected'])
+              ? get(requestPath).data.get('storeId', '')
+              : '');
+    }
+
+    // app_info/catalog_versions = { stores, m_<storeId>, big_<storeId>, indexReady, updatedAt }.
+    // أرقام الإصدار ما تتكررش أبدًا (العميل بيعتمد على الرقم عشان يستخدم الكاش):
+    //   الزيادة = |السابق| + 1، والتعطيل = سالب السابق (من إصدار صالح بس).
+    // big_<storeId>: القائمة أكبر من حد المستند (المحل على المسار القديم).
+    function catalogVersionsWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let mk = 'm_' + sid;
+      let bk = 'big_' + sid;
+      let k = after.diff(before).affectedKeys();
+      let prev = before.get(mk, 0);
+      return sid is string && sid.size() > 0 &&
+        k.hasOnly([mk, bk, 'stores', 'updatedAt']) &&
+        (!(mk in k) ||
+          (after[mk] is int &&
+            (after[mk] == math.abs(prev) + 1 || (prev > 0 && after[mk] == -prev)))) &&
+        (!(bk in k) || after[bk] is bool) &&
+        (!('stores' in k) || after.get('stores', 0) == before.get('stores', 0) + 1);
+    }
+
+    // عنصر عرض في خانة المحل بالفهرس: حقول العرض بس وبأحجام محدودة.
+    function indexItemOk(m) {
+      return m is map &&
+        m.keys().hasOnly(['name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image']) &&
+        m.get('name', '') is string && m.get('name', '').size() <= 120 &&
+        m.get('price', 0) is number &&
+        (!('oldPrice' in m) || m.oldPrice is number) &&
+        m.get('offerText', '') is string && m.get('offerText', '').size() <= 120 &&
+        (!('offerEndsAt' in m) || m.offerEndsAt is timestamp) &&
+        m.get('image', '') is string && m.get('image', '').size() <= 500;
+    }
+
+    // قائمة عروض في الفهرس: 6 عناصر بالكتير، كل واحد متحقق منه (لازم يطابق CatalogSync.indexHighlightsCap).
+    function indexItemsOk(l) {
+      return l is list && l.size() <= 6 &&
+        (l.size() < 1 || indexItemOk(l[0])) &&
+        (l.size() < 2 || indexItemOk(l[1])) &&
+        (l.size() < 3 || indexItemOk(l[2])) &&
+        (l.size() < 4 || indexItemOk(l[3])) &&
+        (l.size() < 5 || indexItemOk(l[4])) &&
+        (l.size() < 6 || indexItemOk(l[5]));
+    }
+
+    // خانة المحل = نسخة من حقول العرض في مستند المحل بالظبط (لازم تطابق CatalogSync.indexKeys)،
+    // فصاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو الاسم. العروض بس متحقق من شكلها وحجمها.
+    function indexEntryMatchesStore(e, st) {
+      return e is map &&
+        e.keys().hasOnly(['name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
+                          'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
+                          'products', 'minOrder', 'minimumOrder', 'offerItems', 'bestItems']) &&
+        e.get('active', false) == true && st.get('active', false) == true &&
+        e.get('name', null) == st.get('name', null) &&
+        e.get('category', null) == st.get('category', null) &&
+        e.get('icon', null) == st.get('icon', null) &&
+        e.get('color', null) == st.get('color', null) &&
+        e.get('imageUrl', null) == st.get('imageUrl', st.get('image', null)) &&
+        e.get('storePhone', null) == st.get('storePhone', null) &&
+        e.get('rating', null) == st.get('rating', null) &&
+        e.get('ratingSum', null) == st.get('ratingSum', null) &&
+        e.get('ratingCount', null) == st.get('ratingCount', null) &&
+        e.get('time', null) == st.get('time', null) &&
+        e.get('order', null) == st.get('order', null) &&
+        e.get('products', null) == st.get('products', null) &&
+        e.get('minOrder', null) == st.get('minOrder', null) &&
+        e.get('minimumOrder', null) == st.get('minimumOrder', null) &&
+        indexItemsOk(e.get('offerItems', [])) &&
+        indexItemsOk(e.get('bestItems', []));
+    }
+
+    // app_info/store_index = { s_<storeId>: {حقول العرض}, updatedAt }.
+    // صاحب المحل يعدّل خانة محله بس.
+    // حد أمان للحجم: 250 محل بالكتير (+ updatedAt)، وكل خانة متقصوصة تحت 3.5KB في التطبيق
+    // (CatalogSync.maxIndexStores / maxIndexEntryBytes)، فالمستند يفضل تحت 1MiB.
+    function storeIndexWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let key = 's_' + sid;
+      let k = after.diff(before).affectedKeys();
+      let storePath = /databases/$(database)/documents/stores/$(sid);
+      return sid is string && sid.size() > 0 &&
+        after.size() <= 251 &&
+        k.hasOnly([key, 'updatedAt']) &&
+        (!(key in after) || (
+          exists(storePath) &&
+          indexEntryMatchesStore(after[key], get(storePath).data)));
+    }
+
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
@@ -511,6 +609,19 @@ service cloud.firestore {
         request.resource.data.ratingSum ==
           resource.data.get('ratingSum', 0) +
           getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
+
+      // قائمة أصناف المحل المجمّعة (قراءة واحدة للعميل). عرض فقط: البوابة بتسعّر من products.
+      match /menu/{doc} {
+        allow read: if isAdmin() || isStoreOwner(storeId) ||
+          isStoreApplicant(storeId) || isPublicStore(storeId);
+        allow create, update: if doc == 'current' &&
+          (isAdmin() || isStoreOwner(storeId) || isStoreApplicant(storeId)) &&
+          request.resource.data.keys().hasOnly(['items', 'count', 'updatedAt']) &&
+          request.resource.data.get('items', {}) is map &&
+          request.resource.data.get('items', {}).size() <= 5000 &&
+          request.resource.data.get('count', 0) is int;
+        allow delete: if isAdmin();
+      }
 
       match /products/{productId} {
         allow read: if isAdmin() || isStoreOwner(storeId) ||
@@ -977,6 +1088,14 @@ service cloud.firestore {
             ? request.resource.data.version == 1
             : (resource.data.get('version', 0) is number &&
                request.resource.data.version == resource.data.get('version', 0) + 1)));
+      allow create: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk({}, request.resource.data);
+      allow update: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk(resource.data, request.resource.data);
+      allow create: if doc == 'store_index' &&
+        storeIndexWriteOk({}, request.resource.data);
+      allow update: if doc == 'store_index' &&
+        storeIndexWriteOk(resource.data, request.resource.data);
     }
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.

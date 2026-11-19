@@ -52,9 +52,11 @@ class StoreHighlights {
   /// المدير: تحديث ملخص العروض لدفعة من المحلات (بالترتيب حسب المعرّف) بعد [startAfterId].
   /// كل محل بيكلف عدد أصنافه المرشحة (عروض/الأكثر مبيعًا) بس، والدفعة 50 محل بالكتير عشان ما نخلصش حصة اليوم مرة واحدة.
   /// بيرجع آخر معرّف اتعالج (للدفعة الجاية) أو null لو خلصوا.
+  /// [afterEach]: بعد نجاح ملخص كل محل (زي تحديث خانته في فهرس الكتالوج).
   static Future<({int done, int failed, String? lastId})> refreshBatch({
     String? startAfterId,
     int batchSize = 50,
+    Future<void> Function(String storeId)? afterEach,
   }) async {
     Query<Map<String, dynamic>> q = FirebaseFirestore.instance
         .collection('stores')
@@ -67,7 +69,11 @@ class StoreHighlights {
     ReadMeter.query('highlights:batch-stores', page);
     var failed = 0;
     for (final d in page.docs) {
-      if (!await refresh(d.id)) failed++;
+      if (await refresh(d.id)) {
+        await afterEach?.call(d.id);
+      } else {
+        failed++;
+      }
     }
     final lastId = page.docs.length < batchSize || page.docs.isEmpty
         ? null

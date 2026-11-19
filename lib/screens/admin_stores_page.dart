@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../models/store.dart';
 import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -177,6 +178,12 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // أول تفعيل للمحل: نبني قائمته المجمّعة؛ بعدها خانة المحل في الفهرس، وآخر حاجة رقم الإصدار.
+      if (active) {
+        await CatalogSync.rebuildStoreMenu(id);
+      } else {
+        await CatalogSync.storeChanged(id);
+      }
       await CatalogService.bump();
     } catch (e) {
       _say(_errorText(e));
@@ -222,6 +229,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
       await _stores.doc(id).delete();
 
+      await CatalogSync.storeChanged(id);
       await CatalogService.bump();
 
       _say('تم حذف المحل.');
@@ -510,6 +518,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         await _stores.doc(_id).update(fields);
       }
 
+      final savedId = _id;
+      if (savedId != null) await CatalogSync.storeChanged(savedId);
       await CatalogService.bump();
 
       if (!mounted) return;
@@ -545,6 +555,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
 
     try {
       final col = _stores.doc(id).collection('products');
+      await CatalogSync.markPending(id);
 
       final total = _products.length;
 
@@ -594,10 +605,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-      final highlightsOk = await StoreHighlights.refresh(id);
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (إعادة بناء كاملة).
+      final highlightsOk = await CatalogSync.afterProductsChanged(id);
 
       if (!mounted) return;
 
@@ -695,6 +704,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
 
       await _stores.doc(_id).delete();
 
+      final deletedId = _id;
+      if (deletedId != null) await CatalogSync.storeChanged(deletedId);
       await CatalogService.bump();
 
       if (mounted) {
@@ -1075,6 +1086,8 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
   void initState() {
     super.initState();
     _load(reset: true);
+    // مزامنة قائمة اتقطعت قبل كده على الجهاز ده: نكمّلها في الخلفية.
+    CatalogSync.resumePending(widget.storeId);
   }
 
   @override
@@ -1305,6 +1318,8 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       if (!ok || !mounted) return;
 
       setState(() => _uploadingFile = true);
+      // قبل الكتابة: لو التطبيق اتقفل في النص، القائمة تتبني أول ما الصفحة تتفتح.
+      await CatalogSync.markPending(widget.storeId);
 
       for (var start = 0; start < validProducts.length; start += _batchSize) {
         final end = start + _batchSize > validProducts.length
@@ -1326,10 +1341,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       }
 
       await _syncCount();
-      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (إعادة بناء كاملة).
+      final highlightsOk =
+          await CatalogSync.afterProductsChanged(widget.storeId);
 
       if (!mounted) return;
 
@@ -1343,11 +1357,9 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         try {
           await _syncCount();
         } catch (_) {}
-        // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-        // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-        // (refresh وbump ما بيرموش استثناءات.)
-        final highlightsOk = await StoreHighlights.refresh(widget.storeId);
-        await CatalogService.bump();
+        // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (ما بيرميش استثناءات).
+        final highlightsOk =
+            await CatalogSync.afterProductsChanged(widget.storeId);
 
         if (mounted) _load(reset: true);
 
@@ -1379,8 +1391,11 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     };
 
     try {
-      if (doc == null) {
-        await _col.doc().set({
+      final newRef = doc == null ? _col.doc() : null;
+      final savedId = doc?.id ?? newRef!.id;
+      await CatalogSync.markPending(widget.storeId, [savedId]);
+      if (newRef != null) {
+        await newRef.set({
           ...data,
           'isAvailable': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -1391,13 +1406,14 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
           await _syncCount();
         } catch (_) {}
       } else {
-        await doc.reference.update(data);
+        await doc!.reference.update(data);
       }
 
-      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
+      final highlightsOk = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: [savedId],
+      );
 
       await _load(reset: true);
 
@@ -1419,6 +1435,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     if (!ok || !mounted) return;
 
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.delete();
 
       // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
@@ -1426,10 +1443,11 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         await _syncCount();
       } catch (_) {}
 
-      // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-      // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-      final highlightsOk = await StoreHighlights.refresh(widget.storeId);
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
+      final highlightsOk = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: [doc.id],
+      );
 
       if (!mounted) return;
 
