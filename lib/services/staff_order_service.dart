@@ -62,6 +62,17 @@ class StaffOrderService {
     }
   }
 
+  static Future<void> _notifyReadyPush(String orderId) async {
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) return;
+      await OrderGateway.notifyReady(idToken: token, orderId: orderId)
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Readiness is already committed; push delivery is best-effort.
+    }
+  }
+
   static Future<void> _notify(
     String? userId,
     String title,
@@ -444,6 +455,7 @@ class StaffOrderService {
       'ready': true,
       'readyAt': FieldValue.serverTimestamp(),
     });
+    await _notifyReadyPush(orderId);
     try {
       final snap = await _orders.doc(orderId).get();
       await _notify(
