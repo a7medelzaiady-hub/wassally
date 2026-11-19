@@ -1,4 +1,5 @@
-﻿import 'dart:convert';
+﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -115,6 +116,18 @@ class OrderService {
     } catch (_) {
       // التسجيل اختياري: فشله ما يمنعش الطلب.
     }
+  }
+
+  static void _notifyCreatedPush(String orderId) {
+    unawaited(Future<void>(() async {
+      try {
+        final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+        if (token == null || token.isEmpty) return;
+        await OrderGateway.notifyCreated(idToken: token, orderId: orderId);
+      } catch (_) {
+        // Order creation already succeeded; push delivery is best-effort.
+      }
+    }));
   }
 
   static Future<String> _guardedPlaceOrder({
@@ -414,6 +427,8 @@ class OrderService {
         }
       }
     }
+
+    if (!serverOrders) _notifyCreatedPush(ref.id);
 
     try {
       await _clearPendingOrderId(user.uid);
