@@ -112,11 +112,15 @@ jobs:
             exit 1
           fi
           missing=()
-          for name in FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; do
+          for name in FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET; do
             echo "$list" | grep -q "\"$name\"" || missing+=("$name")
           done
           if (( ${#missing[@]} )); then
-            echo "::error::Worker secrets missing on Cloudflare (${#missing[@]} of 5). Check them with: npx wrangler secret list"; exit 1
+            echo "::error::Worker secrets missing on Cloudflare (${#missing[@]} of 4). Check them with: npx wrangler secret list"; exit 1
+          fi
+          # معرّف المشروع متغير عادي في wrangler.toml (مش سر)؛ لو مش موجود، النشر هيمسحه من الـ Worker.
+          if ! grep -Eq '^FIREBASE_PROJECT_ID *= *"[a-z0-9-]+"' wrangler.toml && ! echo "$list" | grep -q '"FIREBASE_PROJECT_ID"'; then
+            echo "::error::FIREBASE_PROJECT_ID must be set in wrangler.toml [vars] (or as a Worker secret)."; exit 1
           fi
 
       - name: Deploy
