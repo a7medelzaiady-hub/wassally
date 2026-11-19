@@ -18,5 +18,13 @@ appId: com.wassally.app
     timeout: 90000
 - tapOn: "استلم الطلب"
 - extendedWaitUntil:
+    visible: ".*طلباتي.*"
+    timeout: 30000
+- tapOn: ".*طلباتي.*"
+- extendedWaitUntil:
     visible: ".*وصلت إلى عنوان العميل.*"
+    timeout: 60000
+- tapOn: ".*وصلت إلى عنوان العميل.*"
+- extendedWaitUntil:
+    visible: ".*تم التسليم للعميل.*"
     timeout: 60000
