@@ -1021,6 +1021,7 @@ export function orderStatusPushMessage(
     on_the_way: ["طلبك في الطريق", "المندوب استلم طلبك وهو في الطريق إليك."],
     delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
     cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
+    assigned: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
   };
   const [title, body] = labels[status] ?? ["تحديث على طلبك", "افتح وصّلي لمتابعة طلبك."];
   return {
@@ -1093,10 +1094,72 @@ async function createOrderPushLog(
   });
   if (result.status === 409) return false;
   if (!result.ok) {
+    const detail = await result.text();
+    if (/ALREADY_EXISTS|FAILED_PRECONDITION|already exists/i.test(detail)) return false;
     console.error("Order push idempotency record failed", result.status);
     throw new HttpError(503, "تعذر تجهيز إشعار الطلب حاليًا.");
   }
   return true;
+}
+
+async function notifyOrderAssignment(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const accessToken = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, accessToken);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const courierId = String(order.courierId ?? "");
+  const storeId = String(order.storeId ?? "");
+  if (!courierId || !storeId || !(order.courierAt instanceof Date)) {
+    throw new HttpError(409, "لم يتم تعيين مندوب لهذا الطلب.");
+  }
+
+  // Firestore rules authorize the assignment write. The Worker independently
+  // confirms that the caller is the assigned active courier, an admin, or this store's owner.
+  let authorized = uid === courierId;
+  if (!authorized) {
+    const [adminDoc, ownerDoc] = await Promise.all([
+      getDocument(env, `admins/${encodeURIComponent(uid)}`, accessToken),
+      getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, accessToken),
+    ]);
+    const admin = adminDoc ? decodeFields(adminDoc.fields ?? {}) : {};
+    const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+    authorized = Boolean(adminDoc) ||
+      (ownerDoc !== null && owner.storeId === storeId && owner.active !== false);
+  }
+  if (!authorized) throw new HttpError(403, "لا تملك صلاحية إرسال إشعار التعيين.");
+
+  const assignedAt = order.courierAt instanceof Date ? order.courierAt.getTime() : 0;
+  const logId = `assigned_${orderId}_${courierId}_${assignedAt}`
+    .replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 180);
+  const claimed = await createOrderPushLog(env, accessToken, logId);
+  if (!claimed) return response({ orderId, sent: false, duplicate: true });
+
+  let sent = 0;
+  try {
+    if (typeof order.userId === "string") {
+      sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned");
+    }
+    if (uid !== courierId) {
+      sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned");
+    }
+    await commitFirestoreWrites(env, accessToken, [{
+      update: {
+        name: firestoreDocumentName(env, `notification_push_log/${logId}`),
+        fields: encodeFields({ status: sent > 0 ? "sent" : "no_tokens", sentCount: sent, sentAt: new Date() }),
+      },
+      updateMask: { fieldPaths: ["status", "sentCount", "sentAt"] },
+    }]);
+  } catch (error) {
+    await commitFirestoreWrites(env, accessToken, [{
+      delete: firestoreDocumentName(env, `notification_push_log/${logId}`),
+    }]).catch(() => {});
+    throw error;
+  }
+  return response({ orderId, sent: sent > 0, recipients: uid === courierId ? 1 : 2 });
 }
 
 async function notifyOrderStatus(request: Request, env: Env, orderId: string): Promise<Response> {
@@ -1111,6 +1174,9 @@ async function notifyOrderStatus(request: Request, env: Env, orderId: string): P
     throw new HttpError(400, "بيانات الإشعار غير مفهومة.");
   }
   const status = String(input?.status ?? "");
+  if (input?.event === "assigned") {
+    return notifyOrderAssignment(request, env, orderId);
+  }
   if (!["preparing", "on_the_way", "delivered", "cancelled"].includes(status)) {
     throw new HttpError(400, "نوع تحديث الطلب غير صالح.");
   }
