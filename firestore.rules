@@ -1523,35 +1523,10 @@ service cloud.firestore {
     // طلبات المنتجات غير الموجودة: العميل ينشئ طلبًا لمحـل نشط،
     // وصاحب المحل المعني فقط (أو الإدارة) يقرأ الطلبات.
     match /special_requests/{requestId} {
-      allow create: if signedIn() &&
-        request.resource.data.keys().hasOnly([
-          'storeId', 'storeName', 'userId', 'description', 'quantity',
-          'imageUrl', 'voiceBase64', 'status', 'createdAt'
-        ]) &&
-        request.resource.data.keys().hasAll([
-          'storeId', 'storeName', 'userId', 'description', 'quantity',
-          'imageUrl', 'voiceBase64', 'status', 'createdAt'
-        ]) &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.storeId is string &&
-        request.resource.data.storeId.size() > 0 &&
-        exists(/databases/$(database)/documents/stores/$(request.resource.data.storeId)) &&
-        get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.get('active', true) == true &&
-        request.resource.data.storeName is string &&
-        request.resource.data.storeName.size() <= 100 &&
-        request.resource.data.description is string &&
-        request.resource.data.description.size() <= 300 &&
-        request.resource.data.quantity is int &&
-        request.resource.data.quantity >= 1 && request.resource.data.quantity <= 99 &&
-        request.resource.data.imageUrl is string &&
-        request.resource.data.imageUrl.size() <= 500 &&
-        request.resource.data.voiceBase64 is string &&
-        request.resource.data.voiceBase64.size() <= 700000 &&
-        (request.resource.data.description.size() > 0 ||
-         request.resource.data.imageUrl.size() > 0 ||
-         request.resource.data.voiceBase64.size() > 0) &&
-        request.resource.data.status == 'new' &&
-        request.resource.data.createdAt == request.time;
+      // موقوف مؤقتًا: التطبيق الحالي بيبعت الطلب الخاص جوه الطلب نفسه (orders.specialRequest) عبر الـWorker،
+      // وفتح الإنشاء هنا لأي حساب بدون حد عدد بيعرّض حصة التخزين والكتابة للاستنزاف.
+      // للرجوع: استرجع شرط الإنشاء من تاريخ git (قبل هذا التعديل). القراءة متروكة كما هي للمستندات القديمة.
+      allow create: if false;
       allow read: if isAdmin() ||
         (signedIn() && isStoreOwner(resource.data.get('storeId', '')));
       allow update, delete: if false;
