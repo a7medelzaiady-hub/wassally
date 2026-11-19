@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'catalog_sync.dart';
+
 /// نوع طلب الانضمام. القيم لازم تطابق firestore.rules (validRoleRequest).
 enum JoinType {
   storeOwner('store_owner', 'صاحب محل'),
@@ -167,8 +169,10 @@ class RoleRequestService {
         final products = await storeRef.collection('products').count().get();
         final storeData = storeSnapshot.data() ?? {};
         final imageUrl = (storeData['imageUrl'] ?? storeData['image'] ?? '').toString();
+        // ونشره كمان محتاج مكان في فهرس المحلات (حد 250)؛ لو مليان بيتعتمد مقفول والمدير يفعّله بعدين.
         final readyToPublish = (products.count ?? 0) >= 5 &&
-            imageUrl.startsWith('https://');
+            imageUrl.startsWith('https://') &&
+            await CatalogSync.indexHasRoom(draftId);
         batch.update(storeRef, {
           'approved': true,
           'active': readyToPublish,
@@ -221,6 +225,14 @@ class RoleRequestService {
       'reviewedBy': admin,
     });
     await batch.commit();
+
+    // المحل المعتمد (لو اتنشر) يدخل الفهرس المجمّع وتتبني قائمة أصنافه.
+    final approvedStoreId = storeId;
+    if (type == JoinType.storeOwner &&
+        approvedStoreId != null &&
+        approvedStoreId.isNotEmpty) {
+      await CatalogSync.rebuildStoreMenu(approvedStoreId, adding: true);
+    }
   }
 
   static Future<void> reject(

@@ -147,6 +147,28 @@ class OrderGateway {
     }
   }
 
+  /// البوابة رفضت لأن سعر/توفر صنف في السلة مختلف عن الكتالوج الحالي (مش أي خطأ تاني).
+  /// الـ Worker الجديد بيبعت code = catalog_mismatch؛ النسخة القديمة بنعرفها من الرسالة.
+  @visibleForTesting
+  static bool isCatalogMismatch({
+    required int status,
+    String? code,
+    required String message,
+  }) {
+    if (code != null && code.isNotEmpty) return code == 'catalog_mismatch';
+    if (status != 409) return false;
+    // الـ Worker القديم (من غير code): الرسايل دي بالظبط بس، مش أي رسالة فيها "اتغير".
+    return _legacyMismatchMessages.contains(message.trim());
+  }
+
+  static const _legacyMismatchMessages = {
+    'أحد الأصناف لم يعد موجودًا في كتالوج المحل.',
+    'أحد الأصناف غير متاح حاليًا.',
+    'سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.',
+    'سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.',
+    'أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.',
+  };
+
   static Future<void> _send({
     required String idToken,
     required String method,
@@ -194,14 +216,25 @@ class OrderGateway {
 
     if (result.statusCode < 200 || result.statusCode >= 300) {
       final message = (body['error'] ?? '').toString().trim();
-      throw StateError(
-        message.isNotEmpty
-            ? message
-            : 'تعذر تنفيذ الطلب (${result.statusCode}).',
-      );
+      final text = message.isNotEmpty
+          ? message
+          : 'تعذر تنفيذ الطلب (${result.statusCode}).';
+      if (isCatalogMismatch(
+        status: result.statusCode,
+        code: body['code']?.toString(),
+        message: message,
+      )) {
+        throw CatalogMismatchError(text);
+      }
+      throw StateError(text);
     }
     if ((body['orderId'] ?? '').toString().isEmpty) {
       throw StateError('لم يصل تأكيد العملية من الخادم.');
     }
   }
+}
+
+/// سعر أو توفر صنف اتغير عن اللي في سلة العميل (القائمة المجمّعة عنده ممكن تكون متأخرة).
+class CatalogMismatchError extends StateError {
+  CatalogMismatchError(super.message);
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'catalog_sync.dart';
 import 'read_meter.dart';
 
 class DriverService {
@@ -127,5 +128,7 @@ class RatingService {
       }
       throw StateError('مقدرناش نسجّل تقييم المحل، حاول تاني.');
     }
+    // التقييم اتسجل: نحدّث أرقامه في فهرس المحلات (أفضل محاولة، من غير رفع رقم الإصدار).
+    await CatalogSync.syncRating(storeId);
   }
 }

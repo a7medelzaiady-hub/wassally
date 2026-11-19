@@ -11,6 +11,7 @@ import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
 import '../services/read_meter.dart';
+import '../services/catalog_sync.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../models/product.dart';
@@ -236,6 +237,7 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
               'imageUrl': url,
               'updatedAt': FieldValue.serverTimestamp(),
             });
+        await CatalogSync.storeChanged(widget.storeId);
         if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تحديث صورة المحل.')),
@@ -391,6 +393,26 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       .doc(widget.storeId)
       .snapshots();
   bool _busy = false;
+  StreamSubscription<DocumentSnapshot<_Json>>? _indexRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    // تقييمات العملاء بتتكتب على مستند المحل بس (العميل ما يكتبش في الفهرس)، فلما صاحب المحل
+    // يفتح لوحته بنحدّث خانة محله في الفهرس لو التقييم اتغير. نفس الاستعلام = من غير قراءات زيادة.
+    _indexRefresh = _stream.listen((snap) {
+      final data = snap.data();
+      if (data != null) {
+        CatalogSync.refreshIfRatingChanged(widget.storeId, data);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _indexRefresh?.cancel();
+    super.dispose();
+  }
 
   Future<void> _changeImage() async {
     if (_busy) return;
@@ -410,6 +432,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
               'image': url,
               'updatedAt': FieldValue.serverTimestamp(),
             });
+        await CatalogSync.storeChanged(widget.storeId);
         await CatalogService.bump();
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تغيير صورة المحل.')),
@@ -433,7 +456,16 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
           .collection('stores')
           .doc(widget.storeId)
           .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
+      final indexed = await CatalogSync.storeChanged(widget.storeId, adding: value);
       await CatalogService.bump();
+      if (!indexed) {
+        await CatalogSync.markIndexPending(widget.storeId);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('اتغيرت حالة المحل، بس ظهوره للعملاء هيتحدث لما الاتصال يتحسن.'),
+          ),
+        );
+      }
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),
@@ -1311,6 +1343,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   void initState() {
     super.initState();
     _load();
+    // مزامنة قائمة اتقطعت قبل كده (التطبيق اتقفل/النت قطع بعد حفظ صنف): نكمّلها في الخلفية.
+    CatalogSync.resumePending(widget.storeId);
   }
 
   @override
@@ -1379,15 +1413,14 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     });
   }
 
-  /// بعد أي تعديل صنف: الترتيب مهم.
-  /// 1) تحديث ملخص العروض من الخادم، 2) بعده رفع رقم إصدار الكتالوج،
-  /// عشان العميل اللي يشوف الإصدار الجديد ياخد الملخص الجديد مش القديم.
-  /// 3) إعادة عرض القائمة من الكاش (صفر قراءات).
-  /// الإصدار بيترفع حتى لو الملخص فشل، لأن الصنف نفسه اتغيّر واتحفظ.
-  /// بيرجع true لو الملخص اتحدث.
-  Future<bool> _afterProductChange() async {
-    final ok = await StoreHighlights.refresh(widget.storeId);
-    await CatalogService.bump();
+  /// بعد أي تعديل صنف: القائمة المجمّعة ← ملخص العروض ← الفهرس ← رقم الإصدار
+  /// (الترتيب في CatalogSync.afterProductsChanged)، وبعدها إعادة عرض القائمة من الكاش.
+  /// بيرجع true لو ملخص العروض اتحدث.
+  Future<bool> _afterProductChange(String productId) async {
+    final ok = await CatalogSync.afterProductsChanged(
+      widget.storeId,
+      productIds: [productId],
+    );
     await _load(fromCache: true);
     return ok;
   }
@@ -1401,8 +1434,12 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     if (result == null || !mounted) return;
 
     try {
-      if (doc == null) {
-        await _col.doc().set({
+      final newRef = doc == null ? _col.doc() : null;
+      final savedId = doc?.id ?? newRef!.id;
+      // قبل الكتابة: لو التطبيق اتقفل قبل مزامنة القائمة، تتكمّل أول ما الصفحة تتفتح.
+      await CatalogSync.markPending(widget.storeId, [savedId]);
+      if (newRef != null) {
+        await newRef.set({
           'name': result.name,
           'price': result.price,
           'image': result.image,
@@ -1421,7 +1458,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           await _syncCount();
         } catch (_) {}
       } else {
-        await doc.reference.update({
+        await doc!.reference.update({
           'name': result.name,
           'price': result.price,
           'image': result.image,
@@ -1432,7 +1469,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
-      final ok = await _afterProductChange();
+      final ok = await _afterProductChange(savedId);
       _say(StoreHighlights.withNote('تم حفظ الصنف', ok));
     } catch (e) {
       _say('تعذر حفظ الصنف: ${_why(e)}');
@@ -1545,8 +1582,9 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         };
       }
       update['updatedAt'] = FieldValue.serverTimestamp();
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.update(update);
-      final ok = await _afterProductChange();
+      final ok = await _afterProductChange(doc.id);
       _say(StoreHighlights.withNote(
         choice.cancel ? 'اتلغى العرض' : 'تم تفعيل العرض',
         ok,
@@ -1558,12 +1596,13 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
 
   Future<void> _toggle(QueryDocumentSnapshot<_Json> doc, bool value) async {
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.update({
         'available': value,
         'isAvailable': value,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      final ok = await _afterProductChange();
+      final ok = await _afterProductChange(doc.id);
       if (!ok) _say(StoreHighlights.withNote('اتغيرت حالة الصنف', ok));
     } catch (_) {
       _say('تعذر تغيير حالة الصنف.');
@@ -1581,12 +1620,13 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     );
     if (!ok || !mounted) return;
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.delete();
       // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
       try {
         await _syncCount();
       } catch (_) {}
-      final ok = await _afterProductChange();
+      final ok = await _afterProductChange(doc.id);
       _say(StoreHighlights.withNote('تم حذف الصنف', ok));
     } catch (_) {
       _say('تعذر حذف الصنف.');

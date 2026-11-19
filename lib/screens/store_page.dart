@@ -19,6 +19,7 @@ import '../models/store.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
@@ -507,6 +508,44 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
+  /// كل أصناف المحل من مستند القائمة المجمّع (للعميل فقط). null = استخدم الاستعلام المباشر.
+  List<Product>? _menuAll;
+  bool _menuUnavailable = false;
+
+  /// المدير وصاحب المحل يكملوا على الاستعلام المباشر (بيانات لحظية لأزرار التعديل).
+  /// لو الدور لسه مش معروف، الأمان إننا نستخدم الاستعلام المباشر.
+  bool get _mayEdit {
+    if (_canEditStore) return true;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    final known = RoleService.cachedFor(uid);
+    if (known == null) return true;
+    if (known.role == AppRole.admin || known.roles.contains(AppRole.admin)) {
+      return true;
+    }
+    // صاحب المحل أو صاحب طلب الانضمام لنفس المحل.
+    return known.storeId.isNotEmpty && known.storeId == store.id;
+  }
+
+  Future<List<Product>?> _menuProducts() async {
+    if (_menuAll != null) return _menuAll;
+    if (_menuUnavailable || _mayEdit) return null;
+    final docs = await CatalogReader.menu(store.id);
+    if (docs == null) {
+      _menuUnavailable = true;
+      return null;
+    }
+    final list = <Product>[];
+    for (final d in docs) {
+      try {
+        list.add(_parse(d.id, d.data()));
+      } catch (_) {}
+    }
+    list.sort((a, b) => a.name.compareTo(b.name));
+    _menuAll = list;
+    return list;
+  }
+
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       _gen++;
@@ -520,6 +559,23 @@ class _StorePageState extends State<StorePage> {
     final gen = _gen;
     setState(() => _loading = true);
     try {
+      // العميل: قراءة واحدة لكل الأصناف (أو صفر لو القائمة متخزنة)، والبحث محلي من غير قراءات.
+      final menu = await _menuProducts();
+      if (menu != null) {
+        if (!mounted || gen != _gen) return;
+        final term = _term.toLowerCase();
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(term.isEmpty
+                ? menu
+                : menu.where((p) => p.name.toLowerCase().contains(term)));
+          _hasMore = false;
+          _loading = false;
+        });
+        return;
+      }
+
       Query<_Json> q = _col.orderBy('name');
       if (_term.isNotEmpty) {
         q = q
@@ -1029,6 +1085,8 @@ class _StorePageState extends State<StorePage> {
 
       var uploaded = 0;
       Object? uploadError;
+      // رفع جماعي: إعادة بناء القائمة المجمّعة مرة واحدة بعده (والعلامة بتضمنها لو التطبيق اتقفل).
+      await CatalogSync.markPending(store.id);
       try {
         for (var start = 0; start < rows.length; start += 400) {
           final end = start + 400 > rows.length ? rows.length : start + 400;
@@ -1052,11 +1110,8 @@ class _StorePageState extends State<StorePage> {
       }
 
       if (uploaded > 0) {
-        // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-        // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
-        // (refresh وbump ما بيرموش استثناءات.)
-        highlightsOk = await StoreHighlights.refresh(store.id);
-        await CatalogService.bump();
+        // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (ما بيرميش استثناءات).
+        highlightsOk = await CatalogSync.afterProductsChanged(store.id);
         _load(reset: true);
       }
 
@@ -1235,9 +1290,12 @@ class _StorePageState extends State<StorePage> {
                         }
 
                         try {
-                          if (product == null) {
+                          final newRef = product == null ? _col.doc() : null;
+                          final savedId = product?.id ?? newRef!.id;
+                          await CatalogSync.markPending(store.id, [savedId]);
+                          if (newRef != null) {
                             final batch = FirebaseFirestore.instance.batch();
-                            batch.set(_col.doc(), {
+                            batch.set(newRef, {
                               'name': name,
                               'price': price,
                               'image': image,
@@ -1255,8 +1313,8 @@ class _StorePageState extends State<StorePage> {
                               'updatedAt': FieldValue.serverTimestamp(),
                             });
                             await batch.commit();
-                          } else if (product.id.isNotEmpty) {
-                            await _col.doc(product.id).update({
+                          } else if (savedId.isNotEmpty) {
+                            await _col.doc(savedId).update({
                               'name': name,
                               'price': price,
                               'image': image,
@@ -1268,11 +1326,12 @@ class _StorePageState extends State<StorePage> {
                             });
                           }
 
-                          // العروض في الرئيسية بتتقري من ملخص المحل: نحدّثه قبل رفع رقم الإصدار
-                          // عشان العميل ما يخزّنش الملخص القديم بالإصدار الجديد.
+                          // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
                           final highlightsOk =
-                              await StoreHighlights.refresh(store.id);
-                          await CatalogService.bump();
+                              await CatalogSync.afterProductsChanged(
+                            store.id,
+                            productIds: [savedId],
+                          );
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);

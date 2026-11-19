@@ -10,6 +10,7 @@ import '../models/order.dart';
 import '../models/store.dart';
 import '../models/user_profile.dart';
 import 'cart_model.dart';
+import 'catalog_sync.dart';
 import 'order_contact_service.dart';
 import 'order_gateway.dart';
 import 'order_status_writer.dart';
@@ -347,32 +348,40 @@ class OrderService {
       if (idToken == null || idToken.isEmpty) {
         throw StateError('تعذر تأكيد تسجيل الدخول. سجّل الدخول وحاول تاني.');
       }
-      await OrderGateway.submit(
-        idToken: idToken,
-        payload: {
-          'orderId': orderId,
-          'storeId': storeId,
-          'customerName': _firstName(name),
-          'notes': notes,
-          'area': cart.area,
-          'expectedDeliveryFee': cart.effectiveFee,
-          'expectedTotal': cart.total,
-          if (cart.discount > 0) 'promoCode': cart.promoCode,
-          'items': cart.items.entries
-              .map((e) => {
-                    if (e.key.id.isNotEmpty) 'productId': e.key.id,
-                    if (e.key.id.isEmpty) 'name': e.key.name,
-                    'expectedPrice': e.key.price,
-                    'qty': e.value,
-                    if (e.key.chosen.isNotEmpty)
-                      'options': e.key.chosen.map((option) => option.name).toList(),
-                    if (e.key.chosenTotal > 0) 'optionsTotal': e.key.chosenTotal,
-                  })
-              .toList(),
-          if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
-          'contact': contactData,
-        },
-      );
+      try {
+        await OrderGateway.submit(
+          idToken: idToken,
+          payload: {
+            'orderId': orderId,
+            'storeId': storeId,
+            'customerName': _firstName(name),
+            'notes': notes,
+            'area': cart.area,
+            'expectedDeliveryFee': cart.effectiveFee,
+            'expectedTotal': cart.total,
+            if (cart.discount > 0) 'promoCode': cart.promoCode,
+            'items': cart.items.entries
+                .map((e) => {
+                      if (e.key.id.isNotEmpty) 'productId': e.key.id,
+                      if (e.key.id.isEmpty) 'name': e.key.name,
+                      'expectedPrice': e.key.price,
+                      'qty': e.value,
+                      if (e.key.chosen.isNotEmpty)
+                        'options': e.key.chosen.map((option) => option.name).toList(),
+                      if (e.key.chosenTotal > 0) 'optionsTotal': e.key.chosenTotal,
+                    })
+                .toList(),
+            if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
+            'contact': contactData,
+          },
+        );
+      } on CatalogMismatchError {
+        // سعر أو توفر صنف اتغير والقائمة المجمّعة عند العميل متأخرة: نقرأ أصناف المحل ده مباشرة
+        // (القرار محفوظ على الجهاز لحد ما القائمة تتحدث، فبيفضل بعد إعادة فتح التطبيق).
+        // أي خطأ تاني (نت، محل مقفول، كوبون...) ما بيلمسش القائمة.
+        await CatalogReader.distrustMenu(storeId);
+        rethrow;
+      }
     } else {
       // وضع التوافق القديم يظل متاحًا حتى نشر Worker وتفعيل serverOrders.
       final batch = FirebaseFirestore.instance.batch()..set(ref, data);

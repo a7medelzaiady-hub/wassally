@@ -22,10 +22,14 @@ type JsonMap = Record<string, unknown>;
 type FirestoreDoc = { name: string; fields?: Record<string, unknown>; updateTime?: string };
 
 class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  // code: machine-readable reason for the app (e.g. "catalog_mismatch" = the customer's cached
+  // catalog is behind; the app then stops trusting its aggregated menu for that store).
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
   }
 }
+
+const CATALOG_MISMATCH = "catalog_mismatch";
 
 const firebaseKeys = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
@@ -318,7 +322,7 @@ export function resolveCatalogOptions(
   for (const name of selected) {
     const indexes = matches.get(name) ?? [];
     if (indexes.length !== 1) {
-      throw new HttpError(409, "أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.");
+      throw new HttpError(409, "أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.", CATALOG_MISMATCH);
     }
     const groupIndex = indexes[0];
     counts[groupIndex] += 1;
@@ -337,7 +341,7 @@ export function resolveCatalogOptions(
   optionsTotal = money(optionsTotal);
   if (!Number.isFinite(expectedOptionsTotal) ||
       Math.abs(expectedOptionsTotal - optionsTotal) >= 0.01) {
-    throw new HttpError(409, "سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.");
+    throw new HttpError(409, "سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.", CATALOG_MISMATCH);
   }
   return { options: selected, optionsTotal };
 }
@@ -512,6 +516,29 @@ function firestoreDocumentsUrl(env: Env): string {
 
 function firestoreDocumentName(env: Env, path: string): string {
   return `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+// The app shows stores from one aggregated index (app_info/store_index). When a store is
+// deactivated here, nobody is left to remove its entry, so do it now and bump the index version
+// (customers re-read the index once). Best effort: failure must not block account deletion.
+async function removeStoreFromCatalogIndex(env: Env, token: string, storeId: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(storeId)) return;
+  try {
+    await commitFirestoreWrites(env, token, [
+      {
+        update: { name: firestoreDocumentName(env, "app_info/store_index"), fields: {} },
+        updateMask: { fieldPaths: [`\`s_${storeId}\``] },
+      },
+      {
+        transform: {
+          document: firestoreDocumentName(env, "app_info/catalog_versions"),
+          fieldTransforms: [{ fieldPath: "stores", increment: { integerValue: "1" } }],
+        },
+      },
+    ]);
+  } catch (error) {
+    console.error("Catalog index cleanup failed", error instanceof Error ? error.message : error);
+  }
 }
 
 async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Promise<void> {
@@ -789,6 +816,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
         },
         updateMask: { fieldPaths: ["active", "ownerDeleted", "updatedAt", "ownerUid"] },
       }]);
+      if (store) await removeStoreFromCatalogIndex(env, token, ownedStoreId);
     }
   }
 
@@ -977,7 +1005,7 @@ async function resolveItems(
     if (productId) {
       const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
       const found = productDocs.get(path);
-      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.");
+      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.", CATALOG_MISMATCH);
       product = found;
     } else {
       const name = String(line?.name ?? "").trim();
@@ -987,7 +1015,7 @@ async function resolveItems(
       isLegacy = true;
     }
     if (product.available === false || product.isAvailable === false) {
-      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
+      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.", CATALOG_MISMATCH);
     }
     const name = String(product.name ?? "").trim();
     if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
@@ -1005,7 +1033,7 @@ async function resolveItems(
     }
     // expectedPrice is only a stale-cart check; the saved price and option surcharges come from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
-      throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.");
+      throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.", CATALOG_MISMATCH);
     }
     subtotal = money(subtotal + price * qty);
     items.push({
@@ -1811,7 +1839,9 @@ export default {
       });
     } catch (error) {
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
-      return response({ error: e.message }, e.status, headers);
+      // Business rejections (409) always carry a code so the app never guesses from the text.
+      const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
+      return response(code ? { error: e.message, code } : { error: e.message }, e.status, headers);
     }
   },
 };

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/read_meter.dart';
@@ -64,6 +65,7 @@ class AdminToolsPage extends StatelessWidget {
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
                 ),
+                const _CatalogIndexCard(),
                 const _HighlightsRefreshCard(),
                 tile(
                   Icons.speed_outlined,
@@ -112,6 +114,8 @@ class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
     try {
       final r = await StoreHighlights.refreshBatch(
         startAfterId: _finished ? null : _cursor,
+        // العروض في الرئيسية بتتقري من فهرس الكتالوج: نحدّث خانة كل محل بعد ملخصه.
+        afterEach: CatalogSync.storeChanged,
       );
       await CatalogService.bump();
       if (!mounted) return;
@@ -177,6 +181,22 @@ class AdminReadMeterPage extends StatefulWidget {
 }
 
 class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
+  /// من مستند الإصدارات اللي الجلسة قرته أصلًا (من غير أي قراءة جديدة).
+  static String _catalogHealth() {
+    final v = CatalogReader.loadedVersions;
+    if (v == null) {
+      return 'حالة الكتالوج المجمّع: افتح الرئيسية مرة الأول عشان تظهر (من غير قراءة زيادة).';
+    }
+    if (v['indexReady'] != true) {
+      return 'فهرس المحلات مش جاهز: كل العملاء على الطريقة القديمة (دوس «بناء فهرس الكتالوج»).';
+    }
+    final h = CatalogReader.disabledMenus(v);
+    if (h.disabled == 0 && h.big == 0) return 'الكتالوج المجمّع: كل المحلات شغالة.';
+    return 'كتالوجات متعطلة: ${h.disabled} محل على الطريقة القديمة'
+        '${h.big > 0 ? ' (منهم ${h.big} أكبر من الحد)' : ''}. '
+        'بتتصلح تلقائيًا مع أول تعديل صنف ناجح، أو بـ «بناء فهرس الكتالوج».';
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = ReadMeter.snapshot();
@@ -205,6 +225,11 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                   'الإجمالي التقديري: ${ReadMeter.total()} قراءة منذ '
                   '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _catalogHealth(),
+                  style: TextStyle(color: kMuted, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
                 if (rows.isEmpty)
@@ -253,6 +278,77 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── فهرس الكتالوج ─────────────────────────
+
+/// بناء الفهرس المجمّع وقوائم الأصناف من الصفر: أول مرة بعد التحديث، أو للإصلاح.
+/// بيقرا كل المحلات وكل الأصناف مرة واحدة، فمش المفروض يتعمل كتير.
+class _CatalogIndexCard extends StatefulWidget {
+  const _CatalogIndexCard();
+
+  @override
+  State<_CatalogIndexCard> createState() => _CatalogIndexCardState();
+}
+
+class _CatalogIndexCardState extends State<_CatalogIndexCard> {
+  bool _busy = false;
+  String _status = '';
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'بناء فهرس الكتالوج',
+      message:
+          'هيتقرا كل المحلات وكل الأصناف مرة واحدة ويتبني منهم الفهرس اللي '
+          'بيوفّر القراءات على العملاء. اعمله مرة بعد التحديث، أو لو لاحظت محل '
+          'أو صنف مش ظاهر صح. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'جاري البناء...';
+    });
+    try {
+      final summary = await CatalogSync.rebuildAll(
+        onProgress: (step) {
+          if (mounted) setState(() => _status = step);
+        },
+      );
+      if (mounted) setState(() => _status = summary);
+    } catch (e) {
+      if (mounted) setState(() => _status = 'فشل: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.inventory_2_outlined, color: kPrimary),
+        title: const Text(
+          'بناء فهرس الكتالوج',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          _status.isEmpty
+              ? 'يقلل قراءات العملاء: المحلات في قراءة واحدة وأصناف كل محل في قراءة واحدة'
+              : _status,
+        ),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
       ),
     );
   }
