@@ -1406,25 +1406,19 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       });
       await CatalogService.bump();
     } catch (_) {}
-    await _syncCatalog();
+    // ملخص العروض اتغير على مستند المحل: نحدّث خانة المحل في الفهرس.
+    await CatalogSync.storeChanged(widget.storeId);
   }
 
-  /// القائمة المجمّعة للعملاء + خانة المحل في الفهرس. الأصناف محمّلة بالفعل في _docs،
-  /// فلو القائمة كاملة (أقل من الحد) بنكتبها من غير أي قراءة إضافية.
-  Future<void> _syncCatalog() async {
-    if (_docs.length < _limit) {
-      await CatalogSync.writeFullMenu(widget.storeId, {
-        for (final d in _docs) d.id: d.data(),
-      });
-    } else {
-      await CatalogSync.rebuildStoreMenu(
+  /// القائمة المجمّعة للعملاء: تحديث الأصناف اللي اتغيرت بس (قراءة لكل صنف متغير).
+  /// العروض والفهرس بتتحدث بعدها في _syncHighlights.
+  Future<void> _syncMenu(Iterable<String> productIds) =>
+      CatalogSync.productsChanged(
         widget.storeId,
+        productIds,
         updateHighlights: false,
         syncStore: false,
       );
-    }
-    await CatalogSync.storeChanged(widget.storeId);
-  }
 
   Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
     final result = await showDialog<_ProductForm>(
@@ -1435,8 +1429,11 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     if (result == null || !mounted) return;
 
     try {
+      var savedId = doc?.id ?? '';
       if (doc == null) {
-        await _col.doc().set({
+        final newRef = _col.doc();
+        savedId = newRef.id;
+        await newRef.set({
           'name': result.name,
           'price': result.price,
           'image': result.image,
@@ -1464,6 +1461,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         });
       }
       await CatalogService.bump();
+      await _syncMenu([savedId]);
       await _load();
       await _syncHighlights();
       _say('تم حفظ الصنف.');
@@ -1580,6 +1578,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       update['updatedAt'] = FieldValue.serverTimestamp();
       await doc.reference.update(update);
       await CatalogService.bump();
+      await _syncMenu([doc.id]);
       await _load();
       await _syncHighlights();
       _say(choice.cancel ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
@@ -1596,6 +1595,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await CatalogService.bump();
+      await _syncMenu([doc.id]);
       await _load();
       await _syncHighlights();
     } catch (_) {
@@ -1617,6 +1617,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       await doc.reference.delete();
       await _syncCount();
       await CatalogService.bump();
+      await _syncMenu([doc.id]);
       await _load();
       await _syncHighlights();
       _say('تم حذف الصنف.');

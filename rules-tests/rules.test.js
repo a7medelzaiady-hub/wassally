@@ -1921,3 +1921,52 @@ test('catalog store_index: محل موقوف لا يضاف للفهرس، وصا
   });
   await assertFails(setDoc(doc(as('owner1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
 });
+
+test('catalog store_index: صاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو يضيف حقول', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: entry }, { merge: true }));
+  for (const forged of [
+    { rating: 5 }, { order: 0 }, { storePhone: '01099999999' }, { ratingSum: 50, ratingCount: 10 },
+    { ownerUid: 'owner1' }, { approved: true }, { junk: 'x' }, { image: 'https://x' },
+  ]) {
+    await assertFails(setDoc(ref, { s_shop1: { ...entry, ...forged } }, { merge: true }));
+  }
+});
+
+test('catalog store_index: قوائم العروض محدودة العدد والشكل والحجم', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  const item = { name: 'عرض', price: 10, oldPrice: 12, image: 'https://img' };
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, offerItems: Array(6).fill(item), bestItems: [item] } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, offerItems: Array(7).fill(item) } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, offerItems: [{ ...item, junk: 1 }] } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, bestItems: [{ ...item, name: 'x'.repeat(121) }] } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, bestItems: [{ ...item, image: 'x'.repeat(501) }] } }, { merge: true }));
+});
+
+test('catalog versions: بعد التعطيل (-1) إعادة البناء ترجّع 1 بالظبط، و-2 مسموح، وindexReady للمدير بس', async () => {
+  const ref = doc(as('owner1'), 'app_info/catalog_versions');
+  await assertFails(setDoc(ref, { indexReady: true, m_shop1: 1 }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 5 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -2 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  await assertFails(setDoc(ref, { indexReady: false }, { merge: true }));
+});
+
+test('catalog: صاحب طلب انضمام يدير قائمة وإصدار مسودته بس، ومسودته ما تدخلش الفهرس', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'stores/draft1'), { name: 'مسودة', category: 'مطاعم', ownerUid: 'app1', active: false, approved: false });
+    await setDoc(doc(db, 'role_requests/app1_store_owner'), { userId: 'app1', type: 'store_owner', status: 'pending', storeId: 'draft1' });
+  });
+  const db = as('app1');
+  await assertSucceeds(setDoc(doc(db, 'stores/draft1/menu/current'), { items: {}, count: 0 }));
+  await assertFails(setDoc(doc(db, 'stores/shop1/menu/current'), { items: {}, count: 0 }));
+  await assertSucceeds(setDoc(doc(db, 'app_info/catalog_versions'), { m_draft1: 1 }, { merge: true }));
+  await assertFails(setDoc(doc(db, 'app_info/catalog_versions'), { m_shop1: 1 }, { merge: true }));
+  await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
+  await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
+});

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -177,17 +179,35 @@ class CatalogReader {
 
 /// الكتابة (صاحب المحل / المدير): بعد أي تعديل على صنف أو محل نحدّث المستندات المجمّعة.
 /// كل الدوال هنا "أفضل محاولة": أي فشل بيتسجّل وما بيوقفش حفظ الصنف نفسه.
-/// لو القائمة فشلت (مثلاً كبرت عن حد المستند) بنعلّم إصدارها -1 فالعملاء يرجعوا للمسار القديم.
+///
+/// أرقام إصدار القائمة (m_<storeId>):
+///   ≥ 1  القائمة كاملة وصالحة للعملاء.
+///   0/-1 أو ناقص: القائمة مش موثوقة → العملاء على المسار القديم، وأول تعديل يعيد البناء كامل.
+///   -2   القائمة أكبر من حد المستند → المحل على المسار القديم دايمًا (من غير إعادة بناء مع كل تعديل).
 class CatalogSync {
   const CatalogSync._();
 
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
-  /// أقصى عدد عناصر في الفهرس لكل قائمة عروض (حجم مستند الفهرس محدود بـ 1MB).
+  /// أقصى عدد عناصر في الفهرس لكل قائمة عروض (لازم يطابق indexItemsOk في firestore.rules).
   static const int indexHighlightsCap = 6;
 
   /// أكتر من كده يبقى إعادة بناء كاملة للقائمة بدل تحديث صنف صنف.
   static const int _targetedLimit = 25;
+
+  /// حد آمن تحت 1MiB لمستند القائمة (تقدير بالبايت).
+  static const int _maxMenuBytes = 900 * 1024;
+
+  /// الحقول اللي الشاشات بتستخدمها من مستند المحل. لازم تطابق storeIndexKeys في firestore.rules.
+  static const List<String> indexKeys = [
+    'name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
+    'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
+    'products', 'minOrder', 'minimumOrder', 'offerItems', 'bestItems',
+  ];
+
+  static const _itemKeys = [
+    'name', 'price', 'oldPrice', 'offerText', 'offerEndsAt', 'image',
+  ];
 
   /// ملخص العروض والأكثر مبيعًا (نفس منطق صفحة صاحب المحل) من أصناف المحل.
   static ({List<Map<String, dynamic>> offers, List<Map<String, dynamic>> best})
@@ -228,18 +248,45 @@ class CatalogSync {
     return (offers: offers, best: best);
   }
 
-  /// نسخة المحل اللي بتتحط في الفهرس: نفس البيانات مع تقصير قوائم العروض.
+  static List<Map<String, dynamic>> _indexItems(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <Map<String, dynamic>>[];
+    for (final value in raw) {
+      if (value is! Map) continue;
+      final item = <String, dynamic>{};
+      for (final k in _itemKeys) {
+        if (value.containsKey(k)) item[k] = value[k];
+      }
+      out.add(item);
+      if (out.length >= indexHighlightsCap) break;
+    }
+    return out;
+  }
+
+  /// خانة المحل في الفهرس: الحقول المعروفة بس (القواعد بتطابقها مع مستند المحل)،
+  /// والصورة في imageUrl بس (من غير تكرار image)، وقوائم عروض مقصوصة.
   @visibleForTesting
   static Map<String, dynamic> indexEntry(Map<String, dynamic> store) {
-    final entry = Map<String, dynamic>.from(store);
-    for (final key in const ['offerItems', 'bestItems']) {
-      final value = entry[key];
-      if (value is List && value.length > indexHighlightsCap) {
-        entry[key] = value.take(indexHighlightsCap).toList();
-      }
+    final entry = <String, dynamic>{};
+    for (final k in indexKeys) {
+      if (k == 'imageUrl' || k == 'offerItems' || k == 'bestItems') continue;
+      if (store.containsKey(k)) entry[k] = store[k];
+    }
+    final image = store.containsKey('imageUrl') ? store['imageUrl'] : store['image'];
+    if (image != null) entry['imageUrl'] = image;
+    if (store.containsKey('offerItems')) {
+      entry['offerItems'] = _indexItems(store['offerItems']);
+    }
+    if (store.containsKey('bestItems')) {
+      entry['bestItems'] = _indexItems(store['bestItems']);
     }
     return entry;
   }
+
+  /// تقدير حجم القائمة بالبايت (Timestamps وغيرها بتتحول لنص).
+  @visibleForTesting
+  static int estimateBytes(Map<String, Map<String, dynamic>> items) =>
+      utf8.encode(items.toString()).length;
 
   static Map<String, Map<String, dynamic>> _itemsOf(Map<String, dynamic>? menu) {
     final out = <String, Map<String, dynamic>>{};
@@ -256,21 +303,58 @@ class CatalogSync {
     return out;
   }
 
+  static Future<int?> _menuVersion(String storeId) async {
+    final snap = await CatalogPaths.versions
+        .get(const GetOptions(source: Source.server));
+    final v = snap.data()?['m_$storeId'];
+    return v is num ? v.toInt() : null;
+  }
+
+  /// الإصدار الجاي: زيادة بواحد لو القائمة صالحة، أو 1 لو كانت معطلة/جديدة.
+  static Object _nextVersion(int? current) =>
+      (current == null || current < 1) ? 1 : FieldValue.increment(1);
+
+  static Future<void> _setMenuVersion(String storeId, int value) async {
+    try {
+      await CatalogPaths.versions.set({
+        'm_$storeId': value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Could not mark menu $value for $storeId: $e');
+    }
+  }
+
+  static bool _isTooLarge(Object e) =>
+      e is FirebaseException &&
+      (e.code == 'invalid-argument' || e.code == 'resource-exhausted');
+
   /// تحديث القائمة بعد تعديل/إضافة/حذف أصناف محددة.
+  /// [syncStore]: تحديث خانة المحل في الفهرس لو ملخص العروض اتغير.
   static Future<void> productsChanged(
     String storeId,
     Iterable<String> productIds, {
     bool updateHighlights = true,
+    bool syncStore = true,
   }) async {
     final ids = productIds.where((id) => id.isNotEmpty).toSet();
     if (storeId.isEmpty || ids.isEmpty) return;
     Map<String, Map<String, dynamic>>? items;
     try {
+      final current = await _menuVersion(storeId);
+      // -2: القائمة أكبر من الحد؛ المحل على المسار القديم ومفيش إعادة بناء مع كل تعديل.
+      if (current == -2) return;
       final menuRef = CatalogPaths.menu(storeId);
-      final menuSnap =
-          await menuRef.get(const GetOptions(source: Source.server));
-      if (!menuSnap.exists || ids.length > _targetedLimit) {
-        await rebuildStoreMenu(storeId, updateHighlights: updateHighlights);
+      final menuSnap = current != null && current >= 1
+          ? await menuRef.get(const GetOptions(source: Source.server))
+          : null;
+      // قائمة معطلة أو ناقصة أو جديدة: ما ندمجش فيها، نبنيها من الأول.
+      if (menuSnap == null || !menuSnap.exists || ids.length > _targetedLimit) {
+        await rebuildStoreMenu(
+          storeId,
+          updateHighlights: updateHighlights,
+          syncStore: syncStore,
+        );
         return;
       }
       items = _itemsOf(menuSnap.data());
@@ -294,6 +378,10 @@ class CatalogSync {
         }
         fields.add(FieldPath(['items', doc.id]));
       }
+      if (estimateBytes(items) > _maxMenuBytes) {
+        await _setMenuVersion(storeId, -2);
+        return;
+      }
       final batch = _db.batch()
         ..set(
           menuRef,
@@ -315,16 +403,17 @@ class CatalogSync {
       await batch.commit();
     } catch (e) {
       debugPrint('Menu sync failed for $storeId: $e');
-      await _disableMenu(storeId);
+      await _setMenuVersion(storeId, _isTooLarge(e) ? -2 : -1);
       items = null;
     }
     if (updateHighlights && items != null) {
-      await _writeHighlights(storeId, items.values);
+      final changed = await _writeHighlights(storeId, items.values);
+      if (changed && syncStore) await storeChanged(storeId);
     }
-    await storeChanged(storeId);
   }
 
-  /// إعادة بناء قائمة محل كاملة من أصنافه (للتعديلات الجماعية أو أول مرة).
+  /// إعادة بناء قائمة محل كاملة من أصنافه (للتعديلات الجماعية، أو أول مرة، أو بعد فشل).
+  /// [syncStore]: تحديث خانة المحل في الفهرس بعدها (للتفعيل والاعتماد).
   static Future<bool> rebuildStoreMenu(
     String storeId, {
     bool updateHighlights = true,
@@ -334,10 +423,12 @@ class CatalogSync {
     final items = <String, Map<String, dynamic>>{};
     var ok = false;
     try {
+      final current = await _menuVersion(storeId);
       DocumentSnapshot<Map<String, dynamic>>? cursor;
       while (true) {
-        Query<Map<String, dynamic>> q =
-            CatalogPaths.products(storeId).orderBy(FieldPath.documentId).limit(400);
+        Query<Map<String, dynamic>> q = CatalogPaths.products(storeId)
+            .orderBy(FieldPath.documentId)
+            .limit(400);
         if (cursor != null) q = q.startAfterDocument(cursor);
         final page = await q.get(const GetOptions(source: Source.server));
         for (final d in page.docs) {
@@ -346,119 +437,122 @@ class CatalogSync {
         if (page.docs.length < 400) break;
         cursor = page.docs.last;
       }
-      final batch = _db.batch()
-        ..set(CatalogPaths.menu(storeId), {
-          'items': items,
-          'count': items.length,
-          'updatedAt': FieldValue.serverTimestamp(),
-        })
-        ..set(
-          CatalogPaths.versions,
-          {
-            'm_$storeId': FieldValue.increment(1),
+      if (estimateBytes(items) > _maxMenuBytes) {
+        await _setMenuVersion(storeId, -2);
+      } else {
+        final batch = _db.batch()
+          ..set(CatalogPaths.menu(storeId), {
+            'items': items,
+            'count': items.length,
             'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      await batch.commit();
-      ok = true;
+          })
+          ..set(
+            CatalogPaths.versions,
+            {
+              'm_$storeId': _nextVersion(current),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+        await batch.commit();
+        ok = true;
+      }
     } catch (e) {
       debugPrint('Menu rebuild failed for $storeId: $e');
-      await _disableMenu(storeId);
+      await _setMenuVersion(storeId, _isTooLarge(e) ? -2 : -1);
     }
-    if (ok && updateHighlights) await _writeHighlights(storeId, items.values);
-    if (syncStore) await storeChanged(storeId);
+    var highlightsChanged = false;
+    if (ok && updateHighlights) {
+      highlightsChanged = await _writeHighlights(storeId, items.values);
+    }
+    if (syncStore || highlightsChanged) await storeChanged(storeId);
     return ok;
   }
 
-  /// صاحب المحل عنده الأصناف محمّلة بالفعل: نكتب القائمة كاملة من غير أي قراءة إضافية.
-  static Future<void> writeFullMenu(
-    String storeId,
-    Map<String, Map<String, dynamic>> items,
-  ) async {
-    if (storeId.isEmpty) return;
-    try {
-      final batch = _db.batch()
-        ..set(CatalogPaths.menu(storeId), {
-          'items': items,
-          'count': items.length,
-          'updatedAt': FieldValue.serverTimestamp(),
-        })
-        ..set(
-          CatalogPaths.versions,
-          {
-            'm_$storeId': FieldValue.increment(1),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('Full menu write failed for $storeId: $e');
-      await _disableMenu(storeId);
-    }
-  }
-
-  static Future<void> _writeHighlights(
+  /// بيرجّع true لو ملخص العروض اتغير واتحفظ على مستند المحل.
+  static Future<bool> _writeHighlights(
     String storeId,
     Iterable<Map<String, dynamic>> products,
   ) async {
     try {
       final h = highlightsFrom(products);
+      final snap = await CatalogPaths.store(storeId)
+          .get(const GetOptions(source: Source.server));
+      final data = snap.data();
+      if (data == null) return false;
+      if (data['offerItems'].toString() == h.offers.toString() &&
+          data['bestItems'].toString() == h.best.toString()) {
+        return false;
+      }
       await CatalogPaths.store(storeId).update({
         'offerItems': h.offers,
         'bestItems': h.best,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      return true;
     } catch (e) {
       debugPrint('Highlights sync failed for $storeId: $e');
-    }
-  }
-
-  static Future<void> _disableMenu(String storeId) async {
-    try {
-      await CatalogPaths.versions.set({
-        'm_$storeId': -1,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Could not disable menu for $storeId: $e');
+      return false;
     }
   }
 
   /// تحديث خانة المحل في الفهرس من مستند المحل الحالي (أو شيلها لو المحل مش نشط/اتحذف).
+  /// محاولة تانية عند الفشل؛ ولو فشلت كمان والمستخدم مدير، بنوقف الفهرس (المسار القديم)
+  /// بدل ما العملاء يفضلوا على فهرس قديم. (صاحب المحل ما يقدرش يوقفه للكل.)
   static Future<void> storeChanged(String storeId) async {
     if (storeId.isEmpty) return;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _writeStoreEntry(storeId);
+        CatalogReader.invalidate();
+        return;
+      } catch (e) {
+        debugPrint('Store index sync failed for $storeId (try ${attempt + 1}): $e');
+      }
+    }
     try {
-      final snap = await CatalogPaths.store(storeId)
-          .get(const GetOptions(source: Source.server));
-      final data = snap.data();
-      final key = FieldPath(['s_$storeId']);
-      final Object entry = (snap.exists && data != null && data['active'] == true)
-          ? indexEntry(data)
-          : FieldValue.delete();
-      final batch = _db.batch()
-        ..set(
-          CatalogPaths.storeIndex,
-          {
-            's_$storeId': entry,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(mergeFields: [key, FieldPath(const ['updatedAt'])]),
-        )
-        ..set(
-          CatalogPaths.versions,
-          {
-            'stores': FieldValue.increment(1),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
-      await batch.commit();
-    } catch (e) {
-      debugPrint('Store index sync failed for $storeId: $e');
+      await CatalogPaths.versions.set({
+        'indexReady': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+      // غير المدير: مسموح بس بخانة محله.
     }
     CatalogReader.invalidate();
+  }
+
+  static Future<void> _writeStoreEntry(String storeId) async {
+    final snap = await CatalogPaths.store(storeId)
+        .get(const GetOptions(source: Source.server));
+    final data = snap.data();
+    final key = FieldPath(['s_$storeId']);
+    final Object entry = (snap.exists && data != null && data['active'] == true)
+        ? indexEntry(data)
+        : FieldValue.delete();
+    final batch = _db.batch()
+      ..set(
+        CatalogPaths.storeIndex,
+        {
+          's_$storeId': entry,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(mergeFields: [key, FieldPath(const ['updatedAt'])]),
+      )
+      ..set(
+        CatalogPaths.versions,
+        {
+          'stores': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    await batch.commit();
+    if (!snap.exists) {
+      // المحل اتحذف: نشيل قائمته اليتيمة (المدير بس يقدر؛ غيره بيتجاهل).
+      try {
+        await CatalogPaths.menu(storeId).delete();
+      } catch (_) {}
+    }
   }
 
   /// المدير: بناء الفهرس وكل القوائم من الصفر (أول تشغيل أو إصلاح).
@@ -469,7 +563,6 @@ class CatalogSync {
         .get(const GetOptions(source: Source.server));
     var menusOk = 0;
     var menusFailed = 0;
-    final index = <String, dynamic>{};
     for (final doc in storesSnap.docs) {
       onProgress?.call('قائمة ${doc.data()['name'] ?? doc.id}');
       final ok = await rebuildStoreMenu(
@@ -483,10 +576,12 @@ class CatalogSync {
     final fresh = await _db
         .collection('stores')
         .get(const GetOptions(source: Source.server));
+    final index = <String, dynamic>{};
     for (final doc in fresh.docs) {
       final data = doc.data();
       if (data['active'] == true) index['s_${doc.id}'] = indexEntry(data);
     }
+    final storeCount = index.length;
     index['updatedAt'] = FieldValue.serverTimestamp();
     var indexOk = true;
     try {
@@ -514,7 +609,7 @@ class CatalogSync {
       } catch (_) {}
     }
     CatalogReader.invalidate();
-    return 'الفهرس: ${indexOk ? 'تم (${index.length - 1} محل نشط)' : 'فشل (التطبيق هيستخدم الطريقة القديمة)'}'
-        ' — القوائم: $menusOk تمام${menusFailed > 0 ? '، $menusFailed فشلت (هتستخدم الطريقة القديمة)' : ''}';
+    return 'الفهرس: ${indexOk ? 'تم ($storeCount محل نشط)' : 'فشل (التطبيق هيستخدم الطريقة القديمة)'}'
+        ' — القوائم: $menusOk تمام${menusFailed > 0 ? '، $menusFailed على الطريقة القديمة (كبيرة أو فشلت)' : ''}';
   }
 }

@@ -34,23 +34,58 @@ void main() {
   });
 
   group('CatalogSync.indexEntry', () {
-    test('keeps every store field and trims highlight lists to the index cap', () {
+    test('keeps only display fields (matching the rules) and trims highlights', () {
       final store = <String, dynamic>{
         'name': 'S',
         'category': 'مطاعم',
         'active': true,
-        'offerItems': List.generate(10, (i) => {'name': 'o$i'}),
-        'bestItems': [{'name': 'b'}],
+        'image': 'https://img',
+        'ownerUid': 'u1',
+        'approvedBy': 'admin',
+        'lastReviewId': 'r1',
+        'ratingSum': 9,
+        'ratingCount': 2,
+        'offerItems': List.generate(
+          10,
+          (i) => {'name': 'o$i', 'price': 5, 'image': 'x', 'junk': true},
+        ),
+        'bestItems': [
+          {'name': 'b', 'price': 3},
+        ],
       };
       final entry = CatalogSync.indexEntry(store);
+      expect(entry.keys.toSet().difference(CatalogSync.indexKeys.toSet()), isEmpty);
       expect(entry['name'], 'S');
-      expect(entry['category'], 'مطاعم');
-      expect(entry['active'], true);
-      expect((entry['offerItems'] as List).length, CatalogSync.indexHighlightsCap);
+      expect(entry['imageUrl'], 'https://img');
+      expect(entry.containsKey('image'), isFalse);
+      expect(entry.containsKey('ownerUid'), isFalse);
+      expect(entry.containsKey('approvedBy'), isFalse);
+      expect(entry['ratingSum'], 9);
+      final offers = entry['offerItems'] as List;
+      expect(offers.length, CatalogSync.indexHighlightsCap);
+      expect((offers.first as Map).containsKey('junk'), isFalse);
       expect((entry['bestItems'] as List).length, 1);
       // الأصل ما يتغيرش.
       expect((store['offerItems'] as List).length, 10);
     });
+
+    test('prefers imageUrl over image and omits absent fields', () {
+      final entry = CatalogSync.indexEntry({
+        'name': 'S',
+        'active': true,
+        'imageUrl': 'https://new',
+        'image': 'https://old',
+      });
+      expect(entry['imageUrl'], 'https://new');
+      expect(entry.containsKey('offerItems'), isFalse);
+      expect(entry.containsKey('rating'), isFalse);
+    });
+  });
+
+  test('estimateBytes grows with content', () {
+    final small = CatalogSync.estimateBytes({'p1': {'name': 'a'}});
+    final big = CatalogSync.estimateBytes({'p1': {'name': 'ب' * 1000}});
+    expect(big, greaterThan(small + 1000));
   });
 
   test('CatalogDoc mirrors id and data()', () {
