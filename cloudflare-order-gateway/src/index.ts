@@ -1042,6 +1042,9 @@ export function orderStatusPushMessage(
     delivered: ["تم تسليم طلبك", "بالهنا والشفا! شكرًا لاختيارك وصلي."],
     cancelled: ["تم إلغاء طلبك", "تم إلغاء الطلب."],
     assigned: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    assigned_customer: ["تم تعيين مندوب لطلبك", "المندوب استلم تفاصيل الطلب وهيبدأ التوصيل."],
+    assigned_courier: ["تم تكليفك بطلب جديد", "افتح وصّلي لمراجعة تفاصيل الطلب."],
+    new_order_staff: ["طلب جديد للمحل", "وصل طلب جديد. افتح وصّلي لمراجعته."],
     ready: ["طلبك جاهز", "المحل جهّز طلبك وهيتسلّم للمندوب."],
     store_pickup: ["المندوب استلم الطلب", "المندوب استلم الطلب من المحل وبدأ التوصيل."],
     store_delivered: ["تم تسليم الطلب", "تم تأكيد تسليم الطلب للعميل."],
@@ -1052,7 +1055,13 @@ export function orderStatusPushMessage(
     message: {
       token,
       notification: { title, body },
-      data: { type: status === "new_order" ? "new_order" : status === "assigned" ? "assigned" : "status", orderId, status },
+      data: {
+        type: status.startsWith("new_order") ? "new_order" :
+          status.startsWith("assigned") ? "assigned" :
+          status.startsWith("store_") ? "status" : "status",
+        orderId,
+        status,
+      },
       android: {
         priority: "HIGH",
         ttl: "86400s",
@@ -1198,10 +1207,10 @@ async function notifyOrderAssignment(request: Request, env: Env, orderId: string
   let sent = 0;
   try {
     if (typeof order.userId === "string") {
-      sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned");
+      sent += await sendOrderPushToUser(env, accessToken, order.userId, orderId, "assigned_customer");
     }
     if (uid !== courierId) {
-      sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned");
+      sent += await sendOrderPushToUser(env, accessToken, courierId, orderId, "assigned_courier");
     }
     await commitFirestoreWrites(env, accessToken, [{
       update: {
@@ -1252,8 +1261,10 @@ async function notifyOrderCreated(request: Request, env: Env, orderId: string): 
       const adminUid = doc.name.split("/").pop() ?? "";
       if (adminUid) recipients.add(adminUid);
     }
+    sent += await sendOrderPushToUser(env, accessToken, uid, orderId, "new_order");
     for (const recipient of recipients) {
-      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order");
+      if (recipient === uid) continue;
+      sent += await sendOrderPushToUser(env, accessToken, recipient, orderId, "new_order_staff");
     }
     // The available-order feed is intentionally public only to authenticated couriers;
     // the push itself contains no customer name, phone, address, or notes.
