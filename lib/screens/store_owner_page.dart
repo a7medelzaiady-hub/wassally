@@ -1837,6 +1837,14 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       children: [
         Column(
           children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 2),
+              child: Text(
+                'صاحب المحل مسؤول عن صحة الأصناف والأسعار والصور والبيانات المعروضة. وصّلي منصة وسيطة للطلبات والتوصيل.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: TextField(
