@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/empty_state.dart';
+import '../services/notifications_query.dart';
 import '../services/read_meter.dart';
 
 // ───────────────────────── أنواع الإشعارات ─────────────────────────
@@ -182,12 +183,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ),
             )
           : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('notifications')
-                  .where('userId', isEqualTo: uid)
-                  .orderBy('createdAt', descending: true)
-                  .limit(_limit)
-                  .snapshots().metered('notifications:list'),
+              stream: watchMyNotifications(
+                FirebaseFirestore.instance,
+                uid,
+                _limit,
+              ).metered('notifications:list'),
               builder: (context, snap) {
                 if (snap.hasError) {
                   return _shell(
@@ -208,7 +208,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   );
                 }
 
-                final docs = [...snap.data!.docs];
+                // الاستعلام البديل (لو الفهرس ناقص) من غير ترتيب، فنرتّب هنا دايمًا.
+                final docs = sortNewestFirst(snap.data!.docs);
                 final unread = docs
                     .where((d) => d.data()['read'] != true)
                     .length;
