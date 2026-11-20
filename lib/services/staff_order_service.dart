@@ -514,10 +514,20 @@ class StaffOrderService {
     });
     batch.update(orderRef, {'activeDeliveryIssueId': issueRef.id});
     await batch.commit();
+    const reasonLabels = <String, String>{
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'عدم توفر قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    final reasonText = reasonLabels[reason] ?? 'تعذر التسليم';
     await _notify(
       order.userId,
-      'تعذر تسليم طلبك',
-      'المندوب تعذر عليه التسليم وبدأ إرجاع الطلب للمحل.',
+      'تعذر تسليم طلبك — جارٍ إرجاعه للمحل',
+      'السبب: $reasonText.${cleanNote.isEmpty ? '' : ' التفاصيل: $cleanNote'}',
       order.id,
     );
     return issueRef.id;
