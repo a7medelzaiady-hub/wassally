@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/customer_rating_service.dart';
+import 'star_picker.dart';
 
 class CustomerRatingInput {
   final int rating;
@@ -30,24 +31,15 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
               children: [
                 const Text('اختار تقييمًا من 1 إلى 5'),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var star = 1; star <= 5; star++)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => setDialogState(() {
-                          rating = star;
-                          if (star <= 3 && reason == 'positive') reason = 'other';
-                          if (star >= 4 && reason == 'other') reason = 'positive';
-                        }),
-                        icon: Icon(
-                          star <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
-                          color: star <= rating ? Colors.amber : Colors.grey,
-                          size: 30,
-                        ),
-                      ),
-                  ],
+                StarPicker(
+                  value: rating,
+                  size: 30,
+                  filledColor: Colors.amber,
+                  onChanged: (star) => setDialogState(() {
+                    rating = star;
+                    if (star <= 3 && reason == 'positive') reason = 'other';
+                    if (star >= 4 && reason == 'other') reason = 'positive';
+                  }),
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
