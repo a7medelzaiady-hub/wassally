@@ -76,6 +76,24 @@ class NotificationService {
     await _registerGrantedDevice();
   }
 
+  /// Synchronize the courier push topic using the already-loaded, verified role.
+  /// No additional Firestore reads or listeners. Do not subscribe based on a
+  /// cached role: RoleGate invokes this only after RoleService.load() completes.
+  static Future<void> syncCourierTopic({required bool isCourier}) async {
+    if (!_supported || FirebaseAuth.instance.currentUser == null) return;
+    if (!await hasPermission()) return;
+    try {
+      final messaging = FirebaseMessaging.instance;
+      if (isCourier) {
+        await messaging.subscribeToTopic('couriers');
+      } else {
+        await messaging.unsubscribeFromTopic('couriers');
+      }
+    } catch (e) {
+      debugPrint('تعذر تحديث اشتراك إشعارات المندوب: $e');
+    }
+  }
+
   static Future<void> _registerGrantedDevice() async {
     final user = FirebaseAuth.instance.currentUser;
     if (!_supported || user == null) return;
