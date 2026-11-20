@@ -28,6 +28,7 @@ class NotificationService {
   static StreamSubscription<RemoteMessage>? _opened;
   static StreamSubscription<String>? _tokenRefresh;
   static String? _fcmToken;
+  static bool? _verifiedCourierRole;
 
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -80,6 +81,7 @@ class NotificationService {
   /// No additional Firestore reads or listeners. Do not subscribe based on a
   /// cached role: RoleGate invokes this only after RoleService.load() completes.
   static Future<void> syncCourierTopic({required bool isCourier}) async {
+    _verifiedCourierRole = isCourier;
     if (!_supported || FirebaseAuth.instance.currentUser == null) return;
     if (!await hasPermission()) return;
     try {
@@ -111,6 +113,10 @@ class NotificationService {
       }
       // الاشتراك في تنبيهات تحديث التطبيق القادمة من Cloudflare Worker
       await messaging.subscribeToTopic('app_updates');
+      final verifiedRole = _verifiedCourierRole;
+      if (verifiedRole != null) {
+        await syncCourierTopic(isCourier: verifiedRole);
+      }
 
       _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) async {
         final previousToken = _fcmToken;
@@ -151,6 +157,7 @@ class NotificationService {
     _foreground = null;
     _opened = null;
     _tokenRefresh = null;
+    _verifiedCourierRole = null;
     if (!_supported) return;
 
     // منع بقاء الجهاز مشتركًا في إشعارات الحساب السابق بعد تسجيل الخروج.
