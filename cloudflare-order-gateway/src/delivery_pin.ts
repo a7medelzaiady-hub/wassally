@@ -69,3 +69,34 @@ export function nextDeliveryPinFailure(attempts: number): {
   const next = attempts + 1;
   return { attempts: next, locked: next >= DELIVERY_PIN_MAX_ATTEMPTS };
 }
+
+/**
+ * Pure verification decision. Caller MUST persist the returned failure count
+ * or successful consumption atomically using the Firestore updateTime precondition.
+ * Never return the PIN, hash, or salt to a courier.
+ */
+export type DeliveryPinDecision =
+  | { outcome: "accepted"; attempts: number; consumed: true; locked: false }
+  | { outcome: "rejected"; attempts: number; consumed: false; locked: boolean }
+  | { outcome: "unavailable"; attempts: number; consumed: boolean; locked: boolean };
+
+export function decideDeliveryPinVerification(
+  submittedDigest: string,
+  storedDigest: string,
+  attempts: number,
+  locked: boolean,
+  consumed: boolean,
+): DeliveryPinDecision {
+  if (!Number.isSafeInteger(attempts) || attempts < 0 || typeof locked !== "boolean" ||
+      typeof consumed !== "boolean") {
+    return { outcome: "unavailable", attempts: DELIVERY_PIN_MAX_ATTEMPTS, consumed: true, locked: true };
+  }
+  if (consumed || !canAttemptDeliveryPin(attempts, locked)) {
+    return { outcome: "unavailable", attempts, consumed, locked };
+  }
+  if (equalHexDigest(submittedDigest, storedDigest)) {
+    return { outcome: "accepted", attempts, consumed: true, locked: false };
+  }
+  const failure = nextDeliveryPinFailure(attempts);
+  return { outcome: "rejected", attempts: failure.attempts, consumed: false, locked: failure.locked };
+}
