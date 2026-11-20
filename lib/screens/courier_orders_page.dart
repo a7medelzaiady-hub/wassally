@@ -20,6 +20,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
+import '../utils/dialog_controllers.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -796,7 +797,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         ),
       ),
     );
-    note.dispose();
+    disposeAfterDialogCloses(note);
     if (result == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);

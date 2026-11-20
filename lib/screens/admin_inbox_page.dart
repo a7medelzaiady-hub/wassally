@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
+import '../utils/dialog_controllers.dart';
 
 typedef _Doc = QueryDocumentSnapshot<Map<String, dynamic>>;
 
@@ -278,7 +279,7 @@ class _RequestCardState extends State<_RequestCard> {
         },
       ),
     );
-    ctrl.dispose();
+    disposeAfterDialogCloses(ctrl);
     return result;
   }
 
@@ -367,7 +368,7 @@ class _RequestCardState extends State<_RequestCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (reason == null) return;
     await _run(
       () => RoleRequestService.reject(widget.doc, note: reason),
@@ -836,7 +837,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (note == null || !mounted) return;
     setState(() => _busy = true);
     try {
@@ -937,7 +938,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (reason == null || !mounted) return;
     setState(() => _busy = true);
     try {
