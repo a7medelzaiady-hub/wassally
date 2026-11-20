@@ -16,11 +16,27 @@ class DeliveryService {
       FirebaseFirestore.instance.collection('app_info').doc('delivery_areas');
 
   static List<DeliveryArea>? _cache;
+  static bool _ordersPaused = false;
+
+  /// مفتاح الطوارئ من الإدارة (آخر قيمة اتقرت).
+  static bool get ordersPaused => _ordersPaused;
+
+  /// `ordersPaused` لازم تكون true صريحة؛ أي قيمة تانية = الطلبات شغالة.
+  static bool parseOrdersPaused(Map<String, dynamic>? data) =>
+      data?['ordersPaused'] == true;
+
+  /// قراءة جديدة للمستند وقت إرسال الطلب (قراءة واحدة) عشان الإيقاف يظهر فورًا.
+  /// لو القراءة فشلت (مثلًا من غير نت) بنرجع آخر قيمة معروفة، ومنعش العميل.
+  static Future<bool> checkOrdersPaused() async {
+    await load(force: true);
+    return _ordersPaused;
+  }
 
   static Future<List<DeliveryArea>> load({bool force = false}) async {
     if (_cache != null && !force) return _cache!;
     try {
       final snap = await _ref.get();
+      _ordersPaused = parseOrdersPaused(snap.data());
       final raw = snap.data()?['areas'];
       final out = <DeliveryArea>[];
       if (raw is List) {
@@ -46,7 +62,17 @@ class DeliveryService {
       ],
       'fees': [for (final a in areas) a.fee],
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+      // merge: من غير ما نمسح باقي الحقول (maxOrdersPerDay وordersPaused).
+    }, SetOptions(merge: true));
     _cache = List.of(areas);
+  }
+
+  /// تشغيل/إيقاف استقبال الطلبات الجديدة (الإدارة بس، حسب قواعد app_info).
+  static Future<void> setOrdersPaused(bool paused) async {
+    await _ref.set({
+      'ordersPaused': paused,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    _ordersPaused = paused;
   }
 }
