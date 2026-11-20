@@ -6,6 +6,29 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../theme/app_theme.dart';
 
+/// عمر أقدم طلب متأخر بصيغة مفهومة (مش رقم دقايق خام ممكن يتقري كمبلغ).
+String formatOverdueAge(Duration d) {
+  final m = d.inMinutes < 0 ? 0 : d.inMinutes;
+  if (m < 60) {
+    if (m == 1) return 'دقيقة';
+    if (m == 2) return 'دقيقتين';
+    if (m <= 10) return '$m دقائق';
+    return '$m دقيقة';
+  }
+  final h = m ~/ 60;
+  if (h < 24) {
+    if (h == 1) return 'ساعة';
+    if (h == 2) return 'ساعتين';
+    if (h <= 10) return '$h ساعات';
+    return '$h ساعة';
+  }
+  final days = h ~/ 24;
+  if (days == 1) return 'يوم';
+  if (days == 2) return 'يومين';
+  if (days <= 10) return '$days أيام';
+  return '$days يوم';
+}
+
 /// تنبيه مجاني داخل التطبيق للطلبات الجديدة التي لم يرد عليها المحل خلال 5 دقائق.
 /// يظهر عند فتح الشاشة أو أثناء بقائها مفتوحة، ويصدر صوتًا مرة واحدة لكل طلب متأخر.
 class UnansweredOrdersAlert extends StatefulWidget {
@@ -92,7 +115,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
     final oldestActivity = activities.reduce(
       (a, b) => a.isBefore(b) ? a : b,
     );
-    final oldest = _now.difference(oldestActivity).inMinutes;
+    final oldest = formatOverdueAge(_now.difference(oldestActivity));
     final countLabel = overdue.length >= 100 ? '100+' : overdue.length.toString();
 
     return Container(
@@ -120,7 +143,7 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
           ),
           const SizedBox(width: 8),
           Text(
-            '$oldest د',
+            'أقدمهم من $oldest',
             style: TextStyle(
               color: kDanger,
               fontWeight: FontWeight.w800,
