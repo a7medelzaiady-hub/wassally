@@ -12,6 +12,7 @@ import '../screens/order_details_page.dart';
 import '../models/app_role.dart';
 import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
+import '../screens/admin_inbox_page.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -97,6 +98,26 @@ class NotificationService {
     }
   }
 
+  /// توبيك admins: إشعارات طلبات الانضمام وبلاغات التسليم للإدارة بس.
+  /// زي المندوب: بيتحدد من الدور اللي اتأكد من السيرفر، من غير قراءات زيادة.
+  static bool? _verifiedAdminRole;
+
+  static Future<void> syncAdminTopic({required bool isAdmin}) async {
+    _verifiedAdminRole = isAdmin;
+    if (!_supported || FirebaseAuth.instance.currentUser == null) return;
+    if (!await hasPermission()) return;
+    try {
+      final messaging = FirebaseMessaging.instance;
+      if (isAdmin) {
+        await messaging.subscribeToTopic('admins');
+      } else {
+        await messaging.unsubscribeFromTopic('admins');
+      }
+    } catch (e) {
+      debugPrint('تعذر تحديث اشتراك إشعارات الإدارة: $e');
+    }
+  }
+
   static Future<void> _registerGrantedDevice() async {
     final user = FirebaseAuth.instance.currentUser;
     if (!_supported || user == null) return;
@@ -117,6 +138,10 @@ class NotificationService {
       final verifiedRole = _verifiedCourierRole;
       if (verifiedRole != null) {
         await syncCourierTopic(isCourier: verifiedRole);
+      }
+      final verifiedAdmin = _verifiedAdminRole;
+      if (verifiedAdmin != null) {
+        await syncAdminTopic(isAdmin: verifiedAdmin);
       }
 
       _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) async {
@@ -159,12 +184,14 @@ class NotificationService {
     _opened = null;
     _tokenRefresh = null;
     _verifiedCourierRole = null;
+    _verifiedAdminRole = null;
     if (!_supported) return;
 
     // منع بقاء الجهاز مشتركًا في إشعارات الحساب السابق بعد تسجيل الخروج.
     try {
       final messaging = FirebaseMessaging.instance;
       await messaging.unsubscribeFromTopic('couriers');
+      await messaging.unsubscribeFromTopic('admins');
       await messaging.unsubscribeFromTopic('all');
     } catch (e) {
       debugPrint('تعذر إلغاء اشتراكات الإشعارات: $e');
@@ -220,6 +247,12 @@ class NotificationService {
     }
     // إشعارات الشات القديمة (support_chat) اتشالت: الدعم بقى على واتساب.
     if (type == 'support_chat') return;
+    if (type == 'admin_inbox') {
+      rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
+        builder: (_) => const AdminInboxPage(),
+      ));
+      return;
+    }
     if (type == 'available_order') {
       // This is an unassigned order. Couriers may view the available-order
       // queue, but not the private order details until assigned.

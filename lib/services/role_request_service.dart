@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'catalog_sync.dart';
+import 'admin_notify.dart';
 
 /// نوع طلب الانضمام. القيم لازم تطابق firestore.rules (validRoleRequest).
 enum JoinType {
@@ -125,10 +126,12 @@ class RoleRequestService {
       }
       batch.set(requestRef, requestData);
       await batch.commit();
+      AdminNotify.joinRequest(requestRef.id);
       return;
     }
 
     await requestRef.set(requestData);
+    AdminNotify.joinRequest(requestRef.id);
   }
 
   /// طلبات الانضمام المعلقة للأدمن.

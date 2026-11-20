@@ -1939,6 +1939,13 @@ test('expression limit: مستخدم واحد بكل الأدوار يمرّ ب�
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
 });
 
+test('adminNotices: سجل إشعارات الإدارة مقفول على التطبيق', async () => {
+  for (const uid of ['cust1', 'owner1', 'admin1']) {
+    await assertFails(getDoc(doc(as(uid), 'adminNotices/join_request_x')));
+    await assertFails(setDoc(doc(as(uid), 'adminNotices/join_request_x'), { kind: 'join_request' }));
+  }
+});
+
 test('deliveryPinAttempts: مفيش قراءة ولا كتابة من التطبيق لأي دور', async () => {
   await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'deliveryPinAttempts/o1'), { attempts: 2, locked: false }));
   for (const uid of ['cust1', 'owner1', 'admin1', 'courier1']) {

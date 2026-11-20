@@ -8,6 +8,7 @@ import '../models/store.dart';
 import 'order_status_writer.dart';
 import 'price_check.dart';
 import 'read_meter.dart';
+import 'admin_notify.dart';
 
 /// إحصائيات التسليم (للمندوب أو للمدير).
 class DeliveryStats {
@@ -466,6 +467,7 @@ class StaffOrderService {
     });
     batch.update(orderRef, {'activeDeliveryIssueId': issueRef.id});
     await batch.commit();
+    AdminNotify.deliveryIssue(issueRef.id);
     const reasonLabels = <String, String>{
       'no_answer': 'العميل لا يرد',
       'wrong_address': 'العنوان غير صحيح',
