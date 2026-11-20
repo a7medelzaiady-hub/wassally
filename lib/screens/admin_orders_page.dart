@@ -19,6 +19,7 @@ import '../widgets/unanswered_orders_alert.dart';
 import 'admin_banners_page.dart';
 import '../services/admin_inbox_counts.dart';
 import 'admin_inbox_page.dart';
+import '../utils/dialog_controllers.dart';
 
 /// شاشة المدير: كل الطلبات، فلترة بالحالة، تغيير الحالة، وتعيين مندوب.
 class AdminOrdersPage extends StatefulWidget {
@@ -793,7 +794,7 @@ class _ManageSheetState extends State<_ManageSheet> {
         ],
       ),
     );
-    ctrl.dispose();
+    disposeAfterDialogCloses(ctrl);
     if (typed == null || !mounted) return null;
 
     var t = typed.trim().replaceAll('٫', '.').replaceAll(',', '.');
@@ -826,6 +827,11 @@ class _ManageSheetState extends State<_ManageSheet> {
 
   Future<void> _changeStatus(OrderStatus s) async {
     if (s == _o.status || _busy) return;
+    // طلب ملغي أو اتسلّم: الحالة مقفولة (القواعد كمان بترفض). بنقول بدل ما نفتح حوارات بلا فايدة.
+    if (adminStatusLocked(_o.status)) {
+      setState(() => _err = 'الطلب ${_o.status.label}، وحالته مش بتتغير.');
+      return;
+    }
     if (s == OrderStatus.cancelled) {
       final ok = await confirmDialog(
         context,
@@ -1582,3 +1588,8 @@ class _PhaseTimesState extends State<_PhaseTimes> {
     );
   }
 }
+
+
+/// الطلب الملغي أو اللي اتسلّم: الإدارة ما تغيّرش حالته.
+bool adminStatusLocked(OrderStatus status) =>
+    status == OrderStatus.cancelled || status == OrderStatus.delivered;

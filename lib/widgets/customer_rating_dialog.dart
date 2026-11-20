@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/customer_rating_service.dart';
 import 'star_picker.dart';
+import '../utils/dialog_controllers.dart';
 
 class CustomerRatingInput {
   final int rating;
@@ -96,6 +97,6 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
       ),
     ),
   );
-  comment.dispose();
+  disposeAfterDialogCloses(comment);
   return result;
 }
