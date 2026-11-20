@@ -15,6 +15,7 @@ import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
 import 'panel_switcher.dart';
+import '../services/admin_inbox_counts.dart';
 
 /// هيدر شاشات المدير والمندوب: العنوان + عرض كعميل + تسجيل خروج.
 class StaffHeader extends StatelessWidget {
@@ -122,11 +123,25 @@ class StaffHeader extends StatelessWidget {
           ),
         ),
       if (isAdmin)
-        _btn(
-          tooltip: 'طلبات الانضمام والمراجعات',
-          icon: Icons.inbox_outlined,
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
+        FutureBuilder<AdminInboxCounts>(
+          future: AdminInboxCounts.load(),
+          builder: (context, snap) {
+            final n = snap.data?.total ?? 0;
+            final button = _btn(
+              tooltip: n > 0
+                  ? 'طلبات الانضمام والمراجعات ($n محتاجين مراجعة)'
+                  : 'طلبات الانضمام والمراجعات',
+              icon: Icons.inbox_outlined,
+              onPressed: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
+            );
+            if (n == 0) return button;
+            return Badge(
+              label: Text(AdminInboxCounts.badgeText(n)),
+              backgroundColor: const Color(0xFFD32F2F),
+              child: button,
+            );
+          },
         ),
       if (!isAdmin)
         _btn(

@@ -17,6 +17,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/unanswered_orders_alert.dart';
 import 'admin_banners_page.dart';
+import '../services/admin_inbox_counts.dart';
+import 'admin_inbox_page.dart';
 
 /// شاشة المدير: كل الطلبات، فلترة بالحالة، تغيير الحالة، وتعيين مندوب.
 class AdminOrdersPage extends StatefulWidget {
@@ -34,6 +36,32 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
     limit: _limit,
   );
   OrderStatus? _filter;
+
+  /// تنبيه مرة واحدة في الجلسة لما المدير يفتح التطبيق وفيه حاجات محتاجة مراجعة.
+  static bool _inboxAlertShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _alertInbox());
+  }
+
+  Future<void> _alertInbox() async {
+    if (_inboxAlertShown) return;
+    _inboxAlertShown = true;
+    final c = await AdminInboxCounts.load();
+    final text = AdminInboxCounts.alertText(c);
+    if (!mounted || text == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text(text),
+      action: SnackBarAction(
+        label: 'افتح',
+        onPressed: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
+      ),
+    ));
+  }
 
   void _loadMore() {
     setState(() {

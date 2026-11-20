@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
 
+import '../services/admin_inbox_counts.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/role_request_service.dart';
@@ -12,6 +13,35 @@ import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 
 typedef _Doc = QueryDocumentSnapshot<Map<String, dynamic>>;
+
+/// اسم التبويب ومعاه عدد اللي محتاج مراجعة (لو فيه).
+class _CountLabel extends StatelessWidget {
+  final String text;
+  final int Function(AdminInboxCounts) pick;
+  const _CountLabel(this.text, this.pick);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AdminInboxCounts>(
+      future: AdminInboxCounts.load(),
+      builder: (context, snap) {
+        final n = snap.data == null ? 0 : pick(snap.data!);
+        if (n == 0) return Text(text);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(text),
+            const SizedBox(width: 6),
+            Badge(
+              label: Text(AdminInboxCounts.badgeText(n)),
+              backgroundColor: const Color(0xFFD32F2F),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 /// صندوق المدير: طلبات الانضمام (قبول/رفض) والشكاوى والاقتراحات.
 class AdminInboxPage extends StatelessWidget {
@@ -25,14 +55,14 @@ class AdminInboxPage extends StatelessWidget {
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
           actions: const [HomeActionButton()],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
-              Tab(text: 'طلبات الانضمام'),
-              Tab(text: 'تقديمات المناديب'),
-              Tab(text: 'تقييم العملاء'),
-              Tab(text: 'تعذر التسليم'),
+              Tab(child: _CountLabel('طلبات الانضمام', (c) => c.joinRequests)),
+              const Tab(text: 'تقديمات المناديب'),
+              const Tab(text: 'تقييم العملاء'),
+              Tab(child: _CountLabel('تعذر التسليم', (c) => c.deliveryIssues)),
             ],
           ),
         ),
