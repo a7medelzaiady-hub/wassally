@@ -45,7 +45,7 @@ class OrderDetailsPage extends StatelessWidget {
     final ok = await confirmDialog(
       context,
       title: 'حذف الطلب',
-      message: 'الطلب هيتحذف نهائيًا ومش هيظهر في طلباتك. متأكد؟',
+      message: 'الطلب هيتلغي ومش هيظهر في طلباتك. متأكد؟',
       confirmLabel: 'حذف الطلب',
       destructive: true,
     );
