@@ -618,6 +618,12 @@ class StaffOrderService {
       'storeReceivedAt': FieldValue.serverTimestamp(),
       'storeReceivedBy': uid,
     });
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'تم استلام مرتجع طلبك في المحل',
+      'أكد المحل استلام الطلب المرتجع. يمكنك مراجعة السبب في تفاصيل الطلب.',
+      orderId,
+    );
   }
 
   /// المندوب يؤكد رجوع الطلب للمحل بعد قرار الإدارة.
