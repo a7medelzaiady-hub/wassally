@@ -42,3 +42,30 @@ export function equalHexDigest(left: string, right: string): boolean {
   for (let i = 0; i < 64; i++) diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
   return diff === 0;
 }
+
+/**
+ * Persist attempts per order in a server-only Firestore document and update with
+ * a precondition/transaction. A process-local counter is NOT sufficient on Workers.
+ */
+export const DELIVERY_PIN_MAX_ATTEMPTS = 5;
+
+export function canAttemptDeliveryPin(
+  attempts: number,
+  locked: boolean,
+): boolean {
+  return Number.isSafeInteger(attempts) &&
+    attempts >= 0 &&
+    attempts < DELIVERY_PIN_MAX_ATTEMPTS &&
+    !locked;
+}
+
+export function nextDeliveryPinFailure(attempts: number): {
+  attempts: number;
+  locked: boolean;
+} {
+  if (!canAttemptDeliveryPin(attempts, false)) {
+    return { attempts: Math.max(DELIVERY_PIN_MAX_ATTEMPTS, attempts), locked: true };
+  }
+  const next = attempts + 1;
+  return { attempts: next, locked: next >= DELIVERY_PIN_MAX_ATTEMPTS };
+}
