@@ -69,7 +69,7 @@ class OrderDetailsPage extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          InnerHeader(title: 'تفاصيل الطلب'),
+          InnerHeader(title: 'تفاصيل الطلب', showHome: false),
           Expanded(
             child: StreamBuilder<AppOrder?>(
               stream: OrderService.watchOrder(orderId),
@@ -398,9 +398,16 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final awaitingCustomerConfirmation =
+        order.status == OrderStatus.onTheWay &&
+        order.customerDeliveryReportedAt != null &&
+        order.customerConfirmedAt == null;
+    return Column(
       children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
         Container(
           padding: const EdgeInsets.all(16),
           decoration: _card,
@@ -525,36 +532,7 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (order.status == OrderStatus.onTheWay &&
-            order.customerDeliveryReportedAt != null &&
-            order.customerConfirmedAt == null) ...[
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF7EF),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: kSuccess),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'المندوب أبلغ إنه سلّمك الطلب. من فضلك أكد الاستلام بعد مراجعة الطلب.',
-                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.5),
-                ),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: onConfirmDelivery,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: Text(order.deliveryMode == 'external'
-                      ? 'تأكيد استلام الطلب'
-                      : 'تأكيد الاستلام وإغلاق الطلب'),
-                ),
-              ],
-            ),
-          ),
-        ] else if (order.customerConfirmedAt != null &&
+        if (order.customerConfirmedAt != null &&
             order.deliveryMode == 'external' &&
             order.status == OrderStatus.onTheWay) ...[
           const SizedBox(height: 12),
@@ -632,6 +610,42 @@ class _Details extends StatelessWidget {
             ],
           ),
         ],
+            ],
+          ),
+        ),
+        if (awaitingCustomerConfirmation)
+          SafeArea(
+            top: false,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF7EF),
+                border: Border(top: BorderSide(color: kSuccess)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'المندوب أبلغ إنه سلّمك الطلب. راجع الطلب قبل تأكيد الاستلام.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: onConfirmDelivery,
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: Text(order.deliveryMode == 'external'
+                          ? 'تأكيد استلام الطلب'
+                          : 'تأكيد الاستلام وإغلاق الطلب'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

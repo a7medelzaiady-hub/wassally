@@ -12,7 +12,6 @@ import '../widgets/feedback_fab.dart';
 import 'account_page.dart';
 import 'cart_page.dart';
 import 'home_page.dart';
-import 'notifications_page.dart';
 import 'orders_page.dart';
 
 class MainShell extends StatelessWidget {
@@ -73,21 +72,11 @@ class MainShell extends StatelessWidget {
           bottomNavigationBar: ListenableBuilder(
             listenable: cart,
             builder: (context, _) {
-              // الرئيسية بقت الصفحة الافتراضية (بدون زر)، والسلة في النص.
-              // اليمين لليسار: الرئيسية، طلباتي، السلة (في النص)، حسابي، الإشعارات.
-              const map = [0, 2, 1, 3, -1];
+              // الرئيسية، طلباتي، السلة، حسابي. الإشعارات من جرس الرئيسية.
+              const map = [0, 2, 1, 3];
               return CurvedNavBar(
                 index: map.indexOf(index),
                 onTap: (i) {
-                  if (map[i] == -1) {
-                    PerformanceMonitor.screenOpened('notifications');
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsPage(),
-                      ),
-                    );
-                    return;
-                  }
                   shellTab.value = map[i];
                 },
                 items: [
@@ -111,11 +100,6 @@ class MainShell extends StatelessWidget {
                     icon: Icons.person_outline,
                     selectedIcon: Icons.person,
                     label: 'حسابي',
-                  ),
-                  const AppNavItem(
-                    icon: Icons.notifications_none_rounded,
-                    selectedIcon: Icons.notifications_rounded,
-                    label: 'الإشعارات',
                   ),
                 ],
               );
