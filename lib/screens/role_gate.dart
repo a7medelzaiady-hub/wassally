@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -85,6 +87,10 @@ class _RoleGateState extends State<RoleGate> {
       if (mounted && _uid == uid) {
         setState(() => _info = fresh);
         _startAlerts(fresh);
+        // Only the freshly verified role controls FCM courier subscriptions.
+        unawaited(NotificationService.syncCourierTopic(
+          isCourier: fresh.held.contains(AppRole.courier),
+        ));
       }
     });
   }
