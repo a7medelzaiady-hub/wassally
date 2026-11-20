@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../services/cart_model.dart';
-import '../services/navigation.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
@@ -9,6 +8,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/qty_stepper.dart';
 import '../widgets/app_header.dart';
 import 'checkout_page.dart';
+import 'store_directory_page.dart';
 
 /// السلة. بتتعرض كتبويب في الشاشة الرئيسية، أو كصفحة مستقلة (showBackButton).
 class CartPage extends StatelessWidget {
@@ -64,13 +64,12 @@ class CartPage extends StatelessWidget {
                       title: 'السلة فاضية',
                       message: 'ضيف منتجات من أي محل وهتظهر هنا.',
                       actionLabel: 'تصفّح المحلات',
-                      onAction: () {
-                        if (showBackButton) {
-                          Navigator.of(context).maybePop();
-                        } else {
-                          shellTab.value = 0;
-                        }
-                      },
+                      // بيفتح قائمة كل المحلات (نفس شاشة "تسوق" اللي في الرئيسية).
+                      onAction: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const StoreDirectoryPage(),
+                        ),
+                      ),
                     )
                   : const _CartBody(),
             ),
