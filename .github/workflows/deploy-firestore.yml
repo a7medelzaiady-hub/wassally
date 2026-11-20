@@ -1,0 +1,78 @@
+name: Deploy Firestore rules & indexes (manual)
+
+# نشر firestore.rules وfirestore.indexes.json من main بدل جهازك. يدوي بس (Actions ← Run workflow)
+# ولازم تكتب DEPLOY. محتاج سر واحد في GitHub (Settings ← Secrets and variables ← Actions):
+#   FIREBASE_SERVICE_ACCOUNT : محتوى ملف JSON من Firebase ← Project settings ← Service accounts
+#                              ← Generate new private key (بيتكتب لملف مؤقت ويتمسح في آخر الخطوة).
+# القواعد بتتختبر الأول على المحاكي (نفس اختبارات CI) قبل النشر.
+# من غير --force: أي فهرس موجود على Firebase ومش في الملف بيفضل زي ما هو (مش بيتمسح).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "اكتب DEPLOY عشان تأكد نشر قواعد وفهارس Firestore على الإنتاج"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-firestore
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy Firestore rules & indexes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require confirmation and main branch
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$CONFIRM" != "DEPLOY" ]]; then
+            echo "::error::اكتب DEPLOY في خانة التأكيد."; exit 1
+          fi
+          if [[ "$REF" != "refs/heads/main" ]]; then
+            echo "::error::النشر من main بس (الفرع الحالي: $REF)."; exit 1
+          fi
+
+      - name: Require the service account secret
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [[ -z "$SA" ]]; then
+            echo "::error::Missing GitHub secret FIREBASE_SERVICE_ACCOUNT."; exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Rules tests on the emulator
+        working-directory: rules-tests
+        run: |
+          npm ci
+          npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js"
+
+      - name: Deploy rules and indexes
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          key="$RUNNER_TEMP/firebase-sa.json"
+          printf '%s' "$SA" > "$key"
+          chmod 600 "$key"
+          export GOOGLE_APPLICATION_CREDENTIALS="$key"
+          npx --yes firebase-tools@13 deploy --only firestore:rules,firestore:indexes \
+            --project wasally-12259 --non-interactive
+          rm -f "$key"
