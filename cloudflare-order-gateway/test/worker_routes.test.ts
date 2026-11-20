@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import worker from "../src/index";
+import worker, { courierTopicMessage } from "../src/index";
 
 const envConfig = {
   FIREBASE_PROJECT_ID: "wasally-test",
@@ -131,5 +131,27 @@ describe("Worker order gateway route hardening", () => {
       env,
     );
     expect(response.status).toBe(404);
+  });
+});
+
+describe("Courier available-order push privacy", () => {
+  it("targets the topic and carries only the order id, not customer PII", () => {
+    const message = courierTopicMessage("order_12345", "محل الاختبار").message;
+    expect(message.topic).toBe("couriers");
+    expect(message.data).toEqual({
+      type: "available_order",
+      orderId: "order_12345",
+    });
+    expect(message.android.priority).toBe("HIGH");
+    const serialized = JSON.stringify(message);
+    for (const sensitive of ["phone", "address", "customerName", "userId", "lat", "lng"]) {
+      expect(serialized).not.toContain(sensitive);
+    }
+  });
+
+  it("limits untrusted store names in the notification body", () => {
+    const message = courierTopicMessage("abcde", "X".repeat(500)).message;
+    expect(message.notification.body.startsWith("X".repeat(80))).toBe(true);
+    expect(message.notification.body).not.toContain("X".repeat(81));
   });
 });
