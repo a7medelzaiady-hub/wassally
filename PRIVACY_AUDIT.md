@@ -23,7 +23,7 @@
 10. اختبارات قواعد جديدة في `rules-tests/rules.test.js` (لسه ماتشغّلتش).
 
 ## ترتيب النشر (مهم، غير كده الطلبات القديمة هتتكسر)
-1. `firebase deploy --only functions` (فيه `migrateOrderContacts` و`onUserDeleted` المحدّثة).
+1. ~~`firebase deploy --only functions`~~ **ملغي:** المشروع على Spark ومفيش نشر Functions. تنظيف بيانات الحساب بقى من الـWorker (`POST /v1/account/delete`)، و`functions/` غير مستخدم.
 2. ارفع نسخة التطبيق الجديدة وفعّل `force_update` للنسخ القديمة.
 3. `firebase deploy --only firestore:rules` (النسخ القديمة هتتوقف عن إنشاء الطلبات، وده المقصود).
 4. من حساب الأدمن نادِ الدالة `migrateOrderContacts` (من التطبيق أو Console) لحد ما ترجّع `done: true`.
