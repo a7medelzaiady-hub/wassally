@@ -77,6 +77,29 @@ class PerformanceMonitor {
     });
   }
 
+  /// أرقام بدء التشغيل بالمللي ثانية (من غير قيم سالبة).
+  /// `bootstrap_ms`: من أول main لحد runApp (تهيئة Firebase وApp Check والسمة).
+  /// `first_frame_ms`: من أول main لحد أول إطار اترسم على الشاشة.
+  static Map<String, int> startupMetrics({
+    required Duration bootstrap,
+    required Duration firstFrame,
+  }) => {
+    'bootstrap_ms': bootstrap.inMilliseconds < 0 ? 0 : bootstrap.inMilliseconds,
+    'first_frame_ms': firstFrame.inMilliseconds < 0 ? 0 : firstFrame.inMilliseconds,
+  };
+
+  /// بيسجّل trace واحد `dart_startup` فيه أرقام الجزء اللي في Dart بس.
+  /// الغرض: نفرّق بين بطء الكود وبين قياس `_app_start` بتاع أندرويد اللي بيبدأ
+  /// من لحظة تشغيل العملية (حتى لو اشتغلت في الخلفية بسبب إشعار).
+  static Future<void> recordStartup(Map<String, int> metrics) async {
+    final trace = await _start('dart_startup');
+    if (trace == null) return;
+    try {
+      metrics.forEach(trace.setMetric);
+    } catch (_) {}
+    await _stop(trace);
+  }
+
   static Future<Trace?> _start(String name) async {
     if (!_canCollect) return null;
     try {
