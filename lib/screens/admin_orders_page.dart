@@ -1038,6 +1038,55 @@ class _ManageSheetState extends State<_ManageSheet> {
   }
 
   /// تايل حالة في شيت الإدارة: شبكة من عمودين بدل الشرايح المتفاوتة.
+  /// رمز التسليم اتقفل بعد محاولات غلط: الإدارة تقرر إن العميل استلم.
+  /// مندوب المحل: الطلب يتقفل «تم التوصيل». مندوب خارجي: يفضل لتسوية النقدية مع المحل.
+  Widget _pinDecisionCard(AppOrder o) {
+    final external = o.deliveryMode == 'external';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: kDanger.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kDanger.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'رمز التسليم اتقفل بعد محاولات غلط من المندوب. لو اتأكدت إن العميل استلم الطلب، أكّد التسليم.',
+            style: TextStyle(color: kDanger, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () async {
+                    final ok = await confirmDialog(
+                      context,
+                      title: 'تأكيد التسليم',
+                      message: external
+                          ? 'هيتسجّل إن العميل استلم، والطلب يفضل لحد ما المحل يأكد استلام النقدية من المندوب.'
+                          : 'الطلب هيتقفل «تم التوصيل» باسم المندوب.',
+                      confirmLabel: 'تأكيد',
+                    );
+                    if (!ok || !mounted) return;
+                    if (external) {
+                      await _run(
+                        () => StaffOrderService.adminConfirmLockedExternalDelivery(o.id),
+                        'تم تأكيد استلام العميل',
+                      );
+                    } else {
+                      await _changeStatus(OrderStatus.delivered);
+                    }
+                  },
+            icon: const Icon(Icons.verified_outlined),
+            label: const Text('العميل استلم: أكّد التسليم'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _statusTile(OrderStatus s, bool selected) {
     return Material(
       color: selected ? s.color.withValues(alpha: 0.14) : Colors.white,
@@ -1331,6 +1380,10 @@ class _ManageSheetState extends State<_ManageSheet> {
           ),
           _stepsCard(),
           _priceCard(),
+          if (needsPinDecision(o)) ...[
+            const SizedBox(height: 12),
+            _pinDecisionCard(o),
+          ],
           const SizedBox(height: 20),
           _section('تغيير الحالة'),
           const SizedBox(height: 10),
@@ -1593,3 +1646,10 @@ class _PhaseTimesState extends State<_PhaseTimes> {
 /// الطلب الملغي أو اللي اتسلّم: الإدارة ما تغيّرش حالته.
 bool adminStatusLocked(OrderStatus status) =>
     status == OrderStatus.cancelled || status == OrderStatus.delivered;
+
+
+/// طلب في الطريق رمزه اتقفل ولسه ما اتأكدش: محتاج قرار من الإدارة.
+bool needsPinDecision(AppOrder o) =>
+    o.deliveryPinLockedAt != null &&
+    o.status == OrderStatus.onTheWay &&
+    o.customerConfirmedAt == null;

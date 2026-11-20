@@ -212,6 +212,14 @@ class StaffOrderService {
   }
 
   /// المندوب الخارجي يسجل تسليم النقدية للمحل بعد تأكيد العميل.
+  /// قرار الإدارة بعد قفل رمز التسليم لمندوب خارجي: العميل استلم.
+  /// الطلب يفضل «في الطريق» لحد ما المندوب يسلّم النقدية والمحل يأكد (زي الرمز الصحيح).
+  static Future<void> adminConfirmLockedExternalDelivery(String orderId) async {
+    await _orders.doc(orderId).update({
+      'customerConfirmedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   static Future<void> recordCashHandedToStore(String orderId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('سجّل دخول الأول.');
