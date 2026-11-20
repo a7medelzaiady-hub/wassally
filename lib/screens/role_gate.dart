@@ -91,6 +91,9 @@ class _RoleGateState extends State<RoleGate> {
         unawaited(NotificationService.syncCourierTopic(
           isCourier: fresh.held.contains(AppRole.courier),
         ));
+        unawaited(NotificationService.syncAdminTopic(
+          isAdmin: fresh.held.contains(AppRole.admin),
+        ));
       }
     });
   }

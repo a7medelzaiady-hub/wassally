@@ -1093,6 +1093,11 @@ service cloud.firestore {
       allow read, delete: if false;
     }
 
+    // سجل إشعارات الإدارة (مرة لكل طلب انضمام/بلاغ): الـWorker بس.
+    match /adminNotices/{noticeId} {
+      allow read, write: if false;
+    }
+
     // عدّاد محاولات رمز التسليم: الـWorker بس (حساب الخدمة) بيقرا ويكتب. مفيش وصول من التطبيق.
     match /deliveryPinAttempts/{orderId} {
       allow read, write: if false;

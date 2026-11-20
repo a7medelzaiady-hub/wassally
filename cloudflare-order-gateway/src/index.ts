@@ -1883,6 +1883,17 @@ export default {
         ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
         : "";
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
+    if (request.method === "POST" && url.pathname === "/v1/notify-admins") {
+      try {
+        const result = await notifyAdmins(request, env);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      }
+    }
     const pinMatch = url.pathname.match(/^\/v1\/orders\/([^/]+)\/(delivery-pin|deliver)$/);
     if (pinMatch) {
       try {
@@ -2090,6 +2101,97 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
   return response({ delivered: update.status === "delivered", confirmed: true });
+}
+
+// ───────────── إشعار الإدارة بطلب انضمام أو بلاغ تعذر تسليم ─────────────
+
+export type AdminNoticeKind = "join_request" | "delivery_issue";
+const ADMIN_NOTICE_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** نص الإشعار من غير أي بيانات شخصية (توبيك admins مش محمي، فالمحتوى عام). */
+export function adminNoticeMessage(kind: AdminNoticeKind, detail: string) {
+  const title = kind === "join_request" ? "طلب انضمام جديد" : "بلاغ تعذر تسليم جديد";
+  const body = kind === "join_request"
+    ? (detail === "store_owner" ? "صاحب محل" : detail === "courier" ? "مندوب" : "طلب") + " • افتح الطلبات والرسائل للمراجعة"
+    : "مندوب سجّل تعذر تسليم • افتح الطلبات والرسائل";
+  return {
+    message: {
+      topic: "admins",
+      notification: { title, body },
+      data: { type: "admin_inbox", kind },
+      android: { priority: "HIGH", ttl: "3600s", notification: { sound: "default" } },
+    },
+  };
+}
+
+/**
+ * سبب رفض إرسال الإشعار أو null لو مسموح: لازم المستند يكون جديد (آخر 10 دقايق)
+ * وصاحبه هو اللي بيطلب الإشعار. ده بيمنع استخدام الـendpoint في إزعاج الإدارة.
+ */
+export function adminNoticeBlocker(kind: AdminNoticeKind, id: string, doc: JsonMap | null, uid: string, now = Date.now()): string | null {
+  if (!doc) return "not_found";
+  const created = doc.createdAt instanceof Date ? doc.createdAt.getTime() : 0;
+  if (!created || now - created > ADMIN_NOTICE_MAX_AGE_MS || created - now > 60_000) return "stale";
+  if (kind === "join_request") {
+    if (doc.userId !== uid || !id.startsWith(uid + "_")) return "forbidden";
+    if (doc.status !== "pending") return "not_pending";
+  } else if (doc.createdBy !== uid) {
+    return "forbidden";
+  }
+  return null;
+}
+
+async function notifyAdmins(request: Request, env: Env): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  const kind = body?.kind;
+  const id = typeof body?.id === "string" ? body.id : "";
+  if ((kind !== "join_request" && kind !== "delivery_issue") || !/^[A-Za-z0-9_-]{1,160}$/.test(id)) {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  const token = await googleAccessToken(env);
+  const col = kind === "join_request" ? "role_requests" : "delivery_issues";
+  const docRaw = await getDocument(env, `${col}/${encodeURIComponent(id)}`, token);
+  const doc = docRaw ? decodeFields(docRaw.fields ?? {}) : null;
+  const blocker = adminNoticeBlocker(kind, id, doc, uid);
+  if (blocker) throw new HttpError(blocker === "forbidden" ? 403 : 409, "مش ممكن إرسال الإشعار.", blocker);
+
+  // مرة واحدة لكل مستند: مستند تسجيل بشرط exists:false (الطلب المكرر بياخد sent:false).
+  const noticePath = `adminNotices/${kind}_${encodeURIComponent(id)}`;
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes: [{
+        update: {
+          name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${noticePath}`,
+          fields: encodeFields({ kind, id, by: uid }),
+        },
+        updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: { exists: false },
+      }] }),
+    },
+  );
+  if (res.status === 409 || res.status === 400) return response({ sent: false, reason: "already_sent" });
+  if (!res.ok) throw new HttpError(503, "تعذر الإرسال حاليًا.");
+
+  const detail = kind === "join_request" ? String(doc?.type ?? "") : "";
+  const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(adminNoticeMessage(kind, detail)),
+  });
+  if (!sent.ok) {
+    console.error("Admin FCM send failed", sent.status);
+    throw new HttpError(503, "تعذر إرسال الإشعار.");
+  }
+  return response({ sent: true });
 }
 
 export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
