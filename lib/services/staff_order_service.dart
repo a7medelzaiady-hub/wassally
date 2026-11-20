@@ -645,6 +645,12 @@ class StaffOrderService {
       'returnedAt': FieldValue.serverTimestamp(),
       'returnedBy': uid,
     });
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'المندوب رجّع الطلب للمحل',
+      'تم تسجيل إرجاع طلبك للمحل، وبانتظار تأكيد المحل للاستلام.',
+      orderId,
+    );
   }
 
   /// المحل بيعلّم أصناف «غير متاحة» على طلب جديد (أو بيشيل العلامة لو [names] فاضية).
