@@ -17,6 +17,7 @@ import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/star_picker.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -244,21 +245,10 @@ class _Details extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: kMuted),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (index) {
-                    final v = index + 1.0;
-                    return IconButton(
-                      iconSize: 28,
-                      onPressed: () => setDialogState(() => storeRating = v),
-                      icon: Icon(
-                        v <= storeRating
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        color: kAccent,
-                      ),
-                    );
-                  }),
+                StarPicker(
+                  value: storeRating,
+                  size: 30,
+                  onChanged: (v) => setDialogState(() => storeRating = v.toDouble()),
                 ),
                 const Divider(),
               ],
@@ -268,21 +258,9 @@ class _Details extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: kMuted),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) {
-                  final starVal = index + 1.0;
-                  return IconButton(
-                    iconSize: 32,
-                    onPressed: () => setDialogState(() => rating = starVal),
-                    icon: Icon(
-                      starVal <= rating
-                          ? Icons.star_rounded
-                          : Icons.star_outline_rounded,
-                      color: kAccent,
-                    ),
-                  );
-                }),
+              StarPicker(
+                value: rating,
+                onChanged: (v) => setDialogState(() => rating = v.toDouble()),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -377,16 +355,9 @@ class _Details extends StatelessWidget {
             children: [
               Text(order.storeName, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (i) {
-                  final value = i + 1.0;
-                  return IconButton(
-                    onPressed: () => setDialogState(() => rating = value),
-                    icon: Icon(value <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
-                      color: kAccent, size: 30),
-                  );
-                }),
+              StarPicker(
+                value: rating,
+                onChanged: (v) => setDialogState(() => rating = v.toDouble()),
               ),
             ],
           ),
