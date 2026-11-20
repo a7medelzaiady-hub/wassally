@@ -158,6 +158,8 @@ class AppOrder {
   final DateTime? customerDeliveryReportedAt;
   final String customerDeliveryReportedBy;
   final DateTime? customerConfirmedAt;
+  /// الرمز اتقفل بعد 5 محاولات غلط من المندوب، والإدارة هي اللي تقرر.
+  final DateTime? deliveryPinLockedAt;
   final DateTime? cashHandedToStoreAt;
   final String cashHandedToStoreBy;
 
@@ -216,6 +218,7 @@ class AppOrder {
     this.customerDeliveryReportedAt,
     this.customerDeliveryReportedBy = '',
     this.customerConfirmedAt,
+    this.deliveryPinLockedAt,
     this.cashHandedToStoreAt,
     this.cashHandedToStoreBy = '',
     this.activeDeliveryIssueId = '',
@@ -273,6 +276,7 @@ class AppOrder {
       customerDeliveryReportedAt: customerDeliveryReportedAt,
       customerDeliveryReportedBy: customerDeliveryReportedBy,
       customerConfirmedAt: customerConfirmedAt,
+      deliveryPinLockedAt: deliveryPinLockedAt,
       cashHandedToStoreAt: cashHandedToStoreAt,
       cashHandedToStoreBy: cashHandedToStoreBy,
       activeDeliveryIssueId: activeDeliveryIssueId,
@@ -362,6 +366,9 @@ class AppOrder {
       customerDeliveryReportedBy: (m['customerDeliveryReportedBy'] ?? '').toString(),
       customerConfirmedAt: m['customerConfirmedAt'] is Timestamp
           ? (m['customerConfirmedAt'] as Timestamp).toDate()
+          : null,
+      deliveryPinLockedAt: m['deliveryPinLockedAt'] is Timestamp
+          ? (m['deliveryPinLockedAt'] as Timestamp).toDate()
           : null,
       cashHandedToStoreAt: m['cashHandedToStoreAt'] is Timestamp
           ? (m['cashHandedToStoreAt'] as Timestamp).toDate()
