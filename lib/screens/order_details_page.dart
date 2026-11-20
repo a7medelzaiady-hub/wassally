@@ -978,7 +978,7 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
 
 /// قراءة واحدة عند فتح تفاصيل المرتجع، بدون مستمع Firestore إضافي.
 class _CustomerReturnReason extends StatefulWidget {
-  const _CustomerReturnReason({required this.issueId});
+  const _CustomerReturnReason({super.key, required this.issueId});
   final String issueId;
 
   @override
