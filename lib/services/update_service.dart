@@ -13,6 +13,7 @@ import 'play_update.dart';
 ///
 /// بيقرا المستند `app_info/version` من Firestore، وحقوله:
 ///   latest_version : نص، مثال "1.0.2"
+///   latest_build   : (اختياري) رقم بناء Android، مثال 9 عند إصدار 1.0.0+9.
 ///   force_update   : true/false (true = مينفعش المستخدم يتخطى التحديث)
 ///   apk_url        : (اختياري) رابط صفحة التطبيق على Google Play.
 class UpdateService {
@@ -131,7 +132,12 @@ class UpdateService {
       );
       _force = data['force_update'] == true && _validUrl(url);
       _url = url;
-      _available = latest.isNotEmpty && isNewer(info.version, latest);
+      _available = latest.isNotEmpty && isNewerRelease(
+        currentVersion: info.version,
+        currentBuild: int.tryParse(info.buildNumber) ?? 0,
+        latestVersion: latest,
+        latestBuild: data['latest_build'],
+      );
       _lastCheck = DateTime.now();
       return _available;
     } catch (e) {
@@ -247,6 +253,25 @@ class UpdateService {
       if (y < x) return false;
     }
     return false;
+  }
+
+  /// يقارن إصدار التطبيق أولًا، ثم رقم البناء عند تساوي الإصدار.
+  /// لو latest_build غير موجود، يظل السلوك القديم كما هو.
+  @visibleForTesting
+  static bool isNewerRelease({
+    required String currentVersion,
+    required int currentBuild,
+    required String latestVersion,
+    Object? latestBuild,
+  }) {
+    if (isNewer(currentVersion, latestVersion)) return true;
+    if (isNewer(latestVersion, currentVersion)) return false;
+    final build = switch (latestBuild) {
+      int value => value,
+      String value => int.tryParse(value.trim()),
+      _ => null,
+    };
+    return build != null && build > currentBuild;
   }
 
   static List<int> _parts(String v) => v

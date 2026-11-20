@@ -22,6 +22,53 @@ void main() {
     });
   });
 
+  group('UpdateService.isNewerRelease', () {
+    test('يكتشف رقم بناء أحدث حتى لو الإصدار نفسه', () {
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.0.0', currentBuild: 8,
+        latestVersion: '1.0.0', latestBuild: 9,
+      ), isTrue);
+    });
+
+    test('لا يعرض تحديث لنفس رقم البناء أو الأقدم', () {
+      for (final build in [7, 8]) {
+        expect(UpdateService.isNewerRelease(
+          currentVersion: '1.0.0', currentBuild: 8,
+          latestVersion: '1.0.0', latestBuild: build,
+        ), isFalse);
+      }
+    });
+
+    test('يبقى متوافقًا مع المستندات القديمة بدون latest_build', () {
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.0.0', currentBuild: 8,
+        latestVersion: '1.0.0',
+      ), isFalse);
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.0.0', currentBuild: 8,
+        latestVersion: '1.0.1',
+      ), isTrue);
+    });
+
+    test('لا يعلن عن بناء أحدث لإصدار أقدم', () {
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.1.0', currentBuild: 8,
+        latestVersion: '1.0.0', latestBuild: 99,
+      ), isFalse);
+    });
+
+    test('يقبل latest_build كنص رقمي ويتجاهل القيم غير الصالحة', () {
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.0.0', currentBuild: 8,
+        latestVersion: '1.0.0', latestBuild: '9',
+      ), isTrue);
+      expect(UpdateService.isNewerRelease(
+        currentVersion: '1.0.0', currentBuild: 8,
+        latestVersion: '1.0.0', latestBuild: 'invalid',
+      ), isFalse);
+    });
+  });
+
   group('Update reminder scheduling', () {
     final now = DateTime(2026, 11, 18, 12);
 
