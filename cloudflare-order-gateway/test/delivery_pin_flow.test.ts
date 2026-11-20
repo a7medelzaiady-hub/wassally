@@ -148,7 +148,7 @@ describe("POST /v1/orders/:id/deliver", () => {
     expect(await res.json()).toMatchObject({ delivered: false, confirmed: true });
     const w = commits[0].writes[0];
     expect(w.update.fields.status).toBeUndefined();
-    expect(w.updateMask.fieldPaths).toEqual([]);
+    expect(w.updateMask.fieldPaths).toEqual(["customerDeliveryReportedBy"]);
     expect(w.updateTransforms.map((t: any) => t.fieldPath)).toContain("customerConfirmedAt");
     expect(commits[0].writes).toHaveLength(1);
   });
