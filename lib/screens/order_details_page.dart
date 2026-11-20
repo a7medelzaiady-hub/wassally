@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
@@ -423,6 +424,11 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
+
+        if (order.activeDeliveryIssueId.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _CustomerReturnReason(issueId: order.activeDeliveryIssueId),
+        ],
 
         // 🛵 كارت المندوب مع التقييم
         if (order.courierName.isNotEmpty &&
@@ -960,6 +966,81 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
             ),
         ],
       ),
+    );
+  }
+}
+
+
+/// قراءة واحدة عند فتح تفاصيل المرتجع، بدون مستمع Firestore إضافي.
+class _CustomerReturnReason extends StatefulWidget {
+  const _CustomerReturnReason({required this.issueId});
+  final String issueId;
+
+  @override
+  State<_CustomerReturnReason> createState() => _CustomerReturnReasonState();
+}
+
+class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
+  late Future<DocumentSnapshot<Map<String, dynamic>>> _issue;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _issue = FirebaseFirestore.instance
+        .collection('delivery_issues')
+        .doc(widget.issueId)
+        .get();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CustomerReturnReason oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.issueId != widget.issueId) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const reasons = <String, String>{
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'عدم توفر قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: _issue,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        if (data == null) return const SizedBox.shrink();
+        final status = (data['status'] ?? '').toString();
+        final title = status == 'store_confirmed_return'
+            ? 'تم تأكيد رجوع الطلب للمحل'
+            : status == 'returned_to_store'
+                ? 'المندوب رجّع الطلب — بانتظار تأكيد المحل'
+                : 'تعذر التسليم — جارٍ إرجاع الطلب للمحل';
+        final reason = reasons[(data['reason'] ?? '').toString()] ?? 'تعذر التسليم';
+        final note = (data['note'] ?? '').toString().trim();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('السبب: $reason'),
+                if (note.isNotEmpty) Text('التفاصيل: $note'),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
