@@ -461,7 +461,7 @@ class StaffOrderService {
     await ref.update({'courierArrivedAt': FieldValue.serverTimestamp()});
   }
 
-  /// تسجيل تعذر تسليم بعد الوصول ومحاولة التواصل. يظل الطلب في الطريق حتى قرار الإدارة.
+  /// تسجيل تعذر التسليم بعد الوصول: يبدأ الرجوع للمحل مباشرة دون انتظار الإدارة.
   static Future<String> reportDeliveryIssue(
     AppOrder order, {
     required String reason,
@@ -508,16 +508,26 @@ class StaffOrderService {
       'reason': reason,
       'note': cleanNote,
       'contactAttempted': true,
-      'status': 'open',
+      'status': 'return_to_store',
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.update(orderRef, {'activeDeliveryIssueId': issueRef.id});
     await batch.commit();
+    const reasonLabels = <String, String>{
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'عدم توفر قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    final reasonText = reasonLabels[reason] ?? 'تعذر التسليم';
     await _notify(
       order.userId,
-      'تعذر تسليم طلبك',
-      'المندوب وصل للعنوان ولم تكتمل عملية التسليم. الإدارة تراجع الموقف وستتواصل معك.',
+      'تعذر تسليم طلبك — جارٍ إرجاعه للمحل',
+      'السبب: $reasonText.${cleanNote.isEmpty ? '' : ' التفاصيل: $cleanNote'}',
       order.id,
     );
     return issueRef.id;
@@ -608,6 +618,12 @@ class StaffOrderService {
       'storeReceivedAt': FieldValue.serverTimestamp(),
       'storeReceivedBy': uid,
     });
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'تم استلام مرتجع طلبك في المحل',
+      'أكد المحل استلام الطلب المرتجع. يمكنك مراجعة السبب في تفاصيل الطلب.',
+      orderId,
+    );
   }
 
   /// المندوب يؤكد رجوع الطلب للمحل بعد قرار الإدارة.
@@ -629,6 +645,12 @@ class StaffOrderService {
       'returnedAt': FieldValue.serverTimestamp(),
       'returnedBy': uid,
     });
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'المندوب رجّع الطلب للمحل',
+      'تم تسجيل إرجاع طلبك للمحل، وبانتظار تأكيد المحل للاستلام.',
+      orderId,
+    );
   }
 
   /// المحل بيعلّم أصناف «غير متاحة» على طلب جديد (أو بيشيل العلامة لو [names] فاضية).

@@ -749,7 +749,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     controlAffinity: ListTileControlAffinity.leading,
                   ),
                   const Text(
-                    'الطلب سيظل في عهدتك وفي حالة «في الطريق» حتى تراجع الإدارة البلاغ وتحدد إعادة المحاولة أو الإرجاع.',
+                    'بعد تسجيل السبب تقدر ترجع الطلب للمحل مباشرة، والمحل يؤكد استلامه.',
                     style: TextStyle(fontSize: 11.5, color: Colors.black54),
                   ),
                 ],
@@ -767,7 +767,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                           (reason: reason, note: note.text.trim()),
                         )
                     : null,
-                child: const Text('إرسال البلاغ'),
+                child: const Text('ابدأ إرجاع الطلب'),
               ),
             ],
           ),
@@ -786,7 +786,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         contactAttempted: true,
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم إرسال البلاغ للإدارة. انتظر القرار قبل إكمال التسليم.')),
+        const SnackBar(content: Text('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.')),
       );
     } catch (error) {
       messenger.showSnackBar(
@@ -802,10 +802,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       stream: StaffOrderService.watchDeliveryIssue(order.activeDeliveryIssueId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const Text('تعذر تحميل قرار الإدارة بشأن البلاغ.');
+          return const Text('تعذر تحميل حالة إرجاع الطلب.');
         }
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Text('بلاغ تعذر التسليم قيد المراجعة.');
+          return const Text('جارٍ تحميل حالة إرجاع الطلب.');
         }
         final data = snapshot.data!.data() ?? const <String, dynamic>{};
         final status = (data['status'] ?? 'open').toString();
@@ -845,7 +845,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(decision.isEmpty ? 'الإدارة طلبت إرجاع الطلب للمحل.' : decision),
+              Text(decision.isEmpty ? 'ارجع الطلب للمحل ثم أكد الإرجاع.' : decision),
               const SizedBox(height: 8),
               FilledButton.tonalIcon(
                 onPressed: _busy

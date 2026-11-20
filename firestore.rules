@@ -742,7 +742,7 @@ service cloud.firestore {
         let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
         return d.get('orderId', '') == orderId &&
           d.get('courierId', '') == request.auth.uid &&
-          d.get('status', '') == 'open';
+          d.get('status', '') in ['open', 'return_to_store'];
       }
       function issueResumedOk(id) {
         let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
@@ -1257,7 +1257,7 @@ service cloud.firestore {
         d.reason in ['no_answer', 'wrong_address', 'refused_order', 'no_cash',
                      'customer_requested_delay', 'unsafe_location', 'other'] &&
         d.note is string && d.note.size() <= 300 &&
-        d.contactAttempted == true && d.status == 'open' &&
+        d.contactAttempted == true && d.status in ['open', 'return_to_store'] &&
         d.createdBy == request.auth.uid && d.createdAt == request.time &&
         order != null &&
         order.get('status', '') == 'on_the_way' &&
