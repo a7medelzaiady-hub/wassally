@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +9,10 @@ import 'read_meter.dart';
 
 class CatalogService {
   const CatalogService._();
+
+  /// الرفض بسبب حد السرعة بيرجع permission-denied؛ نعيد المحاولة مرة بعد المهلة.
+  /// (صلاحيات ناقصة فعلًا هتترفض تاني وخلاص: إعادة واحدة بس، من غير تكرار.)
+  static bool shouldRetryBump(String code) => code == 'permission-denied';
 
   static DocumentReference<Map<String, dynamic>> get _ref =>
       FirebaseFirestore.instance.collection('app_info').doc('catalog');
@@ -142,12 +148,27 @@ class CatalogService {
   }
 
   /// تحديث إصدار الكتالوج بعد أي إضافة أو تعديل أو حذف.
-  static Future<void> bump() async {
+  /// القواعد بتسمح لصاحب المحل بزيادة واحدة كل 60 ثانية. لو اتنين تعديلات ورا بعض،
+  /// التانية بتترفض، فبنعيد المحاولة مرة واحدة بعد المهلة عشان العملاء يشوفوا آخر تعديل.
+  static const bumpRetryDelay = Duration(seconds: 65);
+  static Timer? _retryBump;
+
+  static Future<void> bump({bool isRetry = false}) async {
     try {
       await _ref.set({
         'version': FieldValue.increment(1),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      _retryBump?.cancel();
+      _retryBump = null;
+    } on FirebaseException catch (e) {
+      debugPrint('Catalog bump failed: ${e.code}');
+      if (!isRetry && shouldRetryBump(e.code)) {
+        _retryBump ??= Timer(bumpRetryDelay, () {
+          _retryBump = null;
+          bump(isRetry: true);
+        });
+      }
     } catch (e) {
       debugPrint('Catalog bump failed: $e');
     }

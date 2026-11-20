@@ -841,11 +841,34 @@ test('owner: يرفع نسخة الكتالوج +1 فقط، والعميل لا'
 test('catalog: صاحب المحل يزود الإصدار خطوة واحدة فقط، بدون تزوير وقت التحديث', async () => {
   const ref = doc(as('owner1'), 'app_info/catalog');
   await assertSucceeds(setDoc(ref, { version: 1, updatedAt: serverTimestamp() }));
+  // آخر زيادة من دقايق: الزيادة الجاية مسموحة
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 1, updatedAt: new Date(Date.now() - 5 * 60 * 1000) }));
   await assertSucceeds(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp() }));
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 2, updatedAt: new Date(Date.now() - 5 * 60 * 1000) }));
   await assertFails(updateDoc(ref, { version: 999999, updatedAt: serverTimestamp() }));
   await assertFails(updateDoc(ref, { version: 2, updatedAt: serverTimestamp() }));
   await assertFails(updateDoc(ref, { version: increment(1), updatedAt: new Date('2020-01-01') }));
   await assertFails(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp(), injected: true }));
+});
+
+test('catalog: حد سرعة لأصحاب المحلات (زيادة كل 60 ثانية)، والمدير بلا حد', async () => {
+  const old = new Date(Date.now() - 2 * 60 * 1000);
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 10, updatedAt: old }));
+  const bump = (uid) => updateDoc(doc(as(uid), 'app_info/catalog'), { version: increment(1), updatedAt: serverTimestamp() });
+  await assertSucceeds(bump('owner1'));
+  // زيادة تانية فورًا مرفوضة (حتى من صاحب محل تاني)
+  await assertFails(bump('owner1'));
+  await assertFails(bump('owner2'));
+  // المدير مش عليه حد
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'app_info/catalog'), { version: 12, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'app_info/catalog'), { version: 13, updatedAt: serverTimestamp() }));
+  // مستند قديم من غير updatedAt: أول زيادة مسموحة
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 20 }));
+  await assertSucceeds(bump('owner1'));
 });
 
 test('owner: يبعت إشعار للعميل، وما يكتبش في storeOwners أو admins', async () => {

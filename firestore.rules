@@ -1085,7 +1085,10 @@ service cloud.firestore {
           (resource == null
             ? request.resource.data.version == 1
             : (resource.data.get('version', 0) is number &&
-               request.resource.data.version == resource.data.get('version', 0) + 1)));
+               request.resource.data.version == resource.data.get('version', 0) + 1 &&
+               // حد سرعة: زيادة واحدة كل 60 ثانية من أصحاب المحلات (المدير بلا حد)،
+               // عشان صاحب محل ما يستهلكش حصة الكتابة اليومية على Spark بزيادات متكررة.
+               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's'))));
       allow create: if doc == 'catalog_versions' &&
         catalogVersionsWriteOk({}, request.resource.data);
       allow update: if doc == 'catalog_versions' &&
