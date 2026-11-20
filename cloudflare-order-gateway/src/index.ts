@@ -1240,6 +1240,9 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (store.active !== undefined && store.active !== true) {
     throw new HttpError(409, "المحل مغلق حاليًا.");
   }
+  if (store.isOpen === false) {
+    throw new HttpError(409, "المحل مغلق الآن. جرّب بعد شوية.", "store_closed");
+  }
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : null;
   if (isCustomerRestricted(restriction)) {
     throw new HttpError(403, "حسابك مقيّد مؤقتًا أو بيانات التقييد غير مكتملة. راجع الدعم.");

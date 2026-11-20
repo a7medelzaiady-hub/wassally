@@ -1364,6 +1364,12 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _add(BuildContext context, Product p, {int qty = 1}) async {
+    if (!store.isOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('المحل مغلق الآن. تقدر تتفرج على الأصناف وتطلب لما يفتح.'),
+      ));
+      return;
+    }
     if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
 
     final startNew = await showDialog<bool>(
@@ -1401,7 +1407,26 @@ class _StorePageState extends State<StorePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: _body(),
+      body: store.isOpen
+          ? _body()
+          : Column(
+              children: [
+                Expanded(child: _body()),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    color: kDanger.withValues(alpha: 0.08),
+                    child: Text(
+                      'المحل مغلق الآن ومش بيستقبل طلبات. تقدر تتفرج على الأصناف.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: kDanger, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
       bottomNavigationBar: ListenableBuilder(
         listenable: cart,
         builder: (context, _) {

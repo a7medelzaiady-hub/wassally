@@ -447,7 +447,9 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
     }
   }
 
-  Future<void> _setActive(bool value) async {
+  /// فتح/غلق المحل. المغلق بيفضل ظاهر للعملاء ومكتوب عليه «مغلق الآن» ومايستقبلش طلبات.
+  /// (الإخفاء الكامل من الإدارة بس.)
+  Future<void> _setOpen(bool value) async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
@@ -455,8 +457,8 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.storeId)
-          .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
-      final indexed = await CatalogSync.storeChanged(widget.storeId, adding: value);
+          .update({'isOpen': value, 'updatedAt': FieldValue.serverTimestamp()});
+      final indexed = await CatalogSync.storeChanged(widget.storeId);
       await CatalogService.bump();
       if (!indexed) {
         await CatalogSync.markIndexPending(widget.storeId);
@@ -493,6 +495,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
         }
         if (data == null) return const SizedBox(height: 56);
         final active = (data['active'] as bool?) ?? true;
+        final isOpen = (data['isOpen'] as bool?) ?? true;
         final shopName = (data['name'] ?? 'المحل').toString();
         final shopImage = (data['imageUrl'] ?? data['image'] ?? '').toString();
         return Container(
@@ -566,11 +569,13 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                           ),
                         ),
                         Text(
-                          active
-                              ? 'المحل مفتوح ويستقبل طلبات'
-                              : 'المحل مقفول أو بانتظار تفعيل الإدارة',
+                          !active
+                              ? 'المحل مخفي أو بانتظار تفعيل الإدارة'
+                              : isOpen
+                                  ? 'المحل مفتوح ويستقبل طلبات'
+                                  : 'المحل مغلق الآن (ظاهر للعملاء ومش بيستقبل طلبات)',
                           style: TextStyle(
-                            color: active ? kSuccess : kDanger,
+                            color: active && isOpen ? kSuccess : kDanger,
                             fontWeight: FontWeight.w700,
                             fontSize: 12.5,
                           ),
@@ -585,8 +590,8 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                     ),
                   ),
                   Switch(
-                    value: active,
-                    onChanged: _busy || !active ? null : _setActive,
+                    value: active && isOpen,
+                    onChanged: _busy || !active ? null : _setOpen,
                   ),
                 ],
               ),

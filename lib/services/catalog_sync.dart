@@ -259,7 +259,7 @@ class CatalogSync {
   static const List<String> indexKeys = [
     'name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
     'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
-    'products', 'minOrder', 'minimumOrder', 'hl',
+    'products', 'minOrder', 'minimumOrder', 'hl', 'isOpen',
   ];
 
   @visibleForTesting
