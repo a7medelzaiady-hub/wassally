@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
 
 import '../services/admin_inbox_counts.dart';
+import '../services/notifications_query.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/role_request_service.dart';
@@ -487,6 +488,7 @@ class _ApplicantsTab extends StatefulWidget {
 }
 
 class _ApplicantsTabState extends State<_ApplicantsTab> {
+  bool _unorderedFallback = false;
   static const int _pageSize = 100;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _moreDocs = [];
   bool _loadingMore = false;
@@ -501,6 +503,11 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
         : (firstPage.isNotEmpty ? firstPage.last : null);
     if (cursor == null) return;
     setState(() => _loadingMore = true);
+    // من غير الفهرس مفيش صفحات تانية مرتبة؛ أول 100 بس.
+    if (_unorderedFallback) {
+      setState(() => _hasMore = false);
+      return;
+    }
     try {
       final page = await FirebaseFirestore.instance
           .collectionGroup('applicants')
@@ -525,11 +532,24 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       // أول 100 تقديم تظل لحظية؛ الصفحات التالية تُقرأ مرة واحدة عند الطلب.
-      stream: FirebaseFirestore.instance
-          .collectionGroup('applicants')
-          .orderBy('createdAt', descending: true)
-          .limit(_pageSize)
-          .snapshots(),
+      // الاستعلام المرتّب محتاج فهرس collection group على createdAt (متعرّف في
+      // firestore.indexes.json). لحد ما يتنشر: نفس الاستعلام من غير ترتيب وبنفس الحد،
+      // والترتيب بيحصل هنا (من غير مستمع زيادة).
+      stream: withIndexFallback(
+        FirebaseFirestore.instance
+            .collectionGroup('applicants')
+            .orderBy('createdAt', descending: true)
+            .limit(_pageSize)
+            .snapshots(),
+        () {
+          _unorderedFallback = true;
+          return FirebaseFirestore.instance
+              .collectionGroup('applicants')
+              .limit(_pageSize)
+              .snapshots();
+        },
+        label: 'applicants',
+      ),
       builder: (context, snap) {
         if (snap.hasError) {
           return EmptyState(
