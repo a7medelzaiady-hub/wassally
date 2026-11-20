@@ -425,9 +425,14 @@ class _Details extends StatelessWidget {
           ),
         ),
 
-        if (order.activeDeliveryIssueId.isNotEmpty) ...[
+        if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
           const SizedBox(height: 12),
-          _CustomerReturnReason(issueId: order.activeDeliveryIssueId),
+          _CustomerReturnReason(
+            key: ValueKey(order.activeDeliveryIssueId.isNotEmpty
+                ? order.activeDeliveryIssueId : order.lastDeliveryIssueId),
+            issueId: order.activeDeliveryIssueId.isNotEmpty
+                ? order.activeDeliveryIssueId : order.lastDeliveryIssueId,
+          ),
         ],
 
         // 🛵 كارت المندوب مع التقييم
