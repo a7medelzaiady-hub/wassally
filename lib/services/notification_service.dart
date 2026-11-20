@@ -9,7 +9,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
-import 'navigation.dart' show rootNavigatorKey;
+import '../models/app_role.dart';
+import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
@@ -219,6 +220,13 @@ class NotificationService {
     }
     // إشعارات الشات القديمة (support_chat) اتشالت: الدعم بقى على واتساب.
     if (type == 'support_chat') return;
+    if (type == 'available_order') {
+      // This is an unassigned order. Couriers may view the available-order
+      // queue, but not the private order details until assigned.
+      // RoleGate only activates panels held by the signed-in user.
+      activePanel.value = AppRole.courier;
+      return;
+    }
     _openOrder(message);
   }
 
