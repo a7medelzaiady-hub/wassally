@@ -155,6 +155,21 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
     }
   }
 
+  /// فتح/غلق المحل (منفصل عن الإخفاء): المغلق بيفضل ظاهر للعملاء ومكتوب عليه «مغلق الآن».
+  Future<void> _toggleOpen(String id, bool open) async {
+    try {
+      await _stores.doc(id).update({
+        'isOpen': open,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await CatalogSync.storeChanged(id);
+      await CatalogService.bump();
+      _say(open ? 'المحل اتفتح.' : 'المحل اتقفل (ظاهر للعملاء ومكتوب عليه مغلق الآن).');
+    } catch (e) {
+      _say(_errorText(e));
+    }
+  }
+
   Future<void> _toggle(String id, bool active) async {
     try {
       final storeRef = _stores.doc(id);
@@ -330,7 +345,8 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                         onTap: () => _open(doc.id, data, nextOrder),
                         title: Text((data['name'] ?? '').toString()),
                         subtitle: Text(
-                          '${data['category'] ?? ''} • $count صنف',
+                          '${data['category'] ?? ''} • $count صنف\n'
+                          '${storeVisibilityLabel(data)}',
                         ),
                         leading: AppImage(
                           url: _storeImage(data),
@@ -363,9 +379,27 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                                       (data['name'] ?? '').toString(),
                                     ),
                             ),
-                            Switch(
-                              value: (data['active'] as bool?) ?? true,
-                              onChanged: (value) => _toggle(doc.id, value),
+                            IconButton(
+                              tooltip: ((data['isOpen'] as bool?) ?? true)
+                                  ? 'غلق المحل (يفضل ظاهر)'
+                                  : 'فتح المحل',
+                              color: ((data['isOpen'] as bool?) ?? true)
+                                  ? kSuccess
+                                  : kDanger,
+                              icon: Icon(((data['isOpen'] as bool?) ?? true)
+                                  ? Icons.lock_open_rounded
+                                  : Icons.lock_rounded),
+                              onPressed: () => _toggleOpen(
+                                doc.id,
+                                !((data['isOpen'] as bool?) ?? true),
+                              ),
+                            ),
+                            Tooltip(
+                              message: 'إظهار/إخفاء المحل للعملاء',
+                              child: Switch(
+                                value: (data['active'] as bool?) ?? true,
+                                onChanged: (value) => _toggle(doc.id, value),
+                              ),
                             ),
                           ],
                         ),
@@ -1564,4 +1598,13 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       ],
     );
   }
+}
+
+
+/// حالة المحل في قائمة الإدارة: ظاهر/مخفي، ومفتوح/مغلق.
+String storeVisibilityLabel(Map<String, dynamic> data) {
+  final visible = (data['active'] as bool?) ?? true;
+  final open = (data['isOpen'] as bool?) ?? true;
+  if (!visible) return 'مخفي عن العملاء';
+  return open ? 'ظاهر • مفتوح' : 'ظاهر • مغلق الآن';
 }

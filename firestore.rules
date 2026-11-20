@@ -117,13 +117,13 @@ service cloud.firestore {
       return e is map &&
         e.keys().hasOnly(['name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
                           'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
-                          'products', 'minOrder', 'minimumOrder', 'hl']) &&
+                          'products', 'minOrder', 'minimumOrder', 'hl', 'isOpen']) &&
         e.get('active', false) == true && st.get('active', false) == true &&
         d.addedKeys().hasOnly(free) &&
         d.changedKeys().hasOnly(free) &&
         !d.removedKeys().hasAny(['name', 'category', 'icon', 'color', 'storePhone',
                                  'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
-                                 'products', 'minOrder', 'minimumOrder']) &&
+                                 'products', 'minOrder', 'minimumOrder', 'isOpen']) &&
         e.get('imageUrl', null) == st.get('imageUrl', st.get('image', null)) &&
         e.get('hl', '') is string && e.get('hl', '').size() <= 1400;
     }
@@ -315,7 +315,9 @@ service cloud.firestore {
     function eligibleStoreForOrder(d) {
       return d.storeId is string && d.storeId.size() > 0 &&
         exists(/databases/$(database)/documents/stores/$(d.storeId)) &&
-        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true;
+        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true &&
+        // المحل المغلق (isOpen=false) بيظهر للعميل بس مايستقبلش طلبات.
+        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('isOpen', true) != false;
     }
 
     // فاصل بين طلبين من نفس العميل (يتفعّل بمفتاح orderRateLimit). التطبيق بيكتب orderLimits/{uid}.lastAt
@@ -553,10 +555,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
       allow update: if isAdmin() ||
         (isStoreOwner(storeId) &&
-          changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
+          changedKeys().hasOnly(['active', 'isOpen', 'time', 'image', 'imageUrl',
                                  'productCount', 'offerItems', 'bestItems',
                                  'updatedAt']) &&
           request.resource.data.get('active', true) is bool &&
+          // فتح/غلق المحل: صاحب المحل يقدر يغيّره في الاتجاهين.
+          request.resource.data.get('isOpen', true) is bool &&
           (!('active' in changedKeys()) || request.resource.data.active == false) &&
           request.resource.data.get('time', '') is string &&
           request.resource.data.get('time', '').size() <= 60 &&

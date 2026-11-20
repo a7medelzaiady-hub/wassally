@@ -8,6 +8,7 @@ import '../services/catalog_sync.dart';
 import '../theme/brand.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
+import '../widgets/closed_badge.dart';
 
 /// دليل المحلات: قائمة رأسية مريحة، مع الاحتفاظ بنفس بيانات كتالوج المحلات.
 class StoreDirectoryPage extends StatefulWidget {
@@ -168,8 +169,16 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                                          Row(children: [
+                                            Flexible(
+                                              child: Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                                            ),
+                                            if (!store.isOpen) ...[
+                                              const SizedBox(width: 6),
+                                              const ClosedBadge(),
+                                            ],
+                                          ]),
                                           const SizedBox(height: 7),
                                           Row(children: [
                                             const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 19),

@@ -785,6 +785,30 @@ test('owner: يعدّل حقول التشغيل في محله فقط', async () 
   await assertFails(setDoc(doc(db, 'stores/newShop'), { name: 'x', active: true, time: '1' }));
 });
 
+test('owner: يفتح ويقفل محله (isOpen) في الاتجاهين، والمغلق ما يستقبلش طلبات', async () => {
+  const db = as('owner1');
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { isOpen: false, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db, 'stores/shop1'), { isOpen: 'no' }));
+  await assertFails(updateDoc(doc(db, 'stores/shop2'), { isOpen: false }));
+  // المحل لسه ظاهر للعميل
+  await assertSucceeds(getDoc(doc(as('cust1'), 'stores/shop1')));
+  // طلب جديد على محل مغلق مرفوض
+  await assertFails(setDoc(doc(as('cust1'), 'orders/closed1'), baseOrder('cust1')));
+  // صاحب المحل يرجّع يفتحه، والطلب يعدّي
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { isOpen: true, updatedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/open1'), baseOrder('cust1')));
+});
+
+test('catalog store_index: خانة المحل لازم تطابق isOpen في مستند المحل', async () => {
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'stores/shop1'), { isOpen: false }));
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, isOpen: false } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: true } }, { merge: true }));
+  // merge بيدمج جوه الخانة، فعشان نجرّب خانة من غير isOpen لازم نشيله صراحة.
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: deleteField() } }, { merge: true }));
+});
+
 test('owner: يضيف ويعدّل ويحذف أصناف محله فقط، وبحقول سليمة', async () => {
   const db = as('owner1');
   const p = { name: 'صنف', price: 25, image: '', isAvailable: true, available: true, createdAt: serverTimestamp() };

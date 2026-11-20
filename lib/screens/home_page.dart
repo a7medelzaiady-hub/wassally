@@ -31,6 +31,7 @@ import '../widgets/promo_banners.dart';
 import 'notifications_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
+import '../widgets/closed_badge.dart';
 
 const Map<String, String> kCategoryPhotos = {
   'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
@@ -1229,14 +1230,16 @@ class _HomePageState extends State<HomePage>
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          item.store.name,
+                          item.store.isOpen
+                              ? item.store.name
+                              : '${item.store.name} • ${ClosedBadge.label}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: Brand.ink,
+                            color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
                         ),
                       ],
