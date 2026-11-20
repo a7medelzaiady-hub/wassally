@@ -1193,7 +1193,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
-          ] else if (next != null) ...[
+          ] else if (showsPickupButton(o)) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -1305,3 +1305,11 @@ class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
     );
   }
 }
+
+
+/// زرار «استلمت من المحل، في الطريق» بيظهر بس لما الخطوة الجاية فعلًا هي بدء التوصيل.
+/// (كان بيظهر كمان لطلب في الطريق العميل أكّد استلامه ومستني تسوية النقدية مع المحل.)
+bool showsPickupButton(AppOrder o) =>
+    o.status.courierNext == OrderStatus.onTheWay &&
+    !o.status.courierMustWait &&
+    (!kCourierWaitsForReady || o.ready);
