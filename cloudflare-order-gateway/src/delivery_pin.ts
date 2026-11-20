@@ -1,6 +1,31 @@
 /** Secure 4-digit delivery PIN primitives. Never expose a PIN or its digest in courier-readable order data. */
 const encoder = new TextEncoder();
 
+/**
+ * رمز التسليم مشتق من رقم الطلب ومفتاح سري على الـWorker بس (HMAC-SHA256)،
+ * فمش بيتخزن في Firestore خالص والمندوب ما يقدرش يوصله. نفس الطلب = نفس الرمز.
+ * (انحياز الـmod على 2^32 أقل من 2 في المليون، ومهمل لرمز 4 أرقام.)
+ */
+export async function deriveDeliveryPin(orderId: string, secret: string): Promise<string> {
+  if (!orderId || !secret) throw new Error("Invalid PIN derivation input");
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const mac = new Uint8Array(await crypto.subtle.sign(
+    "HMAC", key, encoder.encode("delivery-pin:v1:" + orderId),
+  ));
+  const value = ((mac[0] << 24) >>> 0) + (mac[1] << 16) + (mac[2] << 8) + mac[3];
+  return String(value % 10000).padStart(4, "0");
+}
+
+/** مقارنة ثابتة الوقت لرمزين من 4 أرقام. */
+export function equalPin(left: unknown, right: unknown): boolean {
+  if (!isDeliveryPin(left) || !isDeliveryPin(right)) return false;
+  let diff = 0;
+  for (let i = 0; i < 4; i++) diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  return diff === 0;
+}
+
 export function generateDeliveryPin(): string {
   const bytes = new Uint32Array(1);
   // Rejection sampling avoids modulo bias.

@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import { DELIVERY_PIN_MAX_ATTEMPTS, deriveDeliveryPin, equalPin, isDeliveryPin } from "./delivery_pin";
 
 interface Env {
   FIREBASE_PROJECT_ID: string;
@@ -18,6 +19,8 @@ interface Env {
   APP_CHECK_MODE?: string;
   // رقم مشروع Firebase (Project number) المطلوب للتحقق من رموز App Check.
   FIREBASE_PROJECT_NUMBER?: string;
+  // سر اشتقاق رمز التسليم (secret في Cloudflare، مش في wrangler.toml). من غيره ميزة الرمز متوقفة.
+  DELIVERY_PIN_SECRET?: string;
 }
 
 type JsonMap = Record<string, unknown>;
@@ -1877,6 +1880,23 @@ export default {
         ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
         : "";
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
+    const pinMatch = url.pathname.match(/^\/v1\/orders\/([^/]+)\/(delivery-pin|deliver)$/);
+    if (pinMatch) {
+      try {
+        const id = decodeURIComponent(pinMatch[1]);
+        const result = pinMatch[2] === "delivery-pin" && request.method === "GET"
+          ? await getDeliveryPin(request, env, id)
+          : pinMatch[2] === "deliver" && request.method === "POST"
+            ? await deliverWithPin(request, env, id)
+            : response({ error: "Not found." }, 404);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      }
+    }
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
     if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
@@ -1900,6 +1920,174 @@ export default {
     }
   },
 };
+
+// ───────────── رمز التسليم ─────────────
+
+const PIN_DISABLED = "خدمة رمز التسليم غير مفعّلة حاليًا. تواصل مع الدعم.";
+
+/** سبب منع المندوب من تأكيد التسليم، أو null لو مسموح. (نفس شروط بلاغ التسليم القديم.) */
+export function courierDeliveryBlocker(order: JsonMap, uid: string): string | null {
+  if (order.courierId !== uid) return "الطلب غير معيّن لحسابك.";
+  if (order.status !== "on_the_way") return "لازم يكون الطلب «في الطريق».";
+  if (order.ready !== true) return "المحل لم يؤكد جاهزية الطلب بعد.";
+  if (!(order.courierArrivedAt instanceof Date)) return "سجّل وصولك إلى عنوان العميل أولًا.";
+  if (typeof order.activeDeliveryIssueId === "string" && order.activeDeliveryIssueId) {
+    return "يوجد بلاغ توصيل مفتوح لهذا الطلب.";
+  }
+  if (order.customerConfirmedAt instanceof Date) return "تم تأكيد تسليم هذا الطلب بالفعل.";
+  if (order.deliveryMode !== "store" && order.deliveryMode !== "external") {
+    return "نوع المندوب غير محدد على الطلب.";
+  }
+  return null;
+}
+
+/** الحقول اللي بتتكتب على الطلب لما الرمز يطلع صح (نفس اللي كان بيكتبه تأكيد العميل). */
+export function pinDeliveryUpdate(order: JsonMap, uid: string, now: Date): JsonMap {
+  const base: JsonMap = {
+    customerDeliveryReportedAt: now,
+    customerDeliveryReportedBy: uid,
+    customerConfirmedAt: now,
+    deliveryPinVerifiedAt: now,
+  };
+  if (order.deliveryMode !== "store") return base;
+  const fee = typeof order.finalDeliveryFee === "number" ? order.finalDeliveryFee : Number(order.deliveryFee);
+  const total = typeof order.verifiedTotal === "number" ? order.verifiedTotal : Number(order.total);
+  return {
+    ...base,
+    status: "delivered",
+    deliveredBy: uid,
+    deliveredAt: now,
+    collectedAmount: total,
+    courierEarning: fee,
+  };
+}
+
+function docName(env: Env, path: string): string {
+  return `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+async function commitOrConflict(env: Env, token: string, writes: unknown[]): Promise<void> {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes }),
+    },
+  );
+  if (res.status === 409 || res.status === 400) {
+    throw new HttpError(409, "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.", "conflict");
+  }
+  if (!res.ok) throw new HttpError(503, "تعذر الحفظ؛ حاول مرة أخرى.");
+}
+
+/** العميل بيجيب رمز تسليم طلبه وهو «في الطريق». */
+async function getDeliveryPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  const token = await googleAccessToken(env);
+  const doc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(doc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
+  if (order.status !== "on_the_way" || order.customerConfirmedAt instanceof Date) {
+    throw new HttpError(409, "الرمز بيظهر لما الطلب يكون في الطريق.", "pin_not_available");
+  }
+  return response({ pin: await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET) });
+}
+
+/** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
+async function deliverWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  if (!isDeliveryPin(body?.pin)) throw new HttpError(400, "اكتب رمز من 4 أرقام.", "pin_invalid");
+
+  const token = await googleAccessToken(env);
+  const orderPath = `orders/${encodeURIComponent(orderId)}`;
+  const attemptsPath = `deliveryPinAttempts/${encodeURIComponent(orderId)}`;
+  const [orderDoc, courierDoc, attemptsDoc] = await Promise.all([
+    getDocument(env, orderPath, token),
+    getDocument(env, `couriers/${encodeURIComponent(uid)}`, token),
+    getDocument(env, attemptsPath, token),
+  ]);
+  if (!courierDoc) throw new HttpError(403, "حساب المندوب غير معتمد.");
+  const courier = decodeFields(courierDoc.fields ?? {});
+  if (courier.active !== undefined && courier.active !== true) {
+    throw new HttpError(403, "حساب المندوب غير نشط. راجع الإدارة.");
+  }
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const blocker = courierDeliveryBlocker(order, uid);
+  if (blocker) throw new HttpError(409, blocker, "not_deliverable");
+
+  const prev = attemptsDoc ? decodeFields(attemptsDoc.fields ?? {}) : {};
+  const attempts = Number.isSafeInteger(prev.attempts) ? Number(prev.attempts) : 0;
+  if (prev.locked === true || attempts >= DELIVERY_PIN_MAX_ATTEMPTS) {
+    throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+  }
+  const attemptsPrecondition = attemptsDoc?.updateTime
+    ? { updateTime: attemptsDoc.updateTime }
+    : { exists: false };
+  const orderPrecondition = orderDoc.updateTime ? { updateTime: orderDoc.updateTime } : { exists: true };
+  const expected = await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET);
+
+  if (!equalPin(body.pin, expected)) {
+    const next = attempts + 1;
+    const locked = next >= DELIVERY_PIN_MAX_ATTEMPTS;
+    const writes: unknown[] = [{
+      update: { name: docName(env, attemptsPath), fields: encodeFields({ attempts: next, locked, orderId }) },
+      updateTransforms: [{ fieldPath: "updatedAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: attemptsPrecondition,
+    }];
+    if (locked) {
+      // علامة على الطلب عشان الإدارة تشوفه (الرمز نفسه مش بيتخزن).
+      writes.push({
+        // mask فاضي: مفيش حقل بيتمسح أو يتغيّر غير الطابع الزمني اللي بيتحط بالـtransform.
+        update: { name: docName(env, orderPath), fields: {} },
+        updateMask: { fieldPaths: [] },
+        updateTransforms: [{ fieldPath: "deliveryPinLockedAt", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: orderPrecondition,
+      });
+    }
+    await commitOrConflict(env, token, writes);
+    if (locked) {
+      throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+    }
+    const left = DELIVERY_PIN_MAX_ATTEMPTS - next;
+    throw new HttpError(400, `الرمز غلط. فاضل ${left} محاولات.`, "pin_wrong");
+  }
+
+  const now = new Date();
+  const update = pinDeliveryUpdate(order, uid, now);
+  const stampFields = Object.keys(update).filter((k) => update[k] instanceof Date);
+  const plain: JsonMap = {};
+  for (const [k, v] of Object.entries(update)) if (!(v instanceof Date)) plain[k] = v;
+  const writes: unknown[] = [{
+    update: { name: docName(env, orderPath), fields: encodeFields(plain) },
+    // الطوابع الزمنية بتتحط بالـtransform (وقت السيرفر)، فمش في الـmask.
+    updateMask: { fieldPaths: Object.keys(plain) },
+    updateTransforms: stampFields.map((fieldPath) => ({ fieldPath, setToServerValue: "REQUEST_TIME" })),
+    currentDocument: orderPrecondition,
+  }];
+  if (update.status === "delivered") {
+    writes.push({
+      update: {
+        name: docName(env, `${orderPath}/statusHistory/delivered`),
+        fields: encodeFields({ from: "on_the_way", to: "delivered", actorUid: uid, actorRole: "courier", via: "pin" }),
+      },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+    });
+  }
+  if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
+  await commitOrConflict(env, token, writes);
+  return response({ delivered: update.status === "delivered", confirmed: true });
+}
 
 export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
   return existingUserId === userId && existingStoreId === storeId;

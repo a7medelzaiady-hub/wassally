@@ -1909,6 +1909,15 @@ test('expression limit: مستخدم واحد بكل الأدوار يمرّ ب�
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
 });
 
+test('deliveryPinAttempts: مفيش قراءة ولا كتابة من التطبيق لأي دور', async () => {
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'deliveryPinAttempts/o1'), { attempts: 2, locked: false }));
+  for (const uid of ['cust1', 'owner1', 'admin1', 'courier1']) {
+    await assertFails(getDoc(doc(as(uid), 'deliveryPinAttempts/o1')));
+    await assertFails(setDoc(doc(as(uid), 'deliveryPinAttempts/o1'), { attempts: 0, locked: false }));
+    await assertFails(deleteDoc(doc(as(uid), 'deliveryPinAttempts/o1')));
+  }
+});
+
 test('orders: مفيش حذف فعلي من التطبيق، والإخفاء للطلبات المنتهية بس', async () => {
   // o1 جديد ومملوك لـ cust1 (من seed)
   await assertFails(deleteDoc(doc(as('cust1'), 'orders/o1')));

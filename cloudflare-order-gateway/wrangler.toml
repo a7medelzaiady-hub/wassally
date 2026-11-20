@@ -17,6 +17,8 @@ MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"
 # الحد اليومي لطلبات العميل الواحد (بتوقيت القاهرة). ممكن يتغير من app_info/delivery_areas.maxOrdersPerDay.
 MAX_ORDERS_PER_DAY = "50"
+# رمز التسليم: سر اسمه DELIVERY_PIN_SECRET لازم يتضاف كـ secret (مش هنا):
+#   npx wrangler secret put DELIVERY_PIN_SECRET   (قيمة عشوائية طويلة، ما تتغيرش بعد التشغيل)
 CLOUDINARY_CLOUD_NAME = "g3n5pdfz"
 # App Check: ابدأ بـ "monitor" وراقب السجلات، وبعد ما تتأكد إن نسخ التطبيق كلها بتبعت الرمز حوّلها "enforce".
 APP_CHECK_MODE = "monitor"

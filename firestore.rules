@@ -1108,6 +1108,11 @@ service cloud.firestore {
       allow read, delete: if false;
     }
 
+    // عدّاد محاولات رمز التسليم: الـWorker بس (حساب الخدمة) بيقرا ويكتب. مفيش وصول من التطبيق.
+    match /deliveryPinAttempts/{orderId} {
+      allow read, write: if false;
+    }
+
     // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
