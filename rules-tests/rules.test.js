@@ -509,6 +509,19 @@ test('notifications: أدمن ينشئ، عميل يقرأ إشعاراته فق
   await assertFails(getDoc(doc(as('cust2'), 'notifications/n1')));
 });
 
+test('notifications: استعلام شاشة الإشعارات (userId + ترتيب createdAt + limit) مسموح لصاحبه ومرفوض لغيره', async () => {
+  const { collection, getDocs, query, where, orderBy, limit } = require('firebase/firestore');
+  const n = { userId: 'cust1', title: 't', body: 'b', orderId: 'o1', read: false, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as('admin1'), 'notifications/n1'), n));
+  const mine = (uid, db) => query(collection(db, 'notifications'), where('userId', '==', uid), orderBy('createdAt', 'desc'), limit(100));
+  const res = await assertSucceeds(getDocs(mine('cust1', as('cust1'))));
+  assert.equal(res.size, 1);
+  // نفس الاستعلام من غير ترتيب (الاستعلام البديل لو الفهرس ناقص) لازم يتقبل برضه
+  await assertSucceeds(getDocs(query(collection(as('cust1'), 'notifications'), where('userId', '==', 'cust1'), limit(100))));
+  // الاستعلام باسم عميل تاني مرفوض
+  await assertFails(getDocs(mine('cust1', as('cust2'))));
+});
+
 async function deliveredWithCourier() {
   await env.withSecurityRulesDisabled((c) =>
     updateDoc(doc(c.firestore(), 'orders/o1'), { status: 'delivered', courierId: 'cour1', pickedUpAt: new Date() }));
