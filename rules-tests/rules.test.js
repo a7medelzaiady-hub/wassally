@@ -1024,6 +1024,48 @@ test('delivery issue: المندوب يبدأ الرجوع للمحل مباشر
   }));
 });
 
+test('المرتجع: تأكيد المحل بيقفل الطلب «ملغي» في نفس الـbatch من غير الإدارة', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const open = writeBatch(courier);
+  open.set(doc(courier, 'delivery_issues/ret2'), deliveryIssueData({ status: 'return_to_store' }));
+  open.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'ret2' });
+  await assertSucceeds(open.commit());
+
+  const storeClose = (uid) => {
+    const db = as(uid);
+    const b = writeBatch(db);
+    b.update(doc(db, 'delivery_issues/ret2'), {
+      status: 'store_confirmed_return', storeReceivedAt: serverTimestamp(), storeReceivedBy: uid,
+    });
+    b.update(doc(db, 'orders/o1'), { status: 'cancelled', activeDeliveryIssueId: deleteField(), lastDeliveryIssueId: 'ret2' });
+    b.set(doc(db, 'orders/o1/statusHistory/cancelled'), {
+      from: 'on_the_way', to: 'cancelled', actorUid: uid, actorRole: 'storeOwner', at: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  // قبل ما المندوب يسجّل إنه رجّعه: ممنوع
+  await assertFails(storeClose('owner1'));
+  await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/ret2'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour1',
+  }));
+  // صاحب محل تاني: ممنوع
+  await assertFails(storeClose('owner2'));
+  // قفل الطلب من غير تحديث البلاغ في نفس الـbatch: ممنوع
+  const db1 = as('owner1');
+  const noIssue = writeBatch(db1);
+  noIssue.update(doc(db1, 'orders/o1'), { status: 'cancelled', activeDeliveryIssueId: deleteField(), lastDeliveryIssueId: 'ret2' });
+  noIssue.set(doc(db1, 'orders/o1/statusHistory/cancelled'), {
+    from: 'on_the_way', to: 'cancelled', actorUid: 'owner1', actorRole: 'storeOwner', at: serverTimestamp(),
+  });
+  await assertFails(noIssue.commit());
+  await assertSucceeds(storeClose('owner1'));
+  const order = (await getDoc(doc(as('admin1'), 'orders/o1'))).data();
+  assert.equal(order.status, 'cancelled');
+  assert.equal(order.lastDeliveryIssueId, 'ret2');
+  assert.equal(order.deliveredBy, undefined);
+});
+
 test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن تغلق الإدارة الطلب', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   const courier = as('cour1');

@@ -840,6 +840,19 @@ service cloud.firestore {
           nd.get('courierAt', null) == request.time &&
           validCourierForOrder(nd.get('courierId', ''), sid, 'store') &&
           !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
+        ) : (k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
+             k.hasAny(['activeDeliveryIssueId', 'lastDeliveryIssueId'])) ? (
+          // المرتجع: المحل يأكد استلامه والطلب يتقفل «ملغي (مرتجع)» في نفس الـbatch، من غير الإدارة.
+          // البلاغ لازم يكون «المندوب رجّعه» قبل الـbatch و«المحل استلمه» بعده.
+          st == 'on_the_way' &&
+          nst == 'cancelled' &&
+          od.get('activeDeliveryIssueId', '') is string &&
+          od.get('activeDeliveryIssueId', '').size() > 0 &&
+          get(/databases/$(database)/documents/delivery_issues/$(od.activeDeliveryIssueId)).data.get('status', '') == 'returned_to_store' &&
+          getAfter(/databases/$(database)/documents/delivery_issues/$(od.activeDeliveryIssueId)).data.get('status', '') == 'store_confirmed_return' &&
+          !('activeDeliveryIssueId' in nd) &&
+          nd.get('lastDeliveryIssueId', '') == od.activeDeliveryIssueId &&
+          historyGate(nd, orderId, k)
         ) : k.hasOnly(closeKeys) ? (
           st == 'on_the_way' &&
           dm == 'external' &&
