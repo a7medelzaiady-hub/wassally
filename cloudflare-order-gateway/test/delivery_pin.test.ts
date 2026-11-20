@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equalHexDigest, generateDeliveryPin, hashDeliveryPin, isDeliveryPin } from "../src/delivery_pin";
+import { canAttemptDeliveryPin, equalHexDigest, generateDeliveryPin, hashDeliveryPin, isDeliveryPin, nextDeliveryPinFailure } from "../src/delivery_pin";
 
 describe("secure delivery PIN primitives", () => {
   it("generates exactly four digits, including possible leading zeros", () => {
@@ -20,5 +20,16 @@ describe("secure delivery PIN primitives", () => {
     expect(equalHexDigest(digest, await hashDeliveryPin("0007", "order-a", "salt-b", "secret-pepper"))).toBe(false);
     expect(equalHexDigest(digest, await hashDeliveryPin("0007", "order-a", "salt-a", "another-pepper"))).toBe(false);
     expect(equalHexDigest("invalid", digest)).toBe(false);
+  });
+  it("locks after five failures and never permits invalid attempt counts", () => {
+    expect(canAttemptDeliveryPin(0, false)).toBe(true);
+    expect(canAttemptDeliveryPin(4, false)).toBe(true);
+    expect(canAttemptDeliveryPin(5, false)).toBe(false);
+    expect(canAttemptDeliveryPin(0, true)).toBe(false);
+    expect(canAttemptDeliveryPin(-1, false)).toBe(false);
+    expect(canAttemptDeliveryPin(NaN, false)).toBe(false);
+    expect(nextDeliveryPinFailure(3)).toEqual({ attempts: 4, locked: false });
+    expect(nextDeliveryPinFailure(4)).toEqual({ attempts: 5, locked: true });
+    expect(nextDeliveryPinFailure(5)).toEqual({ attempts: 5, locked: true });
   });
 });
