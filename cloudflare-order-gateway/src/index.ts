@@ -1760,6 +1760,28 @@ async function cleanupConfirmedOrderAttachments(
   if (!(order.customerConfirmedAt instanceof Date)) {
     throw new HttpError(409, "لا يمكن حذف المرفقات قبل تأكيد العميل استلام الطلب.");
   }
+  return cleanupOrderAttachmentsFor(env, token, doc, uid, orderId);
+}
+
+/** الطلب فيه مرفقات (صورة/صوت) لسه ما اتمسحتش. */
+export function hasPendingAttachments(order: JsonMap): boolean {
+  const special = order.specialRequest;
+  if (!special || typeof special !== "object") return false;
+  const s = special as JsonMap;
+  if (s.cleanupStatus === "deleted") return false;
+  return Boolean(s.imageUrl) || Boolean(s.voiceBase64);
+}
+
+/** مسح مرفقات الطلب (صورة Cloudinary + الصوت) بعد التسليم. [ownerUid] = عميل الطلب. */
+async function cleanupOrderAttachmentsFor(
+  env: Env,
+  token: string,
+  doc: FirestoreDoc,
+  ownerUid: string,
+  orderId: string,
+): Promise<Response> {
+  const uid = ownerUid;
+  const order = decodeFields(doc.fields ?? {});
   const special = order.specialRequest && typeof order.specialRequest === "object"
     ? Object.assign({}, order.specialRequest as JsonMap)
     : null;
@@ -2089,6 +2111,16 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
   }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  // مرفقات الطلب الخاص كانت بتتمسح لما العميل يدوس تأكيد الاستلام؛ دلوقتي بعد الرمز الصحيح.
+  // محاولة واحدة، وفشلها ما يأثرش على التسليم (العميل لما يفتح الطلب بيعيد المحاولة).
+  if (hasPendingAttachments(order) && typeof order.userId === "string") {
+    try {
+      const fresh = await getDocument(env, orderPath, token);
+      if (fresh) await cleanupOrderAttachmentsFor(env, token, fresh, order.userId, orderId);
+    } catch (error) {
+      console.error("Attachment cleanup after PIN delivery failed", error instanceof HttpError ? error.status : "error");
+    }
+  }
   return response({ delivered: update.status === "delivered", confirmed: true });
 }
 

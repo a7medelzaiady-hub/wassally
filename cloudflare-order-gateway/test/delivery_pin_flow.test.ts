@@ -153,6 +153,36 @@ describe("POST /v1/orders/:id/deliver", () => {
     expect(commits[0].writes).toHaveLength(1);
   });
 
+  it("correct PIN also cleans special-request attachments (voice) in the same call", async () => {
+    // specialRequest كـ map محتاج encoding خاص، فبنعمل mock مخصوص هنا.
+    commits = [];
+    const orderFields = {
+      ...fields(onTheWay()),
+      specialRequest: { mapValue: { fields: { text: { stringValue: "x" }, voiceBase64: { stringValue: "AAAA" } } } },
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (resource, init) => {
+      const url = String(resource);
+      if (url.includes("oauth2.googleapis.com/token")) return Response.json({ access_token: "t", expires_in: 3600 });
+      if (url.includes("accounts:lookup")) {
+        const uid = JSON.parse(String(init?.body)).localId[0];
+        return Response.json({ users: [{ localId: uid, validSince: "1", disabled: false }] });
+      }
+      if (url.endsWith("/documents:commit")) { commits.push(JSON.parse(String(init?.body))); return Response.json({ writeResults: [] }); }
+      const path = decodeURIComponent(url.split("/documents/")[1] ?? "");
+      if (path === "orders/o1") return Response.json({ name: prefix + path, fields: orderFields, updateTime: "2026-11-20T10:00:00.000000Z" });
+      if (path === "couriers/courier_1") return Response.json({ name: prefix + path, fields: fields({ active: true }) });
+      return new Response("not found", { status: 404 });
+    });
+    const res = await deliver("courier_1", await deriveDeliveryPin("o1", SECRET));
+    expect(res.status).toBe(200);
+    expect(commits).toHaveLength(2);
+    const cleanup = commits[1].writes[0];
+    expect(cleanup.updateMask).toEqual({ fieldPaths: ["specialRequest"] });
+    const sr = cleanup.update.fields.specialRequest.mapValue.fields;
+    expect(sr.voiceBase64).toBeUndefined();
+    expect(sr.cleanupStatus).toEqual({ stringValue: "deleted" });
+  });
+
   it("wrong PIN: counts the attempt, does not touch the order", async () => {
     firebase({ "orders/o1": onTheWay(), "couriers/courier_1": { active: true }, "deliveryPinAttempts/o1": { attempts: 1 } });
     const res = await deliver("courier_1", wrongOf(await deriveDeliveryPin("o1", SECRET)));
