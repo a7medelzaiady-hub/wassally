@@ -99,7 +99,7 @@ describe("GET /v1/orders/:id/delivery-pin", () => {
     firebase({ "orders/o1": onTheWay() });
     const res = await getPin("cust_1");
     expect(res.status).toBe(200);
-    expect((await res.json()).pin).toBe(await deriveDeliveryPin("o1", SECRET));
+    expect(((await res.json()) as { pin: string }).pin).toBe(await deriveDeliveryPin("o1", SECRET));
   });
   it("never returns the PIN to the courier or another user", async () => {
     firebase({ "orders/o1": onTheWay() });
@@ -110,7 +110,7 @@ describe("GET /v1/orders/:id/delivery-pin", () => {
     firebase({ "orders/o1": onTheWay({ status: "preparing" }) });
     const res = await getPin("cust_1");
     expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe("pin_not_available");
+    expect(((await res.json()) as { code: string }).code).toBe("pin_not_available");
   });
   it("is disabled when the secret is not configured", async () => {
     firebase({ "orders/o1": onTheWay() });
