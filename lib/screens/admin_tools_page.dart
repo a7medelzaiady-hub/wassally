@@ -371,13 +371,41 @@ class AdminAreasPage extends StatefulWidget {
 
 class _AdminAreasPageState extends State<AdminAreasPage> {
   List<DeliveryArea>? _areas;
+  bool _paused = false;
 
   @override
   void initState() {
     super.initState();
     DeliveryService.load(force: true).then((a) {
-      if (mounted) setState(() => _areas = List.of(a));
+      if (mounted) {
+        setState(() {
+          _areas = List.of(a);
+          _paused = DeliveryService.ordersPaused;
+        });
+      }
     });
+  }
+
+  Future<void> _togglePaused(bool paused) async {
+    if (paused) {
+      final ok = await confirmDialog(
+        context,
+        title: 'إيقاف الطلبات',
+        message: 'العملاء مش هيقدروا يبعتوا طلبات جديدة لحد ما ترجّع التشغيل. الطلبات الحالية مش هتتأثر.',
+        confirmLabel: 'إيقاف',
+        destructive: true,
+      );
+      if (!mounted || !ok) return;
+    }
+    try {
+      await DeliveryService.setOrdersPaused(paused);
+      if (!mounted) return;
+      setState(() => _paused = paused);
+      _say(context, paused ? 'تم إيقاف استقبال الطلبات.' : 'تم تشغيل استقبال الطلبات.');
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر الحفظ: ${_err(e)}');
+    }
   }
 
   Future<void> _save() async {
@@ -480,6 +508,15 @@ class _AdminAreasPageState extends State<AdminAreasPage> {
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
                     children: [
+                      Card(
+                        child: SwitchListTile(
+                          title: const Text('إيقاف استقبال الطلبات مؤقتًا'),
+                          subtitle: const Text('للطوارئ: العملاء مش هيقدروا يبعتوا طلبات جديدة.'),
+                          value: _paused,
+                          onChanged: _togglePaused,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       Text(
                         areas.isEmpty
                             ? 'لسه مفيش مناطق. العملاء بيدفعوا 20 جنيه توصيل. أول ما تضيف منطقة، العميل هيختار منطقته وقت الطلب.'

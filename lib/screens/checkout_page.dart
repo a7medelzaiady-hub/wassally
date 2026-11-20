@@ -189,6 +189,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
     if (!await _confirmAddress() || !mounted) return;
+    if (await DeliveryService.checkOrdersPaused()) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     setState(() => _submitting = true);
     final navigator = Navigator.of(context);

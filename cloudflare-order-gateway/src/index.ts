@@ -1099,6 +1099,7 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+export const ORDERS_PAUSED_MESSAGE = "استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.";
 export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
 const DAILY_LIMIT_CODE = "daily_limit";
 
@@ -1226,6 +1227,11 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     getDocument(env, `orderLimits/${uid}`, token),
     getDocument(env, "app_info/delivery_areas", token),
   ]);
+  // مفتاح طوارئ من الإدارة: app_info/delivery_areas.ordersPaused = true يوقف الطلبات الجديدة
+  // (المستند ده بيتقري أصلًا هنا، فمفيش قراءة زيادة).
+  if (areasDoc && decodeFields(areasDoc.fields ?? {}).ordersPaused === true) {
+    throw new HttpError(503, ORDERS_PAUSED_MESSAGE, "orders_paused");
+  }
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
   if (store.active !== undefined && store.active !== true) {
