@@ -957,6 +957,24 @@ test('delivery issue: الإدارة تختار إعادة المحاولة وي
   await reportDelivery('cour1');
 });
 
+test('delivery issue: المندوب يبدأ الرجوع للمحل مباشرة دون موافقة الإدارة', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const batch = writeBatch(courier);
+  batch.set(doc(courier, 'delivery_issues/direct-return'), deliveryIssueData({ status: 'return_to_store' }));
+  batch.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'direct-return' });
+  await assertSucceeds(batch.commit());
+  await assertFails(updateDoc(doc(as('cour2'), 'delivery_issues/direct-return'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour2',
+  }));
+  await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/direct-return'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour1',
+  }));
+  await assertSucceeds(updateDoc(doc(as('owner1'), 'delivery_issues/direct-return'), {
+    status: 'store_confirmed_return', storeReceivedAt: serverTimestamp(), storeReceivedBy: 'owner1',
+  }));
+});
+
 test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن تغلق الإدارة الطلب', async () => {
   await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
   const courier = as('cour1');
