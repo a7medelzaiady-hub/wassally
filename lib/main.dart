@@ -19,6 +19,7 @@ import 'theme/theme_controller.dart';
 void main() => ErrorGuard.run(_bootstrap);
 
 Future<void> _bootstrap() async {
+  final startup = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
   // على أندرويد Firebase بيقرا الإعدادات من android/app/google-services.json،
   // فمش محتاجين نحدّث appId يدويًا لما نسجّل تطبيق جديد.
@@ -26,15 +27,35 @@ Future<void> _bootstrap() async {
   await Firebase.initializeApp(
     options: isAndroid ? null : DefaultFirebaseOptions.currentPlatform,
   );
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.macOS)) {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
-  }
-  await PerformanceMonitor.configure();
-  await _activateAppCheck();
-  await ThemeController.instance.load();
+  // الخطوات دي مستقلة عن بعض، فبتشتغل مع بعض بدل ورا بعض (كلها لازم تخلص قبل runApp).
+  await Future.wait([
+    _configureCrashlytics(),
+    PerformanceMonitor.configure(),
+    _activateAppCheck(),
+    ThemeController.instance.load(),
+  ]);
+  final bootstrap = startup.elapsed;
   runApp(const WasallyApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    PerformanceMonitor.recordStartup(PerformanceMonitor.startupMetrics(
+      bootstrap: bootstrap,
+      firstFrame: startup.elapsed,
+    ));
+  });
+}
+
+Future<void> _configureCrashlytics() async {
+  if (kIsWeb) return;
+  if (defaultTargetPlatform != TargetPlatform.android &&
+      defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.macOS) {
+    return;
+  }
+  try {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+  } catch (e) {
+    debugPrint('Crashlytics config failed: $e');
+  }
 }
 
 /// App Check: بيثبت إن الطلبات جاية من تطبيق وصلي الأصلي (Play Integrity على أندرويد)،
