@@ -2,7 +2,8 @@ name: Deploy Order Gateway Worker (manual)
 
 # نشر الـ Worker على Cloudflare من GitHub بدل جهازك. بيشتغل يدوي بس (Actions ← Run workflow)،
 # من main بس، وبعد نجاح الفحص والاختبارات. أسرار الـ Worker نفسها (Firebase/Cloudinary)
-# متخزنة على Cloudflare ومش بتتلمس هنا.
+# متخزنة على Cloudflare ومش بتتلمس هنا. الاستثناء الوحيد: DELIVERY_PIN_SECRET بيتعمل تلقائي
+# مرة واحدة لو مش موجود (قيمة عشوائية مخفية)، ومش بيتغير بعد كده.
 #
 # محتاج سرّين في GitHub (Settings ← Secrets and variables ← Actions):
 #   CLOUDFLARE_API_TOKEN   : توكن بصلاحية "Edit Cloudflare Workers" بس
@@ -121,6 +122,25 @@ jobs:
           # معرّف المشروع متغير عادي في wrangler.toml (مش سر)؛ لو مش موجود، النشر هيمسحه من الـ Worker.
           if ! grep -Eq '^FIREBASE_PROJECT_ID *= *"[a-z0-9-]+"' wrangler.toml && ! echo "$list" | grep -q '"FIREBASE_PROJECT_ID"'; then
             echo "::error::FIREBASE_PROJECT_ID must be set in wrangler.toml [vars] (or as a Worker secret)."; exit 1
+          fi
+
+      - name: Ensure DELIVERY_PIN_SECRET exists (created once, never printed)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # سر رمز التسليم: لو موجود على Cloudflare ما نلمسوش أبدًا (تغييره بيبوّظ رموز الطلبات اللي في الطريق).
+          # لو مش موجود: نولّد قيمة عشوائية ونحطها مرة واحدة. القيمة مش بتتطبع ولا بتتخزن في GitHub.
+          if npx wrangler secret list 2>/dev/null | grep -q '"DELIVERY_PIN_SECRET"'; then
+            echo "DELIVERY_PIN_SECRET already set; leaving it unchanged."
+          else
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            printf '%s' "$value" | npx wrangler secret put DELIVERY_PIN_SECRET >/dev/null
+            unset value
+            npx wrangler secret list 2>/dev/null | grep -q '"DELIVERY_PIN_SECRET"' \
+              || { echo "::error::Could not create DELIVERY_PIN_SECRET."; exit 1; }
+            echo "DELIVERY_PIN_SECRET created."
           fi
 
       - name: Deploy
