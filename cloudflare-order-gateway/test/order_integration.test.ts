@@ -71,7 +71,7 @@ describe("full order creation against simulated Firebase", () => {
       if (url.includes("firestore.googleapis.com/")) {
         const path = url.split("/documents/")[1];
         if (path === "orders/" + orderId && saved)
-          return Response.json(doc(path, { userId: uid }));
+          return Response.json(doc(path, { userId: uid, storeId: input.storeId }));
         if (path === "stores/store_test")
           return Response.json(doc(path, { name: "Test store", active: true }));
         return new Response("not found", { status: 404 });
