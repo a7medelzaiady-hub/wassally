@@ -681,6 +681,9 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
     final current = all.where(_isCurrent).toList();
     final past = all.where((o) => !_isCurrent(o)).toList();
     final shown = _showCurrent ? current : past;
+    final completed = past.where((o) => o.status == OrderStatus.delivered).toList();
+    final completedSales = completed.fold<double>(0, (sum, o) => sum + o.subtotal);
+    final cancelledCount = past.where((o) => o.status == OrderStatus.cancelled).length;
 
     return Column(
       children: [
@@ -702,6 +705,30 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
                 setState(() => _showCurrent = v.first),
           ),
         ),
+        if (!_showCurrent)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('سجل الطلبات المنفذة', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text('طلبات مكتملة: ${completed.length}  •  ملغية: $cancelledCount'),
+                    Text('إجمالي قيمة أصناف الطلبات المكتملة: ${formatPrice(completedSales)}'),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'عمولة وصّلي: تُعرض بعد اعتماد طريقة حسابها وتسجيلها لكل طلب. '
+                      'الأرقام تخص الطلبات المحمّلة فقط (حتى 100 طلب)، وليست كشف حساب نهائيًا.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Expanded(
           child: shown.isEmpty
               ? EmptyState(
