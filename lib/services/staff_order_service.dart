@@ -461,7 +461,7 @@ class StaffOrderService {
     await ref.update({'courierArrivedAt': FieldValue.serverTimestamp()});
   }
 
-  /// تسجيل تعذر تسليم بعد الوصول ومحاولة التواصل. يظل الطلب في الطريق حتى قرار الإدارة.
+  /// تسجيل تعذر التسليم بعد الوصول: يبدأ الرجوع للمحل مباشرة دون انتظار الإدارة.
   static Future<String> reportDeliveryIssue(
     AppOrder order, {
     required String reason,
@@ -508,7 +508,7 @@ class StaffOrderService {
       'reason': reason,
       'note': cleanNote,
       'contactAttempted': true,
-      'status': 'open',
+      'status': 'return_to_store',
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -517,7 +517,7 @@ class StaffOrderService {
     await _notify(
       order.userId,
       'تعذر تسليم طلبك',
-      'المندوب وصل للعنوان ولم تكتمل عملية التسليم. الإدارة تراجع الموقف وستتواصل معك.',
+      'المندوب تعذر عليه التسليم وبدأ إرجاع الطلب للمحل.',
       order.id,
     );
     return issueRef.id;
