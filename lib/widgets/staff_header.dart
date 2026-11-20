@@ -143,19 +143,12 @@ class StaffHeader extends StatelessWidget {
           MaterialPageRoute(builder: (_) => const MainShell()),
         ),
       ),
+      // كان فيه زرار رئيسية تاني مكرر لغير الأدمن (نفس الوجهة)، اتشال.
       if (isAdmin)
         _btn(
           tooltip: 'تبديل اللوحة',
           icon: Icons.swap_horiz_rounded,
           onPressed: () => showPanelSwitcher(context),
-        )
-      else
-        _btn(
-          tooltip: 'الصفحة الرئيسية',
-          icon: Icons.home_outlined,
-          onPressed: () =>
-              Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const MainShell())),
         ),
       _btn(
         tooltip: 'تسجيل خروج',
