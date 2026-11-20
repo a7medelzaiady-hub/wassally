@@ -5,7 +5,7 @@ name: Deploy Firestore rules & indexes (manual)
 #   FIREBASE_SERVICE_ACCOUNT : محتوى ملف JSON من Firebase ← Project settings ← Service accounts
 #                              ← Generate new private key (بيتكتب لملف مؤقت ويتمسح في آخر الخطوة).
 # القواعد بتتختبر الأول على المحاكي (نفس اختبارات CI) قبل النشر.
-# من غير --force: أي فهرس موجود على Firebase ومش في الملف بيفضل زي ما هو (مش بيتمسح).
+# الفهارس: بندمج الموجود على Firebase مع الملف قبل النشر، فأي فهرس اتعمل يدوي بيفضل زي ما هو.
 
 on:
   workflow_dispatch:
@@ -65,7 +65,7 @@ jobs:
           npm ci
           npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js"
 
-      - name: Deploy rules and indexes
+      - name: Deploy rules, then indexes (merged with live, nothing deleted)
         env:
           SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
@@ -73,6 +73,16 @@ jobs:
           printf '%s' "$SA" > "$key"
           chmod 600 "$key"
           export GOOGLE_APPLICATION_CREDENTIALS="$key"
-          npx --yes firebase-tools@13 deploy --only firestore:rules,firestore:indexes \
-            --project wasally-12259 --non-interactive
-          rm -f "$key"
+          trap 'rm -f "$key"' EXIT
+          fb="npx --yes firebase-tools@13"
+
+          # 1) القواعد لوحدها.
+          $fb deploy --only firestore:rules --project wasally-12259 --non-interactive
+
+          # 2) الفهارس: اتحاد الموجود على الإنتاج + الملف، فمفيش فهرس بيتمسح
+          #    (--force هنا آمن لأن الملف المدمج فيه كل الفهارس الموجودة).
+          $fb firestore:indexes --project wasally-12259 > "$RUNNER_TEMP/live-indexes.json"
+          node .github/scripts/merge-firestore-indexes.mjs \
+            "$RUNNER_TEMP/live-indexes.json" firestore.indexes.json "$RUNNER_TEMP/merged-indexes.json"
+          cp "$RUNNER_TEMP/merged-indexes.json" firestore.indexes.json
+          $fb deploy --only firestore:indexes --project wasally-12259 --non-interactive --force
