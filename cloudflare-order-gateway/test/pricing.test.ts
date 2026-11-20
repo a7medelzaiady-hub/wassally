@@ -628,3 +628,20 @@ describe("Cloudinary account deletion", () => {
     }
   });
 });
+
+import { isSameStoreOrderReplay } from "../src/index";
+
+describe("order replay store isolation", () => {
+  it("accepts a retry for the same customer and original store", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-1", "store-a")).toBe(true);
+  });
+  it("rejects a retry that switches stores", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-1", "store-b")).toBe(false);
+  });
+  it("rejects a retry from a different customer", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-2", "store-a")).toBe(false);
+  });
+  it("rejects malformed or missing persisted store identity", () => {
+    expect(isSameStoreOrderReplay("customer-1", undefined, "customer-1", "store-a")).toBe(false);
+  });
+});

@@ -1211,7 +1211,12 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const existing = await getDocument(env, orderPath, token);
   if (existing) {
     const old = decodeFields(existing.fields ?? {});
-    if (old.userId === uid) return response({ orderId, reused: true });
+    if (old.userId === uid) {
+      if (!isSameStoreOrderReplay(old.userId, old.storeId, uid, storeId)) {
+        throw new HttpError(409, "معرّف الطلب مرتبط بمحل مختلف. أعد إرسال الطلب.");
+      }
+      return response({ orderId, reused: true });
+    }
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
@@ -1889,3 +1894,7 @@ export default {
     }
   },
 };
+
+export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
+  return existingUserId === userId && existingStoreId === storeId;
+}
