@@ -868,7 +868,15 @@ service cloud.firestore {
         let generalKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning', 'finalDeliveryFee'];
-        return k.hasOnly(['ready', 'readyAt']) ? (
+        return k.hasOnly(['customerConfirmedAt']) ? (
+          // قرار الإدارة بعد قفل رمز التسليم لمندوب خارجي: تأكيد إن العميل استلم،
+          // والطلب يفضل في الطريق لحد ما المحل يأكد استلام النقدية (نفس مسار الرمز الصحيح).
+          st == 'on_the_way' &&
+          od.get('deliveryMode', '') == 'external' &&
+          od.get('deliveryPinLockedAt', null) is timestamp &&
+          !('customerConfirmedAt' in od) &&
+          nd.get('customerConfirmedAt', null) == request.time
+        ) : k.hasOnly(['ready', 'readyAt']) ? (
           st == 'preparing' &&
           nd.get('ready', false) == true &&
           nd.get('readyAt', null) == request.time
@@ -926,7 +934,8 @@ service cloud.firestore {
         let adminKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning',
-          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId',
+          'customerConfirmedAt'];
         return (od.get('userId', '') == uid &&
             // الإخفاء من سجل العميل للطلبات المنتهية بس (اتسلّم أو اتلغى)، عشان ما يخفيش طلب لسه جاي.
             ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true &&

@@ -1224,6 +1224,30 @@ test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اك
   await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { courierEarning: 500 }));
 });
 
+test('قفل الرمز مع مندوب خارجي: الأدمن يأكد استلام العميل بس، والطلب يفضل لتسوية النقدية', async () => {
+  await seedOnWay('external');
+  const admin = as('admin1');
+  // من غير قفل الرمز: ممنوع
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  // وقت مزوّر ممنوع
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: new Date('2020-01-01') }));
+  // العميل والمندوب ما يقدروش
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  const after = (await getDoc(doc(admin, 'orders/o1'))).data();
+  assert.equal(after.status, 'on_the_way');
+  // مرة واحدة بس
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+});
+
+test('قفل الرمز مع مندوب المحل: الأدمن ما يستخدمش تأكيد الاستلام لوحده (بيقفل بالحالة)', async () => {
+  await seedOnWay('store');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+});
+
 test('delivery stamp: الأدمن يغلق بس بعد قفل الرمز، والمبلغ المعتمد هو المحصّل', async () => {
   await seedOnWay('store');
   await setOrder({ verifiedTotal: 28 });
