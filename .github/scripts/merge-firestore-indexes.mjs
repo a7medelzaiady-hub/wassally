@@ -1,8 +1,11 @@
 // يدمج فهارس Firestore الموجودة على الإنتاج مع firestore.indexes.json (اتحاد، من غير مسح).
-// الاستخدام: node merge-firestore-indexes.mjs <live.json> <repo.json> <out.json>
+// الاستخدام: node merge-firestore-indexes.mjs <live.json> <repo.json> <out.json> [--live-composites]
+// --live-composites: الفهارس المركبة زي ما هي على الإنتاج بالظبط (من غير إنشاء جديد)،
+// وإعدادات الحقول (fieldOverrides) = اتحاد. ده بيتجنب 409 "index already exists".
 import { readFileSync, writeFileSync } from "node:fs";
 
-const [livePath, repoPath, outPath] = process.argv.slice(2);
+const [livePath, repoPath, outPath, mode] = process.argv.slice(2);
+const liveComposites = mode === "--live-composites";
 const live = JSON.parse(readFileSync(livePath, "utf8"));
 const repo = JSON.parse(readFileSync(repoPath, "utf8"));
 
@@ -14,7 +17,7 @@ const indexKey = (ix) => [
 ].join("#");
 
 const indexes = new Map();
-for (const ix of repo.indexes ?? []) indexes.set(indexKey(ix), ix);
+if (!liveComposites) for (const ix of repo.indexes ?? []) indexes.set(indexKey(ix), ix);
 let added = 0;
 for (const ix of live.indexes ?? []) {
   const k = indexKey(ix);
