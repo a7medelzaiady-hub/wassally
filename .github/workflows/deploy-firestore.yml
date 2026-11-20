@@ -14,6 +14,12 @@ on:
         description: "اكتب DEPLOY عشان تأكد نشر قواعد وفهارس Firestore على الإنتاج"
         required: true
         type: string
+      indexes_mode:
+        description: "overrides = إعدادات الحقول بس والفهارس المركبة زي ما هي (الافتراضي)، all = كمان ينشئ الفهارس المركبة الناقصة"
+        required: false
+        default: overrides
+        type: choice
+        options: [overrides, all]
 
 permissions:
   contents: read
@@ -83,6 +89,7 @@ jobs:
           #    (--force هنا آمن لأن الملف المدمج فيه كل الفهارس الموجودة).
           $fb firestore:indexes --project wasally-12259 > "$RUNNER_TEMP/live-indexes.json"
           node .github/scripts/merge-firestore-indexes.mjs \
-            "$RUNNER_TEMP/live-indexes.json" firestore.indexes.json "$RUNNER_TEMP/merged-indexes.json"
+            "$RUNNER_TEMP/live-indexes.json" firestore.indexes.json "$RUNNER_TEMP/merged-indexes.json" \
+            ${{ inputs.indexes_mode == 'all' && '' || '--live-composites' }}
           cp "$RUNNER_TEMP/merged-indexes.json" firestore.indexes.json
           $fb deploy --only firestore:indexes --project wasally-12259 --non-interactive --force
