@@ -1448,7 +1448,7 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
 });
 
-test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل/يحذف وهو new بس', async () => {
+test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل وهو new/preparing ومفيش حذف', async () => {
   await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
   await assertSucceeds(getDoc(doc(as('admin1'), contactPath)));
   await assertFails(getDoc(doc(as('cust2'), contactPath)));
@@ -1465,9 +1465,9 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // بعد تعيين المندوب تُقفل بيانات التواصل عن العميل.
   await setOrderState({ courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
-  // وهو new: الحذف ينجح
+  // حتى وهو new: مفيش حذف لبيانات التواصل (الطلبات ما بتتمسحش من التطبيق)
   await seed();
-  await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
+  await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
 });
 
 test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها عميله أو مندوبه', async () => {
