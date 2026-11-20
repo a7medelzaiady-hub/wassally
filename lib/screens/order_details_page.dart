@@ -598,6 +598,7 @@ class _Details extends StatelessWidget {
               ),
             ],
           ),
+        ],
             ],
           ),
         ),
