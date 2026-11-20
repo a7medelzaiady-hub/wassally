@@ -125,19 +125,27 @@ class AboutPage extends StatelessWidget {
 
 /// Opens WhatsApp directly for support or complaints.
 /// The fallback number is temporary and can be changed by an admin.
+/// رقم واتساب الدعم الافتراضي لو app_info/contact مش متظبط أو مش متاح.
+const String kDefaultSupportWhatsApp = '01000197222';
+
+/// بيحوّل رقم مصري (01xxxxxxxxx أو +20...) لصيغة wa.me الدولية (20xxxxxxxxxx).
+/// لو فاضي بيرجع الرقم الافتراضي.
+String normalizeWhatsAppNumber(String raw) {
+  var digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) digits = kDefaultSupportWhatsApp;
+  if (digits.startsWith('00')) digits = digits.substring(2);
+  if (digits.startsWith('0')) digits = '20${digits.substring(1)}';
+  return digits;
+}
+
 Future<void> openWasallyWhatsApp(String message) async {
-  var number = '201000197222';
+  var number = normalizeWhatsAppNumber('');
   try {
     final doc = await FirebaseFirestore.instance
         .collection('app_info').doc('contact').get();
-    final configured = (doc.data()?['whatsapp'] ?? '').toString()
-        .replaceAll(RegExp(r'[^0-9]'), '');
-    if (configured.isNotEmpty) {
-      number = configured.startsWith('0')
-          ? '20${configured.substring(1)}' : configured;
-    }
+    number = normalizeWhatsAppNumber((doc.data()?['whatsapp'] ?? '').toString());
   } catch (_) {
-    // Fall back to the temporary number if offline.
+    // Fall back to the default number if offline.
   }
   final uri = Uri.https('wa.me', '/$number', {'text': message});
   var opened = false;
@@ -207,29 +215,31 @@ class ContactPage extends StatelessWidget {
                   .doc('contact')
                   .get(),
               builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                // لو المستند مش موجود أو القراءة فشلت، واتساب بيظهر بالرقم الافتراضي
+                // بدل ما الصفحة تبقى فاضية.
                 final m = snap.data?.data() ?? const <String, dynamic>{};
                 final phone = (m['phone'] ?? '').toString().trim();
-                final wa = (m['whatsapp'] ?? '').toString().trim();
+                final waRaw = (m['whatsapp'] ?? '').toString().trim();
+                final wa = waRaw.isEmpty ? kDefaultSupportWhatsApp : waRaw;
                 final mail = (m['email'] ?? '').toString().trim();
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
-
+                    tile(
+                      Icons.message_outlined,
+                      'الدعم والشكاوى عبر واتساب',
+                      wa,
+                      () => _open('https://wa.me/${normalizeWhatsAppNumber(wa)}'),
+                    ),
                     if (phone.isNotEmpty)
                       tile(
                         Icons.call_outlined,
                         'اتصل بينا',
                         phone,
                         () => _open('tel:$phone'),
-                      ),
-                    if (wa.isNotEmpty)
-                      tile(
-                        Icons.message_outlined,
-                        'الدعم والشكاوى عبر واتساب',
-                        wa,
-                        () => _open(
-                          'https://wa.me/${wa.replaceAll(RegExp(r'[^0-9]'), '')}',
-                        ),
                       ),
                     if (mail.isNotEmpty)
                       tile(
