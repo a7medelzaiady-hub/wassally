@@ -579,17 +579,15 @@ class OrderService {
     } catch (_) {}
   }
 
-  /// العميل يحذف طلبه نهائيًا طالما حالته "new". (بعد كده الإلغاء بس.)
+  /// "حذف الطلب" عند العميل: إلغاء الطلب (وهو لسه جديد) ثم إخفاؤه من قائمته.
+  /// مفيش حذف فعلي: الطلب بيكون وصل للمحل، فبيفضل عنده وعند الإدارة بحالة "ملغي".
   static Future<void> deleteOrder(String id) async {
-    final batch = FirebaseFirestore.instance.batch()
-      ..delete(OrderContactService.ref(id))
-      ..delete(_orders.doc(id));
     try {
-      await batch.commit();
+      await cancel(id);
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         throw StateError(
-          'مبقاش ينفع تحذف الطلب (المحل استلمه). تقدر تلغيه لو لسه متاح. (${e.code})',
+          'مبقاش ينفع تحذف الطلب (المحل استلمه). (${e.code})',
         );
       }
       if (e.code == 'unavailable') {
@@ -597,6 +595,7 @@ class OrderService {
       }
       throw StateError('تعذر حذف الطلب (${e.code}).');
     }
+    await hideFromCustomer(id);
   }
 
   /// إخفاء الطلب من سجل العميل فقط مع الاحتفاظ بالسجل التجاري لدى وصلي.

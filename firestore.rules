@@ -943,7 +943,9 @@ service cloud.firestore {
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning',
           'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
         return (od.get('userId', '') == uid &&
-            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true) ||
+            // الإخفاء من سجل العميل للطلبات المنتهية بس (اتسلّم أو اتلغى)، عشان ما يخفيش طلب لسه جاي.
+            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true &&
+              od.get('status', '') in ['delivered', 'cancelled']) ||
              (k.hasAny(customerKeys) && canCustomerUpdate(nd, od, k)))) ||
           ((cid == uid || cid == '') &&
             k.hasAny(courierKeys) && isCourier() && canCourierUpdate(nd, od, k)) ||
@@ -966,10 +968,9 @@ service cloud.firestore {
 
       allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);
 
-      // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
-      allow delete: if signedIn() &&
-        resource.data.userId == request.auth.uid &&
-        resource.data.status == 'new';
+      // مفيش حذف فعلي للطلبات من التطبيق: الطلب بيكون وصل للمحل، ومسحه بيضيّع السجل.
+      // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).
+      allow delete: if false;
 
       function customerContactUpdateAllowed(orderId) {
         let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;
@@ -997,12 +998,10 @@ service cloud.firestore {
           existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           validContact(request.resource.data);
-        // العميل يعدّل بيانات التواصل حتى استلام المندوب، ويحذفها فقط مع طلب new.
+        // العميل يعدّل بيانات التواصل حتى استلام المندوب.
         allow update: if doc == 'contact' && customerContactUpdateAllowed(orderId);
-        allow delete: if signedIn() && doc == 'contact' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '';
+        // بيانات التواصل بتفضل مع الطلب (مفيش حذف فعلي للطلبات من التطبيق).
+        allow delete: if false;
       }
 
       // سجل الحالات: create فقط. معرّف المستند = الحالة الجديدة، فمفيش حدث بيتكرر.

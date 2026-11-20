@@ -1448,7 +1448,7 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
 });
 
-test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل/يحذف وهو new بس', async () => {
+test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل وهو new/preparing ومفيش حذف', async () => {
   await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
   await assertSucceeds(getDoc(doc(as('admin1'), contactPath)));
   await assertFails(getDoc(doc(as('cust2'), contactPath)));
@@ -1465,9 +1465,9 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // بعد تعيين المندوب تُقفل بيانات التواصل عن العميل.
   await setOrderState({ courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
-  // وهو new: الحذف ينجح
+  // حتى وهو new: مفيش حذف لبيانات التواصل (الطلبات ما بتتمسحش من التطبيق)
   await seed();
-  await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
+  await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
 });
 
 test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها عميله أو مندوبه', async () => {
@@ -1861,8 +1861,28 @@ test('expression limit: مستخدم واحد بكل الأدوار يمرّ ب�
   });
   await assertSucceeds(b.commit());
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { ready: true, readyAt: serverTimestamp() }));
-  // الإخفاء من سجل العميل (فرع العميل بعد مرور بقية الأدوار على نفس المستخدم).
+  // الإخفاء من سجل العميل: ممنوع والطلب لسه شغال، ومسموح بعد ما يخلص
+  // (فرع العميل بعد مرور بقية الأدوار على نفس المستخدم).
+  await assertFails(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
+  await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), 'orders/om1'), { status: 'cancelled' }));
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
+});
+
+test('orders: مفيش حذف فعلي من التطبيق، والإخفاء للطلبات المنتهية بس', async () => {
+  // o1 جديد ومملوك لـ cust1 (من seed)
+  await assertFails(deleteDoc(doc(as('cust1'), 'orders/o1')));
+  await assertFails(deleteDoc(doc(as('cust1'), 'orders/o1/private/contact')));
+  await assertFails(deleteDoc(doc(as('owner1'), 'orders/o1')));
+  // إخفاء طلب جديد (لسه شغال) مرفوض
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+  // الإلغاء من العميل وهو جديد مسموح، وبعده الإخفاء مسموح
+  await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+  // عميل تاني ما يقدرش يخفي طلب مش بتاعه
+  await assertFails(updateDoc(doc(as('cust2'), 'orders/o1'), { customerHidden: true }));
+  // الطلب لسه موجود للمحل والإدارة
+  await assertSucceeds(getDoc(doc(as('owner1'), 'orders/o1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'orders/o1')));
 });
 
 test('expression limit: لا تهريب مفاتيح بين أدوار مختلفة في تحديث واحد', async () => {

@@ -31,6 +31,11 @@ enum OrderStatus {
   final Color? _color;
   const OrderStatus(this.key, this.label, this.icon, this._color);
 
+  /// العميل يقدر يخفي الطلب من سجله بس بعد ما يخلص (اتسلّم أو اتلغى).
+  /// نفس الشرط موجود في قواعد Firestore.
+  bool get canHideFromHistory =>
+      this == OrderStatus.delivered || this == OrderStatus.cancelled;
+
   /// لون الحالة. "تم الاستلام" بيتبع لون السمة المختارة.
   Color get color => _color ?? kPrimary;
 

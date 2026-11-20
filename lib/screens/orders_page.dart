@@ -231,7 +231,7 @@ class _OrderCardState extends State<_OrderCard> {
                     const Spacer(),
                     if (_busy)
                       const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                    else
+                    else if (status.canHideFromHistory)
                       IconButton(
                         tooltip: 'إخفاء الطلب من السجل',
                         visualDensity: VisualDensity.compact,
