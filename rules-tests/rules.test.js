@@ -1207,9 +1207,10 @@ test('delivery stamp: الأدمن يغلق بس بعد قفل الرمز، وا
   await assertFails(deliver(as('admin1'), 'admin', storeStamp({ collectedAmount: 28 })));
   await setOrder({ deliveryPinLockedAt: new Date() });
   // العميل ما يغلقش حتى بعد القفل
-  const cb = writeBatch(as('cust1'));
-  cb.update(doc(as('cust1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...storeStamp({ collectedAmount: 28 }) });
-  cb.set(doc(as('cust1'), 'orders/o1/statusHistory/delivered'), {
+  const custDb = as('cust1');
+  const cb = writeBatch(custDb);
+  cb.update(doc(custDb, 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...storeStamp({ collectedAmount: 28 }) });
+  cb.set(doc(custDb, 'orders/o1/statusHistory/delivered'), {
     from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
   });
   await assertFails(cb.commit());
