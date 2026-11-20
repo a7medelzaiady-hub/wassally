@@ -258,7 +258,10 @@ class NotificationService {
           behavior: SnackBarBehavior.floating,
           action: (message.data['orderId'] ?? '').toString().isNotEmpty
               ? SnackBarAction(
-                  label: 'عرض الطلب', onPressed: () => _openOrder(message))
+                  label: message.data['type'] == 'available_order'
+                      ? 'عرض الطلبات المتاحة'
+                      : 'عرض الطلب',
+                  onPressed: () => _openMessage(message))
               : (message.data['type'] == 'support_chat'
                   ? SnackBarAction(
                       label: 'فتح المحادثة',
