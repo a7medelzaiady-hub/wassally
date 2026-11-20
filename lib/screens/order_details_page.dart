@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import 'edit_order_page.dart';
+import '../services/delivery_pin_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
@@ -123,28 +124,35 @@ class _DetailsWithContact extends StatefulWidget {
 
 class _DetailsWithContactState extends State<_DetailsWithContact> {
   OrderContact? _contact;
-  bool _confirmingDelivery = false;
+  // رمز التسليم: بيتجاب من الـWorker مرة لما الطلب يبقى «في الطريق».
+  String? _pin;
+  String? _pinMessage;
+  bool _pinLoading = false;
 
-  Future<void> _confirmDelivery() async {
-    if (_confirmingDelivery) return;
-    setState(() => _confirmingDelivery = true);
+  bool _needsPin(AppOrder o) =>
+      o.status == OrderStatus.onTheWay && o.customerConfirmedAt == null;
+
+  Future<void> _loadPin() async {
+    if (_pinLoading || _pin != null || !_needsPin(widget.order)) return;
+    setState(() {
+      _pinLoading = true;
+      _pinMessage = null;
+    });
     try {
-      await OrderService.confirmDelivery(widget.order);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.order.deliveryMode == 'external'
-              ? 'تم تأكيد الاستلام. أكد المحل استلام النقدية لإغلاق الطلب.'
-              : 'تم تأكيد استلام طلبك. شكرًا لك.')),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تأكيد الاستلام. حاول مرة أخرى.')),
-        );
-      }
+      final pin = await DeliveryPinService.fetchPin(widget.order.id);
+      if (mounted) setState(() => _pin = pin);
+    } on DeliveryPinError catch (e) {
+      if (mounted) setState(() => _pinMessage = e.message);
     } finally {
-      if (mounted) setState(() => _confirmingDelivery = false);
+      if (mounted) setState(() => _pinLoading = false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DetailsWithContact oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_needsPin(widget.order) && _pin == null && _pinMessage == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
     }
   }
 
@@ -157,6 +165,7 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     if (widget.order.customerConfirmedAt != null) {
       OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
   }
 
   @override
@@ -166,7 +175,13 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
       order: order,
       onCancel: widget.onCancel,
       onDelete: widget.onDelete,
-      onConfirmDelivery: _confirmingDelivery ? null : _confirmDelivery,
+      deliveryPin: _needsPin(widget.order) ? _pin : null,
+      pinMessage: _needsPin(widget.order) ? _pinMessage : null,
+      pinLoading: _needsPin(widget.order) && _pinLoading,
+      onRetryPin: () {
+        setState(() => _pinMessage = null);
+        _loadPin();
+      },
       onEdit: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => EditOrderPage(order: order)),
       ),
@@ -179,13 +194,19 @@ class _Details extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
-  final VoidCallback? onConfirmDelivery;
+  final String? deliveryPin;
+  final String? pinMessage;
+  final bool pinLoading;
+  final VoidCallback onRetryPin;
   const _Details({
     required this.order,
     required this.onCancel,
     required this.onDelete,
     required this.onEdit,
-    required this.onConfirmDelivery,
+    required this.deliveryPin,
+    required this.pinMessage,
+    required this.pinLoading,
+    required this.onRetryPin,
   });
 
   BoxDecoration get _card => BoxDecoration(
@@ -398,9 +419,7 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    final awaitingCustomerConfirmation =
-        order.status == OrderStatus.onTheWay &&
-        order.customerDeliveryReportedAt != null &&
+    final showPin = order.status == OrderStatus.onTheWay &&
         order.customerConfirmedAt == null;
     return Column(
       children: [
@@ -613,7 +632,7 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (awaitingCustomerConfirmation)
+        if (showPin)
           SafeArea(
             top: false,
             child: Container(
@@ -627,20 +646,38 @@ class _Details extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'المندوب أبلغ إنه سلّمك الطلب. راجع الطلب قبل تأكيد الاستلام.',
+                    'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: onConfirmDelivery,
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: Text(order.deliveryMode == 'external'
-                          ? 'تأكيد استلام الطلب'
-                          : 'تأكيد الاستلام وإغلاق الطلب'),
-                    ),
+                  const SizedBox(height: 6),
+                  if (deliveryPin != null)
+                    Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Text(
+                        deliveryPin!.split('').join(' '),
+                        style: const TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 4,
+                        ),
+                      ),
+                    )
+                  else if (pinLoading)
+                    const SizedBox(
+                      height: 28,
+                      width: 28,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  else if (pinMessage != null) ...[
+                    Text(pinMessage!, textAlign: TextAlign.center),
+                    TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
+                  ],
+                  const SizedBox(height: 4),
+                  const Text(
+                    'ما تديش الرمز لحد قبل ما تستلم الطلب.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5),
                   ),
                 ],
               ),

@@ -362,10 +362,18 @@ async function seedOnWay(deliveryMode = 'external') {
   });
 }
 
+// بلاغ التسليم وتأكيد العميل مبقوش من التطبيق: الـWorker بيكتبهم لما المندوب يدخل رمز التسليم الصحيح.
 async function reportDelivery(courierId = 'cour1') {
-  await assertSucceeds(updateDoc(doc(as(courierId), 'orders/o1'), {
+  await assertFails(updateDoc(doc(as(courierId), 'orders/o1'), {
     customerDeliveryReportedAt: serverTimestamp(),
     customerDeliveryReportedBy: courierId,
+  }));
+}
+// محاكاة اللي بيكتبه الـWorker للمندوب الخارجي بعد الرمز الصحيح (الطلب يفضل في الطريق لتسوية النقدية).
+async function workerConfirmExternal(courierId = 'cour1') {
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: courierId,
+    customerConfirmedAt: new Date(), deliveryPinVerifiedAt: new Date(),
   }));
 }
 
@@ -396,19 +404,15 @@ test('delivery lifecycle: المندوب يبلغ بالتسليم ولا يست
     actorRole: 'admin', at: serverTimestamp(),
   });
   await assertFails(adminClose.commit());
+  // بلاغ التسليم من التطبيق ممنوع (التسليم بالرمز عن طريق الـWorker)
   await reportDelivery();
-  const afterReport = (await getDoc(doc(as('cust1'), 'orders/o1'))).data();
-  assert.equal(afterReport.status, 'on_the_way');
-  assert.equal(afterReport.customerDeliveryReportedBy, 'cour1');
-  await assertFails(updateDoc(doc(courier, 'orders/o1'), {
-    customerDeliveryReportedAt: serverTimestamp(),
-    customerDeliveryReportedBy: 'cour1',
-  }));
 });
 
-test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب المحل', async () => {
+test('delivery lifecycle: العميل ما يقدرش يأكد الاستلام بنفسه (التأكيد بالرمز من الـWorker)', async () => {
   await seedOnWay('store');
-  await reportDelivery('storecour1');
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: 'storecour1',
+  }));
   const db = as('cust1');
   const b = writeBatch(db);
   b.update(doc(db, 'orders/o1'), {
@@ -423,24 +427,22 @@ test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب ا�
     from: 'on_the_way', to: 'delivered', actorUid: 'cust1',
     actorRole: 'customer', at: serverTimestamp(),
   });
-  await assertSucceeds(b.commit());
+  await assertFails(b.commit());
+  await assertFails(updateDoc(doc(db, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
   const order = (await getDoc(doc(db, 'orders/o1'))).data();
-  assert.equal(order.status, 'delivered');
-  assert.equal(order.deliveredBy, 'storecour1');
+  assert.equal(order.status, 'on_the_way');
 });
 
 test('delivery lifecycle: المندوب الخارجي يسلم النقدية والمحل وحده يغلق الطلب', async () => {
   await seedOnWay('external');
   await reportDelivery('cour1');
+  await workerConfirmExternal('cour1');
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
     verifiedTotal: 35,
     verifiedAt: serverTimestamp(),
   }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
     finalDeliveryFee: 15,
-  }));
-  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), {
-    customerConfirmedAt: serverTimestamp(),
   }));
   const owner = as('owner1');
   const earlyClose = writeBatch(owner);
@@ -975,7 +977,7 @@ test('delivery issue: الإدارة تختار إعادة المحاولة وي
   });
   resume.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: deleteField() });
   await assertSucceeds(resume.commit());
-  // بعد الاستئناف المندوب يبلّغ بالتسليم فقط؛ الإغلاق لا يتم منه مباشرة.
+  // بعد الاستئناف: الإغلاق لا يتم من المندوب مباشرة، ولا بلاغ تسليم من التطبيق (الرمز عن طريق الـWorker).
   await assertFails(deliver(courier, 'courier', stamp()));
   await reportDelivery('cour1');
 });
@@ -1172,21 +1174,14 @@ test('delivery: لا يمكن تسجيل التسليم قبل تسجيل الو
   await assertFails(deliver(as('admin1'), 'admin', stamp()));
 });
 
-// الإغلاق لا يتم من المندوب ولا الأدمن مباشرة؛ في طلب مندوب المحل العميل يؤكد الاستلام ويُختم الطلب.
+// الإغلاق العادي بالرمز من الـWorker. من التطبيق: الأدمن بس، ولطلب مندوب المحل اللي رمزه اتقفل.
+// (بنستخدم الإغلاق الإداري هنا عشان نختبر قواعد ختم التسليم.)
 async function seedStoreReported(extra = {}) {
   await seedOnWay('store');
-  await setOrder({ customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: 'storecour1', ...extra });
+  await setOrder({ deliveryPinLockedAt: new Date(), ...extra });
 }
 const storeStamp = (over = {}) => stamp({ deliveredBy: 'storecour1', ...over });
-const customerClose = (patch) => {
-  const db = as('cust1');
-  const b = writeBatch(db);
-  b.update(doc(db, 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...patch });
-  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
-    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
-  });
-  return b.commit();
-};
+const customerClose = (patch) => deliver(as('admin1'), 'admin', patch);
 
 test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
   await seedStoreReported();
@@ -1205,9 +1200,19 @@ test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اك
   await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { courierEarning: 500 }));
 });
 
-test('delivery stamp: الأدمن لا يغلق الطلب، والمبلغ المعتمد هو المحصّل', async () => {
-  await seedStoreReported({ verifiedTotal: 28 });
+test('delivery stamp: الأدمن يغلق بس بعد قفل الرمز، والمبلغ المعتمد هو المحصّل', async () => {
+  await seedOnWay('store');
+  await setOrder({ verifiedTotal: 28 });
+  // من غير قفل الرمز: الأدمن ما يغلقش
   await assertFails(deliver(as('admin1'), 'admin', storeStamp({ collectedAmount: 28 })));
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  // العميل ما يغلقش حتى بعد القفل
+  const cb = writeBatch(as('cust1'));
+  cb.update(doc(as('cust1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...storeStamp({ collectedAmount: 28 }) });
+  cb.set(doc(as('cust1'), 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+  });
+  await assertFails(cb.commit());
   await assertFails(customerClose(storeStamp({ collectedAmount: 40 })));
   await assertSucceeds(customerClose(storeStamp({ collectedAmount: 28 })));
 });

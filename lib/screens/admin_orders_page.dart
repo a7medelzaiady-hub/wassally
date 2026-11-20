@@ -498,6 +498,17 @@ class _AdminOrderCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (order.deliveryPinLockedAt != null &&
+                  order.status == OrderStatus.onTheWay &&
+                  order.customerConfirmedAt == null)
+                Container(
+                  color: kDanger.withValues(alpha: 0.08),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: Text(
+                    'رمز التسليم اتقفل بعد محاولات غلط من المندوب. راجع الطلب وقرر.',
+                    style: TextStyle(color: kDanger, fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                 child: Column(

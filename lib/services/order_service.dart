@@ -669,57 +669,6 @@ class OrderService {
     await OrderGateway.cleanupAttachments(idToken: idToken, orderId: orderId);
   }
 
-  /// تأكيد العميل استلام الطلب بعد بلاغ المندوب.
-  /// مندوب المحل: تأكيد العميل يغلق الطلب. المندوب الخارجي: التأكيد لا يغلقه.
-  static Future<void> confirmDelivery(AppOrder order) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || uid != order.userId) {
-      throw StateError('لا يمكن تأكيد طلب لا يخص حسابك.');
-    }
-    if (order.status != OrderStatus.onTheWay ||
-        order.customerDeliveryReportedAt == null ||
-        order.customerDeliveryReportedBy != order.courierId ||
-        order.courierId.isEmpty ||
-        order.customerConfirmedAt != null) {
-      throw StateError('الطلب لم يصل لمرحلة تأكيد الاستلام.');
-    }
-
-    if (order.deliveryMode == 'store') {
-      await OrderStatusWriter.change(
-        orderId: order.id,
-        from: OrderStatus.onTheWay,
-        to: OrderStatus.delivered,
-        actorRole: 'customer',
-        extra: {
-          'customerConfirmedAt': FieldValue.serverTimestamp(),
-          'deliveredBy': order.courierId,
-          'deliveredAt': FieldValue.serverTimestamp(),
-          'collectedAmount': order.payable,
-          'courierEarning': order.courierFee,
-        },
-      );
-      try {
-        await cleanupConfirmedAttachments(order.id);
-      } catch (error) {
-        if (kDebugMode) debugPrint('ORDER ATTACHMENT CLEANUP PENDING: $error');
-      }
-      return;
-    }
-
-    if (order.deliveryMode != 'external') {
-      throw StateError('نوع التوصيل غير معروف. تواصل مع الدعم.');
-    }
-    await _orders.doc(order.id).update({
-      'customerConfirmedAt': FieldValue.serverTimestamp(),
-    });
-    try {
-      await cleanupConfirmedAttachments(order.id);
-    } catch (error) {
-      if (kDebugMode) debugPrint('ORDER ATTACHMENT CLEANUP PENDING: $error');
-    }
-  }
-
-  /// إلغاء الطلب (مسموح بس طالما حالته "تم استلام الطلب").
   static Future<void> cancel(String id) {
     return OrderStatusWriter.change(
       orderId: id,

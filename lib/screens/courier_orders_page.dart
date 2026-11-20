@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import '../services/customer_rating_service.dart';
+import '../services/delivery_pin_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
@@ -577,6 +578,29 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     }
   }
 
+  /// التسليم بقى برمز من 4 أرقام بياخده المندوب من العميل، والـWorker هو اللي بيتحقق.
+  Future<void> _deliverWithPin() async {
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const _DeliveryPinDialog(),
+    );
+    if (pin == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      final delivered = await DeliveryPinService.deliver(widget.order.id, pin);
+      messenger.showSnackBar(SnackBar(
+        content: Text(delivered
+            ? 'تم تأكيد التسليم. حصّل ${formatPrice(widget.order.payable)} من العميل.'
+            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
+      ));
+    } on DeliveryPinError catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _advance() async {
     final next = widget.order.status.courierNext;
     if (next == null || _busy || widget.order.status.courierMustWait) return;
@@ -586,30 +610,28 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       return;
     }
     final delivering = next == OrderStatus.delivered;
+    if (delivering) {
+      await _deliverWithPin();
+      return;
+    }
 
     final ok = await confirmDialog(
       context,
-      title: delivering ? 'تأكيد التسليم' : 'تأكيد الاستلام',
-      message: delivering
-          ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.payable)} من العميل؟'
-          : 'هتبدأ توصيل الطلب؟',
-      confirmLabel: delivering ? 'إبلاغ العميل بالتسليم' : 'ابدأ التوصيل',
+      title: 'تأكيد الاستلام',
+      message: 'هتبدأ توصيل الطلب؟',
+      confirmLabel: 'ابدأ التوصيل',
     );
     if (!ok || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      if (delivering) {
-        await StaffOrderService.reportCustomerDelivery(widget.order);
-      } else {
-        await StaffOrderService.setStatus(
-          widget.order.id,
-          next,
-          from: widget.order.status,
-          actorRole: 'courier',
-        );
-      }
+      await StaffOrderService.setStatus(
+        widget.order.id,
+        next,
+        from: widget.order.status,
+        actorRole: 'courier',
+      );
     } on FirebaseException catch (error) {
       final message = switch (error.code) {
         'permission-denied' =>
@@ -1116,7 +1138,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               )
             else ...[
               const Text(
-                'تم تسجيل وصولك للعميل. تواصل معه، ثم أبلغ عن التسليم أو سجّل تعذر التسليم.',
+                'تم تسجيل وصولك للعميل. سلّمه الطلب وخد منه رمز التسليم (4 أرقام)، أو سجّل تعذر التسليم.',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -1126,7 +1148,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     child: FilledButton(
                       onPressed: _busy ? null : _advance,
                       style: FilledButton.styleFrom(shape: const StadiumBorder()),
-                      child: const Text('تم التسليم للعميل'),
+                      child: const Text('تأكيد التسليم بالرمز'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1217,6 +1239,67 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 ),
               ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+
+/// حوار إدخال رمز التسليم (4 أرقام) من العميل.
+class _DeliveryPinDialog extends StatefulWidget {
+  const _DeliveryPinDialog();
+
+  @override
+  State<_DeliveryPinDialog> createState() => _DeliveryPinDialogState();
+}
+
+class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
+  final _ctrl = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final pin = DeliveryPinService.normalize(_ctrl.text);
+    if (pin == null) {
+      setState(() => _error = 'اكتب 4 أرقام.');
+      return;
+    }
+    Navigator.pop(context, pin);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('رمز التسليم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('اطلب من العميل رمز التسليم اللي ظاهر عنده في التطبيق.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              maxLength: 4,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
+              style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w800),
+              decoration: InputDecoration(counterText: '', errorText: _error),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('رجوع')),
+          FilledButton(onPressed: _submit, child: const Text('تأكيد التسليم')),
         ],
       ),
     );
