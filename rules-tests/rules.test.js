@@ -805,7 +805,8 @@ test('catalog store_index: خانة المحل لازم تطابق isOpen في �
   const ref = doc(as('owner1'), 'app_info/store_index');
   await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, isOpen: false } }, { merge: true }));
   await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: true } }, { merge: true }));
-  await assertFails(setDoc(ref, { s_shop1: entry }, { merge: true }));
+  // merge بيدمج جوه الخانة، فعشان نجرّب خانة من غير isOpen لازم نشيله صراحة.
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: deleteField() } }, { merge: true }));
 });
 
 test('owner: يضيف ويعدّل ويحذف أصناف محله فقط، وبحقول سليمة', async () => {
