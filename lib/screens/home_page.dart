@@ -77,6 +77,19 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   // العنوان المحفوظ للعميل.
   String _address = '';
+  bool _sareeEnabled = true;
+
+  Future<void> _setSareeEnabled(bool enabled) async {
+    setState(() => _sareeEnabled = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('saree_guide_enabled', enabled);
+  }
+
+  Future<void> _loadSareePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() =>
+        _sareeEnabled = prefs.getBool('saree_guide_enabled') ?? true);
+  }
 
 
   // الإشعارات.
@@ -131,6 +144,7 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
+    _loadSareePreference();
     _loadSavedAddress();
     _initNotifications();
 
@@ -836,6 +850,14 @@ class _HomePageState extends State<HomePage>
                       icon: const Icon(Icons.close_rounded),
                     ),
                   ]),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _setSareeEnabled(false);
+                    },
+                    icon: const Icon(Icons.visibility_off_outlined),
+                    label: const Text('إيقاف سريع وإخفاؤه من الرئيسية'),
+                  ),
                   const SizedBox(height: 12),
                   Text(message, style: const TextStyle(fontSize: 15, height: 1.5)),
                   const SizedBox(height: 16),
@@ -907,6 +929,16 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _sareeGuideCard(List<_StoreItem> stores) {
+    if (!_sareeEnabled) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: () => _setSareeEnabled(true),
+          icon: const Icon(Icons.visibility_outlined, size: 18),
+          label: const Text('إظهار مساعد السوق سريع'),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Material(
