@@ -591,7 +591,7 @@ describe("Cloudinary account deletion", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         partial: false,
         deleted: { "special_requests/test": "deleted" },
-      }), { status: 200, headers: { "content-type": "application/json" } })
+      }), { status: 200, headers: { "content-type": "application/json" } }))
       // الرسائل الصوتية (video على Cloudinary) بعد الصور.
       .mockResolvedValueOnce(new Response(JSON.stringify({
         partial: false,
