@@ -904,7 +904,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         }
         if (status == 'returned_to_store') {
           return const Text(
-            'تم تسجيل رجوع الطلب للمحل. الإدارة ستغلق الطلب بعد المراجعة.',
+            'تم تسجيل رجوع الطلب للمحل. الطلب هيتقفل أول ما المحل يأكد استلامه.',
             style: TextStyle(fontWeight: FontWeight.w700),
           );
         }

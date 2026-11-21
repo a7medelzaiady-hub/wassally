@@ -561,7 +561,8 @@ class StaffOrderService {
     await batch.commit();
   }
 
-  /// صاحب المحل يؤكد استلام المرتجع فعليًا قبل أن تغلق الإدارة الطلب.
+  /// صاحب المحل يؤكد استلام المرتجع، والطلب يتقفل «ملغي (مرتجع)» في نفس الـbatch من غير الإدارة.
+  /// (المندوب لازم يكون سجّل إنه رجّع الطلب الأول.) مفيش عمولة توصيل للمرتجع (مفيش ختم تسليم).
   static Future<void> confirmStoreReceivedReturn({
     required String orderId,
     required String issueId,
@@ -575,11 +576,33 @@ class StaffOrderService {
         data['status'] != 'returned_to_store') {
       throw StateError('البلاغ لا ينتظر تأكيد استلام المحل.');
     }
-    await ref.update({
+    final db = FirebaseFirestore.instance;
+    final orderRef = _orders.doc(orderId);
+    final batch = db.batch();
+    batch.update(ref, {
       'status': 'store_confirmed_return',
       'storeReceivedAt': FieldValue.serverTimestamp(),
       'storeReceivedBy': uid,
     });
+    batch.update(orderRef, {
+      'status': OrderStatus.cancelled.key,
+      'activeDeliveryIssueId': FieldValue.delete(),
+      'lastDeliveryIssueId': issueId,
+    });
+    batch.set(orderRef.collection('statusHistory').doc(OrderStatus.cancelled.key), {
+      'from': OrderStatus.onTheWay.key,
+      'to': OrderStatus.cancelled.key,
+      'actorUid': uid,
+      'actorRole': 'storeOwner',
+      'at': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+    await _notify(
+      (data['courierId'] ?? '').toString(),
+      'المحل استلم المرتجع',
+      'المحل أكد استلام الطلب المرتجع، والطلب اتقفل.',
+      orderId,
+    );
     await _notify(
       (data['customerId'] ?? '').toString(),
       'تم استلام مرتجع طلبك في المحل',

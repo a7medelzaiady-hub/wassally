@@ -946,7 +946,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
         }
         if (status == 'store_confirmed_return') {
           return const Text(
-            'تم تأكيد استلام المحل للمرتجع، والإدارة تقدر تغلق الطلب.',
+            'تم تأكيد استلام المرتجع، والطلب اتقفل.',
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           );
         }
