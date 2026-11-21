@@ -74,9 +74,9 @@ void main() {
     }
   });
 
-  test('صورة الدخول محلية وليست رابط خارجي', () {
+  test('صورة الدخول: الأصلية (Unsplash) أساسية، والخلفية المحلية احتياطي', () {
     final src = _repoFile('lib/screens/login_screen.dart').readAsStringSync();
-    expect(src.contains('unsplash'), isFalse);
+    expect(src.contains('photo-1504674900247-0877df9cc836'), isTrue);
     expect(src.contains("assets/images/login_bg.webp"), isTrue);
     expect(_repoFile('assets/images/login_bg.webp').existsSync(), isTrue);
   });
