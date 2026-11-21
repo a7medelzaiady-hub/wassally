@@ -135,5 +135,8 @@ void main() {
     expect(OptionGroup.tryParse('x'), isNull);
     expect(parseOptionGroups('x'), isEmpty);
     expect(parseOptionGroups(null), isEmpty);
+    expect(parseOptionGroups({'a': 1}), isEmpty);
+    expect(OptionGroup.tryParse({'title': 'x', 'options': 'bad'}), isNull);
+    expect(parseOptionGroups([5, 'x', null]), isEmpty);
   });
 }
