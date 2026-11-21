@@ -34,10 +34,13 @@ class GeminiTests(unittest.TestCase):
             def fake_urlopen(req, timeout=0):
                 if error:
                     raise error
+                data = ({"models": [{"name": "models/gemini-2.5-flash",
+                                     "supportedGenerationMethods": ["generateContent"]}]}
+                        if req.full_url.endswith("/models") else response)
                 class Reply:
                     def __enter__(self): return self
                     def __exit__(self, *args): return False
-                    def read(self): return json.dumps(response).encode()
+                    def read(self): return json.dumps(data).encode()
                 return Reply()
             with patch.dict(os.environ, env), patch.object(module, "ROOT", Path(tmp)), \
                  patch.object(module, "post_comment", side_effect=messages.append), \
