@@ -683,7 +683,7 @@ class _ManageSheetState extends State<_ManageSheet> {
 
   /// الخطوات المتبقية لتجهيز الطلب: اعتماد السعر، تغيير الحالة، تعيين مندوب.
   List<String> get _remaining {
-    if (_o.status == OrderStatus.cancelled) return const [];
+    if (!adminPrepStepsApply(_o)) return const [];
     return [
       if (!_o.isVerified) 'اعتماد السعر',
       if (_o.status == OrderStatus.newOrder) 'تغيير الحالة',
@@ -694,6 +694,8 @@ class _ManageSheetState extends State<_ManageSheet> {
   /// الشيت ما يتقفلش إلا لما كل الخطوات تخلص.
   void _maybeFinish() {
     if (!_acted || _finished || _remaining.isNotEmpty || !mounted) return;
+    // بعد خروج الطلب للتوصيل مفيش «تجهيز»، فما نقفلش الشيت برسالة تجهيز مضلّلة.
+    if (!adminPrepStepsApply(_o)) return;
     _finished = true;
     final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
@@ -899,6 +901,15 @@ class _ManageSheetState extends State<_ManageSheet> {
         body: (o.verifiedTotal! - o.total).abs() >= 0.01
             ? 'الإجمالي الأصلي في الطلب كان ${formatPrice(o.total)}.'
             : null,
+      );
+    }
+    if (!adminCanApprovePrice(o)) {
+      if (o.status == OrderStatus.cancelled) return const SizedBox.shrink();
+      return _noteBox(
+        color: kMuted,
+        icon: Icons.lock_outline_rounded,
+        title: 'اعتماد السعر مقفول',
+        body: 'الطلب خرج للتوصيل أو العميل استلمه. التحصيل بالإجمالي ${formatPrice(o.payable)}.',
       );
     }
     return FutureBuilder<PriceCheck>(
@@ -1173,6 +1184,10 @@ class _ManageSheetState extends State<_ManageSheet> {
   Widget _stepsCard() {
     final rem = _remaining;
     final cancelled = _o.status == OrderStatus.cancelled;
+    if (!cancelled && !adminPrepStepsApply(_o)) {
+      // بعد خروج الطلب للتوصيل: مفيش خطوات تجهيز، بنعرض بس رسالة آخر إجراء/الخطأ.
+      if (_err == null && _last == null) return const SizedBox.shrink();
+    }
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 12),
@@ -1209,7 +1224,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                 ),
               ),
             ),
-          Text(
+          if (cancelled || adminPrepStepsApply(_o)) Text(
             'خطوات تجهيز الطلب',
             style: TextStyle(
               fontSize: 13,
@@ -1225,7 +1240,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
               ),
             )
-          else ...[
+          else if (adminPrepStepsApply(_o)) ...[
             _stepRow('اعتماد السعر', _o.isVerified),
             _stepRow('تغيير الحالة', _o.status != OrderStatus.newOrder),
             _stepRow('تعيين مندوب', _o.courierId.isNotEmpty),
@@ -1673,6 +1688,17 @@ bool adminStatusLocked(OrderStatus status) =>
 
 
 /// طلب في الطريق رمزه اتقفل ولسه ما اتأكدش: محتاج قرار من الإدارة.
+/// خطوات التجهيز (اعتماد السعر/تغيير الحالة/تعيين مندوب) بتنطبق قبل خروج الطلب للتوصيل بس.
+bool adminPrepStepsApply(AppOrder o) =>
+    o.status == OrderStatus.newOrder || o.status == OrderStatus.preparing;
+
+/// اعتماد السعر مسموح في نافذة القواعد بس (pricingApprovalWindow): جديد/بيتجهز،
+/// قبل إبلاغ التسليم وقبل تأكيد العميل الاستلام.
+bool adminCanApprovePrice(AppOrder o) =>
+    adminPrepStepsApply(o) &&
+    o.customerDeliveryReportedAt == null &&
+    o.customerConfirmedAt == null;
+
 /// الإدارة تقدر تغيّر الحالة لـ[s]؟ بتطابق انتقالات الإدارة في firestore.rules (adminMoveOk):
 ///  • جديد: تجهيز أو إلغاء. • تجهيز: إلغاء، أو في الطريق بعد جاهزية المحل وتعيين مندوب.
 ///  • في الطريق: «تم التوصيل» بس بعد قفل الرمز ولمندوب المحل، أو إلغاء بعد توثيق رجوع الطلب

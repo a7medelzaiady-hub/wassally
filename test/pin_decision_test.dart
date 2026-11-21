@@ -51,4 +51,16 @@ void main() {
     expect(adminCanSetStatus(_o(OrderStatus.delivered), OrderStatus.cancelled), isFalse);
     expect(adminCanSetStatus(_o(OrderStatus.cancelled), OrderStatus.delivered), isFalse);
   });
+
+  test('اعتماد السعر مقفول بعد خروج الطلب للتوصيل أو تأكيد العميل (مطابق pricingApprovalWindow)', () {
+    final t = DateTime(2026, 11, 21);
+    expect(adminCanApprovePrice(_o(OrderStatus.newOrder)), isTrue);
+    expect(adminCanApprovePrice(_o(OrderStatus.preparing)), isTrue);
+    expect(adminCanApprovePrice(_o(OrderStatus.onTheWay)), isFalse);
+    expect(adminCanApprovePrice(_o(OrderStatus.delivered)), isFalse);
+    expect(adminCanApprovePrice(_o(OrderStatus.cancelled)), isFalse);
+    expect(adminCanApprovePrice(_o(OrderStatus.preparing, confirmed: t)), isFalse);
+    expect(adminPrepStepsApply(_o(OrderStatus.preparing)), isTrue);
+    expect(adminPrepStepsApply(_o(OrderStatus.onTheWay)), isFalse);
+  });
 }
