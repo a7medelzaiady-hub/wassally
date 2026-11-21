@@ -2341,3 +2341,84 @@ test('catalog: صاحب طلب انضمام يدير قائمة وإصدار م�
   await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
   await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
 });
+
+test('بعد تأكيد العميل الاستلام (مندوب خارجي): الإدارة لا تلغي ولا ترجّع ولا تغلق الطلب؛ الإغلاق لصاحب المحل بعد النقدية', async () => {
+  await seedOnWay('external');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  const admin = as('admin1');
+  // تحكم إيجابي: قرار الإدارة بتأكيد الاستلام نفسه ينجح (يثبت إن الرفض اللي بعده بسبب الحالة مش بسبب إعداد ناقص).
+  await assertSucceeds(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'cancelled', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'preparing', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'new', 'admin'));
+  const close = writeBatch(admin);
+  close.update(doc(admin, 'orders/o1'), stamp());
+  close.set(doc(admin, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: actorUidOf('admin'), actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertFails(close.commit());
+  const after = (await getDoc(doc(admin, 'orders/o1'))).data();
+  assert.equal(after.status, 'on_the_way');
+});
+
+// ───────────── serverOrders: اختبارات بعلامة تحكّم (positive control) ─────────────
+// كل رفض هنا له نظير ناجح بنفس العملية والبيانات من غير الفلاج، فالرفض سببه الفلاج مش خطأ في البيانات.
+const setServerOrders = (value) => (db) =>
+  setDoc(doc(db, 'app_info/security'), { serverOrders: value });
+
+function directCreateBatch(db, id) {
+  const b = writeBatch(db);
+  b.set(doc(db, `orders/${id}`), baseOrder('cust1'));
+  b.set(doc(db, `orders/${id}/private/contact`), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+  b.set(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp() });
+  return b;
+}
+function directEditBatch(db, orderId = 'o1') {
+  const b = writeBatch(db);
+  b.update(doc(db, `orders/${orderId}`), {
+    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+    subtotal: 30, total: 50, editedAt: serverTimestamp(),
+  });
+  b.update(doc(db, `orders/${orderId}/private/contact`), { address: 'عنوان تجريبي 2' });
+  return b;
+}
+
+test('serverOrders control: الإنشاء المباشر الكامل (طلب + تواصل + orderLimits) ينجح بدون الفلاج أو مع false ويُرفض مع true', async () => {
+  await seed();
+  await assertSucceeds(directCreateBatch(as('cust1'), 'direct-no-flag').commit());
+  await seed(setServerOrders(false));
+  await assertSucceeds(directCreateBatch(as('cust1'), 'direct-flag-false').commit());
+  await seed(setServerOrders(true));
+  await assertFails(directCreateBatch(as('cust1'), 'direct-flag-true').commit());
+  // ولا عن طريق كتابة الطلب لوحده
+  await assertFails(setDoc(doc(as('cust1'), 'orders/direct-flag-true-2'), baseOrder('cust1')));
+});
+
+test('serverOrders control: تعديل الأصناف والإجمالي المباشر (طلب + تواصل) ينجح بدون الفلاج ويُرفض مع true', async () => {
+  await seed();
+  await assertSucceeds(directEditBatch(as('cust1')).commit());
+  await seed(setServerOrders(true));
+  await assertFails(directEditBatch(as('cust1')).commit());
+});
+
+test('serverOrders: أي محاولة من العميل لتغيير حقول السعر مباشرة تُرفض مع تفعيل البوابة', async () => {
+  await seed(setServerOrders(true));
+  const attempts = [
+    { subtotal: 1, total: 21 },
+    { total: 1 },
+    { deliveryFee: 0, total: 20 },
+    { discount: 5, total: 35 },
+    { serviceFee: 0 },
+    { items: [{ name: 'p', price: 1, qty: 2, productId: 'p1' }], subtotal: 2, total: 22 },
+  ];
+  for (const patch of attempts) {
+    await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { ...patch, editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), patch));
+  }
+});
+
+test('serverOrders: الإلغاء والإخفاء من العميل يفضلوا شغالين مع تفعيل البوابة (نفس اللي اتجرّب على الـcanary)', async () => {
+  await seed(setServerOrders(true));
+  await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+});
