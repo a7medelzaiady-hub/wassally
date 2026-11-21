@@ -1965,6 +1965,19 @@ export default {
         headers: mergedHeaders,
       });
     } catch (error) {
+      if (!(error instanceof HttpError)) {
+        // Do not log request bodies, tokens, user data, or raw error messages.
+        const errorType = error instanceof Error ? error.name : typeof error;
+        const stackLocations = error instanceof Error
+          ? (error.stack ?? "").split("\n").slice(1, 5)
+              .map((frame) => frame.match(/(?:index|worker|bundle)\.(?:ts|js):\d+:\d+/)?.[0] ?? "unknown")
+          : [];
+        console.error("order_gateway_unexpected_exception", {
+          route: isCreate ? "create" : isCleanup ? "cleanup" : "edit",
+          errorType,
+          stackLocations,
+        });
+      }
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
       // Business rejections (409) always carry a code so the app never guesses from the text.
       const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
