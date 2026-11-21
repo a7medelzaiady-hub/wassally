@@ -1,11 +1,15 @@
-// Diagnostic-only positive control: deliberately exceed Firestore's 1000-expression budget.
-// This is not a production rule and must never be merged to main.
+// Diagnostic-only runtime expression-budget positive control. Never merge into main.
 const { initializeTestEnvironment, assertFails } = require('@firebase/rules-unit-testing');
 const { getDoc, doc } = require('firebase/firestore');
 
 async function main() {
-  const comparisons = Array.from({ length: 1100 }, (_, i) => `request.auth.uid != 'blocked_${i}'`).join(' && ');
-  const rules = `rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { match /positive_control/{id} { allow read: if request.auth != null && (${comparisons}); } } }`;
+  // Small individual expressions avoid the compiler's 'too complex' rejection.
+  // A chain of helper functions forces repeated evaluations at request time.
+  const functions = Array.from({ length: 16 }, (_, i) => {
+    const terms = Array.from({ length: 75 }, (_, j) => `request.auth.uid != 'blocked_${i}_${j}'`).join(' && ');
+    return `function check${i}() { return ${terms}${i < 15 ? ` && check${i + 1}()` : ''}; }`;
+  }).join('\n');
+  const rules = `rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { ${functions} match /positive_control/{id} { allow read: if request.auth != null && check0(); } } }`;
   const env = await initializeTestEnvironment({ projectId: 'demo-wasally', firestore: { rules } });
   try {
     const db = env.authenticatedContext('positive-control-user').firestore();
