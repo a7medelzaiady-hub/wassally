@@ -2362,8 +2362,8 @@ test('بعد تأكيد العميل الاستلام (مندوب خارجي): �
 
 // ───────────── serverOrders: اختبارات بعلامة تحكّم (positive control) ─────────────
 // كل رفض هنا له نظير ناجح بنفس العملية والبيانات من غير الفلاج، فالرفض سببه الفلاج مش خطأ في البيانات.
-const setServerOrders = (value) => env.withSecurityRulesDisabled((c) =>
-  setDoc(doc(c.firestore(), 'app_info/security'), { serverOrders: value }));
+const setServerOrders = (value) => (db) =>
+  setDoc(doc(db, 'app_info/security'), { serverOrders: value });
 
 function directCreateBatch(db, id) {
   const b = writeBatch(db);
@@ -2385,9 +2385,9 @@ function directEditBatch(db, orderId = 'o1') {
 test('serverOrders control: الإنشاء المباشر الكامل (طلب + تواصل + orderLimits) ينجح بدون الفلاج أو مع false ويُرفض مع true', async () => {
   await seed();
   await assertSucceeds(directCreateBatch(as('cust1'), 'direct-no-flag').commit());
-  await seed(() => setServerOrders(false));
+  await seed(setServerOrders(false));
   await assertSucceeds(directCreateBatch(as('cust1'), 'direct-flag-false').commit());
-  await seed(() => setServerOrders(true));
+  await seed(setServerOrders(true));
   await assertFails(directCreateBatch(as('cust1'), 'direct-flag-true').commit());
   // ولا عن طريق كتابة الطلب لوحده
   await assertFails(setDoc(doc(as('cust1'), 'orders/direct-flag-true-2'), baseOrder('cust1')));
@@ -2396,12 +2396,12 @@ test('serverOrders control: الإنشاء المباشر الكامل (طلب +
 test('serverOrders control: تعديل الأصناف والإجمالي المباشر (طلب + تواصل) ينجح بدون الفلاج ويُرفض مع true', async () => {
   await seed();
   await assertSucceeds(directEditBatch(as('cust1')).commit());
-  await seed(() => setServerOrders(true));
+  await seed(setServerOrders(true));
   await assertFails(directEditBatch(as('cust1')).commit());
 });
 
 test('serverOrders: أي محاولة من العميل لتغيير حقول السعر مباشرة تُرفض مع تفعيل البوابة', async () => {
-  await seed(() => setServerOrders(true));
+  await seed(setServerOrders(true));
   const attempts = [
     { subtotal: 1, total: 21 },
     { total: 1 },
@@ -2417,7 +2417,7 @@ test('serverOrders: أي محاولة من العميل لتغيير حقول ا
 });
 
 test('serverOrders: الإلغاء والإخفاء من العميل يفضلوا شغالين مع تفعيل البوابة (نفس اللي اتجرّب على الـcanary)', async () => {
-  await seed(() => setServerOrders(true));
+  await seed(setServerOrders(true));
   await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
   await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
 });
