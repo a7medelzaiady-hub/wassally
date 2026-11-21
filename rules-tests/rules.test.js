@@ -2052,6 +2052,36 @@ test('رسوم وصّلي على المحل: الأدمن بس يسجّل دفع
   await assertFails(deleteDoc(doc(as('admin1'), 'store_fee_payments/p1')));
 });
 
+test('تقفيل الحساب: الأدمن بس يختم settledAt من غير ما يغيّر المدفوع، والدفعة بعده تحافظ عليه', async () => {
+  const settle = (uid, paid, last) => setDoc(doc(as(uid), 'store_fee_balances/shop1'), {
+    storeId: 'shop1', paidAmountMinor: paid, lastPaymentId: last, updatedAt: serverTimestamp(), settledAt: serverTimestamp(),
+  });
+  // أول تقفيل لمحل عمره ما دفع
+  await assertFails(settle('owner1', 0, ''));
+  await assertFails(settle('cust1', 0, ''));
+  await assertFails(settle('admin1', 500, ''));
+  await assertSucceeds(settle('admin1', 0, ''));
+  // دفعة بعد التقفيل لازم تحافظ على settledAt
+  const pay = (pid, amountMinor, paidAfter, keep) => {
+    const db = as('admin1');
+    const b = writeBatch(db);
+    b.set(doc(db, `store_fee_payments/${pid}`), {
+      storeId: 'shop1', amount: amountMinor / 100, amountMinor, note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+    });
+    const bal = { storeId: 'shop1', paidAmountMinor: paidAfter, lastPaymentId: pid, updatedAt: serverTimestamp() };
+    if (keep) bal.settledAt = (keep);
+    b.set(doc(db, 'store_fee_balances/shop1'), bal);
+    return b.commit();
+  };
+  const cur = (await getDoc(doc(as('admin1'), 'store_fee_balances/shop1'))).data().settledAt;
+  await assertFails(pay('q1', 300, 300, null));
+  await assertSucceeds(pay('q1', 300, 300, cur));
+  // تقفيل ثاني: المدفوع وآخر دفعة ما يتغيروش
+  await assertFails(settle('admin1', 999, 'q1'));
+  await assertFails(settle('admin1', 300, 'other'));
+  await assertSucceeds(settle('admin1', 300, 'q1'));
+});
+
 test('adminNotices: سجل إشعارات الإدارة مقفول على التطبيق', async () => {
   for (const uid of ['cust1', 'owner1', 'admin1']) {
     await assertFails(getDoc(doc(as(uid), 'adminNotices/join_request_x')));
