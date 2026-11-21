@@ -605,6 +605,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   Future<void> _advance() async {
     final next = widget.order.status.courierNext;
     if (next == null || _busy || widget.order.status.courierMustWait) return;
+    if (courierPinLocked(widget.order)) return;
     if (next == OrderStatus.onTheWay &&
         kCourierWaitsForReady &&
         !widget.order.ready) {
@@ -1142,14 +1143,22 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 'تم تسجيل وصولك للعميل. سلّمه الطلب وخد منه رمز التسليم (4 أرقام)، أو سجّل تعذر التسليم.',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
+              if (courierPinLocked(o))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب، استنى قرارها.',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: kDanger),
+                  ),
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: FilledButton(
-                      onPressed: _busy ? null : _advance,
+                      onPressed: (_busy || courierPinLocked(o)) ? null : _advance,
                       style: FilledButton.styleFrom(shape: const StadiumBorder()),
-                      child: const Text('تأكيد التسليم بالرمز'),
+                      child: Text(courierPinLocked(o) ? 'الرمز مقفول' : 'تأكيد التسليم بالرمز'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1307,6 +1316,10 @@ class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
   }
 }
 
+
+/// رمز التسليم اتقفل بعد محاولات غلط ولسه الإدارة ما قرّرتش: المندوب ما يقدرش يدخل رمز تاني.
+bool courierPinLocked(AppOrder o) =>
+    o.deliveryPinLockedAt != null && o.customerConfirmedAt == null;
 
 /// زرار «استلمت من المحل، في الطريق» بيظهر بس لما الخطوة الجاية فعلًا هي بدء التوصيل.
 /// (كان بيظهر كمان لطلب في الطريق العميل أكّد استلامه ومستني تسوية النقدية مع المحل.)

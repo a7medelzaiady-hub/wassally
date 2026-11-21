@@ -832,6 +832,10 @@ class _ManageSheetState extends State<_ManageSheet> {
       setState(() => _err = 'الطلب ${_o.status.label}، وحالته مش بتتغير.');
       return;
     }
+    if (!adminCanSetStatus(_o, s)) {
+      setState(() => _err = 'مش مسموح تغيّر الطلب لـ«${s.label}» من حالته الحالية.');
+      return;
+    }
     if (s == OrderStatus.cancelled) {
       final ok = await confirmDialog(
         context,
@@ -1087,13 +1091,15 @@ class _ManageSheetState extends State<_ManageSheet> {
     );
   }
 
-  Widget _statusTile(OrderStatus s, bool selected) {
-    return Material(
+  Widget _statusTile(OrderStatus s, bool selected, {bool enabled = true}) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
       color: selected ? s.color.withValues(alpha: 0.14) : Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _busy ? null : () => _changeStatus(s),
+        onTap: (_busy || !enabled) ? null : () => _changeStatus(s),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1137,6 +1143,7 @@ class _ManageSheetState extends State<_ManageSheet> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -1395,11 +1402,28 @@ class _ManageSheetState extends State<_ManageSheet> {
                 runSpacing: 10,
                 children: [
                   for (final s in OrderStatus.values)
-                    SizedBox(width: w, child: _statusTile(s, s == o.status)),
+                    SizedBox(
+                      width: w,
+                      child: _statusTile(
+                        s,
+                        s == o.status,
+                        enabled: s == o.status || adminCanSetStatus(o, s),
+                      ),
+                    ),
                 ],
               );
             },
           ),
+          if (adminStatusLocked(o.status) || o.customerConfirmedAt != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                adminStatusLocked(o.status)
+                    ? 'الطلب ${o.status.label}، وحالته مقفولة.'
+                    : 'العميل أكد استلام الطلب، فالحالة اتقفلت. المتبقي تسوية النقدية وتأكيد المحل.',
+                style: TextStyle(color: kMuted, fontSize: 12, height: 1.4),
+              ),
+            ),
           if (o.status == OrderStatus.preparing && !o.ready) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -1649,6 +1673,31 @@ bool adminStatusLocked(OrderStatus status) =>
 
 
 /// طلب في الطريق رمزه اتقفل ولسه ما اتأكدش: محتاج قرار من الإدارة.
+/// الإدارة تقدر تغيّر الحالة لـ[s]؟ بتطابق انتقالات الإدارة في firestore.rules (adminMoveOk):
+///  • جديد: تجهيز أو إلغاء. • تجهيز: إلغاء، أو في الطريق بعد جاهزية المحل وتعيين مندوب.
+///  • في الطريق: «تم التوصيل» بس بعد قفل الرمز ولمندوب المحل، أو إلغاء بعد توثيق رجوع الطلب
+///    للمحل (الخدمة بتتحقق منه). مفيش رجوع لخطوة سابقة.
+///  • بعد ما العميل يأكد الاستلام: مفيش أي تغيير (الإغلاق لصاحب المحل بعد تسوية النقدية).
+bool adminCanSetStatus(AppOrder o, OrderStatus s) {
+  if (adminStatusLocked(o.status)) return false;
+  switch (o.status) {
+    case OrderStatus.newOrder:
+      return s == OrderStatus.preparing || s == OrderStatus.cancelled;
+    case OrderStatus.preparing:
+      return s == OrderStatus.cancelled ||
+          (s == OrderStatus.onTheWay && o.ready && o.courierId.isNotEmpty);
+    case OrderStatus.onTheWay:
+      if (o.customerConfirmedAt != null) return false;
+      if (s == OrderStatus.cancelled) return true;
+      return s == OrderStatus.delivered &&
+          o.deliveryPinLockedAt != null &&
+          o.deliveryMode == 'store' &&
+          o.courierId.isNotEmpty;
+    default:
+      return false;
+  }
+}
+
 bool needsPinDecision(AppOrder o) =>
     o.deliveryPinLockedAt != null &&
     o.status == OrderStatus.onTheWay &&
