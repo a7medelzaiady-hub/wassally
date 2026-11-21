@@ -15,6 +15,8 @@ interface Env {
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
   UPLOAD_RATE_LIMITER: RateLimit;
+  // حد تقريبي لطلبات الإنشاء/التعديل لكل عميل (قبل أي قراءة Firestore). اختياري: لو مش مضبوط السلوك زي ما كان.
+  ORDER_RATE_LIMITER?: RateLimit;
   // App Check: off (الافتراضي، بدون أي تغيير) | monitor (تسجيل فقط) | enforce (رفض الطلب بدون رمز صالح).
   APP_CHECK_MODE?: string;
   // رقم مشروع Firebase (Project number) المطلوب للتحقق من رموز App Check.
@@ -1139,6 +1141,29 @@ export function serviceFeeFor(itemsAfterDiscount: number): number {
 
 export const ORDERS_PAUSED_MESSAGE = "استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.";
 export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
+/**
+ * حد طلبات لكل عميل على إنشاء/تعديل الطلب، قبل أي قراءة Firestore: طلب مرفوض بالفاصل (20 ثانية)
+ * أو بالحد اليومي كان بيكلّف قراءات كتير، وتعديل الطلب (PATCH) ماكانش عليه أي حد. من غير ده حساب
+ * واحد بتوكن صالح يقدر يستهلك حصة Spark اليومية. لو الـbinding مش مضبوط أو فشل، الطلب بيكمل
+ * (الحماية دي طبقة إضافية، وما تعطّلش العملاء لو Cloudflare نفسه فيه عطل).
+ */
+export async function assertOrderRateLimit(
+  limiter: { limit(options: { key: string }): Promise<{ success: boolean }> } | undefined,
+  uid: string,
+): Promise<void> {
+  if (!limiter) return;
+  let success = true;
+  try {
+    ({ success } = await limiter.limit({ key: `order:${uid}` }));
+  } catch (error) {
+    console.warn("order rate limiter unavailable", error instanceof Error ? error.name : typeof error);
+    return;
+  }
+  if (!success) {
+    throw new HttpError(429, "طلبات كتير في وقت قصير. استنى دقيقة وحاول تاني.", "rate_limited");
+  }
+}
+
 const DAILY_LIMIT_CODE = "daily_limit";
 
 /** مفتاح اليوم بتوقيت القاهرة (YYYY-MM-DD)، بيراعي التوقيت الصيفي تلقائيًا. */
@@ -1192,6 +1217,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
   }
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   let input: any;
   try {
     input = await request.json();
@@ -1420,6 +1446,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 
 async function updateOrder(request: Request, env: Env, orderId: string): Promise<Response> {
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
   let input: any;
   try {
