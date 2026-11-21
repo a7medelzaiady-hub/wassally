@@ -1,0 +1,67 @@
+name: Diagnostic ONLY - order rule expression isolation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/diagnostic-orders-expression.yml"
+permissions:
+  contents: read
+jobs:
+  isolate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+      - run: npm ci
+        working-directory: rules-tests
+      - name: Baseline with existing rule
+        shell: bash
+        run: |
+          set +e
+          rm -f rules-tests/firestore-debug.log firestore-debug.log
+          (cd rules-tests && npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js") > baseline-test.log 2>&1
+          echo "$?" > baseline-exit.txt
+          cp rules-tests/firestore-debug.log baseline-firestore-debug.log 2>/dev/null || true
+          grep -c "maximum of 1000 expressions" baseline-firestore-debug.log > baseline-hits.txt || echo 0 > baseline-hits.txt
+      - name: Isolate allow update by temporarily replacing with false in CI workspace
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('firestore.rules')
+          s = p.read_text()
+          target = 'allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);'
+          assert s.count(target) == 1, 'Expected exactly one order update rule'
+          p.write_text(s.replace(target, 'allow update: if false;'))
+          PY
+          set +e
+          rm -f rules-tests/firestore-debug.log firestore-debug.log
+          (cd rules-tests && npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js") > isolated-test.log 2>&1
+          echo "$?" > isolated-exit.txt
+          cp rules-tests/firestore-debug.log isolated-firestore-debug.log 2>/dev/null || true
+          grep -c "maximum of 1000 expressions" isolated-firestore-debug.log > isolated-hits.txt || echo 0 > isolated-hits.txt
+      - name: Print measured comparison (test failures expected in isolation)
+        run: |
+          echo "BASELINE_EXIT=$(cat baseline-exit.txt)"
+          echo "BASELINE_LIMIT_LOG_LINES=$(cat baseline-hits.txt)"
+          echo "ISOLATED_EXIT=$(cat isolated-exit.txt)"
+          echo "ISOLATED_LIMIT_LOG_LINES=$(cat isolated-hits.txt)"
+          echo "These are log-line counts, not unique assertFails sites."
+          test -s baseline-firestore-debug.log && test -s isolated-firestore-debug.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: order-expression-isolation-logs
+          path: |
+            baseline-*.log
+            isolated-*.log
+            *-hits.txt
+            *-exit.txt
