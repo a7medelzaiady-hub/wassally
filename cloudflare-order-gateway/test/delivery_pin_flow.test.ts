@@ -106,11 +106,29 @@ describe("GET /v1/orders/:id/delivery-pin", () => {
     expect((await getPin("courier_1")).status).toBe(403);
     expect((await getPin("someone_else")).status).toBe(403);
   });
-  it("is not available before pickup", async () => {
-    firebase({ "orders/o1": onTheWay({ status: "preparing" }) });
-    const res = await getPin("cust_1");
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { code: string }).code).toBe("pin_not_available");
+  it("is available from the start (new/preparing) and stays the same PIN as when on the way", async () => {
+    const expected = await deriveDeliveryPin("o1", SECRET);
+    for (const status of ["new", "preparing", "on_the_way"]) {
+      firebase({ "orders/o1": onTheWay({ status, courierId: "" }) });
+      const res = await getPin("cust_1");
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { pin: string }).pin).toBe(expected);
+      vi.restoreAllMocks();
+    }
+  });
+  it("same PIN after the customer edits the order (items/total changed)", async () => {
+    const before = await (async () => { firebase({ "orders/o1": onTheWay({ status: "new", total: 70 }) }); const r = await getPin("cust_1"); vi.restoreAllMocks(); return ((await r.json()) as { pin: string }).pin; })();
+    firebase({ "orders/o1": onTheWay({ status: "preparing", total: 130, editedAt: new Date() }) });
+    expect(((await (await getPin("cust_1")).json()) as { pin: string }).pin).toBe(before);
+  });
+  it("is not available after delivery, cancellation or customer confirmation", async () => {
+    for (const over of [{ status: "delivered" }, { status: "cancelled" }, { customerConfirmedAt: new Date("2026-11-20T10:05:00Z") }]) {
+      firebase({ "orders/o1": onTheWay(over) });
+      const res = await getPin("cust_1");
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { code: string }).code).toBe("pin_not_available");
+      vi.restoreAllMocks();
+    }
   });
   it("is disabled when the secret is not configured", async () => {
     firebase({ "orders/o1": onTheWay() });
