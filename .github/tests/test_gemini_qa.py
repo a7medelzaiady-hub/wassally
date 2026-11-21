@@ -77,8 +77,8 @@ class GeminiTests(unittest.TestCase):
                     def __exit__(self, *args): return False
                     def read(self): return json.dumps(data).encode()
                 return Reply()
-            with patch.dict(os.environ, env), patch.object(module, "ROOT", Path(tmp)), \\
-                 patch.object(module, "post_comment", side_effect=messages.append), \\
+            with patch.dict(os.environ, env), patch.object(module, "ROOT", Path(tmp)), \
+                 patch.object(module, "post_comment", side_effect=messages.append), \
                  patch.object(module.urllib.request, "urlopen", side_effect=fake_urlopen):
                 module.main()
             self.assertIn("fallback worked", messages[0])
