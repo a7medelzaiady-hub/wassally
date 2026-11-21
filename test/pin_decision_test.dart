@@ -25,15 +25,28 @@ void main() {
     expect(courierPinLocked(_o(OrderStatus.onTheWay, locked: t, confirmed: t)), isFalse);
   });
 
-  test('الإدارة: بعد تأكيد العميل الاستلام مفيش رجوع ولا إلغاء، الإغلاق «تم التوصيل» بس', () {
+  test('الإدارة: الانتقالات المسموحة تطابق القواعد (بعد تأكيد العميل مفيش تغيير)', () {
     final t = DateTime(2026, 11, 21);
     final confirmed = _o(OrderStatus.onTheWay, locked: t, confirmed: t);
-    expect(adminCanSetStatus(confirmed, OrderStatus.delivered), isTrue);
-    expect(adminCanSetStatus(confirmed, OrderStatus.cancelled), isFalse);
-    expect(adminCanSetStatus(confirmed, OrderStatus.preparing), isFalse);
-    expect(adminCanSetStatus(confirmed, OrderStatus.newOrder), isFalse);
-    // طلب عادي لسه ما اتأكدش: الإدارة تقدر تغيّر زي الأول.
-    expect(adminCanSetStatus(_o(OrderStatus.onTheWay), OrderStatus.cancelled), isTrue);
+    for (final s in OrderStatus.values) {
+      expect(adminCanSetStatus(confirmed, s), isFalse, reason: s.key);
+    }
+    // مندوب المحل + رمز مقفول: الإغلاق «تم التوصيل» مسموح، الرجوع ممنوع، الإلغاء بيتحقق منه الـservice.
+    final storeLocked = AppOrder(
+      id: 'o1', storeName: 'S', items: const [], subtotal: 10, deliveryFee: 20, total: 30,
+      status: OrderStatus.onTheWay, createdAt: t, address: 'a', phone: '010', notes: '',
+      deliveryPinLockedAt: t, deliveryMode: 'store', courierId: 'c1',
+    );
+    expect(adminCanSetStatus(storeLocked, OrderStatus.delivered), isTrue);
+    expect(adminCanSetStatus(storeLocked, OrderStatus.preparing), isFalse);
+    expect(adminCanSetStatus(storeLocked, OrderStatus.newOrder), isFalse);
+    // مندوب خارجي رمزه مقفول (لسه ما اتأكدش): مفيش إغلاق من الإدارة، بس قرار تأكيد الاستلام.
+    expect(adminCanSetStatus(_o(OrderStatus.onTheWay, locked: t), OrderStatus.delivered), isFalse);
+    // الدورة العادية.
+    expect(adminCanSetStatus(_o(OrderStatus.newOrder), OrderStatus.preparing), isTrue);
+    expect(adminCanSetStatus(_o(OrderStatus.newOrder), OrderStatus.onTheWay), isFalse);
+    expect(adminCanSetStatus(_o(OrderStatus.preparing), OrderStatus.cancelled), isTrue);
+    expect(adminCanSetStatus(_o(OrderStatus.preparing), OrderStatus.onTheWay), isFalse);
     // مسلّم أو ملغي: مقفول بالكامل.
     expect(adminCanSetStatus(_o(OrderStatus.delivered), OrderStatus.cancelled), isFalse);
     expect(adminCanSetStatus(_o(OrderStatus.cancelled), OrderStatus.delivered), isFalse);

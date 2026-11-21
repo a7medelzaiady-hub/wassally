@@ -833,7 +833,7 @@ class _ManageSheetState extends State<_ManageSheet> {
       return;
     }
     if (!adminCanSetStatus(_o, s)) {
-      setState(() => _err = 'العميل أكد استلام الطلب، فمينفعش ترجّعه أو تلغيه.');
+      setState(() => _err = 'مش مسموح تغيّر الطلب لـ«${s.label}» من حالته الحالية.');
       return;
     }
     if (s == OrderStatus.cancelled) {
@@ -1673,14 +1673,29 @@ bool adminStatusLocked(OrderStatus status) =>
 
 
 /// طلب في الطريق رمزه اتقفل ولسه ما اتأكدش: محتاج قرار من الإدارة.
-/// الإدارة تقدر تغيّر الحالة لـ[s]؟ بعد ما العميل يأكد الاستلام (والطلب لسه «في الطريق»
-/// لتسوية نقدية مندوب خارجي) مفيش رجوع ولا إلغاء، الاستثناء الوحيد الإغلاق «تم التوصيل».
+/// الإدارة تقدر تغيّر الحالة لـ[s]؟ بتطابق انتقالات الإدارة في firestore.rules (adminMoveOk):
+///  • جديد: تجهيز أو إلغاء. • تجهيز: إلغاء، أو في الطريق بعد جاهزية المحل وتعيين مندوب.
+///  • في الطريق: «تم التوصيل» بس بعد قفل الرمز ولمندوب المحل، أو إلغاء بعد توثيق رجوع الطلب
+///    للمحل (الخدمة بتتحقق منه). مفيش رجوع لخطوة سابقة.
+///  • بعد ما العميل يأكد الاستلام: مفيش أي تغيير (الإغلاق لصاحب المحل بعد تسوية النقدية).
 bool adminCanSetStatus(AppOrder o, OrderStatus s) {
   if (adminStatusLocked(o.status)) return false;
-  if (o.customerConfirmedAt != null && o.status == OrderStatus.onTheWay) {
-    return s == OrderStatus.delivered;
+  switch (o.status) {
+    case OrderStatus.newOrder:
+      return s == OrderStatus.preparing || s == OrderStatus.cancelled;
+    case OrderStatus.preparing:
+      return s == OrderStatus.cancelled ||
+          (s == OrderStatus.onTheWay && o.ready && o.courierId.isNotEmpty);
+    case OrderStatus.onTheWay:
+      if (o.customerConfirmedAt != null) return false;
+      if (s == OrderStatus.cancelled) return true;
+      return s == OrderStatus.delivered &&
+          o.deliveryPinLockedAt != null &&
+          o.deliveryMode == 'store' &&
+          o.courierId.isNotEmpty;
+    default:
+      return false;
   }
-  return true;
 }
 
 bool needsPinDecision(AppOrder o) =>
