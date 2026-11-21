@@ -77,6 +77,19 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   // العنوان المحفوظ للعميل.
   String _address = '';
+  bool _sareeEnabled = true;
+
+  Future<void> _setSareeEnabled(bool enabled) async {
+    setState(() => _sareeEnabled = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('saree_guide_enabled', enabled);
+  }
+
+  Future<void> _loadSareePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() =>
+        _sareeEnabled = prefs.getBool('saree_guide_enabled') ?? true);
+  }
 
 
   // الإشعارات.
@@ -131,6 +144,7 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
+    _loadSareePreference();
     _loadSavedAddress();
     _initNotifications();
 
@@ -765,6 +779,196 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  // سريع: إرشاد محلي للأقسام المحمّلة بالفعل، بدون طلبات شبكة أو listeners.
+  static const Map<String, List<String>> _guideKeywords = {
+    'سوبرماركت': ['لبن', 'حليب', 'سكر', 'رز', 'زيت', 'مكرونه', 'مكرونة', 'شاي', 'جبنه', 'جبنة', 'بيض'],
+    'بقالة': ['بقاله', 'بقالة', 'تموين'],
+    'خضار وفاكهة': ['خضار', 'فاكهه', 'فاكهة', 'طماطم', 'بطاطس', 'موز', 'تفاح', 'خيار'],
+    'لحوم ودواجن': ['لحمه', 'لحمة', 'لحوم', 'فراخ', 'دجاج', 'كفته', 'كفتة'],
+    'مطاعم': ['اكل', 'أكل', 'غدا', 'غداء', 'عشا', 'عشاء', 'بيتزا', 'برجر', 'كشري', 'شاورما'],
+    'مخبوزات وحلويات': ['عيش', 'خبز', 'كيك', 'تورتة', 'حلويات', 'مخبوزات'],
+    'محمصات وعطارة': ['عطاره', 'عطارة', 'بهارات', 'مكسرات', 'تسالي'],
+    'كافيه ومشروبات': ['قهوه', 'قهوة', 'عصير', 'مشروبات', 'كافيه'],
+    'ورد وهدايا': ['ورد', 'هديه', 'هدية', 'هدايا', 'بوكيه'],
+    'صيدليات': ['صيدليه', 'صيدلية', 'دواء', 'ادويه', 'أدوية'],
+  };
+
+  String? _guideCategory(String query, Set<String> available) {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    for (final category in available) {
+      if (category.toLowerCase().contains(normalized) ||
+          normalized.contains(category.toLowerCase())) {
+        return category;
+      }
+    }
+    for (final entry in _guideKeywords.entries) {
+      if (!available.contains(entry.key)) continue;
+      if (entry.value.any((word) => normalized.contains(word))) return entry.key;
+    }
+    // بعض الأسواق تستخدم بقالة بدل سوبرماركت والعكس.
+    if (available.contains('بقالة') &&
+        _guideKeywords['سوبرماركت']!.any(normalized.contains)) {
+      return 'بقالة';
+    }
+    if (available.contains('سوبرماركت') &&
+        _guideKeywords['بقالة']!.any(normalized.contains)) {
+      return 'سوبرماركت';
+    }
+    return null;
+  }
+
+  void _showSareeGuide(List<_StoreItem> stores) {
+    final available = stores.map((item) => item.store.category).toSet();
+    final controller = TextEditingController();
+    String? suggestion;
+    String message = 'يا ميت أهلاً! نورت سوق وصّلي، بتدور على إيه النهارده؟';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, update) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20, 8, 20, MediaQuery.viewInsetsOf(sheetContext).bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    const CircleAvatar(child: Text('⚡')),
+                    const SizedBox(width: 10),
+                    const Expanded(child: Text('سريع • دليلك في السوق',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
+                    IconButton(
+                      tooltip: 'إغلاق',
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ]),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _setSareeEnabled(false);
+                    },
+                    icon: const Icon(Icons.visibility_off_outlined),
+                    label: const Text('إيقاف سريع وإخفاؤه من الرئيسية'),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(message, style: const TextStyle(fontSize: 15, height: 1.5)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      hintText: 'مثلاً: لبن وسكر، خضار، بيتزا...',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onSubmitted: (value) {
+                      final category = _guideCategory(value, available);
+                      update(() {
+                        suggestion = category;
+                        message = category == null
+                            ? 'مش لاقي قسم مناسب للكلام ده دلوقتي. جرّب اسم منتج أو اختار من الأقسام.'
+                            : 'لقيتها! نروح لقسم $category؟';
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () {
+                      final category = _guideCategory(controller.text, available);
+                      update(() {
+                        suggestion = category;
+                        message = category == null
+                            ? 'مش لاقي قسم مناسب للكلام ده دلوقتي. جرّب اسم منتج أو اختار من الأقسام.'
+                            : 'لقيتها! نروح لقسم $category؟';
+                      });
+                    },
+                    child: const Text('دوّر مع سريع'),
+                  ),
+                  if (suggestion != null) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        final category = suggestion!;
+                        Navigator.pop(sheetContext);
+                        _openDirectory(category);
+                      },
+                      icon: const Icon(Icons.arrow_forward_rounded),
+                      label: Text('افتح قسم $suggestion'),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final category in available.where((c) => c.isNotEmpty).take(8))
+                        ActionChip(
+                          label: Text(category),
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _openDirectory(category);
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(controller.dispose);
+  }
+
+  Widget _sareeGuideCard(List<_StoreItem> stores) {
+    if (!_sareeEnabled) {
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          onPressed: () => _setSareeEnabled(true),
+          icon: const Icon(Icons.visibility_outlined, size: 18),
+          label: const Text('إظهار مساعد السوق سريع'),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Material(
+        color: Brand.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showSareeGuide(stores),
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Row(children: [
+              CircleAvatar(radius: 23, child: Text('⚡', style: TextStyle(fontSize: 25))),
+              SizedBox(width: 12),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('سريع معاك في السوق', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  SizedBox(height: 3),
+                  Text('بتدور على إيه؟ أساعدك توصل للقسم الصح',
+                      style: TextStyle(fontSize: 12.5)),
+                ],
+              )),
+              Icon(Icons.chevron_left_rounded),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ───────────────────────── الأقسام ─────────────────────────
 
   Widget _categoriesRow(Map<String, String> categoryImages) {
@@ -1280,6 +1484,9 @@ class _HomePageState extends State<HomePage>
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
               SliverToBoxAdapter(child: _header()),
+
+              if (!loading && !hasError)
+                SliverToBoxAdapter(child: _sareeGuideCard(all)),
 
               // الصفحة الرئيسية: محلات مميزة، البنرات، الأقسام، العروض، الأكثر مبيعًا.
               if (!loading && !hasError)
