@@ -1280,16 +1280,16 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // الصفحة الرئيسية: بنرات، روابط المحلات، الأقسام، العروض، الأكثر مبيعًا.
+              // الصفحة الرئيسية: محلات مميزة، البنرات، الأقسام، العروض، الأكثر مبيعًا.
+              if (!loading && !hasError)
+                SliverToBoxAdapter(child: _storeShortcuts(all)),
+
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 12),
+                  padding: EdgeInsets.only(top: 18),
                   child: PromoBanners(),
                 ),
               ),
-
-              if (!loading && !hasError)
-                SliverToBoxAdapter(child: _storeShortcuts(all)),
 
               SliverToBoxAdapter(
                 child: Padding(
