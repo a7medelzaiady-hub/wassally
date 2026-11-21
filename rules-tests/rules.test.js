@@ -2422,3 +2422,15 @@ test('serverOrders: الإلغاء والإخفاء من العميل يفضلو
   await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
   await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
 });
+
+test('اعتماد السعر: ينجح وهو بيتجهز، ويترفض بعد خروج الطلب وتأكيد العميل الاستلام', async () => {
+  // تحكم إيجابي: الاعتماد وهو «preparing» ينجح.
+  await setOrder({ status: 'preparing', courierId: 'cour1', deliveryMode: 'external', ready: true });
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 40, verifiedAt: serverTimestamp() }));
+  // بعد خروج الطلب للتوصيل وتأكيد الاستلام: مرفوض.
+  await seedOnWay('external');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 41, verifiedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 42, verifiedAt: serverTimestamp() }));
+});
