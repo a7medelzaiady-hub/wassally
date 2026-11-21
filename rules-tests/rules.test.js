@@ -70,7 +70,7 @@ test('orders: الطلب الخاص ومرفقاته تُحفظ داخل نفس 
     description: 'منتج مخصوص',
     quantity: 2,
     imageUrl: 'https://res.cloudinary.com/demo/image/upload/special_requests/sample.jpg',
-    voiceBase64: 'QUJDRA==',
+    voiceUrl: 'https://res.cloudinary.com/demo/video/upload/v1/special_requests/abc/voice.m4a',
     createdAt: new Date().toISOString(),
   };
   await assertSucceeds(setDoc(
@@ -84,6 +84,20 @@ test('orders: الطلب الخاص ومرفقاته تُحفظ داخل نفس 
   await assertFails(setDoc(
     doc(as('cust1'), 'orders/unknown-special-request-key'),
     baseOrder('cust1', { specialRequest: { ...request, customerPhone: '01012345678' } }),
+  ));
+  // الصوت base64 جوه الطلب اتقفل، ورابط الصوت لازم يكون من مجلد الطلبات الخاصة على Cloudinary.
+  const { voiceUrl: _v, ...noVoice } = request;
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-base64'),
+    baseOrder('cust1', { specialRequest: { ...noVoice, voiceBase64: 'QUJDRA==' } }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-foreign'),
+    baseOrder('cust1', { specialRequest: { ...request, voiceUrl: 'https://evil.example/voice.m4a' } }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-other-folder'),
+    baseOrder('cust1', { specialRequest: { ...request, voiceUrl: 'https://res.cloudinary.com/demo/video/upload/products/x.m4a' } }),
   ));
 });
 

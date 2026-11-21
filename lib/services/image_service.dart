@@ -48,7 +48,35 @@ class ImageService {
     if (bytes.length > 5 * 1024 * 1024) {
       throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
     }
+    return _upload(
+      bytes: bytes,
+      filename: picked.name.isEmpty ? 'upload' : picked.name,
+      folder: folder,
+      storeId: storeId,
+    );
+  }
 
+  /// رفع رسالة صوتية للطلب الخاص (m4a) على Cloudinary عن طريق الـWorker.
+  /// الطلب بيشيل الرابط بس، والملف بيتمسح بعد التسليم زي الصور.
+  static Future<String> uploadVoice(List<int> bytes, {required String storeId}) async {
+    if (bytes.isEmpty) throw StateError('التسجيل الصوتي فارغ. حاول مرة أخرى.');
+    if (bytes.length > 1024 * 1024) {
+      throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: 'voice.m4a',
+      folder: 'special_requests',
+      storeId: storeId,
+    );
+  }
+
+  static Future<String> _upload({
+    required List<int> bytes,
+    required String filename,
+    required String folder,
+    String? storeId,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل الدخول قبل رفع الصورة.');
     if (!OrderGateway.isConfigured) {
@@ -74,7 +102,7 @@ class ImageService {
         http.MultipartFile.fromBytes(
           'file',
           bytes,
-          filename: picked.name.isEmpty ? 'upload' : picked.name,
+          filename: filename,
         ),
       );
 

@@ -2428,7 +2428,8 @@ class _SpecialRequestBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = (data['description'] ?? '').toString().trim();
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
-    final voiceBase64 = (data['voiceBase64'] ?? '').toString().trim();
+    final voiceUrl = (data['voiceUrl'] ?? '').toString().trim();
+    final voice = voiceUrl.isNotEmpty ? voiceUrl : (data['voiceBase64'] ?? '').toString().trim();
     final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -2497,9 +2498,9 @@ class _SpecialRequestBox extends StatelessWidget {
               ),
             ),
           ],
-          if (voiceBase64.isNotEmpty) ...[
+          if (voice.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _SpecialVoicePlayer(encoded: voiceBase64),
+            _SpecialVoicePlayer(encoded: voice),
           ],
         ],
       ),
@@ -2538,7 +2539,10 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
   Future<void> _play() async {
     try {
       await _player.stop();
-      await _player.setSource(audio.BytesSource(base64Decode(widget.encoded)));
+      // الطلبات الجديدة: رابط Cloudinary. القديمة: base64 جوه الطلب.
+      await _player.setSource(widget.encoded.startsWith('https://')
+          ? audio.UrlSource(widget.encoded)
+          : audio.BytesSource(base64Decode(widget.encoded)));
       await _player.resume();
       if (mounted) setState(() => _playing = true);
     } catch (_) {
