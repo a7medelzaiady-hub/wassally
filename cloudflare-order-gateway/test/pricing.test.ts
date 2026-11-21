@@ -591,6 +591,11 @@ describe("Cloudinary account deletion", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         partial: false,
         deleted: { "special_requests/test": "deleted" },
+      }), { status: 200, headers: { "content-type": "application/json" } })
+      // الرسائل الصوتية (video على Cloudinary) بعد الصور.
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partial: false,
+        deleted: {},
       }), { status: 200, headers: { "content-type": "application/json" } }));
 
     try {
@@ -604,10 +609,15 @@ describe("Cloudinary account deletion", () => {
         UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
       }, "customer-uid-123");
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      for (const [input, init] of fetchSpy.mock.calls) {
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      const expectedPaths = [
+        "/v1_1/test-cloud/resources/image/upload",
+        "/v1_1/test-cloud/resources/image/upload",
+        "/v1_1/test-cloud/resources/video/upload",
+      ];
+      for (const [i, [input, init]] of fetchSpy.mock.calls.entries()) {
         const url = new URL(input instanceof Request ? input.url : String(input));
-        expect(url.pathname).toBe("/v1_1/test-cloud/resources/image/upload");
+        expect(url.pathname).toBe(expectedPaths[i]);
         expect(url.search).toBe("");
         expect(init?.method).toBe("DELETE");
         expect(new Headers(init?.headers).get("content-type"))
