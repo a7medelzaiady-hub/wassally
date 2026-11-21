@@ -951,10 +951,11 @@ class _HomePageState extends State<HomePage>
     List<(_StoreItem, Map<String, dynamic>)> items, {
     bool offer = false,
   }) {
+    // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
     return Container(
       margin: const EdgeInsets.only(top: 18),
       padding: const EdgeInsets.only(bottom: 14),
-      color: offer ? kTileBeige.withValues(alpha: 0.55) : Colors.white,
+      color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1411,11 +1412,11 @@ class _CategoryTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          color: kTileBeige,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: Colors.transparent,
-            width: 2,
+            color: const Color(0xFFEDEDED),
+            width: 1,
           ),
         ),
         child: Column(
