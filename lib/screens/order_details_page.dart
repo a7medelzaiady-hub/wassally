@@ -13,6 +13,7 @@ import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
@@ -981,6 +982,11 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
           const SizedBox(height: 8),
           if (description.isNotEmpty) Text(description),
           Text('الكمية المطلوبة: ${widget.request['quantity'] ?? 1}'),
+          if (specialAttachmentNotice(widget.request) case final notice?)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(notice, style: TextStyle(color: kMuted, fontSize: 12, height: 1.4)),
+            ),
           if (imageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             ClipRRect(

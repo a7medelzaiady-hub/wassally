@@ -24,6 +24,7 @@ import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
+import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../widgets/app_image.dart';
@@ -427,6 +428,12 @@ class _StorePageState extends State<StorePage> {
               padding: const EdgeInsets.only(top: 6),
               child: Text('المرفقات جاهزة للإرسال',
                   style: TextStyle(color: Brand.greenDark, fontWeight: FontWeight.w700)),
+            ),
+          if (_specialImageUrl != null || _voicePath != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(kAttachmentsWillBeDeleted,
+                  style: TextStyle(fontSize: 12, height: 1.4)),
             ),
           const SizedBox(height: 8),
           Row(
