@@ -522,6 +522,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             'رسوم التوصيل',
                             formatPrice(cart.fee),
                           ),
+                          if (cart.serviceFee > 0) ...[
+                            const SizedBox(height: 4),
+                            _line('رسوم الخدمة', formatPrice(cart.serviceFee)),
+                          ],
                           if (cart.discount > 0) ...[
                             const SizedBox(height: 4),
                             _line(

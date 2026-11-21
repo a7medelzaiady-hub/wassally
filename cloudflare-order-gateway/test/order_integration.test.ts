@@ -41,7 +41,7 @@ const doc = (path: string, fields: Record<string, unknown>) => ({
 });
 const input = {
   orderId, storeId: "store_test", customerName: "Ahmed Test",
-  expectedDeliveryFee: 20, expectedTotal: 70,
+  expectedDeliveryFee: 20, expectedTotal: 75, // + رسوم خدمة 5
   items: [{ productId: "product_test", expectedPrice: 25, qty: 2, options: [], optionsTotal: 0 }],
   contact: { userName: "Ahmed Test", phone: "01012345678", address: "Test street address" },
 };
@@ -87,7 +87,8 @@ describe("full order creation against simulated Firebase", () => {
       const first = await worker.fetch(request(), env);
       expect(first.status).toBe(200);
       const result = await first.json() as Record<string, unknown>;
-      expect(result).toMatchObject({ orderId, subtotal: 50, deliveryFee: 20, total: 70 });
+      expect(result).toMatchObject({ orderId, subtotal: 50, deliveryFee: 20, total: 75 });
+      expect(commits[0].writes[0].update.fields.serviceFee).toEqual({ integerValue: "5" });
       expect(commits).toHaveLength(1);
       expect(commits[0].writes).toHaveLength(3);
       expect(commits[0].writes[0].update.name).toBe(prefix + "orders/" + orderId);

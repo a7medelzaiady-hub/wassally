@@ -488,6 +488,10 @@ class _Details extends StatelessWidget {
               _line('المجموع', formatPrice(order.subtotal)),
               const SizedBox(height: 4),
               _line('رسوم التوصيل', formatPrice(order.courierFee)),
+              if ((order.serviceFee ?? 0) > 0) ...[
+                const SizedBox(height: 4),
+                _line('رسوم الخدمة', formatPrice(order.serviceFee!)),
+              ],
               const SizedBox(height: 8),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
             ],

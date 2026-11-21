@@ -131,6 +131,8 @@ class AppOrder {
   /// ملاحظات للمندوب (من المستند الخاص). المحل ما بيشوفهاش.
   final String courierNotes;
   final double discount;
+  /// رسوم خدمة وصّلي على العميل (2%، من 5 لـ15). null = طلب قديم قبل الرسوم.
+  final double? serviceFee;
   final String area;
   final String courierId;
   final String courierName;
@@ -202,6 +204,7 @@ class AppOrder {
     this.customerName = '',
     this.courierNotes = '',
     this.discount = 0,
+    this.serviceFee,
     this.area = '',
     this.courierId = '',
     this.courierName = '',
@@ -260,6 +263,7 @@ class AppOrder {
       customerName: customerName,
       courierNotes: c.courierNotes.isNotEmpty ? c.courierNotes : courierNotes,
       discount: discount,
+      serviceFee: serviceFee,
       area: area,
       courierId: courierId,
       courierName: courierName,
@@ -339,6 +343,7 @@ class AppOrder {
       userName: (m['userName'] ?? '').toString(),
       customerName: (m['customerName'] ?? '').toString(),
       discount: (m['discount'] as num?)?.toDouble() ?? 0,
+      serviceFee: (m['serviceFee'] as num?)?.toDouble(),
       area: (m['area'] ?? '').toString(),
       courierId: (m['courierId'] ?? '').toString(),
       courierName: (m['courierName'] ?? '').toString(),

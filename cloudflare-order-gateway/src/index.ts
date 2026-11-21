@@ -1102,6 +1102,17 @@ async function notifyCouriersOfNewOrder(
   }
 }
 
+/**
+ * رسوم خدمة وصّلي على العميل: 2% من الأصناف (بعد الخصم)، أقل حاجة 5 وأقصى حاجة 15 جنيه.
+ * بالقروش عشان نتجنب كسور العشرية (نفس WasallyServiceFee في التطبيق).
+ */
+export function serviceFeeFor(itemsAfterDiscount: number): number {
+  if (!Number.isFinite(itemsAfterDiscount) || itemsAfterDiscount <= 0) return 0;
+  const piastres = Math.round(itemsAfterDiscount * 100);
+  const computed = Math.floor((piastres * 200 + 5000) / 10000);
+  return Math.min(1500, Math.max(500, computed)) / 100;
+}
+
 export const ORDERS_PAUSED_MESSAGE = "استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.";
 export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
 const DAILY_LIMIT_CODE = "daily_limit";
@@ -1298,7 +1309,8 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (promoCode) throw new HttpError(409, "الكوبونات غير مفعّلة حاليًا.");
   const discount = 0;
   const normalizedPromo = "";
-  const total = money(subtotal + deliveryFee - discount);
+  const serviceFee = serviceFeeFor(subtotal - discount);
+  const total = money(subtotal + deliveryFee - discount + serviceFee);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1316,6 +1328,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     ...(specialRequest ? { specialRequest } : {}),
     subtotal,
     deliveryFee,
+    serviceFee,
     total,
     paymentMethod: "cash",
     status: "new",
@@ -1439,7 +1452,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   } else {
     promoCode = "";
   }
-  const total = money(subtotal + deliveryFee - discount);
+  // الطلبات القديمة (قبل رسوم الخدمة) بتفضل من غير رسوم حتى بعد التعديل.
+  const serviceFee = typeof order.serviceFee === "number" ? serviceFeeFor(subtotal - discount) : 0;
+  const total = money(subtotal + deliveryFee - discount + serviceFee);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1450,6 +1465,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     ...order,
     items,
     subtotal,
+    ...(typeof order.serviceFee === "number" ? { serviceFee } : {}),
     total,
     notes,
     customerName,
