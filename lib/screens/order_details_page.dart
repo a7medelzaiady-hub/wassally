@@ -288,19 +288,28 @@ class _Details extends StatelessWidget {
                   : () async {
                       setDialogState(() => submitting = true);
                       String? err;
-                      try {
-                        await DriverService.rateDriver(
-                          orderId: order.id,
-                          driverId: order.courierId,
-                          rating: rating,
-                          comment: commentCtrl.text.trim(),
-                        );
-                      } catch (e) {
-                        err = e is StateError
-                            ? e.message
-                            : 'تعذر تقييم المندوب.';
+                      // اللي اتقيّم فعلًا نتخطاه، فتقييم ناقص قبل كده ما يمنعش إكمال الباقي.
+                      final courierDone = await ReviewLookup.exists('${order.id}_courier');
+                      final storeDone = order.storeId.isEmpty ||
+                          await ReviewLookup.exists('${order.id}_store');
+                      if (courierDone && storeDone) {
+                        err = 'الطلب ده اتقيّم قبل كده.';
                       }
-                      if (order.storeId.isNotEmpty) {
+                      if (!courierDone) {
+                        try {
+                          await DriverService.rateDriver(
+                            orderId: order.id,
+                            driverId: order.courierId,
+                            rating: rating,
+                            comment: commentCtrl.text.trim(),
+                          );
+                        } catch (e) {
+                          err = e is StateError
+                              ? e.message
+                              : 'تعذر تقييم المندوب.';
+                        }
+                      }
+                      if (order.storeId.isNotEmpty && !storeDone) {
                         try {
                           await RatingService.rateStore(
                             orderId: order.id,
