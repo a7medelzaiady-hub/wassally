@@ -8,6 +8,7 @@ import 'cart_model.dart';
 import 'navigation.dart';
 import 'notification_service.dart';
 import 'order_gateway.dart';
+import 'image_cache.dart';
 
 class AuthService {
   const AuthService._();
@@ -105,6 +106,7 @@ class AuthService {
     }
     cart.clear();
     shellTab.value = 0;
+    await WasallyImageCache.clear();
     // لازم قبل الخروج، لأن مسح توكن الجهاز بيحتاج المستخدم لسه مسجّل.
     await NotificationService.dispose();
     await FirebaseAuth.instance.signOut();
@@ -145,6 +147,7 @@ class AuthService {
     await NotificationService.dispose();
     cart.clear();
     shellTab.value = 0;
+    await WasallyImageCache.clear();
     await FirebaseAuth.instance.signOut();
     if (_googleInitialized) {
       try {

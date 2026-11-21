@@ -9,6 +9,7 @@ import '../theme/brand.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
 import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 /// دليل المحلات: قائمة رأسية مريحة، مع الاحتفاظ بنفس بيانات كتالوج المحلات.
 class StoreDirectoryPage extends StatefulWidget {
@@ -159,8 +160,8 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                                 color: Brand.softGradient.colors.first,
                                                 child: Icon(store.icon, size: 42, color: Brand.green),
                                               )
-                                            : Image.network(thumb(store.imageUrl, w: 260), fit: BoxFit.cover,
-                                                errorBuilder: (_, _, _) => Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
+                                            : CachedNetImage(url: thumb(store.imageUrl, w: 260), memCacheWidth: 260,
+                                                errorWidget: Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
                                       ),
                                     ),
                                     const SizedBox(width: 14),

@@ -80,9 +80,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 colors: [Colors.black, Colors.transparent],
               ).createShader(r),
               blendMode: BlendMode.dstIn,
-              child: Image.network(
-                'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1000',
+              child: Image.asset(
+                // صورة محلية (WebP صغيرة): بتظهر فورًا ومن غير إنترنت ومن غير موقع خارجي.
+                'assets/images/login_bg.webp',
                 fit: BoxFit.cover,
+                cacheWidth: 800,
                 errorBuilder: (_, _, _) => const SizedBox.shrink(),
               ),
             ),

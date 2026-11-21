@@ -32,6 +32,7 @@ import 'notifications_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 const Map<String, String> kCategoryPhotos = {
   'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
@@ -1035,11 +1036,10 @@ class _HomePageState extends State<HomePage>
                 children: [
                   img.isEmpty
                       ? fallback
-                      : Image.network(
-                          thumb(img, w: 500),
-                          cacheWidth: 500,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => fallback,
+                      : CachedNetImage(
+                          url: thumb(img, w: 500),
+                          memCacheWidth: 500,
+                          errorWidget: fallback,
                         ),
                   if (badge.isNotEmpty)
                     PositionedDirectional(
@@ -1078,11 +1078,10 @@ class _HomePageState extends State<HomePage>
                       ),
                       child: s.image.isEmpty
                           ? Icon(s.store.icon, size: 20, color: Brand.green)
-                          : Image.network(
-                              thumb(s.image, w: 120),
-                              cacheWidth: 120,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
+                          : CachedNetImage(
+                              url: thumb(s.image, w: 120),
+                              memCacheWidth: 120,
+                              errorWidget:
                                   Icon(s.store.icon, size: 20, color: Brand.green),
                             ),
                     ),
@@ -1222,11 +1221,10 @@ class _HomePageState extends State<HomePage>
                           ),
                           child: item.image.isEmpty
                               ? fallback
-                              : Image.network(
-                                  thumb(item.image, w: 200),
-                                  cacheWidth: 200,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => fallback,
+                              : CachedNetImage(
+                                  url: thumb(item.image, w: 200),
+                                  memCacheWidth: 200,
+                                  errorWidget: fallback,
                                 ),
                         ),
                         const SizedBox(height: 6),
@@ -1429,11 +1427,10 @@ class _CategoryTile extends StatelessWidget {
                 height: 62,
                 child: isAll || imageUrl.isEmpty
                     ? _emojiBox()
-                    : Image.network(
-                        thumb(imageUrl, w: 200),
-                        cacheWidth: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _emojiBox(),
+                    : CachedNetImage(
+                        url: thumb(imageUrl, w: 200),
+                        memCacheWidth: 200,
+                        errorWidget: _emojiBox(),
                       ),
               ),
             ),

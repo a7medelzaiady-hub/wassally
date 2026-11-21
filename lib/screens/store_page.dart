@@ -32,6 +32,7 @@ import '../widgets/option_groups_editor.dart';
 import '../widgets/product_sheet.dart';
 import '../widgets/qty_stepper.dart';
 import 'cart_page.dart';
+import '../widgets/cached_net_image.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -684,10 +685,10 @@ class _StorePageState extends State<StorePage> {
           children: [
             store.imageUrl.isEmpty
                 ? fallback
-                : Image.network(
-                    thumb(store.imageUrl, w: 900),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => fallback,
+                : CachedNetImage(
+                    url: thumb(store.imageUrl, w: 900),
+                    memCacheWidth: 900,
+                    errorWidget: fallback,
                   ),
             DecoratedBox(
               decoration: BoxDecoration(
@@ -1594,14 +1595,13 @@ class _ProductRow extends StatelessWidget {
 
   Widget _image() {
     if (product.imageUrl.isEmpty) return _fallback();
-    return Image.network(
-      thumb(product.imageUrl, w: 300),
-      fit: BoxFit.cover,
+    return CachedNetImage(
+      url: thumb(product.imageUrl, w: 300),
       width: double.infinity,
       height: double.infinity,
-      loadingBuilder: (context, child, progress) =>
-          progress == null ? child : _fallback(),
-      errorBuilder: (_, _, _) => _fallback(),
+      memCacheWidth: 300,
+      placeholder: _fallback(),
+      errorWidget: _fallback(),
     );
   }
 
