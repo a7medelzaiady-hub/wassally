@@ -32,7 +32,7 @@ jobs:
           cat positive-control.log
           echo "POSITIVE_CONTROL_EXIT=$status"
           if [ "$status" -ne 0 ] || ! grep -q 'POSITIVE_CONTROL_DETECTOR=HIT' positive-control.log; then
-            echo "::warning::Positive control not verified; baseline/isolation will still run for evidence"
+            echo "::error::Positive control not verified; baseline/isolation will still run for evidence"\n            echo failed > positive-control-status.txt
           fi
       - name: Baseline with existing rule
         shell: bash
@@ -66,7 +66,7 @@ jobs:
           echo "BASELINE_LIMIT_LOG_LINES=$(cat baseline-hits.txt)"
           echo "ISOLATED_EXIT=$(cat isolated-exit.txt)"
           echo "ISOLATED_LIMIT_LOG_LINES=$(cat isolated-hits.txt)"
-          echo "These are log-line counts, not unique assertFails sites."
+          echo "These are log-line counts, not unique assertFails sites."\n          test ! -f positive-control-status.txt\n          test "$(cat baseline-exit.txt)" = "0"\n          test "$(cat baseline-hits.txt)" = "0"\n          test "$(cat isolated-hits.txt)" = "0"
           test -s baseline-firestore-debug.log && test -s isolated-firestore-debug.log
       - uses: actions/upload-artifact@v4
         if: always()
