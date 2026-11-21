@@ -942,8 +942,10 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
         if (mounted) setState(() => _playing = false);
         return;
       }
-      final bytes = Uint8List.fromList(base64Decode(encoded));
-      await _player.play(audio.BytesSource(bytes));
+      // الطلبات الجديدة: رابط Cloudinary. القديمة: base64 جوه الطلب.
+      await _player.play(encoded.startsWith('https://')
+          ? audio.UrlSource(encoded)
+          : audio.BytesSource(Uint8List.fromList(base64Decode(encoded))));
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _playing = false);
@@ -962,7 +964,8 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
   Widget build(BuildContext context) {
     final description = (widget.request['description'] ?? '').toString();
     final imageUrl = (widget.request['imageUrl'] ?? '').toString();
-    final voice = (widget.request['voiceBase64'] ?? '').toString();
+    final voiceUrl = (widget.request['voiceUrl'] ?? '').toString();
+    final voice = voiceUrl.isNotEmpty ? voiceUrl : (widget.request['voiceBase64'] ?? '').toString();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

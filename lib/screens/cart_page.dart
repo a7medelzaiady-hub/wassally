@@ -155,7 +155,7 @@ class _CartBody extends StatelessWidget {
                             ),
                           ),
                         ),
-                      if ((cart.specialRequest!['voiceBase64'] ?? '').toString().isNotEmpty)
+                      if ((cart.specialRequest!['voiceUrl'] ?? '').toString().isNotEmpty)
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
                           child: Row(

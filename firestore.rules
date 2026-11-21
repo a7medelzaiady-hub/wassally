@@ -349,7 +349,8 @@ service cloud.firestore {
     function validSpecialRequest(d) {
       return !('specialRequest' in d) || (
         d.specialRequest is map &&
-        d.specialRequest.keys().hasOnly(['description', 'quantity', 'imageUrl', 'voiceBase64', 'createdAt']) &&
+        // الصوت رابط Cloudinary (voiceUrl)، مش base64 جوه الطلب (كان بيكبّر المستند لحد 700KB).
+        d.specialRequest.keys().hasOnly(['description', 'quantity', 'imageUrl', 'voiceUrl', 'createdAt']) &&
         d.specialRequest.get('description', '') is string &&
         d.specialRequest.get('description', '').size() <= 300 &&
         d.specialRequest.get('quantity', 1) is int &&
@@ -359,13 +360,15 @@ service cloud.firestore {
         d.specialRequest.get('imageUrl', '').size() <= 450 &&
         (d.specialRequest.get('imageUrl', '') == '' ||
           d.specialRequest.get('imageUrl', '').matches('https://res\\.cloudinary\\.com/[^/]+/image/upload/.*')) &&
-        d.specialRequest.get('voiceBase64', '') is string &&
-        d.specialRequest.get('voiceBase64', '').size() <= 700000 &&
+        d.specialRequest.get('voiceUrl', '') is string &&
+        d.specialRequest.get('voiceUrl', '').size() <= 450 &&
+        (d.specialRequest.get('voiceUrl', '') == '' ||
+          d.specialRequest.get('voiceUrl', '').matches('https://res\\.cloudinary\\.com/[^/]+/video/upload/(v[0-9]+/)?special_requests/.*')) &&
         d.specialRequest.get('createdAt', '') is string &&
         d.specialRequest.get('createdAt', '').size() <= 40 &&
         (d.specialRequest.get('description', '').size() > 0 ||
           d.specialRequest.get('imageUrl', '').size() > 0 ||
-          d.specialRequest.get('voiceBase64', '').size() > 0)
+          d.specialRequest.get('voiceUrl', '').size() > 0)
       );
     }
 

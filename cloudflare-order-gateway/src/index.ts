@@ -1218,19 +1218,26 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     const description = String(rawSpecialRequest.description ?? "").trim();
     const quantity = Number(rawSpecialRequest.quantity ?? 1);
     const imageUrl = String(rawSpecialRequest.imageUrl ?? "");
-    const voiceBase64 = String(rawSpecialRequest.voiceBase64 ?? "");
+    const voiceUrl = String(rawSpecialRequest.voiceUrl ?? "");
+    // الصوت جوه مستند الطلب (base64) اتلغى: كان بيكبّر الطلب لحد 700KB.
+    if (String(rawSpecialRequest.voiceBase64 ?? "")) {
+      throw new HttpError(400, "حدّث التطبيق عشان تبعت رسالة صوتية.");
+    }
     if (description.length > 300 || !Number.isInteger(quantity) || quantity < 1 || quantity > 99 ||
         (imageUrl && (!isCloudinaryImageUrl(imageUrl) || imageUrl.length > 450)) ||
-        voiceBase64.length > 700000 ||
-        (voiceBase64 && !/^[A-Za-z0-9+/]+={0,2}$/.test(voiceBase64)) ||
-        (!description && !imageUrl && !voiceBase64)) {
+        (voiceUrl && !isCloudinaryVoiceUrl(voiceUrl)) ||
+        (!description && !imageUrl && !voiceUrl)) {
       throw new HttpError(400, "راجع وصف الطلب الخاص والمرفقات.");
+    }
+    if (voiceUrl &&
+        !cloudinaryPublicIdFromUrl(voiceUrl).startsWith(await cloudinarySpecialRequestFolder(uid) + "/")) {
+      throw new HttpError(403, "الرسالة الصوتية لا تخص حسابك.");
     }
     specialRequest = {
       description,
       quantity,
       ...(imageUrl ? { imageUrl } : {}),
-      ...(voiceBase64 ? { voiceBase64 } : {}),
+      ...(voiceUrl ? { voiceUrl } : {}),
       createdAt: String(rawSpecialRequest.createdAt ?? "").slice(0, 40),
     };
   }
@@ -1575,6 +1582,31 @@ export function isCloudinaryImageUrl(value: unknown): boolean {
   }
 }
 
+/** رابط رسالة صوتية مرفوعة لمجلد الطلبات الخاصة على Cloudinary. */
+export function isCloudinaryVoiceUrl(value: unknown): boolean {
+  if (typeof value !== "string" || value.length > 450) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname === "res.cloudinary.com" &&
+      url.pathname.includes("/video/upload/") &&
+      url.pathname.includes("/special_requests/");
+  } catch {
+    return false;
+  }
+}
+
+/** public_id للأصل من رابط Cloudinary (من غير v123 والامتداد). */
+export function cloudinaryPublicIdFromUrl(value: string): string {
+  const segments = new URL(value).pathname.split("/").filter(Boolean);
+  const uploadIndex = segments.indexOf("upload");
+  if (uploadIndex < 0) return "";
+  const assetSegments = segments.slice(uploadIndex + 1);
+  if (assetSegments[0] && /^v\d+$/.test(assetSegments[0])) assetSegments.shift();
+  const last = assetSegments.pop() ?? "";
+  return [...assetSegments, last.replace(/\.[^.]+$/, "")].join("/");
+}
+
 export async function cloudinarySpecialRequestFolder(uid: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(uid));
   const hash = Array.from(new Uint8Array(digest), (byte) =>
@@ -1587,10 +1619,17 @@ export async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string
     throw new HttpError(503, "تعذر تنظيف صور الطلبات الخاصة من خدمة الصور.");
   }
   const prefix = await cloudinarySpecialRequestFolder(uid);
+  // الصور (image) والرسائل الصوتية (video على Cloudinary).
+  for (const resourceType of ["image", "video"]) {
+    await deleteCloudinaryPrefix(env, resourceType, prefix);
+  }
+}
+
+async function deleteCloudinaryPrefix(env: Env, resourceType: string, prefix: string): Promise<void> {
   let nextCursor = "";
   for (let page = 0; page < 10; page++) {
     const url = new URL(
-      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload`,
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/${resourceType}/upload`,
     );
     const params = new URLSearchParams({ prefix, invalidate: "true" });
     if (nextCursor) params.set("next_cursor", nextCursor);
@@ -1651,6 +1690,19 @@ export function isUploadRequestLengthAllowed(value: string | null): boolean {
     length > 0 &&
     length <= 5 * 1024 * 1024 + 64 * 1024;
 }
+
+/** رسالة صوتية من التطبيق: m4a (حاوية MP4 = ftyp) أو AAC خام (ADTS). */
+export function detectAudioContent(bytes: Uint8Array): { format: string; mime: string } | null {
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp") {
+    return { format: "m4a", mime: "audio/mp4" };
+  }
+  if (bytes.length >= 7 && bytes[0] === 0xff && (bytes[1] & 0xf6) === 0xf0) {
+    return { format: "aac", mime: "audio/aac" };
+  }
+  return null;
+}
+
+export const MAX_VOICE_UPLOAD_BYTES = 1024 * 1024;
 
 export function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
@@ -1739,8 +1791,15 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const detected = detectImageContent(bytes);
+  const image = detectImageContent(bytes);
+  // الرسائل الصوتية مسموحة في مجلد الطلبات الخاصة بس، وبحد 1MB.
+  const voice = !image && folder === "special_requests" ? detectAudioContent(bytes) : null;
+  const detected = image ?? voice;
   if (!detected) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+  if (voice && bytes.length > MAX_VOICE_UPLOAD_BYTES) {
+    throw new HttpError(413, "الرسالة الصوتية أكبر من 1MB. سجّل رسالة أقصر.");
+  }
+  const resourceType = voice ? "video" : "image";
   const uploadFolder = folder === "special_requests"
     ? await cloudinarySpecialRequestFolder(uid)
     : folder === "banners" || isAdmin
@@ -1749,7 +1808,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = crypto.randomUUID();
   const signedParams = {
-    allowed_formats: "jpg,jpeg,png,webp",
+    allowed_formats: voice ? "m4a,aac,mp4" : "jpg,jpeg,png,webp",
     ...(folder === "special_requests" ? {} : { folder: uploadFolder }),
     overwrite: "false",
     public_id: folder === "special_requests" ? `${uploadFolder}/${publicId}` : publicId,
@@ -1765,7 +1824,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   upload.append("signature", signature);
 
   const uploaded = await fetch(
-    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
     { method: "POST", body: upload },
   );
   if (!uploaded.ok) {
@@ -1779,7 +1838,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
   if (parsedUrl.protocol !== "https:" ||
       !(parsedUrl.hostname === "res.cloudinary.com" || parsedUrl.hostname.endsWith(".res.cloudinary.com")) ||
-      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/`)) {
     throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
   }
   return response({ url: secureUrl });
@@ -1809,7 +1868,7 @@ export function hasPendingAttachments(order: JsonMap): boolean {
   if (!special || typeof special !== "object") return false;
   const s = special as JsonMap;
   if (s.cleanupStatus === "deleted") return false;
-  return Boolean(s.imageUrl) || Boolean(s.voiceBase64);
+  return Boolean(s.imageUrl) || Boolean(s.voiceUrl) || Boolean(s.voiceBase64);
 }
 
 /** مسح مرفقات الطلب (صورة Cloudinary + الصوت) بعد التسليم. [ownerUid] = عميل الطلب. */
@@ -1828,29 +1887,32 @@ async function cleanupOrderAttachmentsFor(
   if (!special) return response({ cleaned: true, alreadyClean: true });
   if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
 
+  const markFailed = async () => {
+    special.cleanupStatus = "failed";
+    await commitFirestoreWrites(env, token, [{
+      update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
+      updateMask: { fieldPaths: ["specialRequest"] },
+    }]);
+  };
+  const assets: Array<{ url: string; resourceType: string }> = [];
   const imageUrl = String(special.imageUrl ?? "");
-  if (imageUrl) {
-    if (!isCloudinaryImageUrl(imageUrl) || !env.CLOUDINARY_CLOUD_NAME ||
+  const voiceUrl = String(special.voiceUrl ?? "");
+  if (imageUrl) assets.push({ url: imageUrl, resourceType: "image" });
+  if (voiceUrl) assets.push({ url: voiceUrl, resourceType: "video" });
+  const expectedPrefix = assets.length ? await cloudinarySpecialRequestFolder(uid) : "";
+  for (const asset of assets) {
+    const validUrl = asset.resourceType === "image"
+      ? isCloudinaryImageUrl(asset.url)
+      : isCloudinaryVoiceUrl(asset.url);
+    if (!validUrl || !env.CLOUDINARY_CLOUD_NAME ||
         !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-        currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
-      }]);
-      throw new HttpError(503, "تعذر التحقق من الصورة أو إعدادات حذفها. يمكن إعادة المحاولة.");
+      await markFailed();
+      throw new HttpError(503, "تعذر التحقق من المرفق أو إعدادات حذفه. يمكن إعادة المحاولة.");
     }
-    const parsed = new URL(imageUrl);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    const uploadIndex = segments.indexOf("upload");
-    if (uploadIndex < 0) throw new HttpError(400, "مسار الصورة غير صالح.");
-    const assetSegments = segments.slice(uploadIndex + 1);
-    if (assetSegments[0]?.startsWith("v") && /^v\d+$/.test(assetSegments[0])) assetSegments.shift();
-    const last = assetSegments.pop() ?? "";
-    const publicId = [...assetSegments, last.replace(/\.[^.]+$/, "")].join("/");
-    const expectedPrefix = await cloudinarySpecialRequestFolder(uid);
+    const publicId = cloudinaryPublicIdFromUrl(asset.url);
+    if (!publicId) throw new HttpError(400, "مسار المرفق غير صالح.");
     if (!publicId.startsWith(expectedPrefix + "/")) {
-      throw new HttpError(403, "الصورة لا تخص مرفقات هذا العميل.");
+      throw new HttpError(403, "المرفق لا يخص هذا العميل.");
     }
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = await cloudinarySignature(
@@ -1864,29 +1926,22 @@ async function cleanupOrderAttachmentsFor(
     form.append("api_key", env.CLOUDINARY_API_KEY);
     form.append("signature", signature);
     const deleted = await fetch(
-      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`,
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${asset.resourceType}/destroy`,
       { method: "POST", body: form },
     );
     if (!deleted.ok) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-      }]);
-      throw new HttpError(503, "تعذر حذف الصورة من التخزين. أعد المحاولة.");
+      await markFailed();
+      throw new HttpError(503, "تعذر حذف المرفق من التخزين. أعد المحاولة.");
     }
     const result = await deleted.json() as { result?: string };
     if (!["ok", "not found"].includes(String(result.result ?? ""))) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-      }]);
+      await markFailed();
       throw new HttpError(503, "لم تؤكد خدمة الصور حذف المرفق. أعد المحاولة.");
     }
   }
 
   delete special.imageUrl;
+  delete special.voiceUrl;
   delete special.voiceBase64;
   special.cleanupStatus = "deleted";
   special.cleanedAt = new Date();

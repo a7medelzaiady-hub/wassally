@@ -287,18 +287,15 @@ class _StorePageState extends State<StorePage> {
     final sentVoicePath = _voicePath;
     setState(() => _sendingSpecial = true);
     try {
-      String? voiceBase64;
+      String? voiceUrl;
       if (sentVoicePath != null) {
         final voiceFile = File(sentVoicePath);
         if (!await voiceFile.exists()) {
           throw StateError('ملف التسجيل غير موجود. سجّل الرسالة مرة أخرى.');
         }
         final bytes = await voiceFile.readAsBytes();
-        if (bytes.isEmpty) throw StateError('التسجيل الصوتي فارغ. حاول مرة أخرى.');
-        voiceBase64 = base64Encode(bytes);
-        if (voiceBase64.length > 700000) {
-          throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
-        }
+        // الصوت بيترفع على Cloudinary والطلب بيشيل الرابط بس (مستند صغير).
+        voiceUrl = await ImageService.uploadVoice(bytes, storeId: store.id);
       }
       final attached = cart.setSpecialRequest(
         storeId: store.id,
@@ -307,7 +304,7 @@ class _StorePageState extends State<StorePage> {
           'description': description,
           'quantity': _specialQty,
           if ((_specialImageUrl ?? '').isNotEmpty) 'imageUrl': _specialImageUrl,
-          if ((voiceBase64 ?? '').isNotEmpty) 'voiceBase64': voiceBase64,
+          if ((voiceUrl ?? '').isNotEmpty) 'voiceUrl': voiceUrl,
           'createdAt': DateTime.now().toIso8601String(),
         },
       );
