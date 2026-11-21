@@ -773,13 +773,12 @@ class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
                             padding: const EdgeInsets.all(16),
                             itemCount: closed.length,
                             separatorBuilder: (_, _) => const SizedBox(height: 12),
-                            itemBuilder: (context, i) => _OwnerOrderCard(order: closed[i]),
+                            itemBuilder: (context, i) => ClosedOrderCompactCard(order: closed[i]),
                           ))
                     : ListView(
                         padding: const EdgeInsets.all(16),
                         children: [
-                          ClosedOrdersMoneyView(closed: closed),
-                          const SizedBox(height: 12),
+                          // حساب وصّلي الإجمالي (المستحق/المدفوع/المتبقي) منفصل عن كروت الأيام.
                           Card(
                             child: Padding(
                               padding: const EdgeInsets.all(14),
@@ -789,6 +788,15 @@ class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            child: Text(
+                              'تفصيل الطلبات بالأيام. رسوم كل يوم هي اللي اتجمعت على طلباته، مش رصيد لسه مطلوب دفعه (المتبقي الفعلي في الكارت اللي فوق).',
+                              style: TextStyle(fontSize: 12.5, height: 1.4),
+                            ),
+                          ),
+                          for (final g in groupClosedByDay(closed)) ClosedDayCard(group: g),
                         ],
                       ),
               ),
@@ -800,51 +808,123 @@ class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
   }
 }
 
-/// «الفلوس» للطلبات المنتهية المعروضة: ملخص + سطر لكل طلب (بضاعة، رسوم وصّلي).
-class ClosedOrdersMoneyView extends StatelessWidget {
-  final List<AppOrder> closed;
-  const ClosedOrdersMoneyView({super.key, required this.closed});
+/// كارت يوم واحد: عدد الطلبات، البضاعة، ورسوم وصّلي (للمسلّم بس)، وتفاصيل كل فاتورة بالضغط.
+class ClosedDayCard extends StatelessWidget {
+  final ClosedDayGroup group;
+  const ClosedDayCard({super.key, required this.group});
 
   @override
   Widget build(BuildContext context) {
-    final money = ClosedOrdersMoney.of(closed);
-    final delivered = closed.where((o) => o.status == OrderStatus.delivered).toList();
+    final m = group.money;
+    final d = group.day;
+    final title = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('ملخص الطلبات المنتهية', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text('تم توصيلها: ${money.completedCount}  •  ملغية: ${money.cancelledCount}'),
-            Text('قيمة البضاعة: ${formatPrice(money.goodsTotal)}'),
-            Text('رسوم خدمة وصّلي على هذه الطلبات: ${formatPrice(money.serviceFeeTotal)}'),
-            if (delivered.isNotEmpty) ...[
-              const Divider(height: 18),
-              for (final o in delivered)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          o.deliveredAt != null
-                              ? formatDateTime(o.deliveredAt!)
-                              : (o.createdAt != null ? formatDateTime(o.createdAt!) : ''),
-                          style: const TextStyle(fontSize: 12.5),
-                        ),
-                      ),
-                      Text(
-                        '${formatPrice(o.subtotal)}  •  رسوم ${formatPrice(o.serviceFee ?? 0)}',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-                      ),
-                    ],
+      margin: const EdgeInsets.only(top: 10),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'مكتمل ${m.completedCount}${m.cancelledCount > 0 ? '  •  ملغي ${m.cancelledCount}' : ''}\n'
+            'البضاعة: ${formatPrice(m.goodsTotal)}  •  رسوم وصّلي: ${formatPrice(m.serviceFeeTotal)}',
+            style: const TextStyle(height: 1.45),
+          ),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          for (final o in group.orders)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${formatDateTime(closedOrderTime(o)!)}'
+                      '${o.status == OrderStatus.cancelled ? ' • ملغي' : ''}',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
                   ),
-                ),
-            ],
+                  Text(
+                    o.status == OrderStatus.cancelled
+                        ? '—'
+                        : '${formatPrice(o.subtotal)} • رسوم ${formatPrice(o.serviceFee ?? 0)}',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// بطاقة طلب منتهٍ مختصرة: العميل، التاريخ، الحالة، قيمة البضاعة، وزر «عرض التفاصيل».
+class ClosedOrderCompactCard extends StatelessWidget {
+  final AppOrder order;
+  const ClosedOrderCompactCard({super.key, required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    final t = closedOrderTime(o);
+    final who = o.customerName.trim().isNotEmpty ? o.customerName.trim() : 'عميل';
+    return Card(
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Row(
+          children: [
+            Expanded(child: Text(who, style: const TextStyle(fontWeight: FontWeight.w800))),
+            Text(
+              o.status.label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: o.status == OrderStatus.cancelled ? Colors.red.shade700 : Colors.green.shade700,
+              ),
+            ),
           ],
         ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            '${t != null ? formatDateTime(t) : ''}\n'
+            'قيمة البضاعة: ${formatPrice(o.subtotal)}',
+            style: const TextStyle(height: 1.45),
+          ),
+        ),
+        trailing: const Text('عرض التفاصيل', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          for (final line in o.items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${line.qty} × ${line.name}'
+                      '${line.options.isNotEmpty ? ' (${line.options.join('، ')})' : ''}',
+                      style: const TextStyle(height: 1.35),
+                    ),
+                  ),
+                  Text('${formatPrice(line.price)} × ${line.qty} = ${formatPrice(line.total)}',
+                      style: const TextStyle(fontSize: 12.5)),
+                ],
+              ),
+            ),
+          const Divider(height: 16),
+          Row(
+            children: [
+              const Expanded(child: Text('المجموع (البضاعة)', style: TextStyle(fontWeight: FontWeight.w800))),
+              Text(formatPrice(o.subtotal), style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -50,4 +50,22 @@ void main() {
     expect(m.goodsTotal, 150);
     expect(m.serviceFeeTotal, 5);
   });
+
+  test('تجميع حسب اليوم: الأحدث أولاً، الرسوم للمسلّم بس، الملغي بيتعدّ من غير فلوس', () {
+    final g = groupClosedByDay([
+      _o('a', OrderStatus.delivered, created: DateTime(2026, 11, 20, 10), delivered: DateTime(2026, 11, 20, 23, 30), sub: 100, fee: 5),
+      _o('b', OrderStatus.delivered, created: DateTime(2026, 11, 21, 9), delivered: DateTime(2026, 11, 21, 9, 30), sub: 50, fee: 2),
+      _o('c', OrderStatus.cancelled, created: DateTime(2026, 11, 21, 12), sub: 999, fee: 9),
+      _o('d', OrderStatus.delivered, created: DateTime(2026, 11, 21, 8), delivered: DateTime(2026, 11, 21, 14), sub: 10, fee: 1),
+    ]);
+    expect(g.length, 2);
+    expect(g[0].day, DateTime(2026, 11, 21));
+    expect(g[0].orders.map((e) => e.id), ['d', 'b', 'c']);
+    expect(g[0].money.completedCount, 2);
+    expect(g[0].money.cancelledCount, 1);
+    expect(g[0].money.goodsTotal, 60);
+    expect(g[0].money.serviceFeeTotal, 3);
+    expect(g[1].day, DateTime(2026, 11, 20));
+    expect(g[1].money.serviceFeeTotal, 5);
+  });
 }
