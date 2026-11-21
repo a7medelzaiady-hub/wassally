@@ -83,7 +83,33 @@ def main():
         "Never disclose secrets. Do not suggest enabling Firebase Blaze by default.\n"
         "QUESTION:\n" + question + "\n\nSOURCE SNIPPETS:\n" + "\n\n".join(selected)
     )
-    endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    # Model availability varies by API key/project; discover supported models instead
+    # of assuming a hardcoded model exists for every free-tier account.
+    catalog_request = urllib.request.Request(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+    )
+    try:
+        with urllib.request.urlopen(catalog_request, timeout=30) as response:
+            catalog = json.load(response)
+        supported = [
+            item["name"] for item in catalog.get("models", [])
+            if "generateContent" in item.get("supportedGenerationMethods", [])
+            and item.get("name", "").startswith("models/gemini-")
+        ]
+        preferred = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3-flash")
+        model = next((f"models/{name}" for name in preferred if f"models/{name}" in supported),
+                     next((name for name in supported if "flash" in name), None))
+        if not model:
+            post_comment("تعذر العثور على نموذج Gemini متاح لتوليد النصوص لهذا المفتاح.")
+            return
+    except urllib.error.HTTPError as error:
+        post_comment(f"تعذر قراءة نماذج Gemini المتاحة (HTTP {error.code}).")
+        return
+    except Exception:
+        post_comment("تعذر قراءة قائمة نماذج Gemini المتاحة. راجع سجل GitHub Actions.")
+        return
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
     payload = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"maxOutputTokens": 1800}}).encode()
     request = urllib.request.Request(
         endpoint, data=payload,
