@@ -11,7 +11,14 @@ class StoreFeeSummary {
   /// اللي المحل دفعه لوصّلي وسجّلته الإدارة (بالقروش).
   final int paidMinor;
 
-  const StoreFeeSummary({required this.dueMinor, required this.paidMinor});
+  /// وقت آخر «تقفيل حساب» من الإدارة (null = لسه ما اتقفلش). الطلبات اللي قبله بتختفي من صفحة المحل.
+  final DateTime? settledAt;
+
+  const StoreFeeSummary({
+    required this.dueMinor,
+    required this.paidMinor,
+    this.settledAt,
+  });
 
   int get outstandingMinor => dueMinor - paidMinor;
   double get due => dueMinor / 100;
@@ -42,6 +49,9 @@ class StoreFeeService {
     return StoreFeeSummary(
       dueMinor: (due * 100).round(),
       paidMinor: (bal.data()?['paidAmountMinor'] as num?)?.toInt() ?? 0,
+      settledAt: bal.data()?['settledAt'] is Timestamp
+          ? (bal.data()!['settledAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
