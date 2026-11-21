@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/promo_banners.dart';
 import '../widgets/app_header.dart';
 
 import '../models/store.dart';
@@ -51,7 +52,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F5F7),
+        backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
@@ -99,6 +100,11 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
 
             final categories = stores.map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category).where((e) => e.trim().isNotEmpty).toSet().toList()..sort();
             return Column(children: [
+              // صورة (بوستر) في الهيدر؛ من نفس كاش بوسترات الرئيسية.
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: PromoBanners(),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: TextField(

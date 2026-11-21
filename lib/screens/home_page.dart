@@ -774,9 +774,9 @@ class _HomePageState extends State<HomePage>
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: LayoutBuilder(
         builder: (context, c) {
-          const gap = 12.0;
-          // 3 في الصف، صورة كبيرة واسم تحتها بدون إطار.
-          final w = (c.maxWidth - gap * 2) / 3 - 0.5;
+          const gap = 10.0;
+          // 4 في الصف، صورة واسم تحتها بدون إطار.
+          final w = (c.maxWidth - gap * 3) / 4 - 0.5;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -1414,7 +1414,7 @@ class _CategoryTile extends StatelessWidget {
           AspectRatio(
             aspectRatio: 1,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               child: isAll || imageUrl.isEmpty
                   ? _emojiBox()
                   : CachedNetImage(
@@ -1431,7 +1431,7 @@ class _CategoryTile extends StatelessWidget {
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 12.5,
               fontWeight: FontWeight.w700,
               height: 1.25,
               color: Brand.ink,
@@ -1448,7 +1448,7 @@ class _CategoryTile extends StatelessWidget {
       decoration: BoxDecoration(gradient: Brand.softGradient),
       child: Text(
         _emojiFor(label),
-        style: const TextStyle(fontSize: 44, height: 1.1),
+        style: const TextStyle(fontSize: 34, height: 1.1),
       ),
     );
   }
