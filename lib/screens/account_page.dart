@@ -16,7 +16,6 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
-import '../widgets/theme_picker.dart';
 import 'join_request_page.dart';
 import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
@@ -354,7 +353,6 @@ class _AccountPageState extends State<AccountPage> {
                   trailing: const Icon(Icons.chevron_left),
                 ),
               ),
-              const ThemePickerCard(),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
