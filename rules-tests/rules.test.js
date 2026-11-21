@@ -6,8 +6,21 @@ const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
+const { initializeTestEnvironment, assertFails: firebaseAssertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const { doc, setDoc, updateDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, increment, deleteField } = require('firebase/firestore');
+
+// Fail the suite when an expected denial was actually caused by the expression budget.
+// The SDK's assertFails resolves with the Firestore error when permission is denied.
+const WASALLY_LIMIT_HITS = [];
+async function assertFails(promise) {
+  const origin = new Error().stack?.split('\\n').slice(2, 5).join(' | ') || 'unknown callsite';
+  const denied = await firebaseAssertFails(promise);
+  const message = [denied?.message, denied?.details, denied?.toString?.()].filter(Boolean).join(' ');
+  if (/maximum of 1000 expressions/i.test(message)) {
+    WASALLY_LIMIT_HITS.push(origin);
+  }
+  return denied;
+}
 
 let env;
 before(async () => {
@@ -16,7 +29,15 @@ before(async () => {
     firestore: { rules: fs.readFileSync(process.env.RULES_FILE || path.join(__dirname, '..', 'firestore.rules'), 'utf8') },
   });
 });
-after(async () => env && env.cleanup());
+after(async () => {
+  try { if (env) await env.cleanup(); }
+  finally {
+    console.log('WASALLY_LIMIT_HITS=' + WASALLY_LIMIT_HITS.length);
+    if (WASALLY_LIMIT_HITS.length) {
+      throw new Error('Firestore expression budget exceeded in assertFails at:\\n' + WASALLY_LIMIT_HITS.join('\\n'));
+    }
+  }
+});
 
 const store = 'shop1';
 const baseOrder = (uid, over = {}) => ({

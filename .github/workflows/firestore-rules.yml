@@ -75,3 +75,42 @@ jobs:
             exit 1
           fi
           echo "No expression-limit errors in emulator log."
+
+      # Diagnostic only: run baseline and isolated order-update rule inside runner.
+      # Both test commands may fail; inspect logs and expression-limit counts.
+      - name: Diagnostic isolate order update expression budget (PR only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set +e
+          rm -f rules-tests/firestore-debug.log firestore-debug.log
+          (cd rules-tests && npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js") > baseline-test.log 2>&1
+          echo "$?" > baseline-exit.txt
+          cp rules-tests/firestore-debug.log baseline-firestore-debug.log 2>/dev/null || true
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('firestore.rules')
+          s = p.read_text()
+          target = 'allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);'
+          assert s.count(target) == 1
+          p.write_text(s.replace(target, 'allow update: if false;'))
+          PY
+          rm -f rules-tests/firestore-debug.log firestore-debug.log
+          (cd rules-tests && npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js") > isolated-test.log 2>&1
+          echo "$?" > isolated-exit.txt
+          cp rules-tests/firestore-debug.log isolated-firestore-debug.log 2>/dev/null || true
+          echo "Baseline expression-limit log lines:"
+          grep -c "maximum of 1000 expressions" baseline-firestore-debug.log || true
+          echo "Isolated expression-limit log lines:"
+          grep -c "maximum of 1000 expressions" isolated-firestore-debug.log || true
+          test -s baseline-firestore-debug.log && test -s isolated-firestore-debug.log
+
+      - name: Upload isolation evidence (PR only)
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-order-update-isolation
+          path: |
+            baseline-*.log
+            isolated-*.log
+            *-exit.txt
