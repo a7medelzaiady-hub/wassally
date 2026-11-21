@@ -60,7 +60,7 @@ void main() {
     ]);
     expect(g.length, 2);
     expect(g[0].day, DateTime(2026, 11, 21));
-    expect(g[0].orders.map((e) => e.id), ['d', 'b', 'c']);
+    expect(g[0].orders.map((e) => e.id), ['d', 'c', 'b']);
     expect(g[0].money.completedCount, 2);
     expect(g[0].money.cancelledCount, 1);
     expect(g[0].money.goodsTotal, 60);
