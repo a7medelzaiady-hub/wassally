@@ -774,8 +774,9 @@ class _HomePageState extends State<HomePage>
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
       child: LayoutBuilder(
         builder: (context, c) {
-          const gap = 10.0;
-          final w = (c.maxWidth - gap * 3) / 4;
+          const gap = 12.0;
+          // 3 في الصف، صورة كبيرة واسم تحتها بدون إطار.
+          final w = (c.maxWidth - gap * 2) / 3 - 0.5;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -783,7 +784,6 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 104,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
@@ -1407,46 +1407,37 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFEDEDED),
-            width: 1,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: isAll || imageUrl.isEmpty
+                  ? _emojiBox()
+                  : CachedNetImage(
+                      url: thumb(imageUrl, w: 360),
+                      memCacheWidth: 360,
+                      errorWidget: _emojiBox(),
+                    ),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: isAll || imageUrl.isEmpty
-                    ? _emojiBox()
-                    : CachedNetImage(
-                        url: thumb(imageUrl, w: 200),
-                        memCacheWidth: 200,
-                        errorWidget: _emojiBox(),
-                      ),
-              ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+              color: Brand.ink,
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1457,7 +1448,7 @@ class _CategoryTile extends StatelessWidget {
       decoration: BoxDecoration(gradient: Brand.softGradient),
       child: Text(
         _emojiFor(label),
-        style: const TextStyle(fontSize: 32, height: 1.1),
+        style: const TextStyle(fontSize: 44, height: 1.1),
       ),
     );
   }
