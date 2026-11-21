@@ -13,8 +13,6 @@ import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
-import 'theme/brand.dart';
-import 'theme/theme_controller.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -32,7 +30,6 @@ Future<void> _bootstrap() async {
     _configureCrashlytics(),
     PerformanceMonitor.configure(),
     _activateAppCheck(),
-    ThemeController.instance.load(),
   ]);
   final bootstrap = startup.elapsed;
   runApp(const WasallyApp());
@@ -82,41 +79,32 @@ class WasallyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // لما المستخدم يغيّر السمة، التطبيق كله بيتبني من جديد بالألوان الجديدة.
-    return ListenableBuilder(
-      listenable: ThemeController.instance,
-      builder: (context, _) => MaterialApp(
-        title: 'وصلي',
-        debugShowCheckedModeBanner: false,
-        navigatorKey: rootNavigatorKey,
-        scaffoldMessengerKey: NotificationService.messengerKey,
-        theme: buildAppTheme(),
-        locale: const Locale('ar'),
-        supportedLocales: const [Locale('ar')],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        builder: (context, child) {
-          // نحترم إعدادات حجم الخط وإمكانية الوصول في الجهاز دون تصغير إجباري.
-          // خطوط أصغر في التطبيق كله (بدل التكبير الافتراضي).
-          final mq = MediaQuery.of(context);
-          return MediaQuery(
-            data: mq.copyWith(
-              textScaler: mq.textScaler.clamp(
-                minScaleFactor: 0.8,
-                maxScaleFactor: 0.88,
-              ),
+    return MaterialApp(
+      title: 'وصلي',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: rootNavigatorKey,
+      scaffoldMessengerKey: NotificationService.messengerKey,
+      theme: buildAppTheme(),
+      locale: const Locale('ar'),
+      supportedLocales: const [Locale('ar')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: mq.textScaler.clamp(
+              minScaleFactor: 0.8,
+              maxScaleFactor: 0.88,
             ),
-            child: KeyedSubtree(
-              key: ValueKey(Brand.palette.id),
-              child: child ?? const SizedBox.shrink(),
-            ),
-          );
-        },
-        home: const AuthGate(),
-      ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+      home: const AuthGate(),
     );
   }
 }
