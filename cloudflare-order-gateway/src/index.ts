@@ -900,17 +900,41 @@ async function batchGetDocuments(env: Env, paths: string[], token: string): Prom
     },
   );
   if (!result.ok) throw new HttpError(503, "تعذر تحميل كتالوج الأصناف.");
-  const text = await result.text();
   const docs = new Map<string, JsonMap>();
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    const item = JSON.parse(line) as { found?: FirestoreDoc };
+  for (const item of parseBatchGetResponse(await result.text())) {
     if (item.found?.name) {
       const path = item.found.name.split("/documents/")[1];
       docs.set(path, decodeFields(item.found.fields ?? {}));
     }
   }
   return docs;
+}
+
+/**
+ * رد Firestore REST على documents:batchGet بيرجع JSON array منسّق على كذا سطر
+ * ([{"found": ...}, {"missing": ...}]). الكود القديم كان بيعمل JSON.parse لكل سطر لوحده،
+ * فأول طلب حقيقي فيه أصناف كتالوج كان بيقع بـ SyntaxError = HTTP 500.
+ * بنقبل الـarray (الشكل الحقيقي)، أو object واحد، أو سطر لكل عنصر (NDJSON).
+ */
+export function parseBatchGetResponse(text: string): Array<{ found?: FirestoreDoc; missing?: string }> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) return parsed as Array<{ found?: FirestoreDoc }>;
+    if (parsed && typeof parsed === "object") return [parsed as { found?: FirestoreDoc }];
+  } catch {
+    // مش JSON واحد: نجرب سطر لكل عنصر.
+  }
+  try {
+    return trimmed.split("\n").filter((line) => line.trim()).map((line) => {
+      const item = JSON.parse(line) as unknown;
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("bad item");
+      return item as { found?: FirestoreDoc };
+    });
+  } catch {
+    throw new HttpError(503, "تعذر قراءة كتالوج الأصناف من قاعدة البيانات.");
+  }
 }
 
 function productFromLegacy(store: JsonMap, name: string): JsonMap {
