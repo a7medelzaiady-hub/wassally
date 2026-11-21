@@ -1666,6 +1666,52 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ───────────── رسوم خدمة وصّلي على المحلات ─────────────
+    // العميل بيدفع رسوم الخدمة كاش ضمن الإجمالي، فالمحل بيبقى ماسكها ومستحقة عليه لوصّلي.
+    // المستحق = مجموع serviceFee للطلبات المسلّمة (aggregate). المدفوع = store_fee_balances.
+    // كل دفعة مستند في store_fee_payments + تحديث الرصيد في نفس المعاملة (نفس نمط تسويات المناديب).
+    match /store_fee_payments/{pid} {
+      allow create: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt']) &&
+        request.resource.data.storeId is string &&
+        request.resource.data.storeId.size() > 0 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 && request.resource.data.amount <= 1000000 &&
+        request.resource.data.amountMinor is int &&
+        request.resource.data.amountMinor > 0 && request.resource.data.amountMinor <= 100000000 &&
+        request.resource.data.amountMinor >= request.resource.data.amount * 100 - 0.0001 &&
+        request.resource.data.amountMinor <= request.resource.data.amount * 100 + 0.0001 &&
+        request.resource.data.note is string &&
+        request.resource.data.note.size() <= 200 &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/store_fee_balances/$(request.resource.data.storeId)) &&
+        getAfter(/databases/$(database)/documents/store_fee_balances/$(request.resource.data.storeId)).data.get('lastPaymentId', '') == pid;
+      allow read: if signedIn() && (isAdmin() || isStoreOwner(resource.data.get('storeId', '')));
+      allow update, delete: if false;
+    }
+
+    match /store_fee_balances/{storeId} {
+      allow get: if isAdmin() || isStoreOwner(storeId);
+      allow list: if false;
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.storeId == storeId &&
+        request.resource.data.paidAmountMinor is int &&
+        request.resource.data.lastPaymentId is string &&
+        request.resource.data.lastPaymentId.size() > 0 &&
+        request.resource.data.updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)) &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('storeId', '') == storeId &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdBy', '') == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdAt', null) == request.time &&
+        request.resource.data.paidAmountMinor - (resource == null ? 0 : resource.data.get('paidAmountMinor', 0)) ==
+          getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('amountMinor', 0);
+      allow delete: if false;
+    }
+
     // كوبونات الخصم: العميل يقرأ كود واحد بالاسم، والمدير يدير الكل.
     match /promos/{code} {
       allow get: if signedIn();

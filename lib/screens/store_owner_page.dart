@@ -30,6 +30,7 @@ import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/unanswered_orders_alert.dart';
+import '../services/store_fee_service.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -723,12 +724,12 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
                     const SizedBox(height: 8),
                     Text('طلبات مكتملة: ${completed.length}  •  ملغية: $cancelledCount'),
                     Text('إجمالي قيمة أصناف الطلبات المكتملة: ${formatPrice(completedSales)}'),
-                    const SizedBox(height: 6),
                     const Text(
-                      'عمولة وصّلي: تُعرض بعد اعتماد طريقة حسابها وتسجيلها لكل طلب. '
-                      'الأرقام تخص الطلبات المحمّلة فقط (حتى 100 طلب)، وليست كشف حساب نهائيًا.',
+                      'الأرقام دي من الطلبات المحمّلة بس (لحد 100 طلب).',
                       style: TextStyle(fontSize: 12),
                     ),
+                    const Divider(height: 18),
+                    StoreFeeSummaryView(storeId: widget.storeId),
                   ],
                 ),
               ),
@@ -2564,4 +2565,59 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
       label: Text(_playing ? 'إيقاف مؤقت' : 'تشغيل الرسالة الصوتية'),
     ),
   );
+}
+
+
+/// رسوم خدمة وصّلي على المحل: المستحق والمدفوع والمتبقي (من كل الطلبات المسلّمة).
+class StoreFeeSummaryView extends StatefulWidget {
+  final String storeId;
+  const StoreFeeSummaryView({super.key, required this.storeId});
+
+  @override
+  State<StoreFeeSummaryView> createState() => _StoreFeeSummaryViewState();
+}
+
+class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
+  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<StoreFeeSummary>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Row(children: [
+            const Expanded(child: Text('تعذر تحميل رسوم وصّلي.', style: TextStyle(fontSize: 12.5))),
+            TextButton(
+              onPressed: () => setState(() => _future = StoreFeeService.load(widget.storeId)),
+              child: const Text('حاول تاني'),
+            ),
+          ]);
+        }
+        final s = snap.data;
+        if (s == null) return const LinearProgressIndicator(minHeight: 2);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('رسوم خدمة وصّلي', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('المستحقة على المحل: ${formatPrice(s.due)}'),
+            Text('المدفوعة: ${formatPrice(s.paid)}'),
+            Text(
+              'المتبقي: ${formatPrice(s.outstanding)}',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: s.outstandingMinor > 0 ? kDanger : kSuccess,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'العميل بيدفع رسوم الخدمة (2%، من 5 لـ15 جنيه) ضمن إجمالي الطلب، فالمحل بيستلمها ويوردها لوصّلي.',
+              style: TextStyle(fontSize: 11.5),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }

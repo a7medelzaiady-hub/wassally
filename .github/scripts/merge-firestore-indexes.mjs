@@ -16,12 +16,16 @@ const indexKey = (ix) => [
   (ix.fields ?? []).filter((f) => f.fieldPath !== "__name__").map(fieldKey).join("|"),
 ].join("#");
 
+// الموجود على الإنتاج بشكله الحرفي الأول (عشان firebase ما يحاولش ينشئه تاني → 409)،
+// وبعده فهارس الملف الجديدة فعلًا بس.
 const indexes = new Map();
-if (!liveComposites) for (const ix of repo.indexes ?? []) indexes.set(indexKey(ix), ix);
+for (const ix of live.indexes ?? []) indexes.set(indexKey(ix), ix);
 let added = 0;
-for (const ix of live.indexes ?? []) {
-  const k = indexKey(ix);
-  if (!indexes.has(k)) { indexes.set(k, ix); added++; }
+if (!liveComposites) {
+  for (const ix of repo.indexes ?? []) {
+    const k = indexKey(ix);
+    if (!indexes.has(k)) { indexes.set(k, ix); added++; }
+  }
 }
 
 const overrides = new Map();
@@ -37,4 +41,4 @@ if ((live.indexes ?? []).length > 0 && indexes.size < (live.indexes ?? []).lengt
   console.error("merged index count is lower than live"); process.exit(1);
 }
 writeFileSync(outPath, JSON.stringify({ indexes: [...indexes.values()], fieldOverrides: [...overrides.values()] }, null, 2));
-console.log(`indexes: repo=${(repo.indexes ?? []).length} live=${(live.indexes ?? []).length} kept-from-live=${added} total=${indexes.size}`);
+console.log(`indexes: repo=${(repo.indexes ?? []).length} live=${(live.indexes ?? []).length} new-from-repo=${added} total=${indexes.size}`);
