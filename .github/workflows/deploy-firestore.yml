@@ -15,11 +15,11 @@ on:
         required: true
         type: string
       indexes_mode:
-        description: "overrides = إعدادات الحقول بس والفهارس المركبة زي ما هي (الافتراضي)، all = كمان ينشئ الفهارس المركبة الناقصة"
+        description: "add-missing = إعدادات الحقول + إنشاء الفهارس المركبة الناقصة من الملف (الافتراضي، من غير مسح). overrides-only = إعدادات الحقول بس."
         required: false
-        default: overrides
+        default: add-missing
         type: choice
-        options: [overrides, all]
+        options: [add-missing, overrides-only]
 
 permissions:
   contents: read
@@ -90,6 +90,14 @@ jobs:
           $fb firestore:indexes --project wasally-12259 > "$RUNNER_TEMP/live-indexes.json"
           node .github/scripts/merge-firestore-indexes.mjs \
             "$RUNNER_TEMP/live-indexes.json" firestore.indexes.json "$RUNNER_TEMP/merged-indexes.json" \
-            ${{ inputs.indexes_mode == 'all' && '' || '--live-composites' }}
+            --live-composites
+          cp firestore.indexes.json "$RUNNER_TEMP/repo-indexes.json"
           cp "$RUNNER_TEMP/merged-indexes.json" firestore.indexes.json
           $fb deploy --only firestore:indexes --project wasally-12259 --non-interactive --force
+
+          # 3) الفهارس المركبة الجديدة في الملف: إنشاء واحد واحد (الموجود 409 بيتعدّى، ومفيش مسح).
+          if [[ "${{ inputs.indexes_mode }}" != "overrides-only" ]]; then
+            gcloud auth activate-service-account --key-file="$key" --quiet
+            ACCESS_TOKEN="$(gcloud auth print-access-token)" \
+              node .github/scripts/create-missing-composite-indexes.mjs wasally-12259 "$RUNNER_TEMP/repo-indexes.json"
+          fi

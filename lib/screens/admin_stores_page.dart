@@ -16,6 +16,7 @@ import '../utils/format.dart';
 import '../widgets/app_image.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/dialogs.dart';
+import '../services/store_fee_service.dart';
 
 /// أسماء مختصرة للأنواع الطويلة.
 typedef _Json = Map<String, dynamic>;
@@ -378,6 +379,18 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                                       doc.id,
                                       (data['name'] ?? '').toString(),
                                     ),
+                            ),
+                            IconButton(
+                              tooltip: 'رسوم وصّلي على المحل',
+                              icon: const Icon(Icons.account_balance_wallet_outlined),
+                              onPressed: () => showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (_) => AdminStoreFeeSheet(
+                                  storeId: doc.id,
+                                  storeName: (data['name'] ?? '').toString(),
+                                ),
+                              ),
                             ),
                             IconButton(
                               tooltip: ((data['isOpen'] as bool?) ?? true)
@@ -1607,4 +1620,112 @@ String storeVisibilityLabel(Map<String, dynamic> data) {
   final open = (data['isOpen'] as bool?) ?? true;
   if (!visible) return 'مخفي عن العملاء';
   return open ? 'ظاهر • مفتوح' : 'ظاهر • مغلق الآن';
+}
+
+
+/// للأدمن: رصيد رسوم وصّلي على محل، وتسجيل دفعة.
+class AdminStoreFeeSheet extends StatefulWidget {
+  final String storeId;
+  final String storeName;
+  const AdminStoreFeeSheet({super.key, required this.storeId, required this.storeName});
+
+  @override
+  State<AdminStoreFeeSheet> createState() => _AdminStoreFeeSheetState();
+}
+
+class _AdminStoreFeeSheetState extends State<AdminStoreFeeSheet> {
+  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
+  bool _busy = false;
+  String? _msg;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _record() async {
+    final raw = _amount.text.trim().replaceAll('٫', '.').replaceAll(',', '.');
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    var t = raw;
+    for (var i = 0; i < 10; i++) {
+      t = t.replaceAll(ar[i], '$i');
+    }
+    final amount = double.tryParse(t) ?? -1;
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    try {
+      await StoreFeeService.recordPayment(
+        storeId: widget.storeId,
+        amount: amount,
+        note: _note.text,
+      );
+      _amount.clear();
+      _note.clear();
+      setState(() {
+        _msg = 'تم تسجيل الدفعة.';
+        _future = StoreFeeService.load(widget.storeId);
+      });
+    } catch (e) {
+      setState(() => _msg = e is StateError ? e.message : 'تعذر التسجيل. حاول تاني.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+      child: FutureBuilder<StoreFeeSummary>(
+        future: _future,
+        builder: (context, snap) {
+          final s = snap.data;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('رسوم وصّلي • ${widget.storeName}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 10),
+              if (snap.hasError)
+                const Text('تعذر تحميل الرصيد.')
+              else if (s == null)
+                const LinearProgressIndicator(minHeight: 2)
+              else ...[
+                Text('المستحقة: ${formatPrice(s.due)}'),
+                Text('المدفوعة: ${formatPrice(s.paid)}'),
+                Text('المتبقي: ${formatPrice(s.outstanding)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _amount,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'المبلغ اللي المحل دفعه (جنيه)'),
+                ),
+                TextField(
+                  controller: _note,
+                  maxLength: 200,
+                  decoration: const InputDecoration(labelText: 'ملاحظة (اختياري): كاش، تحويل...'),
+                ),
+                FilledButton(
+                  onPressed: _busy || s.outstandingMinor <= 0 ? null : _record,
+                  child: Text(_busy ? 'جاري التسجيل...' : 'تسجيل دفعة'),
+                ),
+              ],
+              if (_msg != null) ...[
+                const SizedBox(height: 8),
+                Text(_msg!, textAlign: TextAlign.center),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
 }

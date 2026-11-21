@@ -2005,6 +2005,39 @@ test('expression limit: مستخدم واحد بكل الأدوار يمرّ ب�
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
 });
 
+test('رسوم وصّلي على المحل: الأدمن بس يسجّل دفعة مع تحديث الرصيد بنفس المبلغ، وصاحب المحل يقرا رصيده', async () => {
+  const pay = (uid, pid, amountMinor, paidAfter, prevPaid = null) => {
+    const db = as(uid);
+    const b = writeBatch(db);
+    b.set(doc(db, `store_fee_payments/${pid}`), {
+      storeId: 'shop1', amount: amountMinor / 100, amountMinor, note: 'كاش', createdBy: uid, createdAt: serverTimestamp(),
+    });
+    b.set(doc(db, 'store_fee_balances/shop1'), {
+      storeId: 'shop1', paidAmountMinor: paidAfter, lastPaymentId: pid, updatedAt: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  await assertFails(pay('owner1', 'p0', 500, 500));
+  await assertFails(pay('cust1', 'p0', 500, 500));
+  // الرصيد لازم يزيد بنفس مبلغ الدفعة بالظبط
+  await assertFails(pay('admin1', 'p1', 500, 900));
+  await assertSucceeds(pay('admin1', 'p1', 500, 500));
+  await assertSucceeds(pay('admin1', 'p2', 1250, 1750));
+  // دفعة من غير تحديث الرصيد ممنوعة
+  await assertFails(setDoc(doc(as('admin1'), 'store_fee_payments/p3'), {
+    storeId: 'shop1', amount: 1, amountMinor: 100, note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+  }));
+  // القراءة
+  await assertSucceeds(getDoc(doc(as('owner1'), 'store_fee_balances/shop1')));
+  await assertFails(getDoc(doc(as('owner2'), 'store_fee_balances/shop1')));
+  await assertFails(getDoc(doc(as('cust1'), 'store_fee_balances/shop1')));
+  await assertSucceeds(getDoc(doc(as('owner1'), 'store_fee_payments/p1')));
+  await assertFails(getDoc(doc(as('owner2'), 'store_fee_payments/p1')));
+  // مفيش تعديل ولا حذف للدفعات
+  await assertFails(updateDoc(doc(as('admin1'), 'store_fee_payments/p1'), { amount: 1 }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'store_fee_payments/p1')));
+});
+
 test('adminNotices: سجل إشعارات الإدارة مقفول على التطبيق', async () => {
   for (const uid of ['cust1', 'owner1', 'admin1']) {
     await assertFails(getDoc(doc(as(uid), 'adminNotices/join_request_x')));
