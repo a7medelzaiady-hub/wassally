@@ -98,9 +98,9 @@ def main():
             and item.get("name", "").startswith("models/gemini-")
         ]
         preferred = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3-flash")
-        model = next((f"models/{name}" for name in preferred if f"models/{name}" in supported),
-                     next((name for name in supported if "flash" in name), None))
-        if not model:
+        candidates = [f"models/{name}" for name in preferred if f"models/{name}" in supported]
+        candidates += [name for name in supported if "flash" in name and name not in candidates]
+        if not candidates:
             post_comment("تعذر العثور على نموذج Gemini متاح لتوليد النصوص لهذا المفتاح.")
             return
     except urllib.error.HTTPError as error:
@@ -109,25 +109,36 @@ def main():
     except Exception:
         post_comment("تعذر قراءة قائمة نماذج Gemini المتاحة. راجع سجل GitHub Actions.")
         return
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
     payload = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"maxOutputTokens": 1800}}).encode()
-    request = urllib.request.Request(
-        endpoint, data=payload,
-        headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=90) as response:
-            result = json.load(response)
-        answer = "\n".join(
-            part.get("text", "")
-            for candidate in result.get("candidates", [])
-            for part in candidate.get("content", {}).get("parts", [])
-        ).strip() or "لم يرجع النموذج إجابة نصية."
-    except urllib.error.HTTPError as error:
-        answer = f"تعذر الاتصال بـGemini (HTTP {error.code}). راجع الحصة المجانية وصلاحية المفتاح في Google AI Studio."
-    except Exception:
-        answer = "تعذر الاتصال بـGemini. راجع سجل GitHub Actions دون مشاركة أي مفاتيح."
+    answer = None
+    tried = []
+    for model in candidates[:5]:
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent"
+        request = urllib.request.Request(
+            endpoint, data=payload,
+            headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                result = json.load(response)
+            answer = "\n".join(
+                part.get("text", "")
+                for candidate in result.get("candidates", [])
+                for part in candidate.get("content", {}).get("parts", [])
+            ).strip() or "لم يرجع النموذج إجابة نصية."
+            break
+        except urllib.error.HTTPError as error:
+            tried.append(f"{model}: HTTP {error.code}")
+            if error.code == 404:
+                continue
+            answer = f"تعذر الاتصال بـGemini (HTTP {error.code}). راجع صلاحية المفتاح والحصة المتاحة."
+            break
+        except Exception:
+            answer = "تعذر الاتصال بـGemini. راجع سجل GitHub Actions دون مشاركة أي مفاتيح."
+            break
+    if answer is None:
+        answer = "تعذر استخدام النماذج المتاحة: " + ", ".join(tried)
     paths = ", ".join(name for _, name, _ in files[:MAX_FILES]) or "لا توجد ملفات مطابقة"
     post_comment("### 🤖 إجابة Gemini (مراجعة قراءة فقط)\n\n" + answer[:50000] + "\n\n---\nالملفات المختارة آليًا: " + paths + "\n\n> الإجابة تعتمد على مقتطفات مختارة، وليست فحصًا شاملًا للمستودع.")
 
