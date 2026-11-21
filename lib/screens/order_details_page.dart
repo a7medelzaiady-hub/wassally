@@ -421,6 +421,59 @@ class _Details extends StatelessWidget {
           ),
         ),
 
+        // 🔐 رمز التسليم جوه الصفحة (مش شريط ثابت) عشان ما يغطيش أزرار تعديل/إلغاء الطلب.
+        if (showPin) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF7EF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kSuccess),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                if (deliveryPin != null)
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      deliveryPin!.split('').join(' '),
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  )
+                else if (pinLoading)
+                  const SizedBox(
+                    height: 28,
+                    width: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                else if (pinMessage != null) ...[
+                  Text(pinMessage!, textAlign: TextAlign.center),
+                  TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
+                ],
+                const SizedBox(height: 4),
+                const Text(
+                  'ما تديش الرمز لحد قبل ما تستلم الطلب.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
           const SizedBox(height: 12),
           _CustomerReturnReason(
@@ -606,57 +659,6 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (showPin)
-          SafeArea(
-            top: false,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF7EF),
-                border: Border(top: BorderSide(color: kSuccess)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  if (deliveryPin != null)
-                    Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Text(
-                        deliveryPin!.split('').join(' '),
-                        style: const TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                    )
-                  else if (pinLoading)
-                    const SizedBox(
-                      height: 28,
-                      width: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2.5),
-                    )
-                  else if (pinMessage != null) ...[
-                    Text(pinMessage!, textAlign: TextAlign.center),
-                    TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
-                  ],
-                  const SizedBox(height: 4),
-                  const Text(
-                    'ما تديش الرمز لحد قبل ما تستلم الطلب.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5),
-                  ),
-                ],
-              ),
-            ),
-          ),
       ],
     );
   }
