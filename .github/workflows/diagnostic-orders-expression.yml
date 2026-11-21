@@ -22,6 +22,12 @@ jobs:
           java-version: "21"
       - run: npm ci
         working-directory: rules-tests
+      - name: Positive control - prove the detector catches a real over-budget denial
+        shell: bash
+        run: |
+          (cd rules-tests && npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node positive-control-expression.js") > positive-control.log 2>&1
+          cat positive-control.log
+          grep -q 'POSITIVE_CONTROL_DETECTOR=HIT' positive-control.log
       - name: Baseline with existing rule
         shell: bash
         run: |
@@ -61,6 +67,7 @@ jobs:
         with:
           name: order-expression-isolation-logs
           path: |
+            positive-control.log
             baseline-*.log
             isolated-*.log
             *-hits.txt
