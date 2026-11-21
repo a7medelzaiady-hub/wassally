@@ -2359,6 +2359,7 @@ test('بعد تأكيد العميل الاستلام (مندوب خارجي): �
   await assertFails(close.commit());
   const after = (await getDoc(doc(admin, 'orders/o1'))).data();
   assert.equal(after.status, 'on_the_way');
+});
 
 // ───────────── serverOrders: اختبارات بعلامة تحكّم (positive control) ─────────────
 // كل رفض هنا له نظير ناجح بنفس العملية والبيانات من غير الفلاج، فالرفض سببه الفلاج مش خطأ في البيانات.
