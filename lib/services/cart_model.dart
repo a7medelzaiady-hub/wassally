@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/product.dart';
+import 'order_gateway.dart';
+import 'wasally_service_fee.dart';
 
 /// حالة السلة. الطلب الواحد بيكون من محل واحد بس (زي تطبيقات التوصيل المعروفة)
 /// عشان رسوم التوصيل والتحضير بتتحسب لكل محل.
@@ -76,7 +78,12 @@ class CartModel extends ChangeNotifier {
   int get count => _items.values.fold(0, (a, b) => a + b);
   double get subtotal =>
       _items.entries.fold(0.0, (sum, e) => sum + e.key.price * e.value);
-  double get total => _items.isEmpty ? 0 : subtotal + effectiveFee - discount;
+  /// رسوم خدمة وصّلي (على العميل): بس في مسار الـWorker، لأنه هو اللي بيعتمدها.
+  double get serviceFee => _items.isEmpty || !OrderGateway.serverOrdersEnabled
+      ? 0
+      : WasallyServiceFee.forItems(subtotal - discount);
+  double get total =>
+      _items.isEmpty ? 0 : subtotal + effectiveFee - discount + serviceFee;
 
   int qtyOf(Product p) => _items[p] ?? 0;
 

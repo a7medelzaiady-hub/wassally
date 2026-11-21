@@ -243,6 +243,13 @@ class _CartBody extends StatelessWidget {
                   label: 'رسوم التوصيل',
                   value: formatPrice(cart.fee),
                 ),
+                if (cart.serviceFee > 0) ...[
+                  const SizedBox(height: 6),
+                  _SummaryRow(
+                    label: 'رسوم الخدمة',
+                    value: formatPrice(cart.serviceFee),
+                  ),
+                ],
                 const Divider(height: 20),
                 _SummaryRow(
                   label: 'الإجمالي',

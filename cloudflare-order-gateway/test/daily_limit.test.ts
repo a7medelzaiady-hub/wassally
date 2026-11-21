@@ -67,7 +67,7 @@ const orderInput = (id: string) => ({
   storeId: "store_test",
   customerName: "Ahmed Test",
   expectedDeliveryFee: 20,
-  expectedTotal: 70,
+  expectedTotal: 75, // 50 أصناف + 20 توصيل + 5 رسوم خدمة (الحد الأدنى)
   items: [{ productId: "product_test", expectedPrice: 25, qty: 2, options: [], optionsTotal: 0 }],
   contact: { userName: "Ahmed Test", phone: "01012345678", address: "Test street address" },
 });

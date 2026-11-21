@@ -18,6 +18,7 @@ import 'performance_monitor.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
 import 'read_meter.dart';
+import 'wasally_service_fee.dart';
 
 /// أقصى عدد أصناف مختلفة في الطلب الواحد. لازم يطابق firestore.rules (validNewOrder: items.size() <= 100).
 const int kMaxOrderLines = 100;
@@ -476,7 +477,11 @@ class OrderService {
       discount = (subtotal * ratio * 100).floor() / 100;
       if (discount >= subtotal) discount = 0;
     }
-    final total = subtotal + order.deliveryFee - discount;
+    // الطلب القديم (من غير رسوم خدمة) بيفضل من غير رسوم بعد التعديل، زي الـWorker.
+    final serviceFee = order.serviceFee == null
+        ? 0.0
+        : WasallyServiceFee.forItems(subtotal - discount);
+    final total = subtotal + order.deliveryFee - discount + serviceFee;
     final updatedItems = lines.map((l) => l.toMap()).toList();
 
     if (OrderGateway.serverOrdersEnabled) {
