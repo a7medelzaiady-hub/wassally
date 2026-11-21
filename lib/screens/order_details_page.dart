@@ -131,8 +131,7 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
   String? _pinMessage;
   bool _pinLoading = false;
 
-  bool _needsPin(AppOrder o) =>
-      o.status == OrderStatus.onTheWay && o.customerConfirmedAt == null;
+  bool _needsPin(AppOrder o) => orderShowsDeliveryPin(o);
 
   Future<void> _loadPin() async {
     if (_pinLoading || _pin != null || !_needsPin(widget.order)) return;
@@ -391,8 +390,7 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    final showPin = order.status == OrderStatus.onTheWay &&
-        order.customerConfirmedAt == null;
+    final showPin = orderShowsDeliveryPin(order);
     return Column(
       children: [
         Expanded(
@@ -1084,3 +1082,12 @@ class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
     );
   }
 }
+
+
+/// رمز التسليم بيظهر للعميل من أول الطلب (جديد/بيتجهز/في الطريق) لحد ما يتسلّم أو يتلغي.
+/// الرمز ثابت للطلب حتى لو اتعدّل (بيتحسب من رقم الطلب في الـWorker).
+bool orderShowsDeliveryPin(AppOrder o) =>
+    (o.status == OrderStatus.newOrder ||
+        o.status == OrderStatus.preparing ||
+        o.status == OrderStatus.onTheWay) &&
+    o.customerConfirmedAt == null;

@@ -2161,8 +2161,11 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
   if (!doc) throw new HttpError(404, "الطلب غير موجود.");
   const order = decodeFields(doc.fields ?? {});
   if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
-  if (order.status !== "on_the_way" || order.customerConfirmedAt instanceof Date) {
-    throw new HttpError(409, "الرمز بيظهر لما الطلب يكون في الطريق.", "pin_not_available");
+  // الرمز بيتحسب من رقم الطلب بس (ثابت حتى لو العميل عدّل الطلب)، فبيظهر من أول الطلب
+  // لحد التسليم أو الإلغاء.
+  if (!["new", "preparing", "on_the_way"].includes(String(order.status)) ||
+      order.customerConfirmedAt instanceof Date) {
+    throw new HttpError(409, "الرمز بيظهر طول ما الطلب لسه شغال، وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
   }
   return response({ pin: await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET) });
 }
