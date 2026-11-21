@@ -39,6 +39,44 @@ class CartModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // أصناف تم تحميلها بالفعل من صفحة المحل: لا استعلامات إضافية.
+  List<Product> _loadedProducts = const [];
+
+  void rememberLoadedProducts(String storeId, List<Product> products) {
+    if (_storeId != null && _storeId != storeId) return;
+    _loadedProducts = List<Product>.of(products);
+  }
+
+  List<Product> get completionSuggestions {
+    if (_items.isEmpty || _loadedProducts.isEmpty) return const [];
+    const groups = <List<String>>[
+      ['مكرونة', 'مكرونه', 'صلصة', 'صلصه', 'جبنة', 'جبنه'],
+      ['شاي', 'سكر', 'لبن'],
+      ['قهوة', 'قهوه', 'سكر', 'لبن'],
+      ['عيش', 'خبز', 'جبنة', 'جبنه', 'بيض'],
+      ['رز', 'أرز', 'زيت', 'سمنة', 'سمن'],
+      ['برجر', 'بطاطس', 'كاتشب'],
+    ];
+    String norm(String v) => v.toLowerCase().replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا').replaceAll('ة', 'ه').replaceAll('ى', 'ي');
+    final chosen = _items.keys.toList();
+    final chosenNames = chosen.map((p) => norm(p.name)).toList();
+    final suggestions = <Product>[];
+    for (final group in groups) {
+      final words = group.map(norm).toList();
+      if (!chosenNames.any((name) => words.any(name.contains))) continue;
+      for (final p in _loadedProducts) {
+        if (!p.available || p.price <= 0 || p.hasOptions ||
+            chosen.contains(p) || suggestions.contains(p)) continue;
+        final name = norm(p.name);
+        if (words.any(name.contains) && !chosenNames.contains(name)) {
+          suggestions.add(p);
+        }
+      }
+    }
+    return List<Product>.unmodifiable(suggestions.take(4));
+  }
+
   final Map<Product, int> _items = {};
   Map<String, dynamic>? _specialRequest;
 
@@ -136,6 +174,7 @@ class CartModel extends ChangeNotifier {
     promoCode = '';
     promoPercent = 0;
     _items.clear();
+    _loadedProducts = const [];
     _specialRequest = null;
     _storeId = null;
     _storeName = null;
