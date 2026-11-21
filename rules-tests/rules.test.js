@@ -2341,3 +2341,22 @@ test('catalog: صاحب طلب انضمام يدير قائمة وإصدار م�
   await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
   await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
 });
+
+test('بعد تأكيد العميل الاستلام (مندوب خارجي): الإدارة لا تلغي ولا ترجّع ولا تغلق الطلب؛ الإغلاق لصاحب المحل بعد النقدية', async () => {
+  await seedOnWay('external');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  const admin = as('admin1');
+  // تحكم إيجابي: قرار الإدارة بتأكيد الاستلام نفسه ينجح (يثبت إن الرفض اللي بعده بسبب الحالة مش بسبب إعداد ناقص).
+  await assertSucceeds(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'cancelled', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'preparing', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'new', 'admin'));
+  const close = writeBatch(admin);
+  close.update(doc(admin, 'orders/o1'), stamp());
+  close.set(doc(admin, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: actorUidOf('admin'), actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertFails(close.commit());
+  const after = (await getDoc(doc(admin, 'orders/o1'))).data();
+  assert.equal(after.status, 'on_the_way');
+});
