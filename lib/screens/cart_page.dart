@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/cart_model.dart';
 import '../theme/app_theme.dart';
@@ -80,8 +81,30 @@ class CartPage extends StatelessWidget {
   }
 }
 
-class _CartBody extends StatelessWidget {
+class _CartBody extends StatefulWidget {
   const _CartBody();
+
+  @override
+  State<_CartBody> createState() => _CartBodyState();
+}
+
+class _CartBodyState extends State<_CartBody> {
+  bool _showSuggestions = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) setState(() => _showSuggestions = prefs.getBool('cart_suggestions_enabled') ?? true);
+    });
+  }
+
+  Future<void> _toggleSuggestions(bool enabled) async {
+    setState(() => _showSuggestions = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('cart_suggestions_enabled', enabled);
+  }
+
 
   // الودجت دي بتتعمل const من CartPage، يعني Flutter بيتخطّى إعادة بنائها لما السلة تتغيّر.
   // عشان كده بتسمع للسلة بنفسها، وإلا أزرار + و − و حذف الصنف بتغيّر الكميات من غير ما الشاشة تتحدّث.
@@ -169,7 +192,16 @@ class _CartBody extends StatelessWidget {
                     ],
                   ),
                 ),
-              if (cart.completionSuggestions.isNotEmpty)
+              if (!_showSuggestions)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    onPressed: () => _toggleSuggestions(true),
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
+                    label: const Text('إظهار اقتراحات كمّل طلبك'),
+                  ),
+                ),
+              if (_showSuggestions && cart.completionSuggestions.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
@@ -181,8 +213,15 @@ class _CartBody extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('🛒 ناقصك حاجة؟ كمّل طلبك!',
-                          style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                      Row(children: [
+                        Expanded(child: Text('🛒 ناقصك حاجة؟ كمّل طلبك!',
+                            style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                        TextButton.icon(
+                          onPressed: () => _toggleSuggestions(false),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('إيقاف الاقتراحات'),
+                        ),
+                      ]),
                       const SizedBox(height: 8),
                       for (final p in cart.completionSuggestions)
                         ListTile(
