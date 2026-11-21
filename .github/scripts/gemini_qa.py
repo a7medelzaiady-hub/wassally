@@ -16,6 +16,15 @@ ALLOWED_EXT = {".dart", ".js", ".ts", ".json", ".yaml", ".yml", ".rules", ".md"}
 DENY = re.compile(r"(secret|credential|private.key|service.account|google-services|key.properties|\.env|\.pem|\.p12)", re.I)
 
 
+# Allow only explicitly reviewed source locations for outbound model context.
+SAFE_PREFIXES = ("lib/", "cloudflare-order-gateway/src/")
+SAFE_FILES = {"firestore.rules"}
+
+
+def is_safe_source(relative):
+    return (relative in SAFE_FILES or relative.startswith(SAFE_PREFIXES)) and not DENY.search(relative)
+
+
 def post_comment(body):
     p = subprocess.run(
         ["gh", "issue", "comment", os.environ["ISSUE_NUMBER"], "--repo", os.environ["GH_REPO"], "--body-file", "-"],
@@ -43,13 +52,15 @@ def main():
     for path in ROOT.rglob("*"):
         if not path.is_file() or path.suffix not in ALLOWED_EXT or any(p in SKIP_PARTS for p in path.parts):
             continue
-        if DENY.search(str(path)) or path.stat().st_size > 85000:
+        if not is_safe_source(str(path.relative_to(ROOT))) or path.stat().st_size > 85000:
             continue
         relative = str(path.relative_to(ROOT))
         score = sum(4 for t in terms if t in relative.lower())
         try:
             data = path.read_text(encoding="utf-8")
         except (UnicodeError, OSError):
+            continue
+        if re.search(r"(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9_]{30,})", data):
             continue
         score += sum(min(data.lower().count(t), 4) for t in terms)
         if score:
