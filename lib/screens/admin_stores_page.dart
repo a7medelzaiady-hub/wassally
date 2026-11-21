@@ -1647,6 +1647,36 @@ class _AdminStoreFeeSheetState extends State<AdminStoreFeeSheet> {
     super.dispose();
   }
 
+  Future<void> _settle() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('تقفيل الحساب؟'),
+        content: const Text('الطلبات المنتهية الحالية هتختفي من صفحة المحل. الفلوس والمدفوعات ما بتتأثرش.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('اقفل الحساب')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    try {
+      await StoreFeeService.settleAccount(widget.storeId);
+      setState(() {
+        _msg = 'تم تقفيل الحساب.';
+        _future = StoreFeeService.load(widget.storeId);
+      });
+    } catch (e) {
+      setState(() => _msg = e is StateError ? e.message : 'تعذر تقفيل الحساب. حاول تاني.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _record() async {
     final raw = _amount.text.trim().replaceAll('٫', '.').replaceAll(',', '.');
     const ar = '٠١٢٣٤٥٦٧٨٩';
@@ -1716,6 +1746,13 @@ class _AdminStoreFeeSheetState extends State<AdminStoreFeeSheet> {
                 FilledButton(
                   onPressed: _busy || s.outstandingMinor <= 0 ? null : _record,
                   child: Text(_busy ? 'جاري التسجيل...' : 'تسجيل دفعة'),
+                ),
+                const SizedBox(height: 6),
+                OutlinedButton(
+                  onPressed: _busy || s.outstandingMinor > 0 ? null : _settle,
+                  child: Text(s.settledAt == null
+                      ? 'تقفيل الحساب'
+                      : 'تقفيل الحساب (آخر تقفيل ${formatDateTime(s.settledAt!)})'),
                 ),
               ],
               if (_msg != null) ...[

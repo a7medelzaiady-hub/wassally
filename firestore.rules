@@ -1698,9 +1698,11 @@ service cloud.firestore {
     match /store_fee_balances/{storeId} {
       allow get: if isAdmin() || isStoreOwner(storeId);
       allow list: if false;
+      // settledAt (اختياري) = وقت آخر «تقفيل حساب»؛ الدفعة العادية بتحافظ عليه زي ما هو.
       allow create, update: if isAdmin() &&
-        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
         request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.get('settledAt', null) == (resource == null ? null : resource.data.get('settledAt', null)) &&
         request.resource.data.storeId == storeId &&
         request.resource.data.paidAmountMinor is int &&
         request.resource.data.lastPaymentId is string &&
@@ -1712,6 +1714,20 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdAt', null) == request.time &&
         request.resource.data.paidAmountMinor - (resource == null ? 0 : resource.data.get('paidAmountMinor', 0)) ==
           getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('amountMinor', 0);
+      // «تقفيل الحساب»: الأدمن بيختم وقت التقفيل من غير ما يلمس المبلغ المدفوع ولا آخر دفعة.
+      // (إن المتبقي صفر بيتحقق منه التطبيق؛ القواعد مش بتقدر تجمّع الطلبات.)
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.storeId == storeId &&
+        request.resource.data.settledAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.paidAmountMinor is int &&
+        request.resource.data.lastPaymentId is string &&
+        (resource == null
+          ? (request.resource.data.paidAmountMinor == 0 && request.resource.data.lastPaymentId == '')
+          : (request.resource.data.paidAmountMinor == resource.data.get('paidAmountMinor', 0) &&
+             request.resource.data.lastPaymentId == resource.data.get('lastPaymentId', '')));
       allow delete: if false;
     }
 
