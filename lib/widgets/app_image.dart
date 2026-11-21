@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../utils/img.dart';
+import 'cached_net_image.dart';
+
 /// صورة من الإنترنت مع بديل (أيقونة على خلفية ملوّنة) لو مفيش رابط أو فشل
 /// التحميل.
 class AppImage extends StatelessWidget {
@@ -22,6 +25,13 @@ class AppImage extends StatelessWidget {
     this.borderRadius = BorderRadius.zero,
   });
 
+  /// عرض النسخة المصغّرة بالبكسل (ضعف الحجم المعروض تقريبًا للشاشات الكثيفة).
+  int get _thumbWidth {
+    final side = [width, height].whereType<double>().fold<double>(0, (a, b) => a > b ? a : b);
+    if (side <= 0 || side.isInfinite) return 400;
+    return (side * 2).round().clamp(96, 800).toInt();
+  }
+
   Widget _fallback() => Container(
     width: width,
     height: height,
@@ -36,20 +46,17 @@ class AppImage extends StatelessWidget {
       borderRadius: borderRadius,
       child: url.isEmpty
           ? _fallback()
-          : Image.network(
-              url,
+          : CachedNetImage(
+              url: thumb(url, w: _thumbWidth),
               width: width,
               height: height,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => _fallback(),
-              loadingBuilder: (context, child, progress) {
-                if (progress == null) return child;
-                return Container(
-                  width: width,
-                  height: height,
-                  color: color.withValues(alpha: 0.08),
-                );
-              },
+              memCacheWidth: _thumbWidth,
+              placeholder: Container(
+                width: width,
+                height: height,
+                color: color.withValues(alpha: 0.08),
+              ),
+              errorWidget: _fallback(),
             ),
     );
   }
