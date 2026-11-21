@@ -105,3 +105,48 @@ describe("full order creation against simulated Firebase", () => {
     }
   });
 });
+
+
+describe("reject tampered client prices without creating an order", () => {
+  it("rejects forged product price and total before any Firestore commit", async () => {
+    let commitCalls = 0;
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async (resource) => {
+      const url = String(resource);
+      if (url.includes("oauth2.googleapis.com/token"))
+        return Response.json({ access_token: "fake-access-token", expires_in: 3600 });
+      if (url.includes("accounts:lookup"))
+        return Response.json({ users: [{ localId: uid, validSince: "1", disabled: false }] });
+      if (url.endsWith("/documents:batchGet"))
+        return new Response(JSON.stringify({ found: doc("stores/store_test/products/product_test", {
+          name: "Test product", price: 25, available: true,
+        }) }) + "\n", { status: 200 });
+      if (url.endsWith("/documents:commit")) {
+        commitCalls++;
+        return Response.json({ writeResults: [] });
+      }
+      if (url.includes("firestore.googleapis.com/")) {
+        const path = url.split("/documents/")[1];
+        if (path === "stores/store_test")
+          return Response.json(doc(path, { name: "Test store", active: true }));
+        return new Response("not found", { status: 404 });
+      }
+      throw Error("Unexpected upstream request: " + url);
+    });
+    try {
+      const forged = {
+        ...input,
+        items: [{ ...input.items[0], expectedPrice: 1 }],
+        expectedTotal: 27,
+      };
+      const result = await worker.fetch(new Request("https://worker.test/v1/orders", {
+        method: "POST",
+        headers: { Authorization: "Bearer mocked-firebase-token", "Content-Type": "application/json" },
+        body: JSON.stringify(forged),
+      }), env);
+      expect(result.status).toBe(409);
+      expect(commitCalls).toBe(0);
+    } finally {
+      upstream.mockRestore();
+    }
+  });
+});
