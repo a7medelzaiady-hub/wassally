@@ -267,7 +267,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
               actionsAlignment: MainAxisAlignment.center,
               actions: [
                 FilledButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () {
+                    shellTab.value = 2; // طلباتي
+                    Navigator.pop(ctx);
+                  },
                   style: FilledButton.styleFrom(
                     shape: const StadiumBorder(),
                     padding: const EdgeInsets.symmetric(horizontal: 28),
