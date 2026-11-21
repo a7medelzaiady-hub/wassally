@@ -72,5 +72,16 @@ flutter:
           weight: 800
         - asset: assets/fonts/Tajawal-Black.ttf
           weight: 900
+    # خط شاشة الدخول (IBM Plex Sans Arabic، رخصة OFL مرفقة في assets/fonts).
+    - family: PlexArabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSansArabic-Bold.ttf
+          weight: 700
 
   
