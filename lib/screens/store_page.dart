@@ -1367,7 +1367,10 @@ class _StorePageState extends State<StorePage> {
       ));
       return;
     }
-    if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
+    if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) {
+      cart.rememberLoadedProducts(store.id, _visible);
+      return;
+    }
 
     final startNew = await showDialog<bool>(
       context: context,
@@ -1397,6 +1400,7 @@ class _StorePageState extends State<StorePage> {
     if (startNew == true) {
       cart.clear();
       cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
+      cart.rememberLoadedProducts(store.id, _visible);
     }
   }
 
