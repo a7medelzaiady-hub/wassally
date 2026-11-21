@@ -21,6 +21,7 @@ import '../services/role_service.dart';
 import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/store_orders_split.dart';
 import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
@@ -90,7 +91,7 @@ class StoreOwnerPage extends StatelessWidget {
       builder: (context, snapshot) {
         final orders = snapshot.data ?? const <AppOrder>[];
         return DefaultTabController(
-          length: 3,
+          length: 2,
           child: Scaffold(
             floatingActionButton: const FeedbackFab(),
             body: NestedScrollView(
@@ -124,7 +125,6 @@ class StoreOwnerPage extends StatelessWidget {
                       tabs: const [
                         Tab(text: 'الطلبات'),
                         Tab(text: 'الأصناف والعروض'),
-                        Tab(text: 'الطلبات الخاصة'),
                       ],
                     ),
                   ),
@@ -139,7 +139,6 @@ class StoreOwnerPage extends StatelessWidget {
                     error: snapshot.error,
                   ),
                   _OwnerProductsTab(storeId: storeId),
-                  _OwnerSpecialRequestsTab(orders: orders),
                 ],
               ),
             ),
@@ -649,7 +648,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
 
 // ───────────────────────── الطلبات ─────────────────────────
 
-class _OwnerOrdersTab extends StatefulWidget {
+class _OwnerOrdersTab extends StatelessWidget {
   final String storeId;
   final List<AppOrder> orders;
   final bool loading;
@@ -662,96 +661,191 @@ class _OwnerOrdersTab extends StatefulWidget {
   });
 
   @override
-  State<_OwnerOrdersTab> createState() => _OwnerOrdersTabState();
-}
-
-class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
-  bool _showCurrent = true;
-
-  bool _isCurrent(AppOrder o) =>
-      o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled;
-
-  @override
   Widget build(BuildContext context) {
-    if (widget.error != null) {
+    if (error != null) {
       return EmptyState(
         icon: Icons.lock_outline,
         title: 'تعذر تحميل الطلبات',
-        message: _why(widget.error!),
+        message: _why(error!),
       );
     }
-    if (widget.loading) {
+    if (loading) {
       return Center(child: CircularProgressIndicator(color: kPrimary));
     }
-    final all = widget.orders;
-    final current = all.where(_isCurrent).toList();
-    final past = all.where((o) => !_isCurrent(o)).toList();
-    final shown = _showCurrent ? current : past;
-    final completed = past.where((o) => o.status == OrderStatus.delivered).toList();
-    final completedSales = completed.fold<double>(0, (sum, o) => sum + o.subtotal);
-    final cancelledCount = past.where((o) => o.status == OrderStatus.cancelled).length;
+    // الصفحة دي للشغل الجاري بس. الطلبات اللي خلصت في صفحة «الطلبات المنتهية».
+    final current = orders.where(isOpenOrder).toList();
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: SegmentedButton<bool>(
-            segments: [
-              ButtonSegment(
-                value: true,
-                label: Text('الحالية (${current.length})'),
-              ),
-              ButtonSegment(
-                value: false,
-                label: Text('السابقة (${past.length})'),
-              ),
-            ],
-            selected: {_showCurrent},
-            onSelectionChanged: (v) =>
-                setState(() => _showCurrent = v.first),
-          ),
-        ),
-        if (!_showCurrent)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('سجل الطلبات المنفذة', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Text('طلبات مكتملة: ${completed.length}  •  ملغية: $cancelledCount'),
-                    Text('إجمالي قيمة أصناف الطلبات المكتملة: ${formatPrice(completedSales)}'),
-                    const Text(
-                      'الأرقام دي من الطلبات المحمّلة بس (لحد 100 طلب).',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    const Divider(height: 18),
-                    StoreFeeSummaryView(storeId: widget.storeId),
-                  ],
-                ),
+          child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoreClosedOrdersPage(storeId: storeId, orders: orders),
               ),
             ),
+            icon: const Icon(Icons.inventory_2_outlined, size: 18),
+            label: const Text('الطلبات المنتهية والحساب'),
           ),
+        ),
         Expanded(
-          child: shown.isEmpty
-              ? EmptyState(
+          child: current.isEmpty
+              ? const EmptyState(
                   icon: Icons.receipt_long_outlined,
-                  title: _showCurrent
-                      ? 'مفيش طلبات حالية'
-                      : 'مفيش طلبات سابقة',
+                  title: 'مفيش طلبات شغالة دلوقتي',
+                  message: 'الطلبات الجديدة هتظهر هنا، والمنتهية في «الطلبات المنتهية والحساب».',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
-                  itemCount: shown.length,
+                  itemCount: current.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) =>
-                      _OwnerOrderCard(order: shown[i]),
+                  itemBuilder: (context, i) => _OwnerOrderCard(order: current[i]),
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// الطلبات اللي خلصت (تم التوصيل/ملغي) لسه ما اتقفلش حسابها مع وصّلي.
+/// قسمين: «البضاعة» (الطلبات وأصنافها) و«الفلوس» (رسوم وصّلي والمتبقي).
+/// بعد ما الإدارة تقفل الحساب، الطلبات القديمة بتختفي من هنا.
+class StoreClosedOrdersPage extends StatefulWidget {
+  final String storeId;
+  final List<AppOrder> orders;
+  const StoreClosedOrdersPage({super.key, required this.storeId, required this.orders});
+
+  @override
+  State<StoreClosedOrdersPage> createState() => _StoreClosedOrdersPageState();
+}
+
+class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
+  bool _goods = true;
+  // قراءة واحدة (رصيد + تجميع رسوم) بتتشارك بين الفلتر وقسم الفلوس.
+  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+
+  void _reload() => setState(() => _future = StoreFeeService.load(widget.storeId));
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الطلبات المنتهية والحساب')),
+      body: FutureBuilder<StoreFeeSummary>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return EmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: 'تعذر تحميل الحساب',
+              message: 'اتأكد من الإنترنت وحاول تاني.',
+              actionLabel: 'حاول تاني',
+              onAction: _reload,
+            );
+          }
+          if (!snap.hasData) {
+            return Center(child: CircularProgressIndicator(color: kPrimary));
+          }
+          final summary = snap.data!;
+          final closed = closedOrdersAfterSettlement(widget.orders, summary.settledAt);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: SegmentedButton<bool>(
+                  segments: [
+                    ButtonSegment(value: true, label: Text('البضاعة (${closed.length})')),
+                    const ButtonSegment(value: false, label: Text('الفلوس')),
+                  ],
+                  selected: {_goods},
+                  onSelectionChanged: (v) => setState(() => _goods = v.first),
+                ),
+              ),
+              Expanded(
+                child: _goods
+                    ? (closed.isEmpty
+                        ? const EmptyState(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'مفيش طلبات منتهية',
+                            message: 'الطلبات اللي اتقفل حسابها بتتشال من هنا.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: closed.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 12),
+                            itemBuilder: (context, i) => _OwnerOrderCard(order: closed[i]),
+                          ))
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          ClosedOrdersMoneyView(closed: closed),
+                          const SizedBox(height: 12),
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: StoreFeeSummaryView(
+                                storeId: widget.storeId,
+                                future: _future,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// «الفلوس» للطلبات المنتهية المعروضة: ملخص + سطر لكل طلب (بضاعة، رسوم وصّلي).
+class ClosedOrdersMoneyView extends StatelessWidget {
+  final List<AppOrder> closed;
+  const ClosedOrdersMoneyView({super.key, required this.closed});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = ClosedOrdersMoney.of(closed);
+    final delivered = closed.where((o) => o.status == OrderStatus.delivered).toList();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('ملخص الطلبات المنتهية', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text('تم توصيلها: ${money.completedCount}  •  ملغية: ${money.cancelledCount}'),
+            Text('قيمة البضاعة: ${formatPrice(money.goodsTotal)}'),
+            Text('رسوم خدمة وصّلي على هذه الطلبات: ${formatPrice(money.serviceFeeTotal)}'),
+            if (delivered.isNotEmpty) ...[
+              const Divider(height: 18),
+              for (final o in delivered)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          o.deliveredAt != null
+                              ? formatDateTime(o.deliveredAt!)
+                              : (o.createdAt != null ? formatDateTime(o.createdAt!) : ''),
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                      Text(
+                        '${formatPrice(o.subtotal)}  •  رسوم ${formatPrice(o.serviceFee ?? 0)}',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -2338,87 +2432,6 @@ class _OfferDialogState extends State<_OfferDialog> {
 }
 
 
-///// الطلبات الخاصة المرفقة بالطلب العادي في النظام الجديد.
-/// نستخدم نفس قائمة الطلبات المحمّلة بالفعل بدل مستمع Firestore إضافي.
-class _OwnerSpecialRequestsTab extends StatelessWidget {
-  final List<AppOrder> orders;
-  const _OwnerSpecialRequestsTab({required this.orders});
-
-  @override
-  Widget build(BuildContext context) {
-    final specialOrders = orders
-        .where((order) => order.specialRequest != null)
-        .toList(growable: false);
-
-    if (specialOrders.isEmpty) {
-      return const EmptyState(
-        icon: Icons.inbox_outlined,
-        title: 'لا توجد طلبات خاصة',
-        message: 'الطلبات الخاصة المرسلة ضمن الطلبات العادية هتظهر هنا.',
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: specialOrders.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final order = specialOrders[index];
-        final data = order.specialRequest!;
-        final date = order.createdAt;
-
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      order.displayCustomer.isEmpty
-                          ? 'عميل'
-                          : order.displayCustomer,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  OrderStatusPill(status: order.status),
-                ],
-              ),
-              if (date != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    formatDateTime(date),
-                    style: TextStyle(color: kMuted, fontSize: 12),
-                  ),
-                ),
-              const SizedBox(height: 10),
-              _SpecialRequestBox(data: data),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// بوكس «طلب خاص» واضح لصاحب المحل: الوصف + الكمية + الصورة + الصوت.
 class _SpecialRequestBox extends StatelessWidget {
   final Map<String, dynamic> data;
@@ -2575,14 +2588,17 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
 /// رسوم خدمة وصّلي على المحل: المستحق والمدفوع والمتبقي (من كل الطلبات المسلّمة).
 class StoreFeeSummaryView extends StatefulWidget {
   final String storeId;
-  const StoreFeeSummaryView({super.key, required this.storeId});
+
+  /// لو اتبعت، بنستخدمه بدل قراءة جديدة (عشان الصفحة اللي فوق ما تقراش مرتين).
+  final Future<StoreFeeSummary>? future;
+  const StoreFeeSummaryView({super.key, required this.storeId, this.future});
 
   @override
   State<StoreFeeSummaryView> createState() => _StoreFeeSummaryViewState();
 }
 
 class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
-  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+  late Future<StoreFeeSummary> _future = widget.future ?? StoreFeeService.load(widget.storeId);
 
   @override
   Widget build(BuildContext context) {
