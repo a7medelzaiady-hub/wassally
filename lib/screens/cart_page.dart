@@ -169,6 +169,38 @@ class _CartBody extends StatelessWidget {
                     ],
                   ),
                 ),
+              if (cart.completionSuggestions.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F8F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFCCE7D2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('🛒 ناقصك حاجة؟ كمّل طلبك!',
+                          style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 8),
+                      for (final p in cart.completionSuggestions)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(formatPrice(p.price)),
+                          trailing: IconButton(
+                            tooltip: 'إضافة للسلة',
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: () => cart.add(p,
+                              storeId: cart.storeId ?? '',
+                              storeName: cart.storeName ?? ''),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               for (final e in entries)
                 Container(
                   margin: const EdgeInsets.only(bottom: 10),
