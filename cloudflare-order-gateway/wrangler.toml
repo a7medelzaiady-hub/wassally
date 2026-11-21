@@ -2,6 +2,11 @@ name = "throbbing-water-4ef7"
 main = "src/index.ts"
 compatibility_date = "2026-11-16"
 
+# Persist Worker request/error logs across deployments for canary diagnostics.
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # Approximate per-user image upload protection; no Firestore counters/reads.
 [[ratelimits]]
 name = "UPLOAD_RATE_LIMITER"
