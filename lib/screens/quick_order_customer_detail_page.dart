@@ -10,6 +10,19 @@ class QuickOrderCustomerDetailPage extends StatefulWidget {
   final String orderId;
   const QuickOrderCustomerDetailPage({super.key, required this.orderId});
 
+  static String statusLabel(String status) => switch (status) {
+    'open' => 'بانتظار مندوب',
+    'accepted' || 'assigned' => 'المندوب استلم الطلب',
+    'awaiting_advance' => 'في انتظار تأكيد الدفعة المقدمة',
+    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
+    'summary_pending' => 'راجع الحساب النهائي',
+    'summary_approved' => 'تمت الموافقة على الحساب',
+    'delivered' => 'تم التسليم',
+    'cancelled' || 'canceled' => 'ملغي',
+    _ => 'جارٍ متابعة الطلب',
+  };
+
+
   @override
   State<QuickOrderCustomerDetailPage> createState() => _QuickOrderCustomerDetailPageState();
 }
@@ -81,17 +94,6 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     }
   }
 
-  static String statusLabel(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' || 'assigned' => 'المندوب استلم الطلب',
-    'awaiting_advance' => 'في انتظار تأكيد الدفعة المقدمة',
-    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' || 'canceled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
 
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
@@ -112,7 +114,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
         if (order == null) const Text('جارٍ تحميل الطلب...') else ...[
-          Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
+          Text('الحالة: ${QuickOrderCustomerDetailPage.statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
             Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
