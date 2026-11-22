@@ -8,7 +8,7 @@
 - الاتفاق على أي تغيير أثناء الشراء (بدائل، أصناف، أجرة) **بالتليفون** بين العميل والمندوب.
   مفيش تفاوض ولا موافقة لكل تغيير داخل التطبيق.
 - التطبيق بيثبت حاجتين بس:
-  1. **المقدم قبل الشراء** لو تقدير المشتريات فوق الحد (200 جنيه افتراضيًا). ده حاجز أمان مالي.
+  1. **المقدم اختياري تمامًا** مهما كان تقدير المشتريات. المندوب يدفع من جيبه، والعميل ممكن يحوّل مقدم بالاتفاق.
   2. **كشف نهائي واحد** يوافق عليه العميل قبل رمز التسليم: مجموع الفواتير + أجرة التوصيل + رسوم وصّلي − المقدم.
 - المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة).
 
@@ -27,7 +27,7 @@
 | الحقل | الافتراضي | المعنى |
 |---|---|---|
 | `enabled` | `false` | الخدمة مقفولة لحد ما تبقى `true` |
-| `prepaidThresholdPiastres` | 20000 | تقدير حتى 200 جنيه = دفع عند الاستلام، أكثر = مقدم |
+| `prepaidThresholdPiastres` | 20000 | حقل قديم للتوافق فقط؛ لا يفرض مقدمًا |
 | `maximumAdvancePiastres` | 100000 | سقف المقدم وسقف تقدير المشتريات |
 | `maximumDeliveryPiastres` | 20000 | أقصى أجرة توصيل يكتبها المندوب |
 | `maxPerDay` | 5 | أقصى طلبات سريعة للعميل في اليوم |
@@ -89,12 +89,12 @@ rev                                   // يزيد مع كل كتابة
 |---|---|---|---|
 | `POST /v1/quick` | العميل | `orderId, customerName, area, notes?, stores (مع pricedItems اختياري), contact{userName, phone, address, courierNotes?}` | ← `open` |
 | `POST /v1/quick/{id}/edit` | العميل | `stores, notes?` | `open` بس |
-| `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted`/`awaiting_advance` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
+| `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
 | `POST /v1/quick/{id}/accept` | مندوب معتمد | — | `open` ← `accepted` |
-| `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` (أو `awaiting_advance` قبل التحويل) ← `open` |
-| `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres` | `accepted` ← `purchasing` (حتى الحد) أو `awaiting_advance` |
-| `POST /v1/quick/{id}/advance-sent` | العميل | `amountPiastres, reference?` | `awaiting_advance` |
-| `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (اللي وصله فعلًا) | `awaiting_advance` ← `purchasing` |
+| `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` ← `open` |
+| `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres` | `accepted` ← `purchasing` مهما كان التقدير |
+| `POST /v1/quick/{id}/advance-sent` | العميل | `amountPiastres, reference?` | `accepted` أو `purchasing` |
+| `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (اللي وصله فعلًا) | `purchasing` ← `purchasing` |
 | `POST /v1/uploads` (multipart) | المندوب المعيّن | `folder=quick_receipts, orderId, file` | `purchasing` — يرجّع `{ url }` |
 | `POST /v1/quick/{id}/receipt` | المندوب المعيّن | `imageUrl, amountPiastres, storeName?` | `purchasing` (حتى 20 فاتورة) |
 | `POST /v1/quick/{id}/receipt-remove` | المندوب المعيّن | `index` | `purchasing` |
@@ -104,7 +104,9 @@ rev                                   // يزيد مع كل كتابة
 | `GET /v1/quick/{id}/delivery-pin` | العميل | — | `summary_approved` بس |
 | `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `summary_approved` ← `delivered` |
 
-**شاشة المندوب المقترحة (أقل كتابة):** قبول ← اتصال ← رقم «تقدير المشتريات» ← (لو فوق الحد: زر «وصلني التحويل» برقم المبلغ)
+**قاعدة الدفع:** المندوب يموّل الشراء من ماله. لا حد 200 جنيه ولا تحويل إلزامي، والمقدم الاختياري لا يخصم من الحساب إلا بعد تأكيد المندوب استلامه.
+
+**شاشة المندوب المقترحة (أقل كتابة):** قبول ← اتصال ← رقم «تقدير المشتريات» ← (لو العميل حوّل مقدمًا اختياريًا: زر «وصلني التحويل» برقم المبلغ)
 ← زر كبير «تصوير فاتورة» + رقم المبلغ (يتكرر) ← رقم «أجرة التوصيل» ← «ابعت الكشف للعميل» ← رمز التسليم.
 
 **شاشة العميل:** لما الحالة `summary_pending` يظهر كشف واحد (`totals` + صور الفواتير) بزرين: «موافق» و«مش موافق».
