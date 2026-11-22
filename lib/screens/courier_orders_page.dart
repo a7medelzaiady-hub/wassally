@@ -464,17 +464,23 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                         color: Brand.ink,
                       ),
                     ),
-                    // المناديب المتاحين يشوفوا المنطقة بس. العنوان والموبايل بيظهروا
-                    // للمندوب اللي استلم الطلب فقط.
-                    if (o.area.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        o.area,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12.5, color: kMuted),
+                    // وجهة مختصرة فقط قبل الاستلام؛ لا نعرض عنوان العميل أو هاتفه.
+                    const SizedBox(height: 5),
+                    Text(
+                      'رايح: ${o.area.trim().isEmpty ? 'المنطقة غير محددة' : o.area.trim()}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Brand.green,
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'طلب #${o.id.length > 8 ? o.id.substring(0, 8) : o.id}',
+                      style: TextStyle(fontSize: 11, color: kMuted),
+                    ),
                   ],
                 ),
               ),
