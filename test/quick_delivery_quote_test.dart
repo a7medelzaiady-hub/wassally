@@ -60,7 +60,8 @@ void main() {
   test('200 EGP threshold is inclusive for cash-on-delivery', () {
     const policy = QuickOrderPaymentPolicy(maximumAdvancePiastres: 50000);
     expect(policy.requiresAdvance(20000), isFalse);
-    expect(policy.requiresAdvance(20001), isTrue);
+    expect(policy.requiresAdvance(20001), isFalse);
+    expect(policy.requiresAdvance(100000), isFalse);
     expect(policy.validAdvance(50000), isTrue);
     expect(policy.validAdvance(50001), isFalse);
   });
