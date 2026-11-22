@@ -326,7 +326,8 @@ export function applyQuickAction(
       if (status !== "open") {
         fail(409, "edit_after_accept", "المندوب قبل الطلب. كلّمه بالتليفون لأي تغيير.");
       }
-      return { stores: validateQuickStores(body.stores), notes: validateQuickNotes(body.notes), rev };
+      const stores = validateQuickStores(body.stores);
+      return { stores, approxTotalPiastres: quickApproxTotal(stores), notes: validateQuickNotes(body.notes), rev };
     }
 
     case "cancel": {
