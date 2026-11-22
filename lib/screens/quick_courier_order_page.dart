@@ -238,7 +238,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     return _card(children: [
       Text('طلب ${o.customerFirstName.isEmpty ? 'العميل' : o.customerFirstName}',
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-      if (o.area.isNotEmpty) Text(o.area, style: TextStyle(color: kMuted)),
+      if (o.area.isNotEmpty)
+        Text('📍 منطقة العميل: ${o.area}', style: TextStyle(color: kMuted)),
+      if (!o.canSeeContact)
+        Text('العنوان التفصيلي ورقم الهاتف يظهران بعد قبول الطلب فقط.',
+            style: TextStyle(color: kMuted, fontSize: 12)),
       for (final s in o.stores) ...[
         const SizedBox(height: 10),
         Row(children: [
