@@ -93,13 +93,13 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
 class QuickOrderCustomerDetailPageStatus {
   static String label(String status) => switch (status) {
     'open' => 'بانتظار مندوب',
-    'accepted' => 'المندوب استلم الطلب',
-    'purchasing' => 'المندوب بيشتري طلبك',
+    'accepted' || 'assigned' => 'المندوب استلم الطلب',
+    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
     'awaiting_advance' => 'بانتظار تأكيد المبلغ المقدم',
     'summary_pending' => 'راجع الحساب النهائي',
     'summary_approved' => 'تمت الموافقة على الحساب',
     'delivered' => 'تم التسليم',
-    'cancelled' => 'ملغي',
+    'cancelled' || 'canceled' => 'ملغي',
     _ => 'جارٍ متابعة الطلب',
   };
 }
