@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/quick_price_guide.dart';
+import 'quick_order_customer_detail_page.dart';
 import '../services/quick_order_api.dart';
 import '../widgets/quick_price_picker.dart';
 
@@ -74,7 +75,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تم إرسال طلبك السريع')),
       );
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+        builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
+      ));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
