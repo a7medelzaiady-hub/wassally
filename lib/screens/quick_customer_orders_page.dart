@@ -71,7 +71,7 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
                 child: ListTile(
                   leading: Icon(Icons.flash_on, color: Brand.green),
                   title: Text('طلب سريع #${doc.id.length > 8 ? doc.id.substring(0, 8) : doc.id}'),
-                  subtitle: Text(QuickOrderCustomerDetailPageStatus.label(status)),
+                  subtitle: Text(QuickOrderCustomerDetailPage.statusLabel(status)),
                   trailing: const Icon(Icons.chevron_left),
                   onTap: () async {
                     await Navigator.of(context).push(MaterialPageRoute<void>(
@@ -89,16 +89,3 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
   );
 }
 
-/// ترجمة حالات الطلب بدون عرض رموز الـWorker للعميل.
-class QuickOrderCustomerDetailPageStatus {
-  static String label(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' => 'المندوب استلم الطلب',
-    'purchasing' => 'المندوب بيشتري طلبك',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
-}
