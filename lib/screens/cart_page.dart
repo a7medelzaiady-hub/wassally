@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -8,6 +9,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/qty_stepper.dart';
 import '../widgets/app_header.dart';
 import 'checkout_page.dart';
+import 'my_carts_page.dart';
 import 'store_directory_page.dart';
 
 /// السلة. بتتعرض كتبويب في الشاشة الرئيسية، أو كصفحة مستقلة (showBackButton).
@@ -29,7 +31,7 @@ class CartPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: cart,
+      listenable: Listenable.merge([cart, carts]),
       builder: (context, _) {
         final clearButton = cart.isEmpty
             ? null
@@ -57,6 +59,7 @@ class CartPage extends StatelessWidget {
                   ],
                 ),
               ),
+            if (carts.hasParked) const MyCartsBanner(),
             Expanded(
               child: cart.isEmpty
                   ? EmptyState(
@@ -297,6 +300,52 @@ class _SummaryRow extends StatelessWidget {
         Text(label, style: style),
         Text(value, style: style),
       ],
+    );
+  }
+}
+
+/// تنبيه في السلة: عند العميل سلال تانية محفوظة في «سلّاتي».
+class MyCartsBanner extends StatelessWidget {
+  const MyCartsBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final others = carts.parked.length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: const Color(0xFFFFF7E8),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          key: const Key('my-carts-banner'),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MyCartsPage()),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE5B85C)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.shopping_basket, color: Color(0xFFB7791F)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    others == 1
+                        ? 'عندك سلة تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.'
+                        : 'عندك $others سلال تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.',
+                    style: const TextStyle(fontWeight: FontWeight.w700, height: 1.4),
+                  ),
+                ),
+                const Icon(Icons.chevron_left),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

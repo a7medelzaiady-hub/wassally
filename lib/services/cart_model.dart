@@ -4,8 +4,8 @@ import '../models/product.dart';
 import 'order_gateway.dart';
 import 'wasally_service_fee.dart';
 
-/// حالة السلة. الطلب الواحد بيكون من محل واحد بس (زي تطبيقات التوصيل المعروفة)
-/// عشان رسوم التوصيل والتحضير بتتحسب لكل محل.
+/// حالة السلة الحالية. الطلب الواحد بيكون من محل واحد بس (رسوم التوصيل والتحضير لكل محل).
+/// السلال التانية (محل لكل سلة) بتتحفظ في «سلّاتي» (CartBook) والعميل يرجع لها في أي وقت.
 class CartModel extends ChangeNotifier {
   /// رسوم التوصيل الافتراضية وقت الطلب. الأدمن يحدد الرسوم النهائية (finalDeliveryFee) لما يوافق على الطلب.
   static const double deliveryFee = 20;
@@ -132,6 +132,33 @@ class CartModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// نسخة من السلة الحالية عشان تتحفظ في «سلّاتي» لما العميل يتسوق من محل تاني.
+  CartSnapshot snapshot() => CartSnapshot._(
+        storeId: _storeId,
+        storeName: _storeName,
+        items: Map<Product, int>.from(_items),
+        specialRequest: _specialRequest == null ? null : Map<String, dynamic>.from(_specialRequest!),
+        area: area,
+        fee: fee,
+        promoCode: promoCode,
+        promoPercent: promoPercent,
+      );
+
+  /// يرجّع سلة محفوظة كسلة حالية (بيستبدل اللي في السلة دلوقتي).
+  void restore(CartSnapshot s) {
+    _items
+      ..clear()
+      ..addAll(s.items);
+    _specialRequest = s.specialRequest == null ? null : Map<String, dynamic>.from(s.specialRequest!);
+    _storeId = s.storeId;
+    _storeName = s.storeName;
+    area = s.area;
+    fee = s.fee;
+    promoCode = s.promoCode;
+    promoPercent = s.promoPercent;
+    notifyListeners();
+  }
+
   void clear() {
     promoCode = '';
     promoPercent = 0;
@@ -141,6 +168,33 @@ class CartModel extends ChangeNotifier {
     _storeName = null;
     notifyListeners();
   }
+}
+
+/// سلة محفوظة (محل واحد) في «سلّاتي». بيانات بس، من غير مستمعين.
+class CartSnapshot {
+  final String? storeId;
+  final String? storeName;
+  final Map<Product, int> items;
+  final Map<String, dynamic>? specialRequest;
+  final String area;
+  final double fee;
+  final String promoCode;
+  final double promoPercent;
+
+  const CartSnapshot._({
+    required this.storeId,
+    required this.storeName,
+    required this.items,
+    required this.specialRequest,
+    required this.area,
+    required this.fee,
+    required this.promoCode,
+    required this.promoPercent,
+  });
+
+  bool get isEmpty => items.isEmpty && specialRequest == null;
+  int get count => items.values.fold(0, (a, b) => a + b);
+  double get subtotal => items.entries.fold(0.0, (sum, e) => sum + e.key.price * e.value);
 }
 
 /// السلة المشتركة في التطبيق كله.
