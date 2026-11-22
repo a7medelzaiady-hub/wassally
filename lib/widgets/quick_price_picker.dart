@@ -22,7 +22,11 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
   final _search = TextEditingController();
   final _unlisted = TextEditingController();
   final Map<String, int> _quantities = {};
-  late final Future<QuickPriceGuide?> _guide = QuickPriceGuideService.load();
+  late Future<QuickPriceGuide?> _guide = QuickPriceGuideService.load();
+
+  void _refreshGuide() => setState(() {
+    _guide = QuickPriceGuideService.refresh();
+  });
 
   @override
   void dispose() {
@@ -82,10 +86,27 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
             ),
             if (snapshot.connectionState == ConnectionState.waiting)
               const LinearProgressIndicator(),
-            if (guide == null && snapshot.connectionState != ConnectionState.waiting)
+            if (snapshot.connectionState != ConnectionState.waiting &&
+                (guide == null || guide.items.isEmpty))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('دليل الأسعار لسه مش متاح. تقدر تكتب الأصناف والكميات يدويًا تحت.'),
+                    TextButton.icon(
+                      onPressed: _refreshGuide,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('إعادة تحميل دليل الأسعار'),
+                    ),
+                  ],
+                ),
+              ),
+            if (guide != null && guide.items.isNotEmpty &&
+                matches.isEmpty && query.isNotEmpty)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('قائمة الأسعار غير متاحة حاليًا، اكتب طلبك بالأسفل.'),
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('الصنف مش موجود في الدليل؛ اكتبه في خانة الأصناف الأخرى.'),
               ),
             ...matches.take(30).map((item) {
               final count = _quantities[item.id] ?? 0;
