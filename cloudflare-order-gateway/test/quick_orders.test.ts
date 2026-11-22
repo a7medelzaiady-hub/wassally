@@ -6,6 +6,7 @@ import {
   quickDeliveredPatch,
   quickDeliveryBlocker,
   quickServiceFee,
+  quickApproxTotal,
   quickTotals,
   resolveQuickSettings,
   validateQuickStores,
@@ -301,5 +302,35 @@ describe("delivery gate", () => {
   });
   it("rejects unknown actions", () => {
     expect(code(() => step(fresh(), "hack", customer))).toBe("404:unknown_action");
+  });
+});
+
+describe("display-only approximate price guide", () => {
+  it("accepts priced items and calculates totals in piastres", () => {
+    const stores = validateQuickStores([{
+      name: "بقالة",
+      items: "",
+      pricedItems: [
+        { name: "لبن", qty: 2, unitPricePiastres: 3500 },
+        { name: "عيش", qty: 3, unitPricePiastres: 200 },
+      ],
+    }]);
+    expect(quickApproxTotal(stores)).toBe(7600);
+    const order = newQuickOrder({
+      uid: "cust1", customerFirstName: "Ali", area: "وسط البلد",
+      notes: "", stores, settings: resolveQuickSettings({ enabled: true }),
+    });
+    expect(order.approxTotalPiastres).toBe(7600);
+    expect(order.estimatedPurchasesPiastres).toBe(null);
+  });
+  it("rejects invalid quantities and negative prices", () => {
+    expect(code(() => validateQuickStores([{
+      name: "", items: "حليب",
+      pricedItems: [{ name: "حليب", qty: 100, unitPricePiastres: 100 }],
+    }]))).toBe("400:invalid_priced_items");
+    expect(code(() => validateQuickStores([{
+      name: "", items: "حليب",
+      pricedItems: [{ name: "حليب", qty: 1, unitPricePiastres: -1 }],
+    }]))).toBe("400:invalid_priced_items");
   });
 });
