@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wassally/services/quick_delivery_quote.dart';
+import 'package:city_store/services/quick_delivery_quote.dart';
 
 void main() {
   test('customer counteroffer invalidates courier previous offer', () {
