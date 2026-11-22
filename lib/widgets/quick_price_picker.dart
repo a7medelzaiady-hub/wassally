@@ -32,6 +32,12 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
   }
 
   void _change(QuickPriceGuide guide, QuickPriceItem item, int delta) {
+    if (delta > 0 && !_quantities.containsKey(item.id) && _quantities.length >= 30) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى 30 صنفًا لكل محل')),
+      );
+      return;
+    }
     final next = ((_quantities[item.id] ?? 0) + delta).clamp(0, 99);
     setState(() {
       if (next == 0) {
