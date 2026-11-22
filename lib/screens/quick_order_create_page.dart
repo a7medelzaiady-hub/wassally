@@ -44,8 +44,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       ));
       return;
     }
-    final phone = _phone.text.replaceAll(RegExp(r'[\\s-]'), '');
-    if (!RegExp(r'^01[0125][0-9]{8}
+    final phone = _phone.text.replaceAll(RegExp(r'[\s-]'), '');
+    if (!RegExp(r'^01[0125][0-9]{8}$').hasMatch(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('اكتب رقم موبايل مصري صحيح من 11 رقم، مثل 01012345678'),
+      ));
+      return;
+    }
+    setState(() => _submitting = true);
     try {
       // The ID is created once per submission, so the same request can be
       // retried without creating duplicate orders.
@@ -133,102 +139,6 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(54),
           ),
-          onPressed: _submitting ? null : _submit,
-          child: Text(_submitting ? 'جارٍ الإرسال...' : 'إرسال الطلب السريع'),
-        ),
-      ],
-    ),
-  );
-}
-).hasMatch(phone)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('اكتب رقم موبايل مصري صحيح من 11 رقم، مثل 01012345678'),
-      ));
-      return;
-    }
-    setState(() => _submitting = true);
-    try {
-      // The ID is created once per submission, so the same request can be
-      // retried without creating duplicate orders.
-      final user = await _currentUserId();
-      final id = _pendingOrderId ??= '${user}_${DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(16, '0')}';
-      final pricedItems = [
-        for (final s in _selected) s.toWorkerMap(),
-      ];
-      await QuickOrderApi.create({
-        'orderId': id,
-        'customerName': _name.text.trim(),
-        'area': _area.text.trim(),
-        'notes': _notes.text.trim(),
-        'stores': [
-          {
-            'name': _store.text.trim(),
-            'items': _unlisted.trim(),
-            if (pricedItems.isNotEmpty) 'pricedItems': pricedItems,
-          },
-        ],
-        'contact': {
-          'userName': _name.text.trim(),
-          'phone': _phone.text.trim(),
-          'address': _address.text.trim(),
-        },
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إرسال طلبك السريع')),
-      );
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
-      ));
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('تعذر إرسال الطلب: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<String> _currentUserId() async {
-    // The authenticated token is obtained by QuickOrderApi.
-    // Read the uid only to create a stable, user-prefixed order ID.
-    final uid = await _uid();
-    if (uid == null || uid.isEmpty) throw StateError('سجل دخولك أولًا');
-    return uid;
-  }
-
-  Future<String?> _uid() async {
-    return FirebaseAuth.instance.currentUser?.uid;
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('طلباتك على السريع')),
-    body: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text('اطلب من أي محل، حتى لو مش موجود على وصّلي.'),
-        TextField(controller: _name,
-          decoration: const InputDecoration(labelText: 'اسمك')),
-        TextField(controller: _area,
-          decoration: const InputDecoration(labelText: 'المنطقة')),
-        TextField(controller: _phone,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'رقم التليفون')),
-        TextField(controller: _address,
-          decoration: const InputDecoration(labelText: 'عنوان التوصيل')),
-        TextField(controller: _store,
-          decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)')),
-        const SizedBox(height: 16),
-        QuickPricePicker(
-          onChanged: (items) => _selected = items,
-          onUnlistedChanged: (text) => _unlisted = text,
-        ),
-        TextField(controller: _notes, maxLines: 2,
-          decoration: const InputDecoration(labelText: 'ملاحظات للمندوب')),
-        const SizedBox(height: 16),
-        FilledButton(
           onPressed: _submitting ? null : _submit,
           child: Text(_submitting ? 'جارٍ الإرسال...' : 'إرسال الطلب السريع'),
         ),
