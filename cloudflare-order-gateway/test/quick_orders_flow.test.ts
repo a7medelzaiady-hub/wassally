@@ -111,8 +111,8 @@ const openOrder = () => newQuickOrder({
 });
 
 describe("POST /v1/quick (create)", () => {
-  it("is refused while the admin has not enabled the service", async () => {
-    firebase({});
+  it("is refused only when the admin switched the service off (emergency)", async () => {
+    firebase({ "app_info/quick_settings": { enabled: false } });
     const res = await call("cust1", "/v1/quick", createBody);
     expect(res.status).toBe(503);
     expect(((await res.json()) as { code: string }).code).toBe("quick_disabled");

@@ -94,11 +94,11 @@ function intIn(value: unknown, min: number, max: number): number | null {
     : null;
 }
 
-/** الخدمة مقفولة لحد ما الإدارة تكتب enabled: true. أي رقم غير صالح بيرجع للافتراضي. */
+/** الخدمة شغالة دايمًا. enabled: false بس = زرار طوارئ لقفلها. أي رقم غير صالح بيرجع للافتراضي. */
 export function resolveQuickSettings(raw: JsonMap | null): QuickSettings {
   const r = raw ?? {};
   return {
-    enabled: r.enabled === true,
+    enabled: r.enabled !== false,
     prepaidThresholdPiastres: intIn(r.prepaidThresholdPiastres, 0, 10_000_000) ??
       QUICK_DEFAULTS.prepaidThresholdPiastres,
     maximumAdvancePiastres: intIn(r.maximumAdvancePiastres, 100, 10_000_000) ??

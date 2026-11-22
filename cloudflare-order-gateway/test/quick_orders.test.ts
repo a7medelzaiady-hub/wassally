@@ -77,11 +77,12 @@ const approved = (o = submitted()) =>
   step(o, "approve-summary", customer, { expectedSummaryRevision: o.summaryRevision });
 
 describe("quick settings", () => {
-  it("is disabled until the admin sets enabled: true, with safe defaults", () => {
+  it("is always on by default; only enabled: false switches it off", () => {
     const s = resolveQuickSettings(null);
-    expect(s.enabled).toBe(false);
+    expect(s.enabled).toBe(true);
     expect(s.prepaidThresholdPiastres).toBe(20000);
-    expect(resolveQuickSettings({ enabled: "yes" }).enabled).toBe(false);
+    expect(resolveQuickSettings({}).enabled).toBe(true);
+    expect(resolveQuickSettings({ enabled: false }).enabled).toBe(false);
   });
   it("ignores invalid admin numbers", () => {
     const s = resolveQuickSettings({ enabled: true, prepaidThresholdPiastres: -5, maximumAdvancePiastres: 1.5, maxPerDay: 999 });
