@@ -21,6 +21,7 @@ import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
+import 'quick_courier_orders_page.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -274,6 +275,8 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
               ].join(' · '),
             ),
           ),
+          // «الطلبات السريعة»: بيظهر للمناديب المعتمدين (quickEnabled) بس.
+          const QuickCourierEntry(),
           Expanded(
             child: StreamBuilder<List<AppOrder>>(
               stream: _orders,
