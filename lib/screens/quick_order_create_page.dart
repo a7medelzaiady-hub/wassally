@@ -23,6 +23,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   String _unlisted = '';
   List<QuickPriceSelection> _selected = const [];
   bool _submitting = false;
+  String? _pendingOrderId;
 
   @override
   void dispose() {
@@ -47,7 +48,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       // The ID is created once per submission, so the same request can be
       // retried without creating duplicate orders.
       final user = await _currentUserId();
-      final id = '${user}_${DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(16, '0')}';
+      final id = _pendingOrderId ??= '${user}_${DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(16, '0')}';
       final pricedItems = [
         for (final s in _selected) s.toWorkerMap(),
       ];
@@ -59,10 +60,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         'stores': [
           {
             'name': _store.text.trim(),
-            'items': _unlisted.trim().isNotEmpty
-                ? _unlisted.trim()
-                : _selected.map((s) => '${s.item.name} × ${s.quantity}').join('، '),
-            'pricedItems': pricedItems,
+            'items': _unlisted.trim(),
+            if (pricedItems.isNotEmpty) 'pricedItems': pricedItems,
           },
         ],
         'contact': {
