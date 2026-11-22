@@ -65,7 +65,7 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
         final guide = snapshot.data;
         final query = _search.text.trim().toLowerCase();
         final matches = guide?.items.where((item) =>
-          item.name.toLowerCase().contains(query)).toList() ?? [];
+          item.matchesSearch(query)).toList() ?? [];
         final selected = [
           if (guide != null)
             for (final item in guide.items)
