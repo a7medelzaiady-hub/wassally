@@ -13,6 +13,13 @@ class QuickPriceItem {
     required this.pricePiastres,
   });
 
+  /// Match either the item name or its unit without extra Firestore reads.
+  bool matchesSearch(String query) {
+    final term = query.trim().toLowerCase();
+    return term.isEmpty || name.toLowerCase().contains(term) ||
+        unit.toLowerCase().contains(term);
+  }
+
   factory QuickPriceItem.fromMap(Map<String, dynamic> map) {
     final id = (map['id'] ?? '').toString().trim();
     final name = (map['name'] ?? '').toString().trim();
