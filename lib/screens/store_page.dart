@@ -65,6 +65,17 @@ class _StorePageState extends State<StorePage> {
   final _scroll = ScrollController();
   final _searchCtrl = TextEditingController();
   final List<Product> _items = [];
+
+  /// آخر قائمة كاملة للمحل (عشان نراجع أسعار سلة راجعة من آخر مرة).
+  List<Product>? _lastMenu;
+
+  /// لو سلة المحل ده راجعة من «سلّاتي» والأسعار اتغيرت، نحدّثها ونبلّغ العميل.
+  void _syncCartWithMenu() {
+    final menu = _lastMenu;
+    if (menu == null) return;
+    final changes = cart.syncWithMenu(store.id, menu);
+    if (changes.isNotEmpty && mounted) _say(changes.join('\n'));
+  }
   DocumentSnapshot? _last;
   Timer? _debounce;
   bool _loading = false;
@@ -573,6 +584,10 @@ class _StorePageState extends State<StorePage> {
           _hasMore = false;
           _loading = false;
         });
+        if (_term.isEmpty) {
+          _lastMenu = menu;
+          _syncCartWithMenu();
+        }
         return;
       }
 
@@ -1432,6 +1447,7 @@ class _StorePageState extends State<StorePage> {
     );
     if (ok != true || !mounted) return false;
     carts.switchTo(store.id);
+    _syncCartWithMenu();
     return true;
   }
 

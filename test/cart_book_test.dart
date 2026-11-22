@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:city_store/models/product.dart';
 import 'package:city_store/models/store.dart';
 import 'package:city_store/screens/my_carts_page.dart';
@@ -14,6 +16,21 @@ const _grocery = Store(
   id: 'g', name: 'بقالة الخير', category: 'بقالة', iconKey: 'store',
   colorHex: 0xFF00AA00, rating: 4.5, time: '30', products: [],
 );
+
+class _MemoryStorage implements CartStorage {
+  String? value;
+  int writes = 0;
+  _MemoryStorage([this.value]);
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String? v) async {
+    writes++;
+    value = v;
+  }
+}
+
+Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
 void main() {
   group('CartBook («سلّاتي»)', () {
@@ -137,6 +154,134 @@ void main() {
       expect(find.byKey(const Key('cart-card-g')), findsNothing);
       expect(carts.hasParked, isFalse);
       expect(cart.storeId, 'p');
+    });
+  });
+
+
+  group('حفظ «سلّاتي» على الموبايل', () {
+    test('السلال بتتحفظ وترجع بعد فتح التطبيق تاني بكل تفاصيلها', () async {
+      final storage = _MemoryStorage();
+      final first = CartBook(CartModel(), storage: storage);
+      await first.load();
+      first.active.add(const Product('زيت', 80, '', 'oil1', true, 0, '', null, '', [], [ProductOption('لتر', 5)]),
+          storeId: 'g', storeName: 'بقالة الخير', qty: 2);
+      first.active.setPromo('SAVE', 10);
+      first.switchTo('p');
+      first.active.add(_chicken, storeId: 'p', storeName: 'دواجن النور');
+      await _settle();
+      expect(storage.value, isNotNull);
+
+      // فتح التطبيق تاني.
+      final second = CartBook(CartModel(), storage: storage);
+      await second.load();
+      expect(second.restoredCount, 2);
+      expect(second.active.storeId, 'p');
+      expect(second.active.qtyOf(_chicken), 1);
+      final g = second.parkedFor('g')!;
+      expect(g.storeName, 'بقالة الخير');
+      expect(g.count, 2);
+      expect(g.promoCode, 'SAVE');
+      final line = g.items.keys.single;
+      expect(line.id, 'oil1');
+      expect(line.chosen.single.name, 'لتر');
+      second.markRestoredSeen();
+      expect(second.restoredCount, 0);
+    });
+
+    test('السلة الأقدم من 3 أيام بتتمسح، والحديثة بتفضل', () async {
+      final now = DateTime(2026, 11, 22, 12);
+      final data = {
+        'v': 1,
+        'active': 'old',
+        'carts': [
+          {
+            'storeId': 'old', 'storeName': 'قديم',
+            'touchedAt': now.subtract(const Duration(days: 4)).toIso8601String(),
+            'items': [{'id': 'a', 'name': 'رز', 'price': 30, 'qty': 1}],
+          },
+          {
+            'storeId': 'new', 'storeName': 'جديد',
+            'touchedAt': now.subtract(const Duration(days: 2)).toIso8601String(),
+            'items': [{'id': 'b', 'name': 'زيت', 'price': 80, 'qty': 2}],
+          },
+        ],
+      };
+      final book = CartBook(CartModel(), storage: _MemoryStorage(jsonEncode(data)));
+      await book.load(now: now);
+      expect(book.restoredCount, 1);
+      expect(book.parkedFor('new')!.count, 2);
+      expect(book.parkedFor('old'), isNull);
+      expect(book.active.isEmpty, isTrue);
+    });
+
+    test('تخزين تالف ما يوقعش التطبيق', () async {
+      final book = CartBook(CartModel(), storage: _MemoryStorage('{not json'));
+      await book.load();
+      expect(book.cartsCount, 0);
+      expect(book.restoredCount, 0);
+    });
+
+    test('اللي العميل ضافه قبل ما التحميل يخلص ما يتلمسش', () async {
+      final storage = _MemoryStorage(jsonEncode({
+        'v': 1,
+        'active': 'g',
+        'carts': [
+          {
+            'storeId': 'g', 'storeName': 'بقالة الخير',
+            'touchedAt': DateTime.now().toIso8601String(),
+            'items': [{'id': 'r', 'name': 'رز', 'price': 30, 'qty': 5}],
+          },
+        ],
+      }));
+      final book = CartBook(CartModel(), storage: storage);
+      book.active.add(_chicken, storeId: 'g', storeName: 'بقالة الخير');
+      await book.load();
+      expect(book.active.qtyOf(_chicken), 1);
+      expect(book.active.count, 1);
+    });
+
+    test('تسجيل الخروج بيمسح السلال من الموبايل', () async {
+      final storage = _MemoryStorage();
+      final book = CartBook(CartModel(), storage: storage);
+      await book.load();
+      book.active.add(_rice, storeId: 'g', storeName: 'بقالة الخير');
+      await _settle();
+      expect(storage.value, isNotNull);
+      book.clearAll();
+      await _settle();
+      expect(storage.value, isNull);
+    });
+  });
+
+  group('مراجعة الأسعار على قائمة المحل', () {
+    test('السعر المتغير بيتحدث، والصنف اللي اتشال بيتشال من السلة', () {
+      final c = CartModel();
+      c.add(const Product('رز', 30, '', 'r'), storeId: 'g', storeName: 'بقالة الخير', qty: 2);
+      c.add(const Product('زيت', 80, '', 'o'), storeId: 'g', storeName: 'بقالة الخير');
+      c.add(const Product('سكر', 25, '', 's'), storeId: 'g', storeName: 'بقالة الخير');
+      final changes = c.syncWithMenu('g', const [
+        Product('رز', 35, '', 'r'),
+        Product('سكر', 25, '', 's'),
+      ]);
+      expect(changes.length, 2);
+      expect(c.count, 3);
+      expect(c.subtotal, 35 * 2 + 25);
+    });
+
+    test('من غير تغيير مفيش رسائل، ومحل تاني ما يتراجعش', () {
+      final c = CartModel();
+      c.add(const Product('رز', 30, '', 'r'), storeId: 'g', storeName: 'بقالة الخير');
+      expect(c.syncWithMenu('g', const [Product('رز', 30, '', 'r')]), isEmpty);
+      expect(c.syncWithMenu('other', const [Product('رز', 99, '', 'r')]), isEmpty);
+      expect(c.subtotal, 30);
+    });
+
+    test('الخيارات المدفوعة بتتحسب فوق السعر الجديد', () {
+      final c = CartModel();
+      const base = Product('قهوة', 20, '', 'c');
+      c.add(base.withChoices(const [ProductOption('سكر زيادة', 3)]), storeId: 'k', storeName: 'كافيه');
+      c.syncWithMenu('k', const [Product('قهوة', 25, '', 'c')]);
+      expect(c.subtotal, 28);
     });
   });
 }

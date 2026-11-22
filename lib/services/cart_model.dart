@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/product.dart';
+import '../utils/format.dart';
 import 'order_gateway.dart';
 import 'wasally_service_fee.dart';
 
@@ -132,8 +133,48 @@ class CartModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// بيراجع أسعار السلة الحالية على قائمة المحل اللي اتحملت (مهم للسلال الراجعة من آخر مرة).
+  /// الصنف اللي سعره اتغير بيتحدث، واللي مبقاش موجود بيتشال. بيرجع رسالة لكل تغيير.
+  List<String> syncWithMenu(String storeId, List<Product> menu) {
+    if (_storeId != storeId || _items.isEmpty || menu.isEmpty) return const [];
+    final byId = {for (final p in menu) if (p.id.isNotEmpty) p.id: p};
+    final changes = <String>[];
+    final next = <Product, int>{};
+    for (final e in _items.entries) {
+      final line = e.key;
+      final current = line.id.isEmpty ? null : byId[line.id];
+      if (line.id.isEmpty) {
+        next[line] = (next[line] ?? 0) + e.value;
+        continue;
+      }
+      if (current == null || !current.available) {
+        changes.add('«${line.name}» مبقاش متاح واتشال من السلة');
+        continue;
+      }
+      final newPrice = current.price + line.chosenTotal;
+      if ((newPrice - line.price).abs() < 0.005) {
+        next[line] = (next[line] ?? 0) + e.value;
+        continue;
+      }
+      changes.add('سعر «${line.name}» اتغير من ${formatPrice(line.price)} لـ ${formatPrice(newPrice)}');
+      final updated = Product(line.name, newPrice, line.imageUrl, line.id, true, 0, '', null,
+          line.description, const [], line.chosen);
+      next[updated] = (next[updated] ?? 0) + e.value;
+    }
+    if (changes.isEmpty) return const [];
+    _items
+      ..clear()
+      ..addAll(next);
+    if (_items.isEmpty && _specialRequest == null) {
+      _storeId = null;
+      _storeName = null;
+    }
+    notifyListeners();
+    return changes;
+  }
+
   /// نسخة من السلة الحالية عشان تتحفظ في «سلّاتي» لما العميل يتسوق من محل تاني.
-  CartSnapshot snapshot() => CartSnapshot._(
+  CartSnapshot snapshot() => CartSnapshot.fromParts(
         storeId: _storeId,
         storeName: _storeName,
         items: Map<Product, int>.from(_items),
@@ -181,7 +222,7 @@ class CartSnapshot {
   final String promoCode;
   final double promoPercent;
 
-  const CartSnapshot._({
+  const CartSnapshot.fromParts({
     required this.storeId,
     required this.storeName,
     required this.items,

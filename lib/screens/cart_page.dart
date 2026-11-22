@@ -59,7 +59,7 @@ class CartPage extends StatelessWidget {
                   ],
                 ),
               ),
-            if (carts.hasParked) const MyCartsBanner(),
+            if (carts.hasParked || carts.restoredCount > 0) const MyCartsBanner(),
             Expanded(
               child: cart.isEmpty
                   ? EmptyState(
@@ -311,6 +311,7 @@ class MyCartsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final others = carts.parked.length;
+    final restored = carts.restoredCount;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Material(
@@ -334,9 +335,11 @@ class MyCartsBanner extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    others == 1
-                        ? 'عندك سلة تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.'
-                        : 'عندك $others سلال تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.',
+                    restored > 0
+                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتتحفظ 3 أيام). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
+                        : others == 1
+                            ? 'عندك سلة تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.'
+                            : 'عندك $others سلال تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.',
                     style: const TextStyle(fontWeight: FontWeight.w700, height: 1.4),
                   ),
                 ),

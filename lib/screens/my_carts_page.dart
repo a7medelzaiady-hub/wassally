@@ -21,6 +21,10 @@ class MyCartsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // العميل شاف سلاله الراجعة من آخر مرة: التنبيه يختفي.
+    if (book.restoredCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => book.markRestoredSeen());
+    }
     return Scaffold(
       body: ListenableBuilder(
         listenable: Listenable.merge([book, book.active]),
@@ -57,7 +61,7 @@ class MyCartsPage extends StatelessWidget {
                             child: Text(
                               all.length == 1
                                   ? 'عندك سلة واحدة. راجعها وأكد طلبك.'
-                                  : 'عندك ${all.length} سلال من ${all.length} محلات. كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. راجع كل سلة: أكدها أو عدّلها أو امسحها.',
+                                  : 'عندك ${all.length} سلال من ${all.length} محلات. كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. راجع كل سلة: أكدها أو عدّلها أو امسحها. السلال بتتحفظ على موبايلك 3 أيام.',
                               style: const TextStyle(height: 1.5),
                             ),
                           ),
