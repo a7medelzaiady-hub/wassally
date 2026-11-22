@@ -2589,7 +2589,17 @@ test('groups: كود التجميع بيظهر في قايمة المناديب 
 test('groups: استلام طلب من المجموعة ما بيستلمش باقي الطلبات', async () => {
   await seedGroupedOrders();
   await assertSucceeds((await preparingBatch(as('owner1'), 'g1', { groupCode: 'OPQR12' })).commit());
-  await assertSucceeds((await preparingBatch(as('owner2'), 'g2', { groupCode: 'OPQR12' })).commit());
+  // الطلب التاني في المجموعة (محل تاني) جاهز في القايمة بنفس الكود.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const o = (await getDoc(doc(db, 'orders/g2'))).data();
+    await updateDoc(doc(db, 'orders/g2'), { status: 'preparing' });
+    await setDoc(doc(db, 'courier_available_orders/g2'), {
+      storeId: o.storeId, storeName: o.storeName, area: '', items: o.items, subtotal: o.subtotal,
+      deliveryFee: o.deliveryFee, discount: 0, total: o.total, status: 'preparing',
+      createdAt: o.createdAt, groupCode: 'OPQR12',
+    });
+  });
   const courierDb = as('cour1');
   const claim = writeBatch(courierDb);
   claim.update(doc(courierDb, 'orders/g1'), {

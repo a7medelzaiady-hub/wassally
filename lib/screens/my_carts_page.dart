@@ -73,13 +73,15 @@ class MyCartsPage extends StatelessWidget {
                             ),
                           ),
                           if (allowGrouping && (all.length >= 2 || book.groupingOn))
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Material(
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: kLine),
+                                side: BorderSide(color: kLine),
                               ),
+                              clipBehavior: Clip.antiAlias,
                               child: SwitchListTile(
                                 key: const Key('carts-group-switch'),
                                 value: book.groupingOn,
@@ -94,6 +96,7 @@ class MyCartsPage extends StatelessWidget {
                                       : 'اختياري: المندوب يعرف إن الطلبات دي لنفس الرحلة. كل طلب بيفضل مستقل برقمه ورسومه.',
                                   style: const TextStyle(height: 1.4),
                                 ),
+                              ),
                               ),
                             ),
                           for (final c in all)
