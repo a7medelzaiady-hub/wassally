@@ -1,7 +1,24 @@
-# «طلباتك على السريع» — عقد Flutter ↔ Worker
+# «طلباتك على السريع» — عقد Flutter ↔ Worker (نسخة 2)
 
-المرجع المشترك بين شاشات Flutter (PR #142 وما بعده) والـWorker والقواعد (هذا الـPR).
+المرجع المشترك بين شاشات Flutter (PR #142 وما بعده) والـWorker والقواعد (PR #143).
 كل المبالغ **بالقروش** (أرقام صحيحة). كل الكتابة عن طريق الـWorker فقط؛ القواعد تمنع أي كتابة من التطبيق.
+
+## المبدأ
+
+- الاتفاق على أي تغيير أثناء الشراء (بدائل، أصناف، أجرة) **بالتليفون** بين العميل والمندوب.
+  مفيش تفاوض ولا موافقة لكل تغيير داخل التطبيق.
+- التطبيق بيثبت حاجتين بس:
+  1. **المقدم قبل الشراء** لو تقدير المشتريات فوق الحد (200 جنيه افتراضيًا). ده حاجز أمان مالي.
+  2. **كشف نهائي واحد** يوافق عليه العميل قبل رمز التسليم: مجموع الفواتير + أجرة التوصيل + رسوم وصّلي − المقدم.
+- المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة).
+
+## ما تغيّر عن النسخة 1
+
+- اتشال: `propose`، `approve`، `lock-receipts`، `quote`، حالة `receipts_locked`، وتعديل العميل بعد القبول.
+- اتضاف: `start-purchase`، `submit-summary`، `approve-summary`، `reject-summary`، `reopen-summary`،
+  وحالتين `summary_pending` و`summary_approved`.
+- `receipt`: اسم المحل **اختياري**، والمطلوب صورة + مبلغ.
+- رمز التسليم يظهر للعميل **بعد موافقته على الكشف بس**.
 
 ## الإعدادات (الإدارة)
 
@@ -10,11 +27,10 @@
 | الحقل | الافتراضي | المعنى |
 |---|---|---|
 | `enabled` | `false` | الخدمة مقفولة لحد ما تبقى `true` |
-| `prepaidThresholdPiastres` | 20000 | حتى 200 جنيه = دفع عند الاستلام، أكثر = مقدم |
+| `prepaidThresholdPiastres` | 20000 | تقدير حتى 200 جنيه = دفع عند الاستلام، أكثر = مقدم |
 | `maximumAdvancePiastres` | 100000 | سقف المقدم وسقف تقدير المشتريات |
-| `maximumDeliveryPiastres` | 20000 | أقصى أجر توصيل يعرضه المندوب |
+| `maximumDeliveryPiastres` | 20000 | أقصى أجرة توصيل يكتبها المندوب |
 | `maxPerDay` | 5 | أقصى طلبات سريعة للعميل في اليوم |
-| `maxProposals` | 3 | أقصى عدد عروض من المندوب للطلب |
 
 الإعدادات تُنسخ على الطلب (`policy`) لحظة إنشائه، فتعديلها لا يغيّر طلبًا شغالًا.
 
@@ -27,17 +43,19 @@
 ```
 userId, customerFirstName, area, notes, createdAt
 stores: [{ name, items }]            // name فاضي = المندوب يختار المحل
-status: open | accepted | awaiting_advance | purchasing | receipts_locked | delivered | cancelled
+status: open | accepted | awaiting_advance | purchasing | summary_pending | summary_approved
+        | delivered | cancelled
 courierId, courierName, acceptedAt
-quote: { courierId, revision, proposedDeliveryPiastres, estimatedPurchasesPiastres,
-         agreedDeliveryPiastres, proposals }
-policy: { prepaidThresholdPiastres, maximumAdvancePiastres, maximumDeliveryPiastres, maxProposals }
+policy: { prepaidThresholdPiastres, maximumAdvancePiastres, maximumDeliveryPiastres }
+estimatedPurchasesPiastres           // رقم المندوب بعد المكالمة
 paymentMode: "" | cod | advance
-approvedAt
 advance: { amountPiastres, reference, sentAt, confirmedAt }
-receipts: [{ storeName, amountPiastres, imageUrl, uploadedAt }]
-receiptsLockedAt, overEstimatePiastres
-totals: { purchases, serviceFee, delivery, prepaid, due }   // due سالب = المندوب يرجّع للعميل
+receipts: [{ storeName, amountPiastres, imageUrl, uploadedAt }]   // storeName ممكن يبقى ""
+deliveryPiastres                     // أجرة التوصيل اللي كتبها المندوب في الكشف
+totals: { purchases, serviceFee, delivery, prepaid, due }         // due سالب = المندوب يرجّع للعميل
+summaryRevision, summarySubmittedAt, summaryApprovedAt
+summaryRejectedAt, summaryRejectReason, summaryRejections
+overEstimatePiastres                 // للإدارة: الزيادة عن التقدير
 deliveredAt, deliveredBy, courierOwedPiastres, collectedPiastres
 cancelledAt, cancelledBy (customer|admin), cancelReason, advanceRefundDue
 deliveryPinLockedAt
@@ -45,7 +63,7 @@ rev                                   // يزيد مع كل كتابة
 ```
 
 `quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes? }` — صاحب الطلب والإدارة،
-والمندوب المعيّن من `accepted` حتى `receipts_locked`.
+والمندوب المعيّن من `accepted` حتى `summary_approved`.
 
 ## الواجهات
 
@@ -57,20 +75,28 @@ rev                                   // يزيد مع كل كتابة
 | المسار | مين | الـbody | الحالة قبل ← بعد |
 |---|---|---|---|
 | `POST /v1/quick` | العميل | `orderId, customerName, area, notes?, stores, contact{userName, phone, address, courierNotes?}` | ← `open` |
-| `POST /v1/quick/{id}/edit` | العميل | `stores, notes?` | `open`/`accepted` (في `accepted` العرض بيتصفّر) |
-| `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | ← `cancelled` |
+| `POST /v1/quick/{id}/edit` | العميل | `stores, notes?` | `open` بس |
+| `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted`/`awaiting_advance` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
 | `POST /v1/quick/{id}/accept` | مندوب معتمد | — | `open` ← `accepted` |
 | `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` (أو `awaiting_advance` قبل التحويل) ← `open` |
-| `POST /v1/quick/{id}/propose` | المندوب المعيّن | `deliveryPiastres, estimatedPurchasesPiastres` | `accepted` |
-| `POST /v1/quick/{id}/approve` | العميل | `expectedRevision` (= `quote.revision`) | `accepted` ← `purchasing` أو `awaiting_advance` |
+| `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres` | `accepted` ← `purchasing` (حتى الحد) أو `awaiting_advance` |
 | `POST /v1/quick/{id}/advance-sent` | العميل | `amountPiastres, reference?` | `awaiting_advance` |
-| `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (المبلغ اللي وصله فعلًا) | `awaiting_advance` ← `purchasing` |
+| `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (اللي وصله فعلًا) | `awaiting_advance` ← `purchasing` |
 | `POST /v1/uploads` (multipart) | المندوب المعيّن | `folder=quick_receipts, orderId, file` | `purchasing` — يرجّع `{ url }` |
-| `POST /v1/quick/{id}/receipt` | المندوب المعيّن | `storeName, amountPiastres, imageUrl` | `purchasing` (حتى 10 فواتير) |
+| `POST /v1/quick/{id}/receipt` | المندوب المعيّن | `imageUrl, amountPiastres, storeName?` | `purchasing` (حتى 20 فاتورة) |
 | `POST /v1/quick/{id}/receipt-remove` | المندوب المعيّن | `index` | `purchasing` |
-| `POST /v1/quick/{id}/lock-receipts` | المندوب المعيّن | — | `purchasing` ← `receipts_locked` (الفواتير تتقفل) |
-| `GET /v1/quick/{id}/delivery-pin` | العميل | — | من `accepted` لحد `receipts_locked` |
-| `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `receipts_locked` ← `delivered` |
+| `POST /v1/quick/{id}/submit-summary` | المندوب المعيّن | `deliveryPiastres` | `purchasing` ← `summary_pending` (الـWorker يحسب `totals`) |
+| `POST /v1/quick/{id}/approve-summary` | العميل | `expectedSummaryRevision` (= `summaryRevision`) | `summary_pending` ← `summary_approved` |
+| `POST /v1/quick/{id}/reject-summary` | العميل | `reason?` | `summary_pending` ← `purchasing` (الكشف يتمسح، مفيش تسليم) |
+| `POST /v1/quick/{id}/reopen-summary` | المندوب المعيّن | — | `summary_pending`/`summary_approved` ← `purchasing` |
+| `GET /v1/quick/{id}/delivery-pin` | العميل | — | `summary_approved` بس |
+| `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `summary_approved` ← `delivered` |
+
+**شاشة المندوب المقترحة (أقل كتابة):** قبول ← اتصال ← رقم «تقدير المشتريات» ← (لو فوق الحد: زر «وصلني التحويل» برقم المبلغ)
+← زر كبير «تصوير فاتورة» + رقم المبلغ (يتكرر) ← رقم «أجرة التوصيل» ← «ابعت الكشف للعميل» ← رمز التسليم.
+
+**شاشة العميل:** لما الحالة `summary_pending` يظهر كشف واحد (`totals` + صور الفواتير) بزرين: «موافق» و«مش موافق».
+عند الرفض: زر اتصال بالمندوب أو الإدارة. بعد الموافقة يظهر رمز التسليم.
 
 ## القراءة في التطبيق (أقل قراءات)
 
@@ -85,3 +111,4 @@ rev                                   // يزيد مع كل كتابة
 عند التسليم الـWorker بيكتب `courierOwedPiastres` (= رسوم وصّلي) و`collectedPiastres` على نفس الطلب.
 المستحق على المندوب من الخدمة = `sum(courierOwedPiastres)` لطلباته المسلّمة في `quick_orders`
 (aggregate زي لوحة المناديب الحالية)، والمدفوع بيتسجل في `courier_settlements` الموجودة.
+لو العميل رفض الكشف: مفيش تسليم ولا تسوية لحد كشف جديد وموافقة جديدة.

@@ -1581,7 +1581,7 @@ service cloud.firestore {
           (isCourier() &&
             get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
             get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('status', '') in
-              ['accepted', 'awaiting_advance', 'purchasing', 'receipts_locked']));
+              ['accepted', 'awaiting_advance', 'purchasing', 'summary_pending', 'summary_approved']));
         allow list, create, update, delete: if false;
       }
     }

@@ -2469,7 +2469,7 @@ test('اعتماد السعر: ينجح وهو بيتجهز، ويترفض بع�
 const quickOrder = (over = {}) => ({
   userId: 'cust1', customerFirstName: 'Ali', area: '', notes: '',
   stores: [{ name: '', items: 'عيش' }], status: 'open', courierId: '', courierName: '',
-  quote: { courierId: '', revision: 1, proposals: 0 }, paymentMode: '', receipts: [], rev: 1, ...over,
+  paymentMode: '', receipts: [], summaryRevision: 0, rev: 1, ...over,
 });
 async function seedQuick(over = {}) {
   await seed(async (db) => {
@@ -2509,6 +2509,8 @@ test('quick_orders: رقم العميل وعنوانه للمندوب المعي
   await seedQuick({ status: 'purchasing', courierId: 'quick1' });
   await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
   await assertFails(getDoc(doc(as('cour1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'summary_approved', courierId: 'quick1' });
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
   await seedQuick({ status: 'delivered', courierId: 'quick1' });
   await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
 });

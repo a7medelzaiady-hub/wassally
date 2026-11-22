@@ -3,23 +3,32 @@
  * الـWorker هو الكاتب الوحيد لـ quick_orders؛ القواعد بتمنع أي كتابة من التطبيق.
  * كل المبالغ بالقروش (أرقام صحيحة) عشان نتجنب كسور العشرية.
  *
+ * المبدأ: الاتفاق على أي تغيير بيتم بالتليفون بين العميل والمندوب. التطبيق بيثبت بس:
+ *   1) المقدم قبل الشراء لو التقدير فوق الحد (حاجز أمان مالي).
+ *   2) كشف نهائي واحد (فواتير + أجرة + رسوم − مقدم) يوافق عليه العميل قبل رمز التسليم.
+ * المندوب ما بيكتبش نصوص: أرقام وصور فواتير بس.
+ *
  * دورة الطلب:
- *   open ← (accept) accepted ← (propose ثم approve) purchasing  [دفع عند الاستلام]
- *                                               ↘ awaiting_advance ← (advance-sent ثم advance-received) purchasing
- *   purchasing ← (receipt × n ثم lock-receipts) receipts_locked ← (deliver بالرمز) delivered
+ *   open ← (accept) accepted ← (start-purchase + تقدير) purchasing          [حتى الحد: دفع عند الاستلام]
+ *                                                ↘ awaiting_advance ← (advance-sent ثم advance-received) purchasing
+ *   purchasing ← (receipt × n ثم submit-summary + أجرة) summary_pending
+ *   summary_pending ← (approve-summary) summary_approved ← (deliver بالرمز) delivered
+ *   summary_pending ← (reject-summary) purchasing   |   summary_approved ← (reopen-summary) purchasing
  *   cancelled: العميل قبل الشراء، أو الإدارة في أي وقت قبل التسليم.
  */
 
 type JsonMap = Record<string, unknown>;
 
 export const QUICK_STATUSES = [
-  "open", "accepted", "awaiting_advance", "purchasing", "receipts_locked", "delivered", "cancelled",
+  "open", "accepted", "awaiting_advance", "purchasing", "summary_pending", "summary_approved",
+  "delivered", "cancelled",
 ] as const;
 export type QuickStatus = typeof QUICK_STATUSES[number];
 
 export const QUICK_ACTIONS = [
-  "edit", "cancel", "accept", "release", "propose", "approve",
-  "advance-sent", "advance-received", "receipt", "receipt-remove", "lock-receipts",
+  "edit", "cancel", "accept", "release", "start-purchase",
+  "advance-sent", "advance-received", "receipt", "receipt-remove",
+  "submit-summary", "approve-summary", "reject-summary", "reopen-summary",
 ] as const;
 export type QuickAction = typeof QUICK_ACTIONS[number];
 
@@ -57,8 +66,8 @@ export const QUICK_LIMITS = {
   maxItemsText: 500,
   maxNotes: 300,
   maxReference: 40,
-  maxCancelReason: 200,
-  maxReceipts: 10,
+  maxReason: 200,
+  maxReceipts: 20,
   /** أقصى قيمة فاتورة واحدة: 10,000 جنيه. */
   maxReceiptPiastres: 1_000_000,
 } as const;
@@ -70,7 +79,6 @@ export const QUICK_DEFAULTS = {
   maximumAdvancePiastres: 100_000,
   maximumDeliveryPiastres: 20_000,
   maxPerDay: 5,
-  maxProposals: 3,
 } as const;
 
 export interface QuickSettings {
@@ -79,7 +87,6 @@ export interface QuickSettings {
   maximumAdvancePiastres: number;
   maximumDeliveryPiastres: number;
   maxPerDay: number;
-  maxProposals: number;
 }
 
 function intIn(value: unknown, min: number, max: number): number | null {
@@ -100,7 +107,6 @@ export function resolveQuickSettings(raw: JsonMap | null): QuickSettings {
     maximumDeliveryPiastres: intIn(r.maximumDeliveryPiastres, 100, 100_000) ??
       QUICK_DEFAULTS.maximumDeliveryPiastres,
     maxPerDay: intIn(r.maxPerDay, 1, 50) ?? QUICK_DEFAULTS.maxPerDay,
-    maxProposals: intIn(r.maxProposals, 1, 10) ?? QUICK_DEFAULTS.maxProposals,
   };
 }
 
@@ -147,19 +153,14 @@ function numOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
-function resetQuote(previous: unknown, courierId: string): JsonMap {
-  const old = asMap(previous);
-  return {
-    courierId,
-    revision: (numOrNull(old.revision) ?? 0) + 1,
-    proposedDeliveryPiastres: null,
-    estimatedPurchasesPiastres: null,
-    agreedDeliveryPiastres: null,
-    proposals: 0,
-  };
-}
-
 const EMPTY_ADVANCE = { amountPiastres: null, reference: "", sentAt: null, confirmedAt: null };
+
+/** حقول الكشف النهائي بتتمسح لما الكشف يترفض أو يتفتح تاني (لازم كشف وموافقة جديدين). */
+const CLEARED_SUMMARY = {
+  totals: null,
+  summarySubmittedAt: null,
+  summaryApprovedAt: null,
+};
 
 export function newQuickOrder(input: {
   uid: string;
@@ -178,18 +179,19 @@ export function newQuickOrder(input: {
     status: "open",
     courierId: "",
     courierName: "",
-    quote: resetQuote({ revision: 0 }, ""),
     // نسخة من إعدادات الإدارة لحظة الإنشاء: أي تعديل بعد كده ما يغيّرش طلب شغال.
     policy: {
       prepaidThresholdPiastres: input.settings.prepaidThresholdPiastres,
       maximumAdvancePiastres: input.settings.maximumAdvancePiastres,
       maximumDeliveryPiastres: input.settings.maximumDeliveryPiastres,
-      maxProposals: input.settings.maxProposals,
     },
+    estimatedPurchasesPiastres: null,
     paymentMode: "",
     advance: { ...EMPTY_ADVANCE },
     receipts: [],
+    deliveryPiastres: null,
     totals: null,
+    summaryRevision: 0,
     rev: 1,
   };
 }
@@ -206,13 +208,43 @@ function receiptUrlOk(url: unknown, orderId: string, cloudName?: string): boolea
 
 const CUSTOMER_CANCELLABLE: readonly string[] = ["open", "accepted", "awaiting_advance"];
 
-/** الحالات اللي العميل بيشوف فيها رمز التسليم (من القبول لحد التسليم). */
-export const QUICK_PIN_STATUSES: readonly string[] = [
-  "accepted", "awaiting_advance", "purchasing", "receipts_locked",
+/** الحالات اللي المندوب المعيّن بيقرا فيها رقم العميل وعنوانه (نفس شرط القواعد). */
+export const QUICK_CONTACT_STATUSES: readonly string[] = [
+  "accepted", "awaiting_advance", "purchasing", "summary_pending", "summary_approved",
 ];
 
-/** الحالات اللي المندوب المعيّن بيقرا فيها رقم العميل وعنوانه (نفس شرط القواعد). */
-export const QUICK_CONTACT_STATUSES = QUICK_PIN_STATUSES;
+/** رمز التسليم بيظهر للعميل بعد ما يوافق على الكشف النهائي بس. */
+export const QUICK_PIN_STATUSES: readonly string[] = ["summary_approved"];
+
+export interface QuickTotals {
+  purchases: number;
+  serviceFee: number;
+  delivery: number;
+  prepaid: number;
+  /** موجب = العميل يدفع للمندوب عند التسليم، سالب = المندوب يرجّع للعميل. */
+  due: number;
+}
+
+/** الكشف النهائي: مجموع الفواتير + الأجرة + رسوم وصّلي − المقدم المؤكد. */
+export function quickTotals(receipts: unknown, deliveryPiastres: number, advance: unknown): QuickTotals {
+  const list = Array.isArray(receipts) ? receipts : [];
+  let purchases = 0;
+  for (const r of list) {
+    const amount = numOrNull(asMap(r).amountPiastres);
+    if (amount === null || amount < 0) fail(409, "invalid_receipt", "قيمة فاتورة غير صالحة.");
+    purchases += amount;
+  }
+  const adv = asMap(advance);
+  const prepaid = adv.confirmedAt instanceof Date ? (numOrNull(adv.amountPiastres) ?? 0) : 0;
+  const serviceFee = quickServiceFee(purchases);
+  return {
+    purchases,
+    serviceFee,
+    delivery: deliveryPiastres,
+    prepaid,
+    due: purchases + serviceFee + deliveryPiastres - prepaid,
+  };
+}
 
 /**
  * يحسب التعديل المطلوب على مستند الطلب لعملية واحدة، أو يرمي QuickRuleError.
@@ -235,39 +267,38 @@ export function applyQuickAction(
   const isCustomer = actor.role === "customer" && actor.uid === order.userId;
   const isAssigned = actor.role === "courier" && actor.uid !== "" && actor.uid === order.courierId;
   const isAdmin = actor.role === "admin";
-  const quote = asMap(order.quote);
   const policy = asMap(order.policy);
   const advance = asMap(order.advance);
   const receipts = Array.isArray(order.receipts) ? order.receipts as JsonMap[] : [];
   const now = ctx.now;
   const rev = (numOrNull(order.rev) ?? 0) + 1;
+  const summaryRevision = numOrNull(order.summaryRevision) ?? 0;
   const threshold = numOrNull(policy.prepaidThresholdPiastres) ?? QUICK_DEFAULTS.prepaidThresholdPiastres;
   const maxAdvance = numOrNull(policy.maximumAdvancePiastres) ?? QUICK_DEFAULTS.maximumAdvancePiastres;
   const maxDelivery = numOrNull(policy.maximumDeliveryPiastres) ?? QUICK_DEFAULTS.maximumDeliveryPiastres;
-  const maxProposals = numOrNull(policy.maxProposals) ?? QUICK_DEFAULTS.maxProposals;
   const forbidden = (): never => fail(403, "forbidden", "مش مسموح لك بالعملية دي على الطلب ده.");
   const wrongState = (): never => fail(409, "invalid_state", "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.");
+  const reasonOf = (value: unknown): string => {
+    const reason = typeof value === "string" ? value.trim() : "";
+    if (reason.length > QUICK_LIMITS.maxReason) fail(400, "invalid_reason", "السبب طويل.");
+    return reason;
+  };
 
   switch (action as QuickAction) {
     case "edit": {
+      // قبل القبول بس. بعد القبول أي تغيير بيتم بالتليفون مع المندوب.
       if (!isCustomer) forbidden();
-      if (status !== "open" && status !== "accepted") wrongState();
-      const patch: JsonMap = {
-        stores: validateQuickStores(body.stores),
-        notes: validateQuickNotes(body.notes),
-        rev,
-      };
-      // بعد القبول: أي تعديل في الطلبات بيلغي عرض المندوب، ولازم يعرض من جديد والعميل يوافق.
-      if (status === "accepted") patch.quote = resetQuote(quote, String(order.courierId ?? ""));
-      return patch;
+      if (status !== "open") {
+        fail(409, "edit_after_accept", "المندوب قبل الطلب. كلّمه بالتليفون لأي تغيير.");
+      }
+      return { stores: validateQuickStores(body.stores), notes: validateQuickNotes(body.notes), rev };
     }
 
     case "cancel": {
-      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
-      if (reason.length > QUICK_LIMITS.maxCancelReason) fail(400, "invalid_reason", "سبب الإلغاء طويل.");
+      const reason = reasonOf(body.reason);
       if (isCustomer) {
         if (!CUSTOMER_CANCELLABLE.includes(status)) {
-          fail(409, "not_cancellable", "المندوب بدأ الشراء. تواصل مع الإدارة لو فيه مشكلة.");
+          fail(409, "not_cancellable", "المندوب بدأ الشراء. تواصل معاه أو مع الإدارة لو فيه مشكلة.");
         }
       } else if (!isAdmin) {
         forbidden();
@@ -278,7 +309,7 @@ export function applyQuickAction(
         cancelledBy: isCustomer ? "customer" : "admin",
         cancelReason: reason,
         // العميل كان قال إنه حوّل: المندوب لازم يرجّع المبلغ (الإدارة بتتابع).
-        advanceRefundDue: advance.sentAt instanceof Date || numOrNull(advance.amountPiastres) !== null,
+        advanceRefundDue: advance.sentAt instanceof Date,
         rev,
       };
     }
@@ -296,15 +327,13 @@ export function applyQuickAction(
         courierId: actor.uid,
         courierName: String(actor.name ?? "").trim().slice(0, 80),
         acceptedAt: now,
-        quote: resetQuote(quote, actor.uid),
         rev,
       };
     }
 
     case "release": {
       if (!isAssigned) forbidden();
-      const advanceTouched = advance.sentAt instanceof Date;
-      if (!(status === "accepted" || (status === "awaiting_advance" && !advanceTouched))) {
+      if (!(status === "accepted" || (status === "awaiting_advance" && !(advance.sentAt instanceof Date)))) {
         fail(409, "not_releasable", "مينفعش تسيب الطلب بعد التحويل أو بدء الشراء. تواصل مع الإدارة.");
       }
       return {
@@ -312,72 +341,33 @@ export function applyQuickAction(
         courierId: "",
         courierName: "",
         acceptedAt: null,
-        approvedAt: null,
-        quote: resetQuote(quote, ""),
+        estimatedPurchasesPiastres: null,
         paymentMode: "",
         advance: { ...EMPTY_ADVANCE },
         rev,
       };
     }
 
-    case "propose": {
+    case "start-purchase": {
+      // بعد المكالمة: المندوب يكتب رقم واحد = تقدير المشتريات. ده بيحدد الدفع عند الاستلام أو المقدم.
       if (!isAssigned) forbidden();
-      if (status !== "accepted" || quote.courierId !== actor.uid ||
-          numOrNull(quote.agreedDeliveryPiastres) !== null) {
-        wrongState();
-      }
-      const proposals = numOrNull(quote.proposals) ?? 0;
-      if (proposals >= maxProposals) {
-        fail(409, "too_many_proposals", "وصلت لأقصى عدد عروض. اتفق مع العميل أو سيب الطلب.");
-      }
-      const delivery = intIn(body.deliveryPiastres, 0, maxDelivery);
-      if (delivery === null) fail(400, "invalid_delivery", "أجر التوصيل خارج الحد المسموح.");
+      if (status !== "accepted") wrongState();
       const estimate = intIn(body.estimatedPurchasesPiastres, 100, Math.max(threshold, maxAdvance));
       if (estimate === null) {
         fail(400, "invalid_estimate", "تقدير المشتريات خارج سقف الطلبات السريعة.");
       }
+      const mode = estimate > threshold ? "advance" : "cod";
       return {
-        quote: {
-          courierId: actor.uid,
-          revision: (numOrNull(quote.revision) ?? 0) + 1,
-          proposedDeliveryPiastres: delivery,
-          estimatedPurchasesPiastres: estimate,
-          agreedDeliveryPiastres: null,
-          proposals: proposals + 1,
-        },
-        rev,
-      };
-    }
-
-    case "approve": {
-      if (!isCustomer) forbidden();
-      const proposed = numOrNull(quote.proposedDeliveryPiastres);
-      const estimate = numOrNull(quote.estimatedPurchasesPiastres);
-      if (status !== "accepted" || proposed === null || estimate === null ||
-          quote.courierId !== order.courierId || numOrNull(quote.agreedDeliveryPiastres) !== null) {
-        wrongState();
-      }
-      if (body.expectedRevision !== quote.revision) {
-        fail(409, "stale_quote", "المندوب غيّر العرض. راجع العرض الجديد.");
-      }
-      const mode = estimate! > threshold ? "advance" : "cod";
-      return {
-        quote: {
-          ...quote,
-          revision: (numOrNull(quote.revision) ?? 0) + 1,
-          agreedDeliveryPiastres: proposed,
-        },
+        estimatedPurchasesPiastres: estimate,
         paymentMode: mode,
         status: mode === "advance" ? "awaiting_advance" : "purchasing",
-        approvedAt: now,
         rev,
       };
     }
 
     case "advance-sent": {
       if (!isCustomer) forbidden();
-      if (status !== "awaiting_advance") wrongState();
-      if (advance.confirmedAt instanceof Date) wrongState();
+      if (status !== "awaiting_advance" || advance.confirmedAt instanceof Date) wrongState();
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
       if (amount === null) fail(400, "invalid_advance", "مبلغ التحويل خارج السقف المسموح.");
       const reference = typeof body.reference === "string" ? body.reference.trim() : "";
@@ -389,9 +379,9 @@ export function applyQuickAction(
     }
 
     case "advance-received": {
+      // حاجز أمان: مفيش شراء فوق الحد قبل ما المندوب يأكد إن المقدم وصله.
       if (!isAssigned) forbidden();
       if (status !== "awaiting_advance" || !(advance.sentAt instanceof Date)) wrongState();
-      // المندوب بيأكد المبلغ اللي وصله فعلًا، وده المعتمد في الحساب النهائي.
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
       if (amount === null) fail(400, "invalid_advance", "المبلغ المستلم غير صالح.");
       return {
@@ -402,18 +392,18 @@ export function applyQuickAction(
     }
 
     case "receipt": {
+      // صورة الفاتورة + مبلغها رقم. اسم المحل اختياري (المندوب مش لازم يكتب).
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
       if (receipts.length >= QUICK_LIMITS.maxReceipts) {
         fail(409, "too_many_receipts", "وصلت لأقصى عدد فواتير.");
       }
-      const storeName = typeof body.storeName === "string" ? body.storeName.trim() : "";
       const amount = intIn(body.amountPiastres, 1, QUICK_LIMITS.maxReceiptPiastres);
-      if (storeName.length < 1 || storeName.length > QUICK_LIMITS.maxStoreName || amount === null) {
-        fail(400, "invalid_receipt", "اكتب اسم المحل وقيمة الفاتورة.");
-      }
+      if (amount === null) fail(400, "invalid_receipt", "اكتب مبلغ الفاتورة.");
+      const storeName = typeof body.storeName === "string" ? body.storeName.trim() : "";
+      if (storeName.length > QUICK_LIMITS.maxStoreName) fail(400, "invalid_receipt", "اسم المحل طويل.");
       if (!receiptUrlOk(body.imageUrl, ctx.orderId, ctx.cloudName)) {
-        fail(400, "invalid_receipt_image", "ارفع صورة الفاتورة من التطبيق الأول.");
+        fail(400, "invalid_receipt_image", "صوّر الفاتورة من التطبيق الأول.");
       }
       return {
         receipts: [...receipts, { storeName, amountPiastres: amount, imageUrl: body.imageUrl, uploadedAt: now }],
@@ -429,55 +419,68 @@ export function applyQuickAction(
       return { receipts: receipts.filter((_, i) => i !== index), rev };
     }
 
-    case "lock-receipts": {
+    case "submit-summary": {
+      // المندوب يكتب الأجرة رقم واحد، والبرنامج يحسب الكشف من الفواتير.
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
-      if (receipts.length < 1) fail(409, "no_receipts", "ارفع فاتورة واحدة على الأقل.");
-      const totals = quickTotals(order);
-      const estimate = numOrNull(quote.estimatedPurchasesPiastres) ?? 0;
+      if (receipts.length < 1) fail(409, "no_receipts", "صوّر فاتورة واحدة على الأقل.");
+      const delivery = intIn(body.deliveryPiastres, 0, maxDelivery);
+      if (delivery === null) fail(400, "invalid_delivery", "أجرة التوصيل خارج الحد المسموح.");
+      const totals = quickTotals(receipts, delivery, advance);
       return {
-        status: "receipts_locked",
-        receiptsLockedAt: now,
+        status: "summary_pending",
+        deliveryPiastres: delivery,
         totals,
-        // للإدارة بس: الزيادة عن المتفق عليه على مسؤولية المندوب لو العميل رفض يدفعها.
-        overEstimatePiastres: Math.max(0, totals.purchases - estimate),
+        summaryRevision: summaryRevision + 1,
+        summarySubmittedAt: now,
+        summaryApprovedAt: null,
+        // للإدارة بس: الزيادة عن التقدير على مسؤولية المندوب لو العميل رفض.
+        overEstimatePiastres: Math.max(0, totals.purchases - (numOrNull(order.estimatedPurchasesPiastres) ?? 0)),
         rev,
       };
+    }
+
+    case "approve-summary": {
+      if (!isCustomer) forbidden();
+      if (status !== "summary_pending") wrongState();
+      // الموافقة على نفس الكشف اللي العميل شافه (لو المندوب بعت كشف أحدث، يراجعه الأول).
+      if (body.expectedSummaryRevision !== summaryRevision) {
+        fail(409, "stale_summary", "الكشف اتغيّر. راجع الكشف الجديد.");
+      }
+      return { status: "summary_approved", summaryApprovedAt: now, rev };
+    }
+
+    case "reject-summary": {
+      // رفض = مفيش تسليم ولا تسوية. الطلب يرجع للمندوب يتصل بالعميل ويعدّل الكشف، أو الإدارة تتدخل.
+      if (!isCustomer) forbidden();
+      if (status !== "summary_pending") wrongState();
+      return {
+        status: "purchasing",
+        ...CLEARED_SUMMARY,
+        summaryRejectedAt: now,
+        summaryRejectReason: reasonOf(body.reason),
+        summaryRejections: (numOrNull(order.summaryRejections) ?? 0) + 1,
+        rev,
+      };
+    }
+
+    case "reopen-summary": {
+      // أي تغيير بعد موافقة العميل = كشف جديد وموافقة جديدة.
+      if (!isAssigned) forbidden();
+      if (status !== "summary_approved" && status !== "summary_pending") wrongState();
+      return { status: "purchasing", ...CLEARED_SUMMARY, rev };
     }
   }
   return fail(404, "unknown_action", "العملية غير معروفة.");
 }
 
-export interface QuickTotals {
-  purchases: number;
-  serviceFee: number;
-  delivery: number;
-  prepaid: number;
-  /** موجب = العميل يدفع للمندوب عند التسليم، سالب = المندوب يرجّع للعميل. */
-  due: number;
-}
-
-export function quickTotals(order: JsonMap): QuickTotals {
-  const receipts = Array.isArray(order.receipts) ? order.receipts as JsonMap[] : [];
-  let purchases = 0;
-  for (const r of receipts) {
-    const amount = numOrNull(asMap(r).amountPiastres);
-    if (amount === null || amount < 0) fail(409, "invalid_receipt", "قيمة فاتورة غير صالحة.");
-    purchases += amount!;
-  }
-  const delivery = numOrNull(asMap(order.quote).agreedDeliveryPiastres);
-  if (delivery === null) fail(409, "not_agreed", "أجر التوصيل لم يُتفق عليه.");
-  const advance = asMap(order.advance);
-  const prepaid = advance.confirmedAt instanceof Date ? (numOrNull(advance.amountPiastres) ?? 0) : 0;
-  const serviceFee = quickServiceFee(purchases);
-  return { purchases, serviceFee, delivery: delivery!, prepaid, due: purchases + serviceFee + delivery! - prepaid };
-}
-
 /** شروط تأكيد التسليم بالرمز (قبل التحقق من الرمز نفسه). */
 export function quickDeliveryBlocker(order: JsonMap, uid: string): string | null {
   if (order.courierId !== uid) return "الطلب غير معيّن لحسابك.";
-  if (order.status !== "receipts_locked") return "اعتمد الفواتير الأول قبل التسليم.";
-  if (!order.totals || typeof order.totals !== "object") return "الحساب النهائي غير موجود.";
+  if (order.status !== "summary_approved" || !(order.summaryApprovedAt instanceof Date)) {
+    return "العميل لازم يوافق على الكشف النهائي الأول.";
+  }
+  if (!order.totals || typeof order.totals !== "object") return "الكشف النهائي غير موجود.";
   return null;
 }
 

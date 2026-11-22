@@ -24,23 +24,21 @@ const admin: QuickActor = { uid: "admin1", role: "admin" };
 const receiptUrl = (n = 1) =>
   `https://res.cloudinary.com/g3n5pdfz/image/upload/v1732270000/quick_receipts/${ID}/r${n}.jpg`;
 
-function settings(over: Record<string, unknown> = {}) {
-  return resolveQuickSettings({ enabled: true, ...over });
-}
+type Doc = Record<string, unknown>;
 
-function fresh() {
+function fresh(): Doc {
   return newQuickOrder({
     uid: "cust1",
     customerFirstName: "Ali",
     area: "وسط البلد",
     notes: "",
     stores: [{ name: "بقالة الخير", items: "رز، 2 زيت" }, { name: "", items: "كيلو لحمة" }],
-    settings: settings(),
+    settings: resolveQuickSettings({ enabled: true }),
   });
 }
 
 /** يطبّق العملية ويرجّع المستند بعد الدمج (زي ما الـWorker بيعمل). */
-function step(order: Record<string, unknown>, action: string, actor: QuickActor, body: Record<string, unknown> = {}) {
+function step(order: Doc, action: string, actor: QuickActor, body: Doc = {}): Doc {
   return { ...order, ...applyQuickAction(order, action, actor, body, ctx) };
 }
 
@@ -54,18 +52,28 @@ function code(fn: () => unknown): string {
   return "ok";
 }
 
-function accepted() {
-  return step(fresh(), "accept", quickCourier);
+const accepted = () => step(fresh(), "accept", quickCourier);
+const started = (estimate = 15000) =>
+  step(accepted(), "start-purchase", quickCourier, { estimatedPurchasesPiastres: estimate });
+
+/** طلب «جاري الشراء» بمقدم مؤكد. */
+function withAdvance(estimate = 60000, amount = 60000): Doc {
+  let o = started(estimate);
+  o = step(o, "advance-sent", customer, { amountPiastres: amount, reference: "VF-1" });
+  return step(o, "advance-received", quickCourier, { amountPiastres: amount });
 }
 
-function agreed(estimate = 15000, delivery = 3000) {
-  const proposed = step(accepted(), "propose", quickCourier, {
-    deliveryPiastres: delivery, estimatedPurchasesPiastres: estimate,
-  });
-  return step(proposed, "approve", customer, {
-    expectedRevision: (proposed.quote as Record<string, unknown>).revision,
-  });
+const addReceipt = (o: Doc, amount: number, n = 1) =>
+  step(o, "receipt", quickCourier, { amountPiastres: amount, imageUrl: receiptUrl(n) });
+
+function submitted(delivery = 3000, receipts = [15000]): Doc {
+  let o = started(15000);
+  receipts.forEach((amount, i) => { o = addReceipt(o, amount, i + 1); });
+  return step(o, "submit-summary", quickCourier, { deliveryPiastres: delivery });
 }
+
+const approved = (o = submitted()) =>
+  step(o, "approve-summary", customer, { expectedSummaryRevision: o.summaryRevision });
 
 describe("quick settings", () => {
   it("is disabled until the admin sets enabled: true, with safe defaults", () => {
@@ -117,73 +125,60 @@ describe("accepting", () => {
     expect(code(() => step(a, "accept", otherQuickCourier))).toBe("409:already_taken");
   });
   it("a courier cannot accept their own order, and customers cannot accept", () => {
-    const own = { ...fresh(), userId: "cour1" };
-    expect(code(() => step(own, "accept", quickCourier))).toBe("403:own_order");
+    expect(code(() => step({ ...fresh(), userId: "cour1" }, "accept", quickCourier))).toBe("403:own_order");
     expect(code(() => step(fresh(), "accept", customer))).toBe("403:not_quick_courier");
   });
 });
 
-describe("delivery fee quote", () => {
-  it("only the assigned courier proposes, within the admin maximum", () => {
-    const a = accepted();
-    expect(code(() => step(a, "propose", otherQuickCourier, { deliveryPiastres: 3000, estimatedPurchasesPiastres: 10000 })))
-      .toBe("403:forbidden");
-    expect(code(() => step(a, "propose", quickCourier, { deliveryPiastres: 20001, estimatedPurchasesPiastres: 10000 })))
-      .toBe("400:invalid_delivery");
-    expect(code(() => step(a, "propose", quickCourier, { deliveryPiastres: 3000, estimatedPurchasesPiastres: 100001 })))
-      .toBe("400:invalid_estimate");
-    expect(code(() => step(a, "propose", quickCourier, { deliveryPiastres: 30.5, estimatedPurchasesPiastres: 10000 })))
-      .toBe("400:invalid_delivery");
+describe("no in-app fee negotiation; estimate decides the 200 EGP threshold", () => {
+  it("the old negotiation actions no longer exist", () => {
+    expect(code(() => step(accepted(), "propose", quickCourier, { deliveryPiastres: 3000 }))).toBe("404:unknown_action");
+    expect(code(() => step(accepted(), "approve", customer, { expectedRevision: 1 }))).toBe("404:unknown_action");
   });
-  it("limits the number of proposals", () => {
-    let o = accepted();
-    for (let i = 0; i < 3; i++) {
-      o = step(o, "propose", quickCourier, { deliveryPiastres: 3000 + i, estimatedPurchasesPiastres: 10000 });
-    }
-    expect(code(() => step(o, "propose", quickCourier, { deliveryPiastres: 2000, estimatedPurchasesPiastres: 10000 })))
-      .toBe("409:too_many_proposals");
-  });
-  it("customer approves only the current revision; courier cannot approve", () => {
-    const p1 = step(accepted(), "propose", quickCourier, { deliveryPiastres: 3000, estimatedPurchasesPiastres: 10000 });
-    const rev1 = (p1.quote as Record<string, unknown>).revision;
-    const p2 = step(p1, "propose", quickCourier, { deliveryPiastres: 4000, estimatedPurchasesPiastres: 10000 });
-    expect(code(() => step(p2, "approve", customer, { expectedRevision: rev1 }))).toBe("409:stale_quote");
-    expect(code(() => step(p2, "approve", quickCourier, { expectedRevision: (p2.quote as Record<string, unknown>).revision })))
-      .toBe("403:forbidden");
-    const ok = step(p2, "approve", customer, { expectedRevision: (p2.quote as Record<string, unknown>).revision });
-    expect((ok.quote as Record<string, unknown>).agreedDeliveryPiastres).toBe(4000);
-  });
-  it("cannot approve before any proposal", () => {
-    const a = accepted();
-    expect(code(() => step(a, "approve", customer, { expectedRevision: (a.quote as Record<string, unknown>).revision })))
-      .toBe("409:invalid_state");
-  });
-});
-
-describe("payment mode by the 200 EGP threshold", () => {
-  it("up to 200 EGP (inclusive) is cash on delivery and goes straight to purchasing", () => {
-    const o = agreed(20000);
+  it("up to 200 EGP (inclusive) is cash on delivery and purchasing starts at once", () => {
+    const o = started(20000);
     expect(o.paymentMode).toBe("cod");
     expect(o.status).toBe("purchasing");
   });
-  it("above 200 EGP needs an advance confirmed by the courier before purchasing", () => {
-    const o = agreed(20001);
+  it("above 200 EGP: no purchase until the courier confirms the advance", () => {
+    const o = started(20001);
     expect(o.paymentMode).toBe("advance");
     expect(o.status).toBe("awaiting_advance");
-    expect(code(() => step(o, "receipt", quickCourier, { storeName: "x", amountPiastres: 100, imageUrl: receiptUrl() })))
-      .toBe("409:invalid_state");
+    expect(code(() => addReceipt(o, 100))).toBe("409:invalid_state");
     expect(code(() => step(o, "advance-received", quickCourier, { amountPiastres: 30000 }))).toBe("409:invalid_state");
     const sent = step(o, "advance-sent", customer, { amountPiastres: 30000, reference: "VF-123" });
+    expect(code(() => addReceipt(sent, 100))).toBe("409:invalid_state");
     expect(code(() => step(sent, "advance-received", otherQuickCourier, { amountPiastres: 30000 }))).toBe("403:forbidden");
+    expect(code(() => step(sent, "advance-received", customer, { amountPiastres: 30000 }))).toBe("403:forbidden");
     const confirmed = step(sent, "advance-received", quickCourier, { amountPiastres: 30000 });
     expect(confirmed.status).toBe("purchasing");
     expect(code(() => step(o, "advance-sent", customer, { amountPiastres: 100001 }))).toBe("400:invalid_advance");
   });
+  it("only the assigned courier sets the estimate, within the cap", () => {
+    expect(code(() => step(accepted(), "start-purchase", otherQuickCourier, { estimatedPurchasesPiastres: 10000 })))
+      .toBe("403:forbidden");
+    expect(code(() => step(accepted(), "start-purchase", customer, { estimatedPurchasesPiastres: 10000 })))
+      .toBe("403:forbidden");
+    expect(code(() => step(accepted(), "start-purchase", quickCourier, { estimatedPurchasesPiastres: 100001 })))
+      .toBe("400:invalid_estimate");
+    expect(code(() => step(fresh(), "start-purchase", quickCourier, { estimatedPurchasesPiastres: 10000 })))
+      .toBe("403:forbidden");
+  });
 });
 
-describe("receipts and totals", () => {
+describe("receipts: photo + amount only", () => {
+  it("store name is optional; several receipts are summed", () => {
+    let o = started();
+    o = addReceipt(o, 12000, 1);
+    o = addReceipt(o, 3000, 2);
+    const receipts = o.receipts as Doc[];
+    expect(receipts.length).toBe(2);
+    expect(receipts[0].storeName).toBe("");
+    const s = step(o, "submit-summary", quickCourier, { deliveryPiastres: 2500 });
+    expect((s.totals as Doc).purchases).toBe(15000);
+  });
   it("accepts only receipt images uploaded for this order", () => {
-    const o = agreed();
+    const o = started();
     const bad = [
       `https://res.cloudinary.com/g3n5pdfz/image/upload/quick_receipts/other_order_123456789/r.jpg`,
       `https://res.cloudinary.com/evil/image/upload/quick_receipts/${ID}/r.jpg`,
@@ -191,98 +186,116 @@ describe("receipts and totals", () => {
       `https://res.cloudinary.com/g3n5pdfz/image/upload/special_requests/${ID}/r.jpg`,
     ];
     for (const imageUrl of bad) {
-      expect(code(() => step(o, "receipt", quickCourier, { storeName: "x", amountPiastres: 100, imageUrl })))
-        .toBe("400:invalid_receipt_image");
+      expect(code(() => step(o, "receipt", quickCourier, { amountPiastres: 100, imageUrl }))).toBe("400:invalid_receipt_image");
     }
-    expect(code(() => step(o, "receipt", customer, { storeName: "x", amountPiastres: 100, imageUrl: receiptUrl() })))
-      .toBe("403:forbidden");
+    expect(code(() => step(o, "receipt", quickCourier, { imageUrl: receiptUrl() }))).toBe("400:invalid_receipt");
+    expect(code(() => step(o, "receipt", customer, { amountPiastres: 100, imageUrl: receiptUrl() }))).toBe("403:forbidden");
   });
-  it("one service fee for all receipts; locked receipts cannot change", () => {
-    let o = agreed(60000, 4000);
-    // تقدير 600 جنيه > 200 → مقدم. نكمل التحويل الأول.
-    o = step(o, "advance-sent", customer, { amountPiastres: 60000 });
-    o = step(o, "advance-received", quickCourier, { amountPiastres: 60000 });
-    o = step(o, "receipt", quickCourier, { storeName: "الخير", amountPiastres: 20000, imageUrl: receiptUrl(1) });
-    o = step(o, "receipt", quickCourier, { storeName: "الجزار", amountPiastres: 40000, imageUrl: receiptUrl(2) });
-    const locked = step(o, "lock-receipts", quickCourier);
-    expect(locked.status).toBe("receipts_locked");
-    expect(locked.totals).toEqual({ purchases: 60000, serviceFee: 1200, delivery: 4000, prepaid: 60000, due: 5200 });
-    expect(code(() => step(locked, "receipt", quickCourier, { storeName: "x", amountPiastres: 1, imageUrl: receiptUrl(3) })))
-      .toBe("409:invalid_state");
-    expect(code(() => step(locked, "receipt-remove", quickCourier, { index: 0 }))).toBe("409:invalid_state");
-  });
-  it("negative due = courier refunds the customer; COD has no prepaid", () => {
-    let adv = agreed(30000, 3000);
-    adv = step(adv, "advance-sent", customer, { amountPiastres: 50000 });
-    adv = step(adv, "advance-received", quickCourier, { amountPiastres: 50000 });
-    adv = step(adv, "receipt", quickCourier, { storeName: "x", amountPiastres: 25000, imageUrl: receiptUrl() });
-    expect(quickTotals(adv).due).toBe(25000 + 500 + 3000 - 50000);
-    let cod = agreed(15000, 3000);
-    cod = step(cod, "receipt", quickCourier, { storeName: "x", amountPiastres: 15000, imageUrl: receiptUrl() });
-    expect(quickTotals(cod)).toEqual({ purchases: 15000, serviceFee: 500, delivery: 3000, prepaid: 0, due: 18500 });
-  });
-  it("records purchases over the agreed estimate for the admin (courier's risk)", () => {
-    let o = agreed(15000, 3000);
-    o = step(o, "receipt", quickCourier, { storeName: "x", amountPiastres: 18000, imageUrl: receiptUrl() });
-    expect(step(o, "lock-receipts", quickCourier).overEstimatePiastres).toBe(3000);
-    expect(code(() => step(agreed(), "lock-receipts", quickCourier))).toBe("409:no_receipts");
-  });
-  it("can remove a receipt before locking", () => {
-    let o = agreed();
-    o = step(o, "receipt", quickCourier, { storeName: "a", amountPiastres: 100, imageUrl: receiptUrl(1) });
-    o = step(o, "receipt", quickCourier, { storeName: "b", amountPiastres: 200, imageUrl: receiptUrl(2) });
+  it("can remove a receipt before submitting the summary", () => {
+    let o = addReceipt(addReceipt(started(), 100, 1), 200, 2);
     o = step(o, "receipt-remove", quickCourier, { index: 0 });
-    expect((o.receipts as Array<Record<string, unknown>>).map((r) => r.storeName)).toEqual(["b"]);
+    expect((o.receipts as Doc[]).map((r) => r.amountPiastres)).toEqual([200]);
     expect(code(() => step(o, "receipt-remove", quickCourier, { index: 5 }))).toBe("400:invalid_index");
   });
 });
 
+describe("final summary and customer approval", () => {
+  it("courier enters one delivery number; the app computes one statement", () => {
+    const s = submitted(3000, [15000]);
+    expect(s.status).toBe("summary_pending");
+    expect(s.totals).toEqual({ purchases: 15000, serviceFee: 500, delivery: 3000, prepaid: 0, due: 18500 });
+    expect(code(() => step(started(), "submit-summary", quickCourier, { deliveryPiastres: 3000 }))).toBe("409:no_receipts");
+    const o = addReceipt(started(), 100);
+    expect(code(() => step(o, "submit-summary", quickCourier, { deliveryPiastres: 20001 }))).toBe("400:invalid_delivery");
+    expect(code(() => step(o, "submit-summary", customer, { deliveryPiastres: 3000 }))).toBe("403:forbidden");
+  });
+  it("subtracts the confirmed advance (negative due = courier refunds)", () => {
+    let o = withAdvance(60000, 60000);
+    o = addReceipt(o, 20000, 1);
+    o = addReceipt(o, 40000, 2);
+    const s = step(o, "submit-summary", quickCourier, { deliveryPiastres: 4000 });
+    expect(s.totals).toEqual({ purchases: 60000, serviceFee: 1200, delivery: 4000, prepaid: 60000, due: 5200 });
+    expect(quickTotals([{ amountPiastres: 25000 }], 3000, { amountPiastres: 50000, confirmedAt: now }).due)
+      .toBe(25000 + 500 + 3000 - 50000);
+    expect(quickTotals([{ amountPiastres: 25000 }], 3000, { amountPiastres: 50000, sentAt: now }).prepaid).toBe(0);
+  });
+  it("receipts and fee are frozen while the summary is pending or approved", () => {
+    const s = submitted();
+    expect(code(() => addReceipt(s, 1, 9))).toBe("409:invalid_state");
+    expect(code(() => step(s, "receipt-remove", quickCourier, { index: 0 }))).toBe("409:invalid_state");
+    expect(code(() => step(s, "submit-summary", quickCourier, { deliveryPiastres: 1 }))).toBe("409:invalid_state");
+    expect(code(() => addReceipt(approved(s), 1, 9))).toBe("409:invalid_state");
+  });
+  it("customer approves only the statement they saw; courier cannot approve", () => {
+    const s = submitted();
+    expect(code(() => step(s, "approve-summary", quickCourier, { expectedSummaryRevision: s.summaryRevision })))
+      .toBe("403:forbidden");
+    expect(code(() => step(s, "approve-summary", customer, { expectedSummaryRevision: 99 }))).toBe("409:stale_summary");
+    const a = approved(s);
+    expect(a.status).toBe("summary_approved");
+    expect(a.summaryApprovedAt).toEqual(now);
+  });
+  it("rejection = no delivery: back to the courier with the statement cleared", () => {
+    const r = step(submitted(), "reject-summary", customer, { reason: "الحساب مش مظبوط" });
+    expect(r.status).toBe("purchasing");
+    expect(r.totals).toBe(null);
+    expect(r.summaryRejections).toBe(1);
+    expect(quickDeliveryBlocker(r, "cour1")).not.toBe(null);
+    // المندوب يعدّل ويبعت كشف جديد برقم مراجعة أعلى، والعميل لازم يوافق عليه هو.
+    const again = step(addReceipt(r, 500, 5), "submit-summary", quickCourier, { deliveryPiastres: 3000 });
+    expect(again.summaryRevision).toBe(2);
+    expect(code(() => step(again, "approve-summary", customer, { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
+  });
+  it("any change after approval needs a new statement and a new approval", () => {
+    const reopened = step(approved(), "reopen-summary", quickCourier);
+    expect(reopened.status).toBe("purchasing");
+    expect(reopened.summaryApprovedAt).toBe(null);
+    expect(quickDeliveryBlocker(reopened, "cour1")).not.toBe(null);
+    expect(code(() => step(approved(), "reopen-summary", customer))).toBe("403:forbidden");
+  });
+});
+
 describe("editing, cancelling and releasing", () => {
-  it("customer edits freely before acceptance; after acceptance the quote resets", () => {
+  it("customer edits freely before acceptance only; after that it's a phone call", () => {
     const edited = step(fresh(), "edit", customer, { stores: [{ name: "", items: "عيش" }] });
     expect(edited.stores).toEqual([{ name: "", items: "عيش" }]);
-    const p = step(accepted(), "propose", quickCourier, { deliveryPiastres: 3000, estimatedPurchasesPiastres: 10000 });
-    const e2 = step(p, "edit", customer, { stores: [{ name: "", items: "عيش وجبنة" }] });
-    const q = e2.quote as Record<string, unknown>;
-    expect(q.proposedDeliveryPiastres).toBe(null);
-    expect(q.courierId).toBe("cour1");
-    expect(code(() => step(agreed(), "edit", customer, { stores: [{ name: "", items: "x" }] }))).toBe("409:invalid_state");
+    expect(code(() => step(accepted(), "edit", customer, { stores: [{ name: "", items: "x" }] }))).toBe("409:edit_after_accept");
     expect(code(() => step(fresh(), "edit", quickCourier, { stores: [{ name: "", items: "x" }] }))).toBe("403:forbidden");
   });
   it("customer cancels before purchasing only; admin any time before delivery", () => {
     expect(step(fresh(), "cancel", customer).status).toBe("cancelled");
-    expect(code(() => step(agreed(), "cancel", customer))).toBe("409:not_cancellable");
-    expect(code(() => step(agreed(), "cancel", quickCourier))).toBe("403:forbidden");
-    const byAdmin = step(agreed(), "cancel", admin, { reason: "مشكلة" });
+    expect(step(accepted(), "cancel", customer).status).toBe("cancelled");
+    expect(code(() => step(started(), "cancel", customer))).toBe("409:not_cancellable");
+    expect(code(() => step(started(), "cancel", quickCourier))).toBe("403:forbidden");
+    const byAdmin = step(submitted(), "cancel", admin, { reason: "مشكلة" });
     expect(byAdmin.cancelledBy).toBe("admin");
     expect(code(() => step(byAdmin, "edit", customer, { stores: [{ name: "", items: "x" }] }))).toBe("409:final");
   });
   it("flags a refund when the customer cancels after sending the advance", () => {
-    const sent = step(agreed(30000), "advance-sent", customer, { amountPiastres: 30000 });
+    const sent = step(started(30000), "advance-sent", customer, { amountPiastres: 30000 });
     expect(step(sent, "cancel", customer).advanceRefundDue).toBe(true);
     expect(step(fresh(), "cancel", customer).advanceRefundDue).toBe(false);
   });
-  it("courier can release before the advance is sent; order reopens with a fresh quote", () => {
-    const released = step(agreed(30000), "release", quickCourier);
+  it("courier can release before the advance is sent; order reopens for others", () => {
+    const released = step(started(30000), "release", quickCourier);
     expect(released.status).toBe("open");
     expect(released.courierId).toBe("");
-    expect((released.quote as Record<string, unknown>).agreedDeliveryPiastres).toBe(null);
+    expect(released.paymentMode).toBe("");
     expect(step(released, "accept", otherQuickCourier).courierId).toBe("cour2");
-    const sent = step(agreed(30000), "advance-sent", customer, { amountPiastres: 30000 });
+    const sent = step(started(30000), "advance-sent", customer, { amountPiastres: 30000 });
     expect(code(() => step(sent, "release", quickCourier))).toBe("409:not_releasable");
-    expect(code(() => step(agreed(), "release", quickCourier))).toBe("409:not_releasable");
+    expect(code(() => step(started(), "release", quickCourier))).toBe("409:not_releasable");
   });
 });
 
-describe("delivery", () => {
-  it("only after receipts are locked, by the assigned courier; fee is owed by the courier", () => {
-    let o = agreed(15000, 3000);
-    o = step(o, "receipt", quickCourier, { storeName: "x", amountPiastres: 15000, imageUrl: receiptUrl() });
-    expect(quickDeliveryBlocker(o, "cour1")).not.toBe(null);
-    const locked = step(o, "lock-receipts", quickCourier);
-    expect(quickDeliveryBlocker(locked, "cour2")).not.toBe(null);
-    expect(quickDeliveryBlocker(locked, "cour1")).toBe(null);
-    const done = quickDeliveredPatch(locked, "cour1", now);
+describe("delivery gate", () => {
+  it("PIN delivery only after the customer approved the statement", () => {
+    expect(quickDeliveryBlocker(started(), "cour1")).not.toBe(null);
+    expect(quickDeliveryBlocker(submitted(), "cour1")).not.toBe(null);
+    const a = approved();
+    expect(quickDeliveryBlocker(a, "cour2")).not.toBe(null);
+    expect(quickDeliveryBlocker(a, "cour1")).toBe(null);
+    const done = quickDeliveredPatch(a, "cour1", now);
     expect(done.status).toBe("delivered");
     expect(done.courierOwedPiastres).toBe(500);
     expect(done.collectedPiastres).toBe(18500);

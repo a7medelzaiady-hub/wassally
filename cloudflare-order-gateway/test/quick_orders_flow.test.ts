@@ -196,6 +196,21 @@ describe("POST /v1/quick/:id/:action", () => {
     expect(commits.length).toBe(0);
   });
 
+  it("customer approves the final statement with its revision; the write is conditional", async () => {
+    firebase({
+      [`quick_orders/${ID}`]: {
+        ...openOrder(), status: "summary_pending", courierId: "cour1", summaryRevision: 2,
+        totals: { purchases: 15000, serviceFee: 500, delivery: 3000, prepaid: 0, due: 18500 },
+      },
+    });
+    expect((await call("cust1", `/v1/quick/${ID}/approve-summary`, { expectedSummaryRevision: 1 })).status).toBe(409);
+    expect(commits.length).toBe(0);
+    const res = await call("cust1", `/v1/quick/${ID}/approve-summary`, { expectedSummaryRevision: 2 });
+    expect(res.status).toBe(200);
+    expect(commits[0].writes[0].currentDocument).toEqual({ updateTime: UPDATE_TIME });
+    expect(commits[0].writes[0].update.fields.status).toEqual({ stringValue: "summary_approved" });
+  });
+
   it("unknown actions are 404", async () => {
     firebase({ [`quick_orders/${ID}`]: openOrder() });
     expect((await call("cust1", `/v1/quick/${ID}/hack`, {})).status).toBe(404);
@@ -203,14 +218,28 @@ describe("POST /v1/quick/:id/:action", () => {
 });
 
 describe("quick delivery PIN", () => {
-  const locked = () => ({
+  const locked = (over: Record<string, unknown> = {}) => ({
     ...openOrder(),
-    status: "receipts_locked",
+    status: "summary_approved",
     courierId: "cour1",
+    summaryRevision: 1,
+    summaryApprovedAt: new Date("2026-11-22T11:00:00Z"),
     totals: { purchases: 15000, serviceFee: 500, delivery: 3000, prepaid: 0, due: 18500 },
+    ...over,
   });
 
-  it("only the customer gets the PIN, after acceptance", async () => {
+  it("no PIN and no delivery while the final statement awaits the customer's approval", async () => {
+    const pending = locked({ status: "summary_pending", summaryApprovedAt: null });
+    firebase({ [`quick_orders/${ID}`]: pending, "couriers/cour1": { name: "Mido", active: true } });
+    expect((await call("cust1", `/v1/quick/${ID}/delivery-pin`, undefined, "GET")).status).toBe(409);
+    const pin = await deriveDeliveryPin("quick:" + ID, SECRET);
+    const res = await call("cour1", `/v1/quick/${ID}/deliver`, { pin });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("not_deliverable");
+    expect(commits.length).toBe(0);
+  });
+
+  it("only the customer gets the PIN, after approving the statement", async () => {
     firebase({ [`quick_orders/${ID}`]: locked() });
     const res = await call("cust1", `/v1/quick/${ID}/delivery-pin`, undefined, "GET");
     expect(res.status).toBe(200);
