@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
 import '../theme/brand.dart';
+import '../utils/quick_order_status.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -81,16 +82,6 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     }
   }
 
-  static String statusLabel(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' || 'assigned' => 'المندوب استلم الطلب',
-    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' || 'canceled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
 
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
@@ -110,8 +101,10 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (order == null) const Text('جارٍ تحميل الطلب...') else ...[
-          Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
+        if (order == null)
+          Text(_error != null ? 'اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
+        else ...[
+          Text('الحالة: ${quickOrderStatusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
             Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
