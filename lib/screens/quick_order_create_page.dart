@@ -38,7 +38,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     final profile = await UserService.load();
     if (!mounted) return;
     // Never overwrite values the customer has already typed.
-    if (_name.text.trim().isEmpty && profile.name.trim().isNotEmpty) {
+    if (profile.name.trim().isNotEmpty &&
+        (_name.text.trim().isEmpty ||
+         _name.text.trim() == (FirebaseAuth.instance.currentUser?.displayName ?? '').trim())) {
       _name.text = profile.name;
     }
     if (_phone.text.trim().isEmpty) _phone.text = profile.phone;
