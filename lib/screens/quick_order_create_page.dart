@@ -44,6 +44,13 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       ));
       return;
     }
+    final phone = _phone.text.replaceAll(RegExp(r'[\s-]'), '');
+    if (!RegExp(r'^01[0125][0-9]{8}$').hasMatch(phone)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('اكتب رقم موبايل مصري صحيح من 11 رقم، مثل 01012345678'),
+      ));
+      return;
+    }
     setState(() => _submitting = true);
     try {
       // The ID is created once per submission, so the same request can be
@@ -67,7 +74,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         ],
         'contact': {
           'userName': _name.text.trim(),
-          'phone': _phone.text.trim(),
+          'phone': phone,
           'address': _address.text.trim(),
         },
       });
@@ -127,6 +134,11 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           decoration: const InputDecoration(labelText: 'ملاحظات للمندوب')),
         const SizedBox(height: 16),
         FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF087B58),
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(54),
+          ),
           onPressed: _submitting ? null : _submit,
           child: Text(_submitting ? 'جارٍ الإرسال...' : 'إرسال الطلب السريع'),
         ),

@@ -1284,7 +1284,15 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: OutlinedButton.icon(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF087B58),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(56),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
                     icon: const Icon(Icons.delivery_dining_outlined),
                     label: const Text('طلباتك على السريع'),
                     onPressed: () => Navigator.of(context).push(
