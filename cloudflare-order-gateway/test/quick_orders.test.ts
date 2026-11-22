@@ -246,12 +246,11 @@ describe("final summary and customer approval", () => {
     expect(again.summaryRevision).toBe(2);
     expect(code(() => step(again, "approve-summary", customer, { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
   });
-  it("any change after approval needs a new statement and a new approval", () => {
-    const reopened = step(approved(), "reopen-summary", quickCourier);
-    expect(reopened.status).toBe("purchasing");
-    expect(reopened.summaryApprovedAt).toBe(null);
-    expect(quickDeliveryBlocker(reopened, "cour1")).not.toBe(null);
-    expect(code(() => step(approved(), "reopen-summary", customer))).toBe("403:forbidden");
+  it("the approved statement is locked: no reopening, no new receipts or summary", () => {
+    const a = approved();
+    expect(code(() => step(a, "reopen-summary", quickCourier))).toBe("404:unknown_action");
+    expect(code(() => step(a, "submit-summary", quickCourier, { deliveryPiastres: 1 }))).toBe("409:invalid_state");
+    expect(code(() => step(a, "reject-summary", customer))).toBe("409:invalid_state");
   });
 });
 

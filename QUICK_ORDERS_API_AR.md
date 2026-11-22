@@ -15,7 +15,7 @@
 ## ما تغيّر عن النسخة 1
 
 - اتشال: `propose`، `approve`، `lock-receipts`، `quote`، حالة `receipts_locked`، وتعديل العميل بعد القبول.
-- اتضاف: `start-purchase`، `submit-summary`، `approve-summary`، `reject-summary`، `reopen-summary`،
+- اتضاف: `start-purchase`، `submit-summary`، `approve-summary`، `reject-summary`،
   وحالتين `summary_pending` و`summary_approved`.
 - `receipt`: اسم المحل **اختياري**، والمطلوب صورة + مبلغ.
 - رمز التسليم يظهر للعميل **بعد موافقته على الكشف بس**.
@@ -88,7 +88,6 @@ rev                                   // يزيد مع كل كتابة
 | `POST /v1/quick/{id}/submit-summary` | المندوب المعيّن | `deliveryPiastres` | `purchasing` ← `summary_pending` (الـWorker يحسب `totals`) |
 | `POST /v1/quick/{id}/approve-summary` | العميل | `expectedSummaryRevision` (= `summaryRevision`) | `summary_pending` ← `summary_approved` |
 | `POST /v1/quick/{id}/reject-summary` | العميل | `reason?` | `summary_pending` ← `purchasing` (الكشف يتمسح، مفيش تسليم) |
-| `POST /v1/quick/{id}/reopen-summary` | المندوب المعيّن | — | `summary_pending`/`summary_approved` ← `purchasing` |
 | `GET /v1/quick/{id}/delivery-pin` | العميل | — | `summary_approved` بس |
 | `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `summary_approved` ← `delivered` |
 
@@ -96,7 +95,7 @@ rev                                   // يزيد مع كل كتابة
 ← زر كبير «تصوير فاتورة» + رقم المبلغ (يتكرر) ← رقم «أجرة التوصيل» ← «ابعت الكشف للعميل» ← رمز التسليم.
 
 **شاشة العميل:** لما الحالة `summary_pending` يظهر كشف واحد (`totals` + صور الفواتير) بزرين: «موافق» و«مش موافق».
-عند الرفض: زر اتصال بالمندوب أو الإدارة. بعد الموافقة يظهر رمز التسليم.
+عند الرفض: زر اتصال بالمندوب أو الإدارة. بعد الموافقة يظهر رمز التسليم، والكشف بيتقفل (أي حاجة بعدها بالتليفون).
 
 ## القراءة في التطبيق (أقل قراءات)
 

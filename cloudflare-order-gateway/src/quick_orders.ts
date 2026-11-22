@@ -13,7 +13,7 @@
  *                                                ↘ awaiting_advance ← (advance-sent ثم advance-received) purchasing
  *   purchasing ← (receipt × n ثم submit-summary + أجرة) summary_pending
  *   summary_pending ← (approve-summary) summary_approved ← (deliver بالرمز) delivered
- *   summary_pending ← (reject-summary) purchasing   |   summary_approved ← (reopen-summary) purchasing
+ *   summary_pending ← (reject-summary) purchasing   (بعد موافقة العميل الكشف بيتقفل؛ أي حاجة بعدها بالتليفون)
  *   cancelled: العميل قبل الشراء، أو الإدارة في أي وقت قبل التسليم.
  */
 
@@ -28,7 +28,7 @@ export type QuickStatus = typeof QUICK_STATUSES[number];
 export const QUICK_ACTIONS = [
   "edit", "cancel", "accept", "release", "start-purchase",
   "advance-sent", "advance-received", "receipt", "receipt-remove",
-  "submit-summary", "approve-summary", "reject-summary", "reopen-summary",
+  "submit-summary", "approve-summary", "reject-summary",
 ] as const;
 export type QuickAction = typeof QUICK_ACTIONS[number];
 
@@ -155,7 +155,7 @@ function numOrNull(value: unknown): number | null {
 
 const EMPTY_ADVANCE = { amountPiastres: null, reference: "", sentAt: null, confirmedAt: null };
 
-/** حقول الكشف النهائي بتتمسح لما الكشف يترفض أو يتفتح تاني (لازم كشف وموافقة جديدين). */
+/** حقول الكشف النهائي بتتمسح لما العميل يرفض الكشف (لازم كشف وموافقة جديدين). */
 const CLEARED_SUMMARY = {
   totals: null,
   summarySubmittedAt: null,
@@ -464,12 +464,6 @@ export function applyQuickAction(
       };
     }
 
-    case "reopen-summary": {
-      // أي تغيير بعد موافقة العميل = كشف جديد وموافقة جديدة.
-      if (!isAssigned) forbidden();
-      if (status !== "summary_approved" && status !== "summary_pending") wrongState();
-      return { status: "purchasing", ...CLEARED_SUMMARY, rev };
-    }
   }
   return fail(404, "unknown_action", "العملية غير معروفة.");
 }
