@@ -245,7 +245,9 @@ class QuickOrderSummaryCard extends StatelessWidget {
                     if (named.isNotEmpty)
                       Text(named.join(' • '), maxLines: 1, overflow: TextOverflow.ellipsis),
                     if (order.area.isNotEmpty)
-                      Text(order.area, style: TextStyle(color: kMuted)),
+                      Text('📍 منطقة العميل: ${order.area}',
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: kMuted)),
                     if (approx != null && approx > 0)
                       Text('تقريبًا ${formatPiastres(approx)}', style: TextStyle(color: kMuted)),
                     const SizedBox(height: 4),
