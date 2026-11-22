@@ -131,7 +131,7 @@ describe("accepting", () => {
   });
 });
 
-describe("no in-app fee negotiation; estimate decides the 200 EGP threshold", () => {
+describe("courier-funded purchases and optional advance", () => {
   it("the old negotiation actions no longer exist", () => {
     expect(code(() => step(accepted(), "propose", quickCourier, { deliveryPiastres: 3000 }))).toBe("404:unknown_action");
     expect(code(() => step(accepted(), "approve", customer, { expectedRevision: 1 }))).toBe("404:unknown_action");
@@ -141,18 +141,21 @@ describe("no in-app fee negotiation; estimate decides the 200 EGP threshold", ()
     expect(o.paymentMode).toBe("cod");
     expect(o.status).toBe("purchasing");
   });
-  it("above 200 EGP: no purchase until the courier confirms the advance", () => {
-    const o = started(20001);
-    expect(o.paymentMode).toBe("advance");
-    expect(o.status).toBe("awaiting_advance");
-    expect(code(() => addReceipt(o, 100))).toBe("409:invalid_state");
+  it("above 200 EGP: courier can buy with own money without advance", () => {
+    const o = started(50000);
+    expect(o.paymentMode).toBe("cod");
+    expect(o.status).toBe("purchasing");
+    expect(addReceipt(o, 100).status).toBe("purchasing");
     expect(code(() => step(o, "advance-received", quickCourier, { amountPiastres: 30000 }))).toBe("409:invalid_state");
+  });
+  it("customer may optionally transfer advance; only assigned courier confirms", () => {
+    const o = started(50000);
     const sent = step(o, "advance-sent", customer, { amountPiastres: 30000, reference: "VF-123" });
-    expect(code(() => addReceipt(sent, 100))).toBe("409:invalid_state");
     expect(code(() => step(sent, "advance-received", otherQuickCourier, { amountPiastres: 30000 }))).toBe("403:forbidden");
     expect(code(() => step(sent, "advance-received", customer, { amountPiastres: 30000 }))).toBe("403:forbidden");
     const confirmed = step(sent, "advance-received", quickCourier, { amountPiastres: 30000 });
     expect(confirmed.status).toBe("purchasing");
+    expect((confirmed.advance as Doc).amountPiastres).toBe(30000);
     expect(code(() => step(o, "advance-sent", customer, { amountPiastres: 100001 }))).toBe("400:invalid_advance");
   });
   it("only the assigned courier sets the estimate, within the cap", () => {
@@ -373,7 +376,7 @@ describe("display-only approximate price guide", () => {
   it("full journey: accept → estimate → advance → receipts → statement → approval → delivery", () => {
     let o = step(fresh(), "accept", quickCourier);
     o = step(o, "start-purchase", quickCourier, { estimatedPurchasesPiastres: 50000 });
-    expect(o.status).toBe("awaiting_advance");
+    expect(o.status).toBe("purchasing");
     o = step(o, "advance-sent", customer, { amountPiastres: 50000, reference: "VF-9" });
     o = step(o, "advance-received", quickCourier, { amountPiastres: 50000 });
     o = addReceipt(o, 30000, 1);
