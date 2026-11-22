@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/quick_price_guide.dart';
+import '../services/user_service.dart';
 import 'quick_order_customer_detail_page.dart';
 import '../services/quick_order_api.dart';
 import '../widgets/quick_price_picker.dart';
@@ -25,6 +26,26 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   List<QuickPriceSelection> _selected = const [];
   bool _submitting = false;
   String? _pendingOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _name.text = FirebaseAuth.instance.currentUser?.displayName ?? '';
+    _prefillContact();
+  }
+
+  Future<void> _prefillContact() async {
+    final profile = await UserService.load();
+    if (!mounted) return;
+    // Never overwrite values the customer has already typed.
+    if (profile.name.trim().isNotEmpty &&
+        (_name.text.trim().isEmpty ||
+         _name.text.trim() == (FirebaseAuth.instance.currentUser?.displayName ?? '').trim())) {
+      _name.text = profile.name;
+    }
+    if (_phone.text.trim().isEmpty) _phone.text = profile.phone;
+    if (_address.text.trim().isEmpty) _address.text = profile.address;
+  }
 
   @override
   void dispose() {
@@ -120,7 +141,12 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         TextField(controller: _name,
           decoration: const InputDecoration(labelText: 'اسمك')),
         TextField(controller: _area,
-          decoration: const InputDecoration(labelText: 'المنطقة')),
+          decoration: const InputDecoration(
+            labelText: 'المنطقة العامة (تظهر للمندوب قبل القبول)',
+            hintText: 'مثال: مدينة كفر الشيخ - حي الزهور',
+            helperText: 'اكتب المدينة والحي فقط، بدون شارع أو رقم منزل.',
+            helperMaxLines: 2,
+          )),
         TextField(controller: _phone,
           keyboardType: TextInputType.phone,
           decoration: const InputDecoration(labelText: 'رقم التليفون')),

@@ -118,7 +118,7 @@ class AppPalette {
     for (final p in all) {
       if (p.id == id) return p;
     }
-    return orange;
+    return green;
   }
 }
 
@@ -127,7 +127,7 @@ class AppPalette {
 class Brand {
   Brand._();
 
-  static AppPalette palette = AppPalette.orange;
+  static AppPalette palette = AppPalette.green;
 
   static Color get green => palette.primary;
   static Color get greenDark => palette.primaryDark;
