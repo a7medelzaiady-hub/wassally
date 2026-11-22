@@ -34,7 +34,7 @@ class QuickOrderApi {
     if (token == null || token.isEmpty) {
       throw StateError('تعذر التحقق من تسجيل الدخول');
     }
-    final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+, '');
+    final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
     final uri = Uri.tryParse('$root/v1/quick${path.isEmpty ? '' : '/$path'}');
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw StateError('خدمة الطلبات السريعة غير مهيأة');
