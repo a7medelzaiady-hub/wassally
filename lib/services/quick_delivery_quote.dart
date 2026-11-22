@@ -99,7 +99,7 @@ class QuickOrderPaymentPolicy {
     if (estimatedPurchasesPiastres < 0) {
       throw ArgumentError.value(estimatedPurchasesPiastres);
     }
-    return estimatedPurchasesPiastres > prepaidThresholdPiastres;
+    return false; // المقدم اختياري دائمًا؛ المندوب يمول المشتريات.
   }
 
   bool validAdvance(int amountPiastres) =>
