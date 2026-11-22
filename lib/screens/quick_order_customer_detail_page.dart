@@ -85,6 +85,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     'open' => 'بانتظار مندوب',
     'accepted' || 'assigned' => 'المندوب استلم الطلب',
     'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
+    'awaiting_advance' => 'بانتظار تأكيد المبلغ المقدم',
     'summary_pending' => 'راجع الحساب النهائي',
     'summary_approved' => 'تمت الموافقة على الحساب',
     'delivered' => 'تم التسليم',
