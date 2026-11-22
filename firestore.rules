@@ -440,7 +440,8 @@ service cloud.firestore {
     function feedDataMatchesOrder(f, orderData) {
       return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
           'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt',
-          'editedAt']) &&
+          'editedAt', 'groupCode']) &&
+        f.get('groupCode', '') == orderData.get('groupCode', '') &&
         f.get('storeId', '') == orderData.get('storeId', '') &&
         f.get('storeName', '') == orderData.get('storeName', '') &&
         f.get('area', '') == orderData.get('area', '') &&
@@ -678,6 +679,12 @@ service cloud.firestore {
 
     // قائمة الطلبات المتاحة للمندوبين (من غير بيانات العميل). بتتكتب من التطبيق (بدون Cloud Functions):
     // المدير أو صاحب المحل بتاع الطلب، لما الطلب يبقى preparing وبدون مندوب.
+    // تجميع طلبات العميل (رقم مشترك لطلبات من محلات مختلفة): الـWorker بس بيكتب ويقرا.
+    // groupId نفسه مش بيظهر للمناديب؛ اللي بيظهر groupCode على الطلب ونسخة القايمة.
+    match /order_groups/{groupId} {
+      allow read, write: if false;
+    }
+
     match /courier_available_orders/{orderId} {
       allow get, list: if isCourier();
 
@@ -688,8 +695,11 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
         request.resource.data.storeId ==
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.storeId &&
+        // كود التجميع (لو موجود) لازم يطابق الطلب نفسه: المحل ما يقدرش يخترع أو يغيّر مجموعة.
+        request.resource.data.get('groupCode', '') ==
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('groupCode', '') &&
         request.resource.data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
-          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']);
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt', 'groupCode']);
 
       // العميل صاحب الطلب يحدّث نسخة القائمة في نفس Batch تعديل الطلب فقط.
       // getAfter يربط المستندين بالقيم النهائية ويمنع إدخال أي PII.

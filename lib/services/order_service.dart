@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import '../models/user_profile.dart';
+import 'cart_book.dart';
 import 'cart_model.dart';
 import 'catalog_sync.dart';
 import 'order_contact_service.dart';
@@ -341,6 +342,8 @@ class OrderService {
           'fee=${data['deliveryFee']} total=${data['total']}');
     }
     final ref = _orders.doc(orderId);
+    // تجميع اختياري اختاره العميل من «سلّاتي» (بوابة الطلبات بس).
+    final groupId = OrderGateway.serverOrdersEnabled ? carts.groupIdFor(storeId) : null;
     if (OrderGateway.serverOrdersEnabled) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
@@ -374,8 +377,13 @@ class OrderService {
                 .toList(),
             if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
             'contact': contactData,
+            if (groupId != null) 'groupId': groupId,
           },
         );
+      } on OrderGroupError catch (e) {
+        // الطلب ما اتعملش. نقفل التجميع عشان الضغطة الجاية تبعته لوحده بنفس رقم الطلب.
+        carts.setGrouping(false);
+        throw StateError('${e.message} اضغط تأكيد تاني وهيتبعت كطلب لوحده.');
       } on CatalogMismatchError {
         // سعر أو توفر صنف اتغير والقائمة المجمّعة عند العميل متأخرة: نقرأ أصناف المحل ده مباشرة
         // (القرار محفوظ على الجهاز لحد ما القائمة تتحدث، فبيفضل بعد إعادة فتح التطبيق).
@@ -440,6 +448,7 @@ class OrderService {
       );
     } catch (_) {}
 
+    if (groupId != null) carts.markGroupedOrder(storeId);
     cart.clear();
     return ref.id;
   }

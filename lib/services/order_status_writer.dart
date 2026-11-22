@@ -29,6 +29,8 @@ class OrderStatusWriter {
       'total': o['total'],
       'status': 'preparing',
       'createdAt': o['createdAt'],
+      // كود التجميع بس (القواعد بتتأكد إنه نفس كود الطلب)، من غير groupId ولا بيانات العميل.
+      if ((o['groupCode'] ?? '').toString().isNotEmpty) 'groupCode': o['groupCode'],
     };
     m.removeWhere((_, v) => v == null);
     return m;

@@ -464,6 +464,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                         color: Brand.ink,
                       ),
                     ),
+                    if (o.groupCode.isNotEmpty) GroupCodeBadge(code: o.groupCode),
                     // وجهة مختصرة فقط قبل الاستلام؛ لا نعرض عنوان العميل أو هاتفه.
                     const SizedBox(height: 5),
                     Text(
@@ -1038,6 +1039,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ),
                 ),
               ),
+              if (o.groupCode.isNotEmpty) GroupCodeBadge(code: o.groupCode),
               if (o.courierAt != null)
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
@@ -1338,3 +1340,27 @@ bool showsPickupButton(AppOrder o) =>
     o.status.courierNext == OrderStatus.onTheWay &&
     !o.status.courierMustWait &&
     (!kCourierWaitsForReady || o.ready);
+
+/// شارة «مجموعة #CODE»: الطلب ده جزء من رحلة تسوق واحدة لنفس العميل (محلات مختلفة).
+/// استلام طلب منها ما بيستلمش الباقي؛ كل طلب مستقل.
+class GroupCodeBadge extends StatelessWidget {
+  final String code;
+  const GroupCodeBadge({super.key, required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF818CF8)),
+      ),
+      child: Text(
+        'مجموعة #$code',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF3730A3)),
+      ),
+    );
+  }
+}

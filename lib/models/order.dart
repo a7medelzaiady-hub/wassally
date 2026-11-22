@@ -170,6 +170,10 @@ class AppOrder {
 
   /// آخر بلاغ إرجاع موثق، للاحتفاظ بتاريخ المندوب وتمكين تقييم العميل بعد الإلغاء.
   final String lastDeliveryIssueId;
+
+  /// كود تجميع طلبات العميل من محلات مختلفة في نفس رحلة التسوق (6 حروف). فاضي = طلب لوحده.
+  /// كل طلب بيفضل مستقل؛ الكود للمندوب يعرف إن الطلبات دي لنفس الرحلة.
+  final String groupCode;
   final double collectedAmount;
   final double courierEarning;
 
@@ -226,6 +230,7 @@ class AppOrder {
     this.cashHandedToStoreBy = '',
     this.activeDeliveryIssueId = '',
     this.lastDeliveryIssueId = '',
+    this.groupCode = '',
     this.collectedAmount = 0,
     this.courierEarning = 0,
     this.verifiedTotal,
@@ -285,6 +290,7 @@ class AppOrder {
       cashHandedToStoreBy: cashHandedToStoreBy,
       activeDeliveryIssueId: activeDeliveryIssueId,
       lastDeliveryIssueId: lastDeliveryIssueId,
+      groupCode: groupCode,
       collectedAmount: collectedAmount,
       courierEarning: courierEarning,
       verifiedTotal: verifiedTotal,
@@ -381,6 +387,7 @@ class AppOrder {
       cashHandedToStoreBy: (m['cashHandedToStoreBy'] ?? '').toString(),
       activeDeliveryIssueId: (m['activeDeliveryIssueId'] ?? '').toString(),
       lastDeliveryIssueId: (m['lastDeliveryIssueId'] ?? '').toString(),
+      groupCode: (m['groupCode'] ?? '').toString(),
       collectedAmount: (m['collectedAmount'] as num?)?.toDouble() ?? 0,
       courierEarning: (m['courierEarning'] as num?)?.toDouble() ?? 0,
       verifiedTotal: (m['verifiedTotal'] as num?)?.toDouble(),
