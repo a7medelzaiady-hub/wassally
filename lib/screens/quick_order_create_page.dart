@@ -141,7 +141,12 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         TextField(controller: _name,
           decoration: const InputDecoration(labelText: 'اسمك')),
         TextField(controller: _area,
-          decoration: const InputDecoration(labelText: 'المنطقة')),
+          decoration: const InputDecoration(
+            labelText: 'المنطقة العامة (تظهر للمندوب قبل القبول)',
+            hintText: 'مثال: مدينة كفر الشيخ - حي الزهور',
+            helperText: 'اكتب المدينة والحي فقط، بدون شارع أو رقم منزل.',
+            helperMaxLines: 2,
+          )),
         TextField(controller: _phone,
           keyboardType: TextInputType.phone,
           decoration: const InputDecoration(labelText: 'رقم التليفون')),
