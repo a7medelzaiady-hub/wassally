@@ -91,7 +91,7 @@ rev                                   // يزيد مع كل كتابة
 | `POST /v1/quick/{id}/edit` | العميل | `stores, notes?` | `open` بس |
 | `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
 | `POST /v1/quick/{id}/accept` | مندوب معتمد | — | `open` ← `accepted` |
-| `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` ← `open` |
+| `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` (قبل أي تحويل من العميل) ← `open` |
 | `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres` | `accepted` ← `purchasing` مهما كان التقدير |
 | `POST /v1/quick/{id}/advance-sent` | العميل | `amountPiastres, reference?` | `accepted` أو `purchasing` |
 | `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (اللي وصله فعلًا) | `purchasing` ← `purchasing` |

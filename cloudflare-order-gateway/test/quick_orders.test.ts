@@ -275,19 +275,21 @@ describe("editing, cancelling and releasing", () => {
     expect(code(() => step(byAdmin, "edit", customer, { stores: [{ name: "", items: "x" }] }))).toBe("409:final");
   });
   it("flags a refund when the customer cancels after sending the advance", () => {
-    const sent = step(started(30000), "advance-sent", customer, { amountPiastres: 30000 });
+    const sent = step(accepted(), "advance-sent", customer, { amountPiastres: 30000 });
     expect(step(sent, "cancel", customer).advanceRefundDue).toBe(true);
     expect(step(fresh(), "cancel", customer).advanceRefundDue).toBe(false);
+    expect(code(() => step(started(30000), "cancel", customer))).toBe("409:not_cancellable");
   });
-  it("courier can release before the advance is sent; order reopens for others", () => {
-    const released = step(started(30000), "release", quickCourier);
+  it("courier can release before purchasing and before any advance; order reopens for others", () => {
+    const released = step(accepted(), "release", quickCourier);
     expect(released.status).toBe("open");
     expect(released.courierId).toBe("");
     expect(released.paymentMode).toBe("");
     expect(step(released, "accept", otherQuickCourier).courierId).toBe("cour2");
-    const sent = step(started(30000), "advance-sent", customer, { amountPiastres: 30000 });
+    // العميل حوّل والطلب لسه «اتقبل»: المندوب ما يسيبش الطلب والفلوس معاه.
+    const sent = step(accepted(), "advance-sent", customer, { amountPiastres: 30000 });
     expect(code(() => step(sent, "release", quickCourier))).toBe("409:not_releasable");
-    expect(code(() => step(started(), "release", quickCourier))).toBe("409:not_releasable");
+    expect(code(() => step(started(30000), "release", quickCourier))).toBe("409:not_releasable");
   });
 });
 

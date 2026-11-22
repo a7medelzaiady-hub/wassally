@@ -241,7 +241,8 @@ function receiptUrlOk(url: unknown, orderId: string, cloudName?: string): boolea
   ).test(url);
 }
 
-const CUSTOMER_CANCELLABLE: readonly string[] = ["open", "accepted", "awaiting_advance"];
+/** العميل يلغي قبل بدء الشراء بس (المندوب بيدفع من جيبه من أول الشراء). */
+const CUSTOMER_CANCELLABLE: readonly string[] = ["open", "accepted"];
 
 /** الحالات اللي المندوب المعيّن بيقرا فيها رقم العميل وعنوانه (نفس شرط القواعد). */
 export const QUICK_CONTACT_STATUSES: readonly string[] = [
@@ -308,7 +309,7 @@ export function applyQuickAction(
   const now = ctx.now;
   const rev = (numOrNull(order.rev) ?? 0) + 1;
   const summaryRevision = numOrNull(order.summaryRevision) ?? 0;
-    const maxAdvance = numOrNull(policy.maximumAdvancePiastres) ?? QUICK_DEFAULTS.maximumAdvancePiastres;
+  const maxAdvance = numOrNull(policy.maximumAdvancePiastres) ?? QUICK_DEFAULTS.maximumAdvancePiastres;
   const maxDelivery = numOrNull(policy.maximumDeliveryPiastres) ?? QUICK_DEFAULTS.maximumDeliveryPiastres;
   const forbidden = (): never => fail(403, "forbidden", "مش مسموح لك بالعملية دي على الطلب ده.");
   const wrongState = (): never => fail(409, "invalid_state", "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.");
@@ -368,7 +369,8 @@ export function applyQuickAction(
 
     case "release": {
       if (!isAssigned) forbidden();
-      if (!(status === "accepted" || (status === "awaiting_advance" && !(advance.sentAt instanceof Date)))) {
+      // لو العميل حوّل مقدم (حتى قبل الشراء) المندوب ما يسيبش الطلب والفلوس معاه: الإدارة تتدخل.
+      if (status !== "accepted" || advance.sentAt instanceof Date) {
         fail(409, "not_releasable", "مينفعش تسيب الطلب بعد التحويل أو بدء الشراء. تواصل مع الإدارة.");
       }
       return {
@@ -384,7 +386,7 @@ export function applyQuickAction(
     }
 
     case "start-purchase": {
-      // بعد المكالمة: المندوب يكتب رقم واحد = تقدير المشتريات. ده بيحدد الدفع عند الاستلام أو المقدم.
+      // بعد المكالمة: المندوب يكتب رقم واحد = تقدير المشتريات (للعرض والإدارة). الشراء يبدأ على طول.
       if (!isAssigned) forbidden();
       if (status !== "accepted") wrongState();
       const estimate = intIn(body.estimatedPurchasesPiastres, 100, maxAdvance);
@@ -414,7 +416,7 @@ export function applyQuickAction(
     }
 
     case "advance-received": {
-      // حاجز أمان: مفيش شراء فوق الحد قبل ما المندوب يأكد إن المقدم وصله.
+      // مقدم اختياري: بيتخصم من الكشف بس بعد ما المندوب يأكد إن المبلغ وصله.
       if (!isAssigned) forbidden();
       if (status !== "purchasing" || !(advance.sentAt instanceof Date) || advance.confirmedAt instanceof Date) wrongState();
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
