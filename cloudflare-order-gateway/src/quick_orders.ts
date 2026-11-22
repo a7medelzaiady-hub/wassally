@@ -148,10 +148,11 @@ export function validateQuickStores(input: unknown): QuickStore[] {
     const name = typeof e.name === "string" ? e.name.trim() : "";
     const items = typeof e.items === "string" ? e.items.trim() : "";
     if (name.length > QUICK_LIMITS.maxStoreName || items.length > QUICK_LIMITS.maxItemsText ||
-        (items.length < 1 && !Array.isArray(e.pricedItems))) {
+        (items.length < 1 && !(Array.isArray(e.pricedItems) && e.pricedItems.length > 0))) {
       fail(400, "invalid_stores", "راجع اسم المحل والطلبات (الطلبات من 1 لـ500 حرف).");
     }
-    if (e.pricedItems === undefined) return { name, items };
+    // null أو غياب الحقل = محل من غير أصناف مسعّرة (نص حر بس).
+    if (e.pricedItems === undefined || e.pricedItems === null) return { name, items };
     if (!Array.isArray(e.pricedItems) || e.pricedItems.length < 1 ||
         e.pricedItems.length > 30) {
       fail(400, "invalid_priced_items", "عدد الأصناف المسعّرة لازم يكون من 1 إلى 30.");

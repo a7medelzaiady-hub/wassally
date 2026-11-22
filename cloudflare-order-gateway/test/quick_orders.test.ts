@@ -333,4 +333,60 @@ describe("display-only approximate price guide", () => {
       pricedItems: [{ name: "حليب", qty: 1, unitPricePiastres: -1 }],
     }]))).toBe("400:invalid_priced_items");
   });
+  it("treats a missing or null pricedItems as free text only", () => {
+    expect(validateQuickStores([{ name: "", items: "عيش", pricedItems: null }])).toEqual([{ name: "", items: "عيش" }]);
+    expect(code(() => validateQuickStores([{ name: "", items: "", pricedItems: null }]))).toBe("400:invalid_stores");
+    expect(code(() => validateQuickStores([{ name: "", items: "", pricedItems: [] }]))).toBe("400:invalid_stores");
+  });
+  it("mixes free text and priced items, and rejects bad priced items", () => {
+    const stores = validateQuickStores([
+      { name: "الخير", items: "عيش بلدي", pricedItems: [{ name: "زيت لتر", qty: 2, unitPricePiastres: 7500 }] },
+      { name: "", items: "كيلو لحمة" },
+    ]);
+    expect(quickApproxTotal(stores)).toBe(15000);
+    expect(stores[1].pricedItems).toBe(undefined);
+    const bad = [
+      { name: "زيت", qty: 0, unitPricePiastres: 100 },
+      { name: "زيت", qty: 1.5, unitPricePiastres: 100 },
+      { name: "زيت", qty: 1, unitPricePiastres: 75.5 },
+      { name: "  ", qty: 1, unitPricePiastres: 100 },
+      { name: "زيت", qty: 1, unitPricePiastres: 1_000_001 },
+    ];
+    for (const item of bad) {
+      expect(code(() => validateQuickStores([{ name: "", items: "", pricedItems: [item] }]))).toBe("400:invalid_priced_items");
+    }
+    const tooMany = Array(31).fill({ name: "x", qty: 1, unitPricePiastres: 100 });
+    expect(code(() => validateQuickStores([{ name: "", items: "", pricedItems: tooMany }]))).toBe("400:invalid_priced_items");
+  });
+  it("edit recomputes the estimate; the estimate never drives the advance or the final bill", () => {
+    const edited = step(fresh(), "edit", customer, {
+      stores: [{ name: "", items: "", pricedItems: [{ name: "رز كيلو", qty: 10, unitPricePiastres: 3500 }] }],
+      approxTotalPiastres: 1,
+    });
+    expect(edited.approxTotalPiastres).toBe(35000);
+    // تقدير المندوب 150 جنيه → دفع عند الاستلام، حتى لو التقدير التقريبي 350 جنيه.
+    const o = step(step(edited, "accept", quickCourier), "start-purchase", quickCourier, { estimatedPurchasesPiastres: 15000 });
+    expect(o.paymentMode).toBe("cod");
+    const s = step(addReceipt(o, 9000), "submit-summary", quickCourier, { deliveryPiastres: 2000 });
+    expect((s.totals as Doc).purchases).toBe(9000);
+  });
+  it("full journey: accept → estimate → advance → receipts → statement → approval → delivery", () => {
+    let o = step(fresh(), "accept", quickCourier);
+    o = step(o, "start-purchase", quickCourier, { estimatedPurchasesPiastres: 50000 });
+    expect(o.status).toBe("awaiting_advance");
+    o = step(o, "advance-sent", customer, { amountPiastres: 50000, reference: "VF-9" });
+    o = step(o, "advance-received", quickCourier, { amountPiastres: 50000 });
+    o = addReceipt(o, 30000, 1);
+    o = addReceipt(o, 22000, 2);
+    o = step(o, "submit-summary", quickCourier, { deliveryPiastres: 4000 });
+    expect(quickDeliveryBlocker(o, "cour1")).not.toBe(null);
+    o = step(o, "approve-summary", customer, { expectedSummaryRevision: o.summaryRevision });
+    expect(o.totals).toEqual({ purchases: 52000, serviceFee: 1040, delivery: 4000, prepaid: 50000, due: 7040 });
+    expect(quickDeliveryBlocker(o, "cour1")).toBe(null);
+    const done = { ...o, ...quickDeliveredPatch(o, "cour1", now) };
+    expect(done.status).toBe("delivered");
+    expect(done.courierOwedPiastres).toBe(1040);
+    expect(code(() => step(done, "cancel", admin))).toBe("409:final");
+  });
 });
+

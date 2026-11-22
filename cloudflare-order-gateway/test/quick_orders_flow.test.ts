@@ -139,6 +139,33 @@ describe("POST /v1/quick (create)", () => {
     expect(JSON.stringify(pushes[0])).not.toContain("01012345678");
   });
 
+  it("computes approxTotalPiastres on the server and ignores a total sent by the app", async () => {
+    firebase({ "app_info/quick_settings": { enabled: true } });
+    const res = await call("cust1", "/v1/quick", {
+      ...createBody,
+      approxTotalPiastres: 1,
+      stores: [
+        { name: "الخير", items: "عيش", pricedItems: [{ name: "زيت لتر", qty: 2, unitPricePiastres: 7500 }] },
+        { name: "", items: "كيلو لحمة", pricedItems: null },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const fields = commits[0].writes[0].update.fields;
+    expect(fields.approxTotalPiastres).toEqual({ integerValue: "15000" });
+    expect(fields.estimatedPurchasesPiastres).toEqual({ nullValue: null });
+  });
+
+  it("rejects an invalid priced item without writing", async () => {
+    firebase({ "app_info/quick_settings": { enabled: true } });
+    const res = await call("cust1", "/v1/quick", {
+      ...createBody,
+      stores: [{ name: "", items: "", pricedItems: [{ name: "زيت", qty: 100, unitPricePiastres: 7500 }] }],
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_priced_items");
+    expect(commits.length).toBe(0);
+  });
+
   it("replaying the same id returns the existing order without writing", async () => {
     firebase({ [`quick_orders/${ID}`]: openOrder() });
     const res = await call("cust1", "/v1/quick", createBody);

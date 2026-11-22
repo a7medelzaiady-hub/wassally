@@ -42,7 +42,9 @@
 
 ```
 userId, customerFirstName, area, notes, createdAt
-stores: [{ name, items }]            // name فاضي = المندوب يختار المحل
+stores: [{ name, items, pricedItems? }]   // name فاضي = المندوب يختار المحل
+        // pricedItems: [{ name, qty, unitPricePiastres }] اختياري من قائمة الأسعار الاسترشادية
+approxTotalPiastres                  // للعرض بس: مجموع qty × unitPricePiastres، الـWorker بيحسبه
 status: open | accepted | awaiting_advance | purchasing | summary_pending | summary_approved
         | delivered | cancelled
 courierId, courierName, acceptedAt
@@ -65,6 +67,17 @@ rev                                   // يزيد مع كل كتابة
 `quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes? }` — صاحب الطلب والإدارة،
 والمندوب المعيّن من `accepted` حتى `summary_approved`.
 
+## الأسعار التقريبية (للعرض بس)
+
+- قائمة الإدارة: `app_info/quick_price_guide` = `{ version, items: [{ id, name, unit, pricePiastres }] }`.
+  الأدمن يكتب وأي مستخدم مسجّل يقرأ (قواعد `app_info` الحالية). التطبيق يخزّنها ويقراها تاني لما `version` يتغير.
+- لكل محل `pricedItems` اختياري: من 1 لـ30 صنف، `name` من 1 لـ100 حرف، `qty` من 1 لـ99، `unitPricePiastres` من 0 لـ1,000,000.
+  غياب الحقل أو `null` = نص حر بس. المحل لازم يكون فيه نص (`items`) أو صنف مسعّر واحد على الأقل.
+- `approxTotalPiastres` بيحسبه الـWorker عند الإنشاء والتعديل؛ أي مجموع يبعته التطبيق بيتجاهل.
+- **مالوش أي تأثير** على حد الـ200 جنيه (ده من `start-purchase`)، ولا الكشف النهائي (من الفواتير)، ولا التسوية.
+- يتعرض للعميل والمندوب بملاحظة: «الأسعار تقريبية وقد تزيد أو تقل حسب المحل».
+- أخطاء: `invalid_stores` (محل فاضي)، `invalid_priced_items` (عدد/اسم/كمية/سعر غير صالح).
+
 ## الواجهات
 
 كل الطلبات بهيدر `Authorization: Bearer <Firebase ID token>` (و`X-Firebase-AppCheck` زي باقي البوابة).
@@ -74,7 +87,7 @@ rev                                   // يزيد مع كل كتابة
 
 | المسار | مين | الـbody | الحالة قبل ← بعد |
 |---|---|---|---|
-| `POST /v1/quick` | العميل | `orderId, customerName, area, notes?, stores, contact{userName, phone, address, courierNotes?}` | ← `open` |
+| `POST /v1/quick` | العميل | `orderId, customerName, area, notes?, stores (مع pricedItems اختياري), contact{userName, phone, address, courierNotes?}` | ← `open` |
 | `POST /v1/quick/{id}/edit` | العميل | `stores, notes?` | `open` بس |
 | `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted`/`awaiting_advance` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
 | `POST /v1/quick/{id}/accept` | مندوب معتمد | — | `open` ← `accepted` |
