@@ -21,6 +21,16 @@ void main() {
     });
   });
 
+  test('search price guide by name or unit without fetching', () {
+    const item = QuickPriceItem(
+      id: 'milk', name: 'لبن', unit: 'لتر', pricePiastres: 3500,
+    );
+    expect(item.matchesSearch('لبن'), isTrue);
+    expect(item.matchesSearch('لتر'), isTrue);
+    expect(item.matchesSearch('  لتر  '), isTrue);
+    expect(item.matchesSearch('كيلو'), isFalse);
+  });
+
   test('reject malformed guide entries and duplicate ids', () {
     expect(() => QuickPriceGuide.fromMap({
       'version': 1,
