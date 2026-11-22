@@ -84,6 +84,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   static String statusLabel(String status) => switch (status) {
     'open' => 'بانتظار مندوب',
     'accepted' || 'assigned' => 'المندوب استلم الطلب',
+    'awaiting_advance' => 'في انتظار تأكيد الدفعة المقدمة',
     'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
     'summary_pending' => 'راجع الحساب النهائي',
     'summary_approved' => 'تمت الموافقة على الحساب',
