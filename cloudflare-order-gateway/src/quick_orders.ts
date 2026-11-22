@@ -117,7 +117,23 @@ export function quickServiceFee(purchasesPiastres: number): number {
   return Math.min(1500, Math.max(500, computed));
 }
 
-export interface QuickStore { name: string; items: string }
+export interface QuickPricedItem {
+  name: string;
+  qty: number;
+  unitPricePiastres: number;
+}
+export interface QuickStore {
+  name: string;
+  items: string;
+  pricedItems?: QuickPricedItem[];
+}
+
+/** Display-only total; never use for advance, final bill or settlements. */
+export function quickApproxTotal(stores: QuickStore[]): number {
+  return stores.reduce((sum, store) =>
+    sum + (store.pricedItems ?? []).reduce((n, item) =>
+      n + item.qty * item.unitPricePiastres, 0), 0);
+}
 
 /** المحلات: من 1 لـ10، اسم المحل اختياري (فاضي = المندوب يختار)، والطلبات نص حر. */
 export function validateQuickStores(input: unknown): QuickStore[] {
@@ -131,11 +147,29 @@ export function validateQuickStores(input: unknown): QuickStore[] {
     const e = entry as JsonMap;
     const name = typeof e.name === "string" ? e.name.trim() : "";
     const items = typeof e.items === "string" ? e.items.trim() : "";
-    if (name.length > QUICK_LIMITS.maxStoreName || items.length < 1 ||
-        items.length > QUICK_LIMITS.maxItemsText) {
+    if (name.length > QUICK_LIMITS.maxStoreName || items.length > QUICK_LIMITS.maxItemsText ||
+        (items.length < 1 && !Array.isArray(e.pricedItems))) {
       fail(400, "invalid_stores", "راجع اسم المحل والطلبات (الطلبات من 1 لـ500 حرف).");
     }
-    return { name, items };
+    if (e.pricedItems === undefined) return { name, items };
+    if (!Array.isArray(e.pricedItems) || e.pricedItems.length < 1 ||
+        e.pricedItems.length > 30) {
+      fail(400, "invalid_priced_items", "عدد الأصناف المسعّرة لازم يكون من 1 إلى 30.");
+    }
+    const pricedItems: QuickPricedItem[] = e.pricedItems.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        fail(400, "invalid_priced_items", "بيانات الصنف المسعّر غير صحيحة.");
+      }
+      const item = entry as JsonMap;
+      const itemName = typeof item.name === "string" ? item.name.trim() : "";
+      const qty = intIn(item.qty, 1, 99);
+      const price = intIn(item.unitPricePiastres, 0, 1_000_000);
+      if (!itemName || itemName.length > 100 || qty === null || price === null) {
+        fail(400, "invalid_priced_items", "راجع اسم الصنف والكمية والسعر.");
+      }
+      return { name: itemName, qty, unitPricePiastres: price };
+    });
+    return { name, items, pricedItems };
   });
 }
 
@@ -176,6 +210,7 @@ export function newQuickOrder(input: {
     area: input.area,
     notes: input.notes,
     stores: input.stores,
+    approxTotalPiastres: quickApproxTotal(input.stores),
     status: "open",
     courierId: "",
     courierName: "",
