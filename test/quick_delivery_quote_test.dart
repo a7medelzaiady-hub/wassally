@@ -2,37 +2,67 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:city_store/services/quick_delivery_quote.dart';
 
 void main() {
-  test('customer counteroffer invalidates courier previous offer', () {
-    final first = const QuickDeliveryQuote().offer(
-      actor: 'courier', deliveryPiastres: 5000,
+  test('only the assigned courier quote can be approved', () {
+    final quote = const QuickDeliveryQuote().propose(
+      assignedCourierId: 'courier-a',
+      deliveryPiastres: 4000,
+      maximumDeliveryPiastres: 10000,
     );
-    final second = first.offer(actor: 'customer', deliveryPiastres: 3500);
-    expect(second.revision, 2);
-    expect(() => second.accept(actor: 'customer', expectedRevision: 1),
-        throwsStateError);
-    expect(() => second.accept(actor: 'customer', expectedRevision: 2),
-        throwsStateError);
-    final agreed = second.accept(actor: 'courier', expectedRevision: 2);
-    expect(agreed.agreedDeliveryPiastres, 3500);
+    expect(() => quote.accept(
+      assignedCourierId: 'courier-b', expectedRevision: 1,
+    ), throwsStateError);
+    expect(() => quote.accept(
+      assignedCourierId: 'courier-a', expectedRevision: 0,
+    ), throwsStateError);
+    final agreed = quote.accept(
+      assignedCourierId: 'courier-a', expectedRevision: 1,
+    );
     expect(agreed.canPurchase, isTrue);
-    expect(() => agreed.offer(actor: 'courier', deliveryPiastres: 4000),
-        throwsStateError);
+    expect(() => agreed.propose(
+      assignedCourierId: 'courier-a',
+      deliveryPiastres: 5000,
+      maximumDeliveryPiastres: 10000,
+    ), throwsStateError);
+    expect(agreed.reset().canPurchase, isFalse);
   });
 
-  test('purchase prohibited before agreement', () {
-    expect(const QuickDeliveryQuote().canPurchase, isFalse);
-    expect(() => const QuickDeliveryQuote().totalPiastres([10000]),
-        throwsStateError);
+  test('reject negative, oversized and switched courier offers', () {
+    expect(() => const QuickDeliveryQuote().propose(
+      assignedCourierId: 'a', deliveryPiastres: 11000,
+      maximumDeliveryPiastres: 10000,
+    ), throwsArgumentError);
+    final q = const QuickDeliveryQuote().propose(
+      assignedCourierId: 'a', deliveryPiastres: 3000,
+      maximumDeliveryPiastres: 10000,
+    );
+    expect(() => q.propose(
+      assignedCourierId: 'b', deliveryPiastres: 3000,
+      maximumDeliveryPiastres: 10000,
+    ), throwsStateError);
   });
 
-  test('multiple receipts incur service fee once', () {
-    final agreed = const QuickDeliveryQuote()
-        .offer(actor: 'courier', deliveryPiastres: 4000)
-        .accept(actor: 'customer', expectedRevision: 1);
-    // 200 + 400 EGP purchases; 2% = 12 EGP; delivery = 40 EGP.
-    expect(agreed.totalPiastres([20000, 40000]), 65200);
-    // 1000 EGP purchases; service fee capped at 15 EGP.
-    expect(agreed.totalPiastres([100000]), 105500);
-    expect(() => agreed.totalPiastres([-1]), throwsArgumentError);
+  test('one service fee across receipts and advance reconciliation', () {
+    final q = const QuickDeliveryQuote().propose(
+      assignedCourierId: 'a', deliveryPiastres: 4000,
+      maximumDeliveryPiastres: 10000,
+    ).accept(assignedCourierId: 'a', expectedRevision: 1);
+    expect(q.totalPiastres([20000, 40000]), 65200);
+    expect(q.settlementPiastres(
+      receiptTotalsPiastres: [20000, 40000],
+      prepaidPiastres: 60000,
+    ), 5200);
+    expect(q.settlementPiastres(
+      receiptTotalsPiastres: [10000],
+      prepaidPiastres: 20000,
+    ), lessThan(0));
+  });
+
+  test('200 EGP threshold is inclusive for cash-on-delivery', () {
+    const policy = QuickOrderPaymentPolicy(maximumAdvancePiastres: 50000);
+    expect(policy.requiresAdvance(20000), isFalse);
+    expect(policy.requiresAdvance(20001), isFalse);
+    expect(policy.requiresAdvance(100000), isFalse);
+    expect(policy.validAdvance(50000), isTrue);
+    expect(policy.validAdvance(50001), isFalse);
   });
 }
