@@ -65,6 +65,10 @@ class _FakeBackend implements QuickCourierBackend {
 }
 
 Future<void> _pumpPage(WidgetTester tester, _FakeBackend backend) async {
+  // شاشة موبايل طويلة عشان الأزرار تبقى ظاهرة.
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(
     home: QuickCourierOrderPage(orderId: _id, backend: backend),
   ));
@@ -73,6 +77,7 @@ Future<void> _pumpPage(WidgetTester tester, _FakeBackend backend) async {
 
 Future<void> _tap(WidgetTester tester, Key key) async {
   await tester.ensureVisible(find.byKey(key));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(key));
   await tester.pumpAndSettle();
 }
@@ -84,11 +89,18 @@ bool _enabled(WidgetTester tester, Key key) {
 
 void main() {
   testWidgets('زرار الطلبات السريعة بيظهر للمندوب المعتمد بس', (tester) async {
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: QuickCourierEntry(backend: _FakeBackend(_doc('open'), enabled: false)))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: QuickCourierEntry(
+      key: const Key('off'),
+      backend: _FakeBackend(_doc('open'), enabled: false),
+    ))));
     await tester.pumpAndSettle();
     expect(find.text('الطلبات السريعة'), findsNothing);
 
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: QuickCourierEntry(backend: _FakeBackend(_doc('open'))))));
+    // مفتاح مختلف = State جديدة بتقرا الاعتماد من جديد.
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: QuickCourierEntry(
+      key: const Key('on'),
+      backend: _FakeBackend(_doc('open')),
+    ))));
     await tester.pumpAndSettle();
     expect(find.text('الطلبات السريعة'), findsOneWidget);
   });

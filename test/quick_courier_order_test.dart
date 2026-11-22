@@ -44,8 +44,8 @@ void main() {
       'createdAt': '2026-11-22T10:00:00.000Z',
       'advance': {'amountPiastres': 30000, 'reference': 'VF', 'sentAt': '2026-11-22T11:00:00.000Z'},
     });
-    expect(fromFirestore.createdAt, DateTime.utc(2026, 11, 22, 10));
-    expect(fromWorker.createdAt, DateTime.utc(2026, 11, 22, 10));
+    expect(fromFirestore.createdAt!.toUtc(), DateTime.utc(2026, 11, 22, 10));
+    expect(fromWorker.createdAt!.toUtc(), DateTime.utc(2026, 11, 22, 10));
     expect(fromWorker.advanceSentAt, isNotNull);
     expect(fromWorker.stores.length, 2);
     expect(fromWorker.stores.first.pricedItems.single.subtotalPiastres, 15000);
