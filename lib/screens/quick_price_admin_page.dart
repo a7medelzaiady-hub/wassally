@@ -69,6 +69,61 @@ class _QuickPriceAdminPageState extends State<QuickPriceAdminPage> {
     });
   }
 
+  Future<void> _edit(int index) async {
+    final item = _items[index];
+    final name = TextEditingController(text: item.name);
+    final unit = TextEditingController(text: item.unit);
+    final price = TextEditingController(
+      text: (item.pricePiastres / 100).toStringAsFixed(2),
+    );
+    try {
+      final updated = await showDialog<QuickPriceItem>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('تعديل الصنف'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: name,
+                decoration: const InputDecoration(labelText: 'اسم الصنف')),
+              TextField(controller: unit,
+                decoration: const InputDecoration(labelText: 'الوحدة')),
+              TextField(controller: price,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'السعر بالجنيه')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(price.text.trim().replaceAll(',', '.'));
+                if (name.text.trim().isEmpty || unit.text.trim().isEmpty ||
+                    amount == null || !amount.isFinite || amount < 0 ||
+                    amount > 100000) return;
+                Navigator.pop(context, QuickPriceItem(
+                  id: item.id,
+                  name: name.text.trim(),
+                  unit: unit.text.trim(),
+                  pricePiastres: (amount * 100).round(),
+                ));
+              },
+              child: const Text('تأكيد'),
+            ),
+          ],
+        ),
+      );
+      if (updated != null && mounted) {
+        setState(() => _items[index] = updated);
+      }
+    } finally {
+      name.dispose();
+      unit.dispose();
+      price.dispose();
+    }
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
@@ -123,10 +178,20 @@ class _QuickPriceAdminPageState extends State<QuickPriceAdminPage> {
                 ListTile(
                   title: Text(_items[i].name),
                   subtitle: Text('${_items[i].unit} — ${(_items[i].pricePiastres / 100).toStringAsFixed(2)} ج'),
-                  trailing: IconButton(
-                    tooltip: 'حذف الصنف',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => setState(() => _items.removeAt(i)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'تعديل الصنف',
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => _edit(i),
+                      ),
+                      IconButton(
+                        tooltip: 'حذف الصنف',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => setState(() => _items.removeAt(i)),
+                      ),
+                    ],
                   ),
                 ),
               FilledButton(
