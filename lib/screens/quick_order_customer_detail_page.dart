@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
+import '../theme/brand.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -80,6 +81,17 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     }
   }
 
+  static String statusLabel(String status) => switch (status) {
+    'open' => 'بانتظار مندوب',
+    'accepted' || 'assigned' => 'المندوب استلم الطلب',
+    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
+    'summary_pending' => 'راجع الحساب النهائي',
+    'summary_approved' => 'تمت الموافقة على الحساب',
+    'delivered' => 'تم التسليم',
+    'cancelled' || 'canceled' => 'ملغي',
+    _ => 'جارٍ متابعة الطلب',
+  };
+
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
 
@@ -99,9 +111,10 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
         if (order == null) const Text('جارٍ تحميل الطلب...') else ...[
-          Text('الحالة: $status', style: Theme.of(context).textTheme.titleLarge),
+          Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
-          Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
+          if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
+            Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
           const Text('الأسعار تقريبية وقد تزيد أو تقل حسب المحل'),
           if (status == 'summary_pending' || status == 'summary_approved' || status == 'delivered') ...[
             const Divider(),
@@ -122,13 +135,13 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
           ],
           if (status == 'summary_pending') ...[
             const SizedBox(height: 12),
-            FilledButton(onPressed: _busy ? null : () => _act(true),
+            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act(true),
               child: const Text('موافق على الحساب النهائي')),
             OutlinedButton(onPressed: _busy ? null : () => _act(false),
               child: const Text('مش موافق — راجع الحساب مع المندوب')),
           ],
           if (status == 'summary_approved') ...[
-            FilledButton(onPressed: _busy ? null : _showPin,
+            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : _showPin,
               child: const Text('إظهار رمز التسليم')),
             if (_pin != null && _pin!.isNotEmpty)
               SelectableText(_pin!, style: Theme.of(context).textTheme.headlineMedium),
