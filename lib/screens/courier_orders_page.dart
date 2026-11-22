@@ -507,6 +507,8 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
             child: FilledButton(
               onPressed: _busy ? null : _claim,
               style: FilledButton.styleFrom(
+                backgroundColor: Brand.green,
+                foregroundColor: Colors.white,
                 shape: const StadiumBorder(),
                 textStyle: const TextStyle(
                   fontSize: 15,
