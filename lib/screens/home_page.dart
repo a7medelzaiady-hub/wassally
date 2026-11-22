@@ -29,6 +29,7 @@ import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/promo_banners.dart';
 import 'notifications_page.dart';
+import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
@@ -1278,6 +1279,20 @@ class _HomePageState extends State<HomePage>
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
               SliverToBoxAdapter(child: _header()),
+
+              // الطلبات السريعة منفصلة عن سلة المحل الواحد.
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.delivery_dining_outlined),
+                    label: const Text('طلباتك على السريع'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const QuickOrderCreatePage()),
+                    ),
+                  ),
+                ),
+              ),
 
               // الصفحة الرئيسية: محلات مميزة، البنرات، الأقسام، العروض، الأكثر مبيعًا.
               if (!loading && !hasError)
