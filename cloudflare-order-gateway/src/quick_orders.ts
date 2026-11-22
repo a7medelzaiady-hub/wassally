@@ -9,8 +9,7 @@
  * المندوب ما بيكتبش نصوص: أرقام وصور فواتير بس.
  *
  * دورة الطلب:
- *   open ← (accept) accepted ← (start-purchase + تقدير) purchasing          [حتى الحد: دفع عند الاستلام]
- *                                                ↘ awaiting_advance ← (advance-sent ثم advance-received) purchasing
+ *   open ← (accept) accepted ← (start-purchase + تقدير) purchasing [المندوب يدفع من جيبه، والمقدم اختياري]
  *   purchasing ← (receipt × n ثم submit-summary + أجرة) summary_pending
  *   summary_pending ← (approve-summary) summary_approved ← (deliver بالرمز) delivered
  *   summary_pending ← (reject-summary) purchasing   (بعد موافقة العميل الكشف بيتقفل؛ أي حاجة بعدها بالتليفون)
@@ -309,8 +308,7 @@ export function applyQuickAction(
   const now = ctx.now;
   const rev = (numOrNull(order.rev) ?? 0) + 1;
   const summaryRevision = numOrNull(order.summaryRevision) ?? 0;
-  const threshold = numOrNull(policy.prepaidThresholdPiastres) ?? QUICK_DEFAULTS.prepaidThresholdPiastres;
-  const maxAdvance = numOrNull(policy.maximumAdvancePiastres) ?? QUICK_DEFAULTS.maximumAdvancePiastres;
+    const maxAdvance = numOrNull(policy.maximumAdvancePiastres) ?? QUICK_DEFAULTS.maximumAdvancePiastres;
   const maxDelivery = numOrNull(policy.maximumDeliveryPiastres) ?? QUICK_DEFAULTS.maximumDeliveryPiastres;
   const forbidden = (): never => fail(403, "forbidden", "مش مسموح لك بالعملية دي على الطلب ده.");
   const wrongState = (): never => fail(409, "invalid_state", "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.");
@@ -389,22 +387,22 @@ export function applyQuickAction(
       // بعد المكالمة: المندوب يكتب رقم واحد = تقدير المشتريات. ده بيحدد الدفع عند الاستلام أو المقدم.
       if (!isAssigned) forbidden();
       if (status !== "accepted") wrongState();
-      const estimate = intIn(body.estimatedPurchasesPiastres, 100, Math.max(threshold, maxAdvance));
+      const estimate = intIn(body.estimatedPurchasesPiastres, 100, maxAdvance);
       if (estimate === null) {
         fail(400, "invalid_estimate", "تقدير المشتريات خارج سقف الطلبات السريعة.");
       }
-      const mode = estimate > threshold ? "advance" : "cod";
+      const mode = "cod"; // المندوب يمول المشتريات؛ المقدم اختياري مهما كان التقدير.
       return {
         estimatedPurchasesPiastres: estimate,
         paymentMode: mode,
-        status: mode === "advance" ? "awaiting_advance" : "purchasing",
+        status: "purchasing",
         rev,
       };
     }
 
     case "advance-sent": {
       if (!isCustomer) forbidden();
-      if (status !== "awaiting_advance" || advance.confirmedAt instanceof Date) wrongState();
+      if (!["accepted", "purchasing"].includes(status) || advance.sentAt instanceof Date) wrongState();
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
       if (amount === null) fail(400, "invalid_advance", "مبلغ التحويل خارج السقف المسموح.");
       const reference = typeof body.reference === "string" ? body.reference.trim() : "";
@@ -418,12 +416,11 @@ export function applyQuickAction(
     case "advance-received": {
       // حاجز أمان: مفيش شراء فوق الحد قبل ما المندوب يأكد إن المقدم وصله.
       if (!isAssigned) forbidden();
-      if (status !== "awaiting_advance" || !(advance.sentAt instanceof Date)) wrongState();
+      if (status !== "purchasing" || !(advance.sentAt instanceof Date) || advance.confirmedAt instanceof Date) wrongState();
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
       if (amount === null) fail(400, "invalid_advance", "المبلغ المستلم غير صالح.");
       return {
         advance: { ...advance, amountPiastres: amount, confirmedAt: now },
-        status: "purchasing",
         rev,
       };
     }
