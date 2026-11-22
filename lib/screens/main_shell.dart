@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/app_role.dart';
 import '../services/role_service.dart';
 
+import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../services/navigation.dart';
 import '../services/performance_monitor.dart';
@@ -70,7 +71,7 @@ class MainShell extends StatelessWidget {
             ],
           ),
           bottomNavigationBar: ListenableBuilder(
-            listenable: cart,
+            listenable: Listenable.merge([cart, carts]),
             builder: (context, _) {
               // الرئيسية، طلباتي، السلة، حسابي. الإشعارات من جرس الرئيسية.
               const map = [0, 2, 1, 3];
@@ -94,7 +95,8 @@ class MainShell extends StatelessWidget {
                     icon: Icons.shopping_cart_outlined,
                     selectedIcon: Icons.shopping_cart,
                     label: 'السلة',
-                    badge: cart.count,
+                    // أصناف كل السلال (الحالية + «سلّاتي»).
+                    badge: carts.totalItems,
                   ),
                   const AppNavItem(
                     icon: Icons.person_outline,

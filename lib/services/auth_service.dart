@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/widgets.dart';
 
-import 'cart_model.dart';
+import 'cart_book.dart';
 import 'navigation.dart';
 import 'notification_service.dart';
 import 'order_gateway.dart';
@@ -104,7 +104,7 @@ class AuthService {
     if (context != null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
-    cart.clear();
+    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
     shellTab.value = 0;
     await WasallyImageCache.clear();
     // لازم قبل الخروج، لأن مسح توكن الجهاز بيحتاج المستخدم لسه مسجّل.
@@ -145,7 +145,7 @@ class AuthService {
     // On any failure the account remains available and app listeners stay active.
     await OrderGateway.deleteAccount(idToken: idToken);
     await NotificationService.dispose();
-    cart.clear();
+    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
     shellTab.value = 0;
     await WasallyImageCache.clear();
     await FirebaseAuth.instance.signOut();

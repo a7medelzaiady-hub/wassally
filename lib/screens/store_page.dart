@@ -16,6 +16,7 @@ import '../models/app_role.dart';
 import '../models/product.dart';
 import '../models/product_offer.dart';
 import '../models/store.dart';
+import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
@@ -64,6 +65,17 @@ class _StorePageState extends State<StorePage> {
   final _scroll = ScrollController();
   final _searchCtrl = TextEditingController();
   final List<Product> _items = [];
+
+  /// آخر قائمة كاملة للمحل (عشان نراجع أسعار سلة راجعة من آخر مرة).
+  List<Product>? _lastMenu;
+
+  /// لو سلة المحل ده راجعة من «سلّاتي» والأسعار اتغيرت، نحدّثها ونبلّغ العميل.
+  void _syncCartWithMenu() {
+    final menu = _lastMenu;
+    if (menu == null) return;
+    final changes = cart.syncWithMenu(store.id, menu);
+    if (changes.isNotEmpty && mounted) _say(changes.join('\n'));
+  }
   DocumentSnapshot? _last;
   Timer? _debounce;
   bool _loading = false;
@@ -179,10 +191,7 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _pickSpecialImage() async {
     if (_sendingSpecial) return;
-    if (!cart.canAddFrom(store.id)) {
-      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
-      return;
-    }
+    if (!await _ensureCartForStore()) return;
     try {
       final url = await ImageService.pickAndUpload('special_requests', storeId: store.id);
       if (url != null && mounted) setState(() => _specialImageUrl = url);
@@ -274,10 +283,7 @@ class _StorePageState extends State<StorePage> {
       _say('سجّل الدخول الأول لإرسال الطلب.');
       return;
     }
-    if (!cart.canAddFrom(store.id)) {
-      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
-      return;
-    }
+    if (!await _ensureCartForStore()) return;
     if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
       _say('اكتب وصف المنتج أو أرفق صورة أو رسالة صوتية.');
       return;
@@ -578,6 +584,10 @@ class _StorePageState extends State<StorePage> {
           _hasMore = false;
           _loading = false;
         });
+        if (_term.isEmpty) {
+          _lastMenu = menu;
+          _syncCartWithMenu();
+        }
         return;
       }
 
@@ -1375,37 +1385,70 @@ class _StorePageState extends State<StorePage> {
       ));
       return;
     }
+    carts.rememberStore(store);
     if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
+    if (!await _ensureCartForStore()) return;
+    cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
+  }
 
-    final startNew = await showDialog<bool>(
+  /// العميل معاه سلة من محل تاني: بننبهه بالتفاصيل، ولو وافق سلته القديمة تتحفظ في «سلّاتي»
+  /// زي ما هي ونبدأ (أو نكمّل) سلة للمحل ده. مفيش حاجة بتتمسح من غير ما يختار.
+  Future<bool> _ensureCartForStore() async {
+    carts.rememberStore(store);
+    if (cart.canAddFrom(store.id)) return true;
+    final other = cart.storeName ?? 'محل تاني';
+    final saved = carts.parkedFor(store.id);
+    final otherCarts = carts.cartsCount;
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'تبدأ طلب جديد؟',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          'خلي بالك: معاك سلة من $other',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        content: Text(
-          'سلتك فيها منتجات من ${cart.storeName}. لو ضفت من ${store.name} هنفرّغ السلة الأول.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'سلة $other فيها ${cart.count} صنف بـ ${formatPrice(cart.subtotal)}'
+              '${cart.specialRequest != null ? ' + طلب خاص' : ''}.',
+              style: const TextStyle(height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              saved != null
+                  ? 'عندك كمان سلة محفوظة من ${store.name} فيها ${saved.count} صنف، هنكمّل عليها.'
+                  : 'لو كمّلت من ${store.name} هنعملك سلة جديدة، وسلة $other هتتحفظ في «سلّاتي» زي ما هي.',
+              style: const TextStyle(height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. '
+              'قبل التأكيد هتلاقي كل سلالك${otherCarts > 1 ? ' ($otherCarts دلوقتي)' : ''} في «سلّاتي»: تأكد أو تعدّل أو تمسح.',
+              style: TextStyle(height: 1.5, color: kMuted),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('إلغاء'),
+            child: const Text('رجوع'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('فرّغ السلة وأضف'),
+            child: Text(saved != null ? 'كمّل سلة ${store.name}' : 'سلة جديدة وكمّل'),
           ),
         ],
       ),
     );
-    if (startNew == true) {
-      cart.clear();
-      cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
-    }
+    if (ok != true || !mounted) return false;
+    carts.switchTo(store.id);
+    _syncCartWithMenu();
+    return true;
   }
 
   @override
