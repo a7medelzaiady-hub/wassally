@@ -240,6 +240,14 @@ class OrderService {
         serverOrders = true;
       }
     }
+    // Do not silently charge a service fee absent from an older APK's cart.
+    // The customer must see the Worker-mode total before confirming.
+    if (serverOrders && !OrderGateway.serverOrdersEnabled) {
+      throw StateError(
+        'تم تحديث نظام تأكيد الطلبات. حدّث تطبيق وصّلي من Google Play '
+        'علشان يظهر الإجمالي الصحيح قبل التأكيد.',
+      );
+    }
     final storeId = (cart.storeId ?? '').trim();
     if (storeId.isEmpty) {
       throw StateError('بيانات المحل غير مكتملة. ارجع للمحل وحاول تاني.');
