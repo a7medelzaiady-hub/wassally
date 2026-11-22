@@ -10,13 +10,8 @@ enum QuickCourierStep {
   /// اتقبل: اتصل بالعميل واكتب تقدير المشتريات.
   estimate,
 
-  /// التقدير فوق الحد: مستني العميل يحوّل المقدم.
-  waitAdvance,
-
-  /// العميل قال إنه حوّل: المندوب يأكد إن المبلغ وصله قبل الشراء.
-  confirmAdvance,
-
-  /// الشراء: صوّر الفواتير، واكتب الأجرة، وابعت الكشف.
+  /// الشراء (المندوب بيدفع من جيبه): صوّر الفواتير، واكتب الأجرة، وابعت الكشف.
+  /// لو العميل حوّل مقدم اختياري، المندوب يأكد استلامه هنا من غير ما يوقف الشراء.
   purchasing,
 
   /// الكشف اتبعت: مستني موافقة العميل (ممنوع التسليم).
@@ -216,9 +211,8 @@ class QuickCourierOrder {
   QuickCourierStep get step => switch (status) {
         'open' => QuickCourierStep.available,
         'accepted' => QuickCourierStep.estimate,
-        'awaiting_advance' =>
-          advanceSentAt == null ? QuickCourierStep.waitAdvance : QuickCourierStep.confirmAdvance,
-        'purchasing' => QuickCourierStep.purchasing,
+        // awaiting_advance حالة قديمة (قبل المقدم الاختياري)؛ بنعاملها كشراء.
+        'purchasing' || 'awaiting_advance' => QuickCourierStep.purchasing,
         'summary_pending' => QuickCourierStep.waitCustomer,
         'summary_approved' => QuickCourierStep.deliver,
         'delivered' => QuickCourierStep.delivered,
@@ -233,15 +227,14 @@ class QuickCourierOrder {
         'accepted', 'awaiting_advance', 'purchasing', 'summary_pending', 'summary_approved',
       }.contains(status);
 
-  /// المندوب يقدر يسيب الطلب قبل التحويل أو الشراء بس.
-  bool get canRelease =>
-      status == 'accepted' || (status == 'awaiting_advance' && advanceSentAt == null);
+  /// المندوب يقدر يسيب الطلب قبل الشراء وقبل أي تحويل من العميل بس (نفس شرط الـWorker).
+  bool get canRelease => status == 'accepted' && advanceSentAt == null;
+
+  /// العميل قال إنه حوّل مقدم (اختياري) ولسه المندوب ما أكدش استلامه.
+  bool get hasPendingAdvance => advanceSentAt != null && advanceConfirmedAt == null;
 
   /// رمز التسليم يتكتب بس بعد موافقة العميل على الكشف.
   bool get canEnterPin => status == 'summary_approved' && totals != null;
-
-  /// التقدير ده محتاج مقدم؟ (حتى الحد = دفع عند الاستلام).
-  bool requiresAdvance(int estimatePiastres) => estimatePiastres > prepaidThresholdPiastres;
 
   int get receiptsTotalPiastres => receipts.fold(0, (sum, r) => sum + r.amountPiastres);
 

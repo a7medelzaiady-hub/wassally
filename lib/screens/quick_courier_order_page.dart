@@ -295,7 +295,6 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
       case QuickCourierStep.estimate:
         final estimate = parsePoundsToPiastres(_estimateCtrl.text);
-        final needsAdvance = estimate != null && o.requiresAdvance(estimate);
         return [
           _card(children: [
             const Text('بعد المكالمة: المشتريات تقريبًا كام جنيه؟',
@@ -304,17 +303,18 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             _MoneyField(controller: _estimateCtrl, onChanged: () => setState(() {}), key: const Key('quick-estimate')),
             const SizedBox(height: 8),
             Text(
-              estimate == null
-                  ? 'لحد ${formatPiastres(o.prepaidThresholdPiastres)}: تشتري وتحصّل عند التسليم. أكتر: العميل يحوّل لك مقدم الأول.'
-                  : needsAdvance
-                      ? 'المبلغ فوق ${formatPiastres(o.prepaidThresholdPiastres)}: العميل لازم يحوّل لك مقدم قبل الشراء.'
-                      : 'هتشتري وتحصّل من العميل عند التسليم.',
-              style: TextStyle(color: needsAdvance ? Colors.orange.shade800 : kMuted, height: 1.4),
+              'انت بتدفع المشتريات، والعميل يدفع الباقي عند الاستلام. لو العميل حوّل لك مقدم، هتأكد استلامه وانت بتشتري.',
+              style: TextStyle(color: kMuted, height: 1.4),
             ),
+            if (o.advanceSentAt != null) ...[
+              const SizedBox(height: 8),
+              Text('العميل حوّل مقدم ${formatPiastres(o.advanceAmountPiastres ?? 0)}، هتأكده بعد ما تبدأ.',
+                  style: TextStyle(color: Brand.green, fontWeight: FontWeight.w700)),
+            ],
           ]),
           _bigButton(
-            needsAdvance ? 'اطلب المقدم' : 'ابدأ الشراء',
-            needsAdvance ? Icons.account_balance_wallet : Icons.shopping_cart,
+            'ابدأ الشراء',
+            Icons.shopping_cart,
             estimate == null || estimate <= 0
                 ? null
                 : () => _act('start-purchase', {'estimatedPurchasesPiastres': estimate}),
@@ -322,43 +322,28 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           ),
         ];
 
-      case QuickCourierStep.waitAdvance:
-        return [
-          _card(children: [
-            const Icon(Icons.hourglass_top, size: 40),
-            const SizedBox(height: 8),
-            Text(
-              'مستني العميل يحوّل المقدم على محفظتك (التقدير ${formatPiastres(o.estimatedPurchasesPiastres ?? 0)}).',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16, height: 1.5),
-            ),
-            const Text('ممنوع تشتري قبل ما التحويل يوصلك.',
-                textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800)),
-          ]),
-          _bigButton('تحديث', Icons.refresh, _refresh),
-        ];
-
-      case QuickCourierStep.confirmAdvance:
-        return [
-          _card(children: [
-            const Text('العميل بيقول إنه حوّل:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            _row('المبلغ', formatPiastres(o.advanceAmountPiastres ?? 0), bold: true),
-            if (o.advanceReference.isNotEmpty) _row('رقم العملية', o.advanceReference),
-            const SizedBox(height: 6),
-            Text('اتأكد من محفظتك الأول.', style: TextStyle(color: kMuted)),
-          ]),
-          _bigButton('وصلني التحويل', Icons.verified, () async {
-            final amount = await _askAmount('المبلغ اللي وصلك فعلًا كام جنيه؟', initial: o.advanceAmountPiastres);
-            if (amount == null) return;
-            await _act('advance-received', {'amountPiastres': amount}, 'تمام، ابدأ الشراء');
-          }, key: const Key('quick-advance-received')),
-        ];
-
       case QuickCourierStep.purchasing:
         final delivery = parsePoundsToPiastres(_deliveryCtrl.text);
         final preview = delivery == null ? null : o.previewTotals(delivery);
         final deliveryTooHigh = delivery != null && delivery > o.maximumDeliveryPiastres;
         return [
+          if (o.hasPendingAdvance)
+            _card(children: [
+              const Text('العميل بيقول إنه حوّل مقدم:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              _row('المبلغ', formatPiastres(o.advanceAmountPiastres ?? 0), bold: true),
+              if (o.advanceReference.isNotEmpty) _row('رقم العملية', o.advanceReference),
+              Text('اتأكد من محفظتك. المقدم بيتخصم من الكشف بعد تأكيدك بس.', style: TextStyle(color: kMuted)),
+              const SizedBox(height: 8),
+              _bigButton('وصلني التحويل', Icons.verified, () async {
+                final amount = await _askAmount('المبلغ اللي وصلك فعلًا كام جنيه؟', initial: o.advanceAmountPiastres);
+                if (amount == null) return;
+                await _act('advance-received', {'amountPiastres': amount}, 'اتسجل المقدم');
+              }, color: const Color(0xFF2563EB), key: const Key('quick-advance-received')),
+            ]),
+          if (o.advanceConfirmedAt != null)
+            _card(children: [
+              _row('مقدم مؤكد من العميل', formatPiastres(o.advanceAmountPiastres ?? 0), bold: true),
+            ]),
           if (o.summaryRejectedAt != null)
             _card(children: [
               Text('العميل رفض الكشف${o.summaryRejectReason.isEmpty ? '' : ': ${o.summaryRejectReason}'}',

@@ -122,27 +122,35 @@ void main() {
     expect(find.text('شارع التحرير 10'), findsOneWidget);
   });
 
-  testWidgets('التقدير: لحد 200 جنيه شراء مباشر، وأكتر يطلب مقدم', (tester) async {
+  testWidgets('التقدير: المندوب يبدأ الشراء على طول مهما كان المبلغ (مفيش حد 200)', (tester) async {
     final backend = _FakeBackend(_doc('accepted'))..next = (_, _) => _doc('purchasing');
     await _pumpPage(tester, backend);
     expect(_enabled(tester, const Key('quick-start')), isFalse);
 
-    await tester.enterText(find.descendant(of: find.byKey(const Key('quick-estimate')), matching: find.byType(TextField)), '250');
+    final field = find.descendant(of: find.byKey(const Key('quick-estimate')), matching: find.byType(TextField));
+    await tester.enterText(field, '٢٥٠٠');
     await tester.pumpAndSettle();
-    expect(find.text('اطلب المقدم'), findsOneWidget);
-
-    await tester.enterText(find.descendant(of: find.byKey(const Key('quick-estimate')), matching: find.byType(TextField)), '١٥٠');
-    await tester.pumpAndSettle();
+    expect(find.text('اطلب المقدم'), findsNothing);
     expect(find.text('ابدأ الشراء'), findsOneWidget);
     await _tap(tester, const Key('quick-start'));
     expect(backend.calls.single.key, 'start-purchase');
-    expect(backend.calls.single.value['estimatedPurchasesPiastres'], 15000);
+    expect(backend.calls.single.value['estimatedPurchasesPiastres'], 250000);
+    expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
   });
 
-  testWidgets('مستني التحويل: مفيش أي زرار شراء', (tester) async {
-    await _pumpPage(tester, _FakeBackend(_doc('awaiting_advance')));
-    expect(find.byKey(const Key('quick-receipt')), findsNothing);
-    expect(find.text('ممنوع تشتري قبل ما التحويل يوصلك.'), findsOneWidget);
+  testWidgets('مقدم اختياري: تأكيده متاح مع تصوير الفواتير من غير ما يوقف الشراء', (tester) async {
+    final backend = _FakeBackend(_doc('purchasing', {
+      'advance': {'amountPiastres': 30000, 'reference': 'VF-1', 'sentAt': '2026-11-22T11:00:00Z', 'confirmedAt': null},
+    }));
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-advance-received')), findsOneWidget);
+    expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
+    expect(_enabled(tester, const Key('quick-receipt')), isTrue);
+  });
+
+  testWidgets('من غير مقدم: مفيش زرار تأكيد تحويل خالص', (tester) async {
+    await _pumpPage(tester, _FakeBackend(_doc('purchasing')));
+    expect(find.byKey(const Key('quick-advance-received')), findsNothing);
   });
 
   testWidgets('الشراء: إرسال الكشف مقفول من غير فواتير', (tester) async {

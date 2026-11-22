@@ -269,8 +269,6 @@ class QuickOrderSummaryCard extends StatelessWidget {
 String quickStepLabel(QuickCourierStep step) => switch (step) {
       QuickCourierStep.available => 'متاح للقبول',
       QuickCourierStep.estimate => 'اتصل بالعميل واكتب التقدير',
-      QuickCourierStep.waitAdvance => 'مستني تحويل العميل',
-      QuickCourierStep.confirmAdvance => 'أكد استلام التحويل',
       QuickCourierStep.purchasing => 'اشتري وصوّر الفواتير',
       QuickCourierStep.waitCustomer => 'مستني موافقة العميل على الكشف',
       QuickCourierStep.deliver => 'سلّم واكتب الرمز',

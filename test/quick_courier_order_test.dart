@@ -56,11 +56,8 @@ void main() {
   test('كل حالة بتودّي لخطوة واحدة واضحة', () {
     expect(_order().step, QuickCourierStep.available);
     expect(_order({'status': 'accepted'}).step, QuickCourierStep.estimate);
-    expect(_order({'status': 'awaiting_advance'}).step, QuickCourierStep.waitAdvance);
-    expect(
-      _order({'status': 'awaiting_advance', 'advance': {'amountPiastres': 30000, 'sentAt': '2026-11-22T11:00:00Z'}}).step,
-      QuickCourierStep.confirmAdvance,
-    );
+    // حالة قديمة من قبل المقدم الاختياري: بتتعامل كشراء.
+    expect(_order({'status': 'awaiting_advance'}).step, QuickCourierStep.purchasing);
     expect(_order({'status': 'purchasing'}).step, QuickCourierStep.purchasing);
     expect(_order({'status': 'summary_pending'}).step, QuickCourierStep.waitCustomer);
     expect(_order({'status': 'summary_approved'}).step, QuickCourierStep.deliver);
@@ -69,21 +66,27 @@ void main() {
     expect(_order({'status': 'something_new'}).step, QuickCourierStep.cancelled);
   });
 
-  test('حد الـ200 جنيه: حتى الحد دفع عند الاستلام، وأكتر مقدم', () {
-    final o = _order({'status': 'accepted'});
-    expect(o.requiresAdvance(20000), isFalse);
-    expect(o.requiresAdvance(20001), isTrue);
+  test('المقدم اختياري: بيظهر للتأكيد لما العميل يحوّل، ومن غير ما يوقف الشراء', () {
+    expect(_order({'status': 'purchasing'}).hasPendingAdvance, isFalse);
+    final sent = _order({'status': 'purchasing', 'advance': {'amountPiastres': 30000, 'sentAt': '2026-11-22T11:00:00Z'}});
+    expect(sent.hasPendingAdvance, isTrue);
+    expect(sent.step, QuickCourierStep.purchasing);
+    final confirmed = _order({
+      'status': 'purchasing',
+      'advance': {'amountPiastres': 30000, 'sentAt': '2026-11-22T11:00:00Z', 'confirmedAt': '2026-11-22T11:05:00Z'},
+    });
+    expect(confirmed.hasPendingAdvance, isFalse);
   });
 
-  test('رمز التسليم بعد موافقة العميل بس، وسيب الطلب قبل التحويل بس', () {
+  test('رمز التسليم بعد موافقة العميل بس، وسيب الطلب قبل الشراء والتحويل بس', () {
     const totals = {'purchases': 15000, 'serviceFee': 500, 'delivery': 3000, 'prepaid': 0, 'due': 18500};
     expect(_order({'status': 'summary_pending', 'totals': totals}).canEnterPin, isFalse);
     expect(_order({'status': 'summary_approved', 'totals': totals}).canEnterPin, isTrue);
     expect(_order({'status': 'summary_approved'}).canEnterPin, isFalse);
     expect(_order({'status': 'accepted'}).canRelease, isTrue);
-    expect(_order({'status': 'awaiting_advance'}).canRelease, isTrue);
+    // العميل حوّل والطلب لسه «اتقبل»: المندوب ما يسيبش الطلب والفلوس معاه.
     expect(
-      _order({'status': 'awaiting_advance', 'advance': {'amountPiastres': 1, 'sentAt': '2026-11-22T11:00:00Z'}}).canRelease,
+      _order({'status': 'accepted', 'advance': {'amountPiastres': 1, 'sentAt': '2026-11-22T11:00:00Z'}}).canRelease,
       isFalse,
     );
     expect(_order({'status': 'purchasing'}).canRelease, isFalse);
