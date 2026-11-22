@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -59,6 +60,56 @@ class CartBook extends ChangeNotifier {
   /// عدد السلال اللي رجعت من آخر مرة (للتنبيه). بيتصفر لما العميل يشوف «سلّاتي».
   int restoredCount = 0;
 
+  // ── تجميع الطلبات (اختياري، العميل بيختاره من «سلّاتي») ──
+  // رقم مشترك للطلبات اللي هتتأكد من السلال دي. كل طلب بيفضل مستقل برقمه وحالته ورسومه.
+  // السيرفر بيربط الرقم بحساب العميل ويرفض أي محل متكرر أو رقم منتهي أو مش تبعه.
+  static const int groupMaxOrders = 5;
+  static const Duration groupKeepFor = Duration(hours: 5, minutes: 50); // أقل من مدة السيرفر (6 ساعات)
+  String? _groupId;
+  DateTime? _groupStartedAt;
+  final Set<String> _groupStores = {};
+
+  bool get groupingOn => _groupId != null;
+
+  /// الكود اللي هيظهر للمندوب (آخر 6 حروف).
+  String? get groupCode => _groupId?.substring(_groupId!.length - 6).toUpperCase();
+
+  /// يشغّل أو يقفل تجميع الطلبات الجاية.
+  void setGrouping(bool on, {Random? random}) {
+    if (on == groupingOn) return;
+    if (on) {
+      _groupId = newGroupId(random ?? Random.secure());
+      _groupStartedAt = DateTime.now();
+    } else {
+      _groupId = null;
+      _groupStartedAt = null;
+    }
+    _groupStores.clear();
+    notifyListeners();
+  }
+
+  /// رقم التجميع اللي يتبعت مع طلب المحل ده، أو null (الطلب يتبعت لوحده):
+  /// التجميع مقفول، أو المحل اتطلب منه قبل كده في نفس المجموعة، أو المجموعة اتملت أو قربت تنتهي.
+  String? groupIdFor(String? storeId, {DateTime? now}) {
+    final id = _groupId;
+    final started = _groupStartedAt;
+    if (id == null || started == null || storeId == null || storeId.isEmpty) return null;
+    if (_groupStores.contains(storeId) || _groupStores.length >= groupMaxOrders) return null;
+    if ((now ?? DateTime.now()).difference(started) > groupKeepFor) return null;
+    return id;
+  }
+
+  /// الطلب اتبعت ضمن المجموعة.
+  void markGroupedOrder(String storeId) {
+    if (_groupId != null) _groupStores.add(storeId);
+  }
+
+  /// صيغة رقم التجميع اللي السيرفر بيقبلها: grp_ + 20 حرف/رقم عشوائي (من غير بيانات العميل).
+  static String newGroupId(Random random) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    return 'grp_${List.generate(20, (_) => chars[random.nextInt(chars.length)]).join()}';
+  }
+
   /// السلال المحفوظة (غير السلة الحالية)، بترتيب الإضافة.
   List<CartSnapshot> get parked => List.unmodifiable(_parked.values);
 
@@ -113,6 +164,9 @@ class CartBook extends ChangeNotifier {
 
   /// تسجيل خروج: كل السلال تتمسح (من الموبايل كمان).
   void clearAll() {
+    _groupId = null;
+    _groupStartedAt = null;
+    _groupStores.clear();
     _parked.clear();
     _stores.clear();
     _touched.clear();
@@ -125,6 +179,12 @@ class CartBook extends ChangeNotifier {
   void _onActiveChanged() {
     final id = active.storeId;
     if (id != null && !active.isEmpty) _touched[id] = DateTime.now();
+    // كل السلال اتأكدت أو اتمسحت: التجميع خلص.
+    if (_groupId != null && cartsCount == 0) {
+      _groupId = null;
+      _groupStartedAt = null;
+      _groupStores.clear();
+    }
     _scheduleSave();
   }
 

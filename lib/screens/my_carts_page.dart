@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
+import '../services/order_gateway.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -15,9 +16,15 @@ import 'store_page.dart';
 /// العميل يراجع كل سلة ويأكدها أو يعدّلها أو يمسحها، وكل سلة بتتطلب كطلب مستقل.
 class MyCartsPage extends StatelessWidget {
   final CartBook? _book;
-  const MyCartsPage({super.key, CartBook? book}) : _book = book;
+
+  /// تجميع الطلبات بيشتغل مع بوابة الطلبات بس (السيرفر هو اللي بيتحقق من الرقم).
+  final bool? _allowGrouping;
+  const MyCartsPage({super.key, CartBook? book, bool? allowGrouping})
+      : _book = book,
+        _allowGrouping = allowGrouping;
 
   CartBook get book => _book ?? carts;
+  bool get allowGrouping => _allowGrouping ?? OrderGateway.serverOrdersEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +72,30 @@ class MyCartsPage extends StatelessWidget {
                               style: const TextStyle(height: 1.5),
                             ),
                           ),
+                          if (allowGrouping && (all.length >= 2 || book.groupingOn))
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: kLine),
+                              ),
+                              child: SwitchListTile(
+                                key: const Key('carts-group-switch'),
+                                value: book.groupingOn,
+                                onChanged: (v) => book.setGrouping(v),
+                                title: const Text(
+                                  'اجمع طلبات السلال دي في رحلة واحدة',
+                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                ),
+                                subtitle: Text(
+                                  book.groupingOn
+                                      ? 'رقم المجموعة #${book.groupCode}: هيظهر للمندوب على كل طلب تأكده من هنا. كل طلب بيفضل مستقل برقمه ورسومه.'
+                                      : 'اختياري: المندوب يعرف إن الطلبات دي لنفس الرحلة. كل طلب بيفضل مستقل برقمه ورسومه.',
+                                  style: const TextStyle(height: 1.4),
+                                ),
+                              ),
+                            ),
                           for (final c in all)
                             _CartCard(
                               snap: c,

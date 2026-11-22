@@ -226,6 +226,10 @@ class OrderGateway {
       )) {
         throw CatalogMismatchError(text);
       }
+      final code = body['code']?.toString() ?? '';
+      if (code == 'invalid_group' || code.startsWith('group_')) {
+        throw OrderGroupError(text);
+      }
       throw StateError(text);
     }
     if ((body['orderId'] ?? '').toString().isEmpty) {
@@ -237,4 +241,9 @@ class OrderGateway {
 /// سعر أو توفر صنف اتغير عن اللي في سلة العميل (القائمة المجمّعة عنده ممكن تكون متأخرة).
 class CatalogMismatchError extends StateError {
   CatalogMismatchError(super.message);
+}
+
+/// رقم التجميع اترفض (انتهى، اتملا، محل متكرر، أو مش تبع الحساب). الطلب نفسه ما اتعملش.
+class OrderGroupError extends StateError {
+  OrderGroupError(super.message);
 }

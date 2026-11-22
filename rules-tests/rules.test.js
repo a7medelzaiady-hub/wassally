@@ -2531,3 +2531,90 @@ test('quick_orders: quickEnabled على المندوب يكتبه المدير �
   await assertFails(updateDoc(doc(as('cour1'), 'couriers/cour1'), { quickEnabled: true }));
   await assertSucceeds(updateDoc(doc(as('admin1'), 'couriers/cour1'), { quickEnabled: true }));
 });
+
+// ───────────── تجميع طلبات العميل (groupCode) ─────────────
+async function seedGroupedOrders() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const createdAt = new Date();
+    for (const [id, storeId] of [['g1', 'shop1'], ['g2', 'shop2']]) {
+      await setDoc(doc(db, `orders/${id}`), {
+        ...baseOrder('cust1', { status: 'new', createdAt }),
+        storeId, groupId: 'grp_AbCdEfGhIjKlMnOpQr12', groupCode: 'OPQR12',
+      });
+      await setDoc(doc(db, `orders/${id}/private/contact`), {
+        userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1',
+      });
+    }
+    await setDoc(doc(db, 'order_groups/grp_AbCdEfGhIjKlMnOpQr12'), {
+      userId: 'cust1', orderIds: ['g1', 'g2'], storeIds: ['shop1', 'shop2'], count: 2,
+    });
+  });
+}
+
+function preparingBatch(db, orderId, feedExtra = {}) {
+  return getDoc(doc(db, `orders/${orderId}`)).then((snap) => {
+    const o = snap.data();
+    const b = writeBatch(db);
+    b.update(doc(db, `orders/${orderId}`), { status: 'preparing' });
+    b.set(doc(db, `orders/${orderId}/statusHistory/preparing`), {
+      from: 'new', to: 'preparing', actorUid: 'owner1', actorRole: 'owner', at: serverTimestamp(),
+    });
+    b.set(doc(db, `courier_available_orders/${orderId}`), {
+      storeId: o.storeId, storeName: o.storeName, area: o.area ?? '', items: o.items,
+      subtotal: o.subtotal, deliveryFee: o.deliveryFee, discount: o.discount ?? 0, total: o.total,
+      status: 'preparing', createdAt: o.createdAt, ...feedExtra,
+    });
+    return b;
+  });
+}
+
+test('groups: كود التجميع بيظهر في قايمة المناديب ولازم يطابق الطلب', async () => {
+  await seedGroupedOrders();
+  const owner = as('owner1');
+  // المحل ما يقدرش يخترع كود أو يشيله من نسخة القايمة.
+  await assertFails((await preparingBatch(owner, 'g1', { groupCode: 'FAKE01' })).commit());
+  await assertFails((await preparingBatch(owner, 'g1')).commit());
+  await assertSucceeds((await preparingBatch(owner, 'g1', { groupCode: 'OPQR12' })).commit());
+  const feed = (await getDoc(doc(as('cour1'), 'courier_available_orders/g1'))).data();
+  assert.equal(feed.groupCode, 'OPQR12');
+  // من غير أي بيانات للعميل ولا رقم المجموعة الكامل.
+  for (const key of ['groupId', 'userId', 'customerName', 'phone', 'address']) {
+    assert.equal(key in feed, false, key);
+  }
+  // المندوب ما يقدرش يقرا بيانات العميل قبل ما يتعيّن.
+  await assertFails(getDoc(doc(as('cour1'), 'orders/g1/private/contact')));
+});
+
+test('groups: استلام طلب من المجموعة ما بيستلمش باقي الطلبات', async () => {
+  await seedGroupedOrders();
+  await assertSucceeds((await preparingBatch(as('owner1'), 'g1', { groupCode: 'OPQR12' })).commit());
+  await assertSucceeds((await preparingBatch(as('owner2'), 'g2', { groupCode: 'OPQR12' })).commit());
+  const courierDb = as('cour1');
+  const claim = writeBatch(courierDb);
+  claim.update(doc(courierDb, 'orders/g1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(), deliveryMode: 'external',
+  });
+  claim.delete(doc(courierDb, 'courier_available_orders/g1'));
+  await assertSucceeds(claim.commit());
+  const second = (await getDoc(doc(courierDb, 'courier_available_orders/g2'))).data();
+  assert.equal(second.groupCode, 'OPQR12');
+  const secondOrder = (await getDoc(doc(as('admin1'), 'orders/g2'))).data();
+  assert.equal(secondOrder.courierId ?? '', '');
+  // بعد التعيين: المندوب يشوف بيانات تواصل طلبه هو بس.
+  await assertSucceeds(getDoc(doc(courierDb, 'orders/g1/private/contact')));
+  await assertFails(getDoc(doc(courierDb, 'orders/g2/private/contact')));
+});
+
+test('groups: العميل ما يقدرش يربط أو يغيّر مجموعة من التطبيق', async () => {
+  await seedGroupedOrders();
+  const db = as('cust1');
+  // مستند المجموعة للـWorker بس.
+  await assertFails(getDoc(doc(db, 'order_groups/grp_AbCdEfGhIjKlMnOpQr12')));
+  await assertFails(setDoc(doc(db, 'order_groups/grp_mine0000000000000000'), { userId: 'cust1' }));
+  await assertFails(getDoc(doc(as('cour1'), 'order_groups/grp_AbCdEfGhIjKlMnOpQr12')));
+  // ولا إنشاء طلب بكود تجميع، ولا تغيير الكود على طلب موجود.
+  await assertFails(setDoc(doc(db, 'orders/new-grouped'), { ...baseOrder('cust1'), groupId: 'grp_AbCdEfGhIjKlMnOpQr12', groupCode: 'OPQR12' }));
+  await assertFails(updateDoc(doc(db, 'orders/g1'), { groupCode: 'OTHER1' }));
+  await assertFails(updateDoc(doc(as('owner1'), 'orders/g1'), { groupId: 'grp_ZZZZZZZZZZZZZZZZZZZZ' }));
+});

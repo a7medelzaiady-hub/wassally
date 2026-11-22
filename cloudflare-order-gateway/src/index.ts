@@ -1,4 +1,10 @@
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import {
+  OrderGroupError,
+  orderGroupCode,
+  parseOrderGroupId,
+  planOrderGroup,
+} from "./order_groups";
 import { DELIVERY_PIN_MAX_ATTEMPTS, deriveDeliveryPin, equalPin, isDeliveryPin } from "./delivery_pin";
 import {
   QUICK_PIN_STATUSES,
@@ -179,7 +185,7 @@ export function shouldRequeueCourierOrder(data: JsonMap): boolean {
 
 export const COURIER_FEED_FIELDS = [
   "storeId", "storeName", "area", "items", "subtotal", "deliveryFee",
-  "finalDeliveryFee", "discount", "total", "status", "createdAt",
+  "finalDeliveryFee", "discount", "total", "status", "createdAt", "groupCode",
 ] as const;
 
 export function sanitizeCourierFeed(data: JsonMap): JsonMap {
@@ -203,6 +209,8 @@ export function courierAvailableFeedData(data: JsonMap): JsonMap {
     total: data.total,
     status: "preparing",
     createdAt: data.createdAt,
+    // كود التجميع بس (6 حروف) من غير groupId الكامل ولا أي بيانات للعميل.
+    ...(typeof data.groupCode === "string" && data.groupCode ? { groupCode: data.groupCode } : {}),
   };
   return sanitizeCourierFeed(feed);
 }
@@ -1280,6 +1288,14 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     };
   }
   const contact = validateContact(input.contact);
+  // تجميع اختياري يختاره العميل لطلبات نفس رحلة التسوق (محل مختلف لكل طلب).
+  let groupId = "";
+  try {
+    groupId = parseOrderGroupId(input.groupId);
+  } catch (error) {
+    if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+    throw error;
+  }
 
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -1304,11 +1320,12 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
-  const [storeDoc, restrictionDoc, limitDoc, areasDoc] = await Promise.all([
+  const [storeDoc, restrictionDoc, limitDoc, areasDoc, groupDoc] = await Promise.all([
     getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
     getDocument(env, `customer_restrictions/${uid}`, token),
     getDocument(env, `orderLimits/${uid}`, token),
     getDocument(env, "app_info/delivery_areas", token),
+    groupId ? getDocument(env, `order_groups/${groupId}`, token) : Promise.resolve(null),
   ]);
   // مفتاح طوارئ من الإدارة: app_info/delivery_areas.ordersPaused = true يوقف الطلبات الجديدة
   // (المستند ده بيتقري أصلًا هنا، فمفيش قراءة زيادة).
@@ -1386,6 +1403,19 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "إجمالي الطلب اتغير. راجع السلة قبل تأكيد الطلب.");
   }
 
+  // التجميع بيتراجع بعد كل فحوصات الطلب، والمستند بيتكتب في نفس الـcommit (بشرط).
+  let groupPlan: ReturnType<typeof planOrderGroup> | null = null;
+  if (groupId) {
+    try {
+      groupPlan = planOrderGroup(groupDoc ? decodeFields(groupDoc.fields ?? {}) : null, {
+        uid, orderId, storeId, now: new Date(),
+      });
+    } catch (error) {
+      if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+      throw error;
+    }
+  }
+
   const storeName = String(store.name ?? "").trim();
   const order: JsonMap = {
     userId: uid,
@@ -1403,6 +1433,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
+    ...(groupId ? { groupId, groupCode: orderGroupCode(groupId) } : {}),
   };
   if (!storeName || storeName.length > 100) {
     throw new HttpError(409, "بيانات المحل غير مكتملة.");
@@ -1434,6 +1465,15 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
         ? { updateTime: limitDoc.updateTime }
         : { exists: false },
     },
+    ...(groupPlan ? [{
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/order_groups/${groupId}`,
+        fields: encodeFields(groupPlan.fields),
+      },
+      currentDocument: groupPlan.isNew || !groupDoc?.updateTime
+        ? { exists: false }
+        : { updateTime: groupDoc.updateTime },
+    }] : []),
   ];
   const committed = await fetch(
     `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
@@ -1453,7 +1493,10 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     console.error("Courier push notification failed", error);
   }
-  return response({ orderId, subtotal, deliveryFee, discount, total, items });
+  return response({
+    orderId, subtotal, deliveryFee, discount, total, items,
+    ...(groupId ? { groupCode: orderGroupCode(groupId) } : {}),
+  });
 }
 
 async function updateOrder(request: Request, env: Env, orderId: string): Promise<Response> {
