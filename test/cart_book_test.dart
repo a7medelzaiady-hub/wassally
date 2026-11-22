@@ -115,6 +115,9 @@ void main() {
       carts.switchTo('p');
       cart.add(_chicken, storeId: 'p', storeName: 'دواجن النور');
 
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(const MaterialApp(home: MyCartsPage()));
       await tester.pumpAndSettle();
 
