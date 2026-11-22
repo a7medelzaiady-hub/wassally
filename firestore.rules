@@ -1557,6 +1557,40 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ───────────── «طلباتك على السريع» (quick_orders) ─────────────
+    // الـWorker هو الكاتب الوحيد (حساب الخدمة بيتخطى القواعد)، فكل الكتابة من التطبيق ممنوعة.
+    // القراءة: صاحب الطلب، والمندوب المعيّن، والإدارة، والمناديب المعتمدين للخدمة للطلبات المفتوحة بس.
+    // مستند الطلب العام مفيهوش رقم ولا عنوان؛ دول في private/contact.
+    function isQuickCourier() {
+      return isCourier() &&
+        get(/databases/$(database)/documents/couriers/$(request.auth.uid)).data.get('quickEnabled', false) == true;
+    }
+
+    match /quick_orders/{orderId} {
+      allow get, list: if signedIn() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('courierId', '') == request.auth.uid ||
+        isAdmin() ||
+        (resource.data.status == 'open' && isQuickCourier()));
+      allow create, update, delete: if false;
+
+      match /private/{doc} {
+        allow get: if signedIn() && doc == 'contact' && (
+          get(/databases/$(database)/documents/quick_orders/$(orderId)).data.userId == request.auth.uid ||
+          isAdmin() ||
+          (isCourier() &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('status', '') in
+              ['accepted', 'awaiting_advance', 'purchasing', 'receipts_locked']));
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    // حد الطلبات السريعة لكل عميل: الـWorker بس.
+    match /quickLimits/{uid} {
+      allow read, write: if false;
+    }
+
     // المناديب: المدير يقرأ الكل (عشان التعيين)، والمندوب يقرأ مستنده هو.
     // الإضافة والتعديل من الـ Console فقط.
     match /couriers/{uid} {

@@ -2464,3 +2464,68 @@ test('اعتماد السعر: ينجح وهو بيتجهز، ويترفض بع�
   await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 42, verifiedAt: serverTimestamp() }));
 });
+
+// ───────────── «طلباتك على السريع» ─────────────
+const quickOrder = (over = {}) => ({
+  userId: 'cust1', customerFirstName: 'Ali', area: '', notes: '',
+  stores: [{ name: '', items: 'عيش' }], status: 'open', courierId: '', courierName: '',
+  quote: { courierId: '', revision: 1, proposals: 0 }, paymentMode: '', receipts: [], rev: 1, ...over,
+});
+async function seedQuick(over = {}) {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'couriers/quick1'), { name: 'Q', active: true, quickEnabled: true });
+    await setDoc(doc(db, 'couriers/quickOff'), { name: 'Q2', active: false, quickEnabled: true });
+    await setDoc(doc(db, 'quick_orders/q1'), quickOrder(over));
+    await setDoc(doc(db, 'quick_orders/q1/private/contact'), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+  });
+}
+
+test('quick_orders: الطلب المفتوح يشوفه صاحبه والإدارة والمندوب المعتمد بس', async () => {
+  await seedQuick();
+  await assertSucceeds(getDoc(doc(as('cust1'), 'quick_orders/q1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'quick_orders/q1')));
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1')));
+  // المندوب العادي (من غير quickEnabled) والمندوب الموقوف وأي عميل تاني: مرفوض.
+  await assertFails(getDoc(doc(as('cour1'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('quickOff'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('cust2'), 'quick_orders/q1')));
+  const { collection, getDocs, query, where } = require('firebase/firestore');
+  await assertSucceeds(getDocs(query(collection(as('quick1'), 'quick_orders'), where('status', '==', 'open'))));
+  await assertFails(getDocs(query(collection(as('cour1'), 'quick_orders'), where('status', '==', 'open'))));
+  // من غير فلتر الحالة القايمة مرفوضة للمندوب (ممكن تكشف طلبات مقبولة لمندوب تاني).
+  await assertFails(getDocs(collection(as('quick1'), 'quick_orders')));
+});
+
+test('quick_orders: بعد القبول الطلب يختفي عن باقي المناديب المعتمدين', async () => {
+  await seedQuick({ status: 'accepted', courierId: 'cour1' });
+  await assertSucceeds(getDoc(doc(as('cour1'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1')));
+});
+
+test('quick_orders: رقم العميل وعنوانه للمندوب المعيّن بعد القبول بس', async () => {
+  await seedQuick();
+  await assertSucceeds(getDoc(doc(as('cust1'), 'quick_orders/q1/private/contact')));
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'purchasing', courierId: 'quick1' });
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+  await assertFails(getDoc(doc(as('cour1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'delivered', courierId: 'quick1' });
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+});
+
+test('quick_orders: أي كتابة من التطبيق مرفوضة (الـWorker بس)', async () => {
+  await seedQuick();
+  await assertFails(setDoc(doc(as('cust1'), 'quick_orders/q2'), quickOrder()));
+  await assertFails(updateDoc(doc(as('cust1'), 'quick_orders/q1'), { status: 'cancelled' }));
+  await assertFails(updateDoc(doc(as('quick1'), 'quick_orders/q1'), { status: 'accepted', courierId: 'quick1' }));
+  await assertFails(updateDoc(doc(as('admin1'), 'quick_orders/q1'), { status: 'delivered' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'quick_orders/q1')));
+  await assertFails(setDoc(doc(as('cust1'), 'quick_orders/q1/private/contact'), { phone: '01000000000' }));
+  await assertFails(getDoc(doc(as('cust1'), 'quickLimits/cust1')));
+});
+
+test('quick_orders: quickEnabled على المندوب يكتبه المدير بس', async () => {
+  await seedQuick();
+  await assertFails(updateDoc(doc(as('cour1'), 'couriers/cour1'), { quickEnabled: true }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'couriers/cour1'), { quickEnabled: true }));
+});
