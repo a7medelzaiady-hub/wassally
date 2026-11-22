@@ -16,7 +16,9 @@ class ThemeController extends ChangeNotifier {
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      Brand.palette = AppPalette.byId(prefs.getString(_key));
+      // Apply the requested green branding to existing installs too.
+      Brand.palette = AppPalette.green;
+      await prefs.setString(_key, AppPalette.green.id);
     } catch (_) {
       // لو فشلت القراءة بنكمّل بالسمة الافتراضية.
     }
