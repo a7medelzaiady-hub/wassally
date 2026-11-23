@@ -31,6 +31,11 @@ enum OrderStatus {
   final Color? _color;
   const OrderStatus(this.key, this.label, this.icon, this._color);
 
+  /// العميل يقدر يخفي الطلب من سجله بس بعد ما يخلص (اتسلّم أو اتلغى).
+  /// نفس الشرط موجود في قواعد Firestore.
+  bool get canHideFromHistory =>
+      this == OrderStatus.delivered || this == OrderStatus.cancelled;
+
   /// لون الحالة. "تم الاستلام" بيتبع لون السمة المختارة.
   Color get color => _color ?? kPrimary;
 
@@ -126,6 +131,8 @@ class AppOrder {
   /// ملاحظات للمندوب (من المستند الخاص). المحل ما بيشوفهاش.
   final String courierNotes;
   final double discount;
+  /// رسوم خدمة وصّلي على العميل (2%، من 5 لـ15). null = طلب قديم قبل الرسوم.
+  final double? serviceFee;
   final String area;
   final String courierId;
   final String courierName;
@@ -153,6 +160,8 @@ class AppOrder {
   final DateTime? customerDeliveryReportedAt;
   final String customerDeliveryReportedBy;
   final DateTime? customerConfirmedAt;
+  /// الرمز اتقفل بعد 5 محاولات غلط من المندوب، والإدارة هي اللي تقرر.
+  final DateTime? deliveryPinLockedAt;
   final DateTime? cashHandedToStoreAt;
   final String cashHandedToStoreBy;
 
@@ -161,6 +170,10 @@ class AppOrder {
 
   /// آخر بلاغ إرجاع موثق، للاحتفاظ بتاريخ المندوب وتمكين تقييم العميل بعد الإلغاء.
   final String lastDeliveryIssueId;
+
+  /// كود تجميع طلبات العميل من محلات مختلفة في نفس رحلة التسوق (6 حروف). فاضي = طلب لوحده.
+  /// كل طلب بيفضل مستقل؛ الكود للمندوب يعرف إن الطلبات دي لنفس الرحلة.
+  final String groupCode;
   final double collectedAmount;
   final double courierEarning;
 
@@ -195,6 +208,7 @@ class AppOrder {
     this.customerName = '',
     this.courierNotes = '',
     this.discount = 0,
+    this.serviceFee,
     this.area = '',
     this.courierId = '',
     this.courierName = '',
@@ -211,10 +225,12 @@ class AppOrder {
     this.customerDeliveryReportedAt,
     this.customerDeliveryReportedBy = '',
     this.customerConfirmedAt,
+    this.deliveryPinLockedAt,
     this.cashHandedToStoreAt,
     this.cashHandedToStoreBy = '',
     this.activeDeliveryIssueId = '',
     this.lastDeliveryIssueId = '',
+    this.groupCode = '',
     this.collectedAmount = 0,
     this.courierEarning = 0,
     this.verifiedTotal,
@@ -252,6 +268,7 @@ class AppOrder {
       customerName: customerName,
       courierNotes: c.courierNotes.isNotEmpty ? c.courierNotes : courierNotes,
       discount: discount,
+      serviceFee: serviceFee,
       area: area,
       courierId: courierId,
       courierName: courierName,
@@ -268,10 +285,12 @@ class AppOrder {
       customerDeliveryReportedAt: customerDeliveryReportedAt,
       customerDeliveryReportedBy: customerDeliveryReportedBy,
       customerConfirmedAt: customerConfirmedAt,
+      deliveryPinLockedAt: deliveryPinLockedAt,
       cashHandedToStoreAt: cashHandedToStoreAt,
       cashHandedToStoreBy: cashHandedToStoreBy,
       activeDeliveryIssueId: activeDeliveryIssueId,
       lastDeliveryIssueId: lastDeliveryIssueId,
+      groupCode: groupCode,
       collectedAmount: collectedAmount,
       courierEarning: courierEarning,
       verifiedTotal: verifiedTotal,
@@ -330,6 +349,7 @@ class AppOrder {
       userName: (m['userName'] ?? '').toString(),
       customerName: (m['customerName'] ?? '').toString(),
       discount: (m['discount'] as num?)?.toDouble() ?? 0,
+      serviceFee: (m['serviceFee'] as num?)?.toDouble(),
       area: (m['area'] ?? '').toString(),
       courierId: (m['courierId'] ?? '').toString(),
       courierName: (m['courierName'] ?? '').toString(),
@@ -358,12 +378,16 @@ class AppOrder {
       customerConfirmedAt: m['customerConfirmedAt'] is Timestamp
           ? (m['customerConfirmedAt'] as Timestamp).toDate()
           : null,
+      deliveryPinLockedAt: m['deliveryPinLockedAt'] is Timestamp
+          ? (m['deliveryPinLockedAt'] as Timestamp).toDate()
+          : null,
       cashHandedToStoreAt: m['cashHandedToStoreAt'] is Timestamp
           ? (m['cashHandedToStoreAt'] as Timestamp).toDate()
           : null,
       cashHandedToStoreBy: (m['cashHandedToStoreBy'] ?? '').toString(),
       activeDeliveryIssueId: (m['activeDeliveryIssueId'] ?? '').toString(),
       lastDeliveryIssueId: (m['lastDeliveryIssueId'] ?? '').toString(),
+      groupCode: (m['groupCode'] ?? '').toString(),
       collectedAmount: (m['collectedAmount'] as num?)?.toDouble() ?? 0,
       courierEarning: (m['courierEarning'] as num?)?.toDouble() ?? 0,
       verifiedTotal: (m['verifiedTotal'] as num?)?.toDouble(),

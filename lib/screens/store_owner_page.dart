@@ -9,6 +9,9 @@ import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
+import '../services/read_meter.dart';
+import '../services/catalog_sync.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../models/product.dart';
@@ -18,6 +21,7 @@ import '../services/role_service.dart';
 import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/store_orders_split.dart';
 import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
@@ -27,6 +31,7 @@ import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/unanswered_orders_alert.dart';
+import '../services/store_fee_service.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -62,6 +67,8 @@ String _priceLine(_Json m, num price, bool available) {
   return b.toString();
 }
 
+const _storeOrderLimit = 100;
+
 /// شاشة صاحب المحل: طلبات محله، أصنافه، وفتح/إغلاق المحل.
 /// الصلاحيات الحقيقية في firestore.rules (isStoreOwner)، والشاشة دي بتعرض بس.
 /// صاحب المحل ما يشوفش عنوان العميل ولا رقمه في الشاشة (المحل مش محتاجهم).
@@ -82,11 +89,11 @@ class StoreOwnerPage extends StatelessWidget {
       return _PendingStoreSetup(storeId: storeId, name: name);
     }
     return StreamBuilder<List<AppOrder>>(
-      stream: StaffOrderService.watchForStore(storeId, limit: 100),
+      stream: StaffOrderService.watchForStore(storeId, limit: _storeOrderLimit),
       builder: (context, snapshot) {
         final orders = snapshot.data ?? const <AppOrder>[];
         return DefaultTabController(
-          length: 3,
+          length: 2,
           child: Scaffold(
             floatingActionButton: const FeedbackFab(),
             body: NestedScrollView(
@@ -120,7 +127,6 @@ class StoreOwnerPage extends StatelessWidget {
                       tabs: const [
                         Tab(text: 'الطلبات'),
                         Tab(text: 'الأصناف والعروض'),
-                        Tab(text: 'الطلبات الخاصة'),
                       ],
                     ),
                   ),
@@ -135,7 +141,6 @@ class StoreOwnerPage extends StatelessWidget {
                     error: snapshot.error,
                   ),
                   _OwnerProductsTab(storeId: storeId),
-                  _OwnerSpecialRequestsTab(orders: orders),
                 ],
               ),
             ),
@@ -234,6 +239,7 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
               'imageUrl': url,
               'updatedAt': FieldValue.serverTimestamp(),
             });
+        await CatalogSync.storeChanged(widget.storeId);
         if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تحديث صورة المحل.')),
@@ -389,9 +395,26 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       .doc(widget.storeId)
       .snapshots();
   bool _busy = false;
-  late final Future<RatingSummary?> _rating = RatingService.store(
-    widget.storeId,
-  );
+  StreamSubscription<DocumentSnapshot<_Json>>? _indexRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    // تقييمات العملاء بتتكتب على مستند المحل بس (العميل ما يكتبش في الفهرس)، فلما صاحب المحل
+    // يفتح لوحته بنحدّث خانة محله في الفهرس لو التقييم اتغير. نفس الاستعلام = من غير قراءات زيادة.
+    _indexRefresh = _stream.listen((snap) {
+      final data = snap.data();
+      if (data != null) {
+        CatalogSync.refreshIfRatingChanged(widget.storeId, data);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _indexRefresh?.cancel();
+    super.dispose();
+  }
 
   Future<void> _changeImage() async {
     if (_busy) return;
@@ -411,6 +434,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
               'image': url,
               'updatedAt': FieldValue.serverTimestamp(),
             });
+        await CatalogSync.storeChanged(widget.storeId);
         await CatalogService.bump();
         messenger.showSnackBar(
           const SnackBar(content: Text('تم تغيير صورة المحل.')),
@@ -425,7 +449,9 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
     }
   }
 
-  Future<void> _setActive(bool value) async {
+  /// فتح/غلق المحل. المغلق بيفضل ظاهر للعملاء ومكتوب عليه «مغلق الآن» ومايستقبلش طلبات.
+  /// (الإخفاء الكامل من الإدارة بس.)
+  Future<void> _setOpen(bool value) async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
@@ -433,8 +459,17 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       await FirebaseFirestore.instance
           .collection('stores')
           .doc(widget.storeId)
-          .update({'active': value, 'updatedAt': FieldValue.serverTimestamp()});
+          .update({'isOpen': value, 'updatedAt': FieldValue.serverTimestamp()});
+      final indexed = await CatalogSync.storeChanged(widget.storeId);
       await CatalogService.bump();
+      if (!indexed) {
+        await CatalogSync.markIndexPending(widget.storeId);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('اتغيرت حالة المحل، بس ظهوره للعملاء هيتحدث لما الاتصال يتحسن.'),
+          ),
+        );
+      }
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),
@@ -462,6 +497,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
         }
         if (data == null) return const SizedBox(height: 56);
         final active = (data['active'] as bool?) ?? true;
+        final isOpen = (data['isOpen'] as bool?) ?? true;
         final shopName = (data['name'] ?? 'المحل').toString();
         final shopImage = (data['imageUrl'] ?? data['image'] ?? '').toString();
         return Container(
@@ -535,30 +571,29 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                           ),
                         ),
                         Text(
-                          active
-                              ? 'المحل مفتوح ويستقبل طلبات'
-                              : 'المحل مقفول أو بانتظار تفعيل الإدارة',
+                          !active
+                              ? 'المحل مخفي أو بانتظار تفعيل الإدارة'
+                              : isOpen
+                                  ? 'المحل مفتوح ويستقبل طلبات'
+                                  : 'المحل مغلق الآن (ظاهر للعملاء ومش بيستقبل طلبات)',
                           style: TextStyle(
-                            color: active ? kSuccess : kDanger,
+                            color: active && isOpen ? kSuccess : kDanger,
                             fontWeight: FontWeight.w700,
                             fontSize: 12.5,
                           ),
                         ),
-                        FutureBuilder<RatingSummary?>(
-                          future: _rating,
-                          builder: (context, rs) => Text(
-                            rs.data == null
-                                ? 'تقييم المحل: ...'
-                                : 'تقييم المحل: ${rs.data!.text}',
-                            style: TextStyle(color: kMuted, fontSize: 12),
-                          ),
+                        // من ratingSum/ratingCount على مستند المحل نفسه (المستمع ده): صفر قراءات،
+                        // بدل قراءة لحد 300 تقييم مع كل فتحة للوحة.
+                        Text(
+                          'تقييم المحل: ${RatingSummary.fromStore(data).text}',
+                          style: TextStyle(color: kMuted, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                   Switch(
-                    value: active,
-                    onChanged: _busy || !active ? null : _setActive,
+                    value: active && isOpen,
+                    onChanged: _busy || !active ? null : _setOpen,
                   ),
                 ],
               ),
@@ -615,7 +650,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
 
 // ───────────────────────── الطلبات ─────────────────────────
 
-class _OwnerOrdersTab extends StatefulWidget {
+class _OwnerOrdersTab extends StatelessWidget {
   final String storeId;
   final List<AppOrder> orders;
   final bool loading;
@@ -628,66 +663,49 @@ class _OwnerOrdersTab extends StatefulWidget {
   });
 
   @override
-  State<_OwnerOrdersTab> createState() => _OwnerOrdersTabState();
-}
-
-class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
-  bool _showCurrent = true;
-
-  bool _isCurrent(AppOrder o) =>
-      o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled;
-
-  @override
   Widget build(BuildContext context) {
-    if (widget.error != null) {
+    if (error != null) {
       return EmptyState(
         icon: Icons.lock_outline,
         title: 'تعذر تحميل الطلبات',
-        message: _why(widget.error!),
+        message: _why(error!),
       );
     }
-    if (widget.loading) {
+    if (loading) {
       return Center(child: CircularProgressIndicator(color: kPrimary));
     }
-    final all = widget.orders;
-    final current = all.where(_isCurrent).toList();
-    final past = all.where((o) => !_isCurrent(o)).toList();
-    final shown = _showCurrent ? current : past;
+    // الصفحة دي للشغل الجاري بس. الطلبات اللي خلصت في صفحة «الطلبات المنتهية».
+    final current = orders.where(isOpenOrder).toList();
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: SegmentedButton<bool>(
-            segments: [
-              ButtonSegment(
-                value: true,
-                label: Text('الحالية (${current.length})'),
+          child: OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => StoreClosedOrdersPage(storeId: storeId, orders: orders),
               ),
-              ButtonSegment(
-                value: false,
-                label: Text('السابقة (${past.length})'),
-              ),
-            ],
-            selected: {_showCurrent},
-            onSelectionChanged: (v) =>
-                setState(() => _showCurrent = v.first),
+            ),
+            icon: const Icon(Icons.inventory_2_outlined, size: 18),
+            label: const Text('الطلبات المنتهية والحساب'),
           ),
         ),
         Expanded(
-          child: shown.isEmpty
-              ? EmptyState(
+          child: current.isEmpty
+              ? const EmptyState(
                   icon: Icons.receipt_long_outlined,
-                  title: _showCurrent
-                      ? 'مفيش طلبات حالية'
-                      : 'مفيش طلبات سابقة',
+                  title: 'مفيش طلبات شغالة دلوقتي',
+                  message: 'الطلبات الجديدة هتظهر هنا، والمنتهية في «الطلبات المنتهية والحساب».',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
-                  itemCount: shown.length,
+                  itemCount: current.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) =>
-                      _OwnerOrderCard(order: shown[i]),
+                  itemBuilder: (context, i) => _OwnerOrderCard(
+                    key: ValueKey(current[i].id),
+                    order: current[i],
+                  ),
                 ),
         ),
       ],
@@ -695,9 +713,265 @@ class _OwnerOrdersTabState extends State<_OwnerOrdersTab> {
   }
 }
 
+/// الطلبات اللي خلصت (تم التوصيل/ملغي) لسه ما اتقفلش حسابها مع وصّلي.
+/// قسمين: «البضاعة» (الطلبات وأصنافها) و«الفلوس» (رسوم وصّلي والمتبقي).
+/// بعد ما الإدارة تقفل الحساب، الطلبات القديمة بتختفي من هنا.
+class StoreClosedOrdersPage extends StatefulWidget {
+  final String storeId;
+  final List<AppOrder> orders;
+  const StoreClosedOrdersPage({super.key, required this.storeId, required this.orders});
+
+  @override
+  State<StoreClosedOrdersPage> createState() => _StoreClosedOrdersPageState();
+}
+
+class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
+  bool _goods = true;
+  // قراءة واحدة (رصيد + تجميع رسوم) بتتشارك بين الفلتر وقسم الفلوس.
+  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+
+  void _reload() => setState(() => _future = StoreFeeService.load(widget.storeId));
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الطلبات المنتهية والحساب')),
+      body: FutureBuilder<StoreFeeSummary>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return EmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: 'تعذر تحميل الحساب',
+              message: 'اتأكد من الإنترنت وحاول تاني.',
+              actionLabel: 'حاول تاني',
+              onAction: _reload,
+            );
+          }
+          if (!snap.hasData) {
+            return Center(child: CircularProgressIndicator(color: kPrimary));
+          }
+          final summary = snap.data!;
+          final closed = closedOrdersAfterSettlement(widget.orders, summary.settledAt);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: SegmentedButton<bool>(
+                  segments: [
+                    ButtonSegment(value: true, label: Text('البضاعة (${closed.length})')),
+                    const ButtonSegment(value: false, label: Text('الفلوس')),
+                  ],
+                  selected: {_goods},
+                  onSelectionChanged: (v) => setState(() => _goods = v.first),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  'السجل من أحدث $_storeOrderLimit طلب للمحل، وبيشمل الطلبات المنتهية بعد آخر تقفيل حساب.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5),
+                ),
+              ),
+              Expanded(
+                child: _goods
+                    ? (closed.isEmpty
+                        ? const EmptyState(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'مفيش طلبات منتهية',
+                            message: 'الطلبات اللي اتقفل حسابها بتتشال من هنا.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: closed.length,
+                            separatorBuilder: (_, _) => const SizedBox(height: 12),
+                            itemBuilder: (context, i) => ClosedOrderCompactCard(order: closed[i]),
+                          ))
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          // حساب وصّلي الإجمالي (المستحق/المدفوع/المتبقي) منفصل عن كروت الأيام.
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: StoreFeeSummaryView(
+                                storeId: widget.storeId,
+                                future: _future,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            child: Text(
+                              'تفصيل الطلبات بالأيام. رسوم كل يوم هي اللي اتجمعت على طلباته، مش رصيد لسه مطلوب دفعه (المتبقي الفعلي في الكارت اللي فوق).',
+                              style: TextStyle(fontSize: 12.5, height: 1.4),
+                            ),
+                          ),
+                          for (final g in groupClosedByDay(closed)) ClosedDayCard(group: g),
+                        ],
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+String _closedOrderLabel(AppOrder order) {
+  if (order.status == OrderStatus.cancelled &&
+      order.lastDeliveryIssueId.isNotEmpty) {
+    return 'مرتجع';
+  }
+  return order.status.label;
+}
+
+/// كارت يوم واحد: عدد الطلبات، البضاعة، ورسوم وصّلي (للمسلّم بس)، وتفاصيل كل فاتورة بالضغط.
+class ClosedDayCard extends StatelessWidget {
+  final ClosedDayGroup group;
+  const ClosedDayCard({super.key, required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = group.money;
+    final d = group.day;
+    final title = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    return Card(
+      margin: const EdgeInsets.only(top: 10),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            'مكتمل ${m.completedCount}${m.cancelledCount > 0 ? '  •  ملغي ${m.cancelledCount}' : ''}\n'
+            'البضاعة: ${formatPrice(m.goodsTotal)}  •  رسوم وصّلي المسجّلة: ${formatPrice(m.serviceFeeTotal)}',
+            style: const TextStyle(height: 1.45),
+          ),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          for (final o in group.orders)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${formatDateTime(closedOrderTime(o)!)}'
+                      '${o.status == OrderStatus.cancelled ? ' • ${_closedOrderLabel(o)}' : ''}',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+                  Text(
+                    o.status == OrderStatus.cancelled
+                        ? '—'
+                        : '${formatPrice(o.subtotal)} • '
+                            '${o.serviceFee == null ? 'الرسوم غير مسجّلة' : 'رسوم ${formatPrice(o.serviceFee!)}'}',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// بطاقة طلب منتهٍ مختصرة: العميل، التاريخ، الحالة، قيمة البضاعة، وزر «عرض التفاصيل».
+class ClosedOrderCompactCard extends StatelessWidget {
+  final AppOrder order;
+  const ClosedOrderCompactCard({super.key, required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    final t = closedOrderTime(o);
+    final who = o.customerName.trim().isNotEmpty ? o.customerName.trim() : 'عميل';
+    return Card(
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Row(
+          children: [
+            Expanded(child: Text(who, style: const TextStyle(fontWeight: FontWeight.w800))),
+            Text(
+              _closedOrderLabel(o),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: o.status == OrderStatus.cancelled ? Colors.red.shade700 : Colors.green.shade700,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            '${t != null ? formatDateTime(t) : ''}\n'
+            'قيمة البضاعة: ${formatPrice(o.subtotal)}',
+            style: const TextStyle(height: 1.45),
+          ),
+        ),
+        trailing: const Text('عرض التفاصيل', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        children: [
+          for (final line in o.items)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${line.qty} × ${line.name}'
+                      '${line.options.isNotEmpty ? ' (${line.options.join('، ')})' : ''}',
+                      style: const TextStyle(height: 1.35),
+                    ),
+                  ),
+                  Text('${formatPrice(line.price)} × ${line.qty} = ${formatPrice(line.total)}',
+                      style: const TextStyle(fontSize: 12.5)),
+                ],
+              ),
+            ),
+          const Divider(height: 16),
+          Row(
+            children: [
+              const Expanded(child: Text('المجموع (البضاعة)', style: TextStyle(fontWeight: FontWeight.w800))),
+              Text(formatPrice(o.subtotal), style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          if (o.status == OrderStatus.delivered) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(child: Text('رسوم التوصيل')),
+                Text(formatPrice(o.courierFee)),
+              ],
+            ),
+            Row(
+              children: [
+                const Expanded(child: Text('رسوم وصّلي المسجّلة')),
+                Text(o.serviceFee == null
+                    ? 'غير مسجّلة'
+                    : formatPrice(o.serviceFee!)),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _OwnerOrderCard extends StatefulWidget {
   final AppOrder order;
-  const _OwnerOrderCard({required this.order});
+  const _OwnerOrderCard({super.key, required this.order});
 
   @override
   State<_OwnerOrderCard> createState() => _OwnerOrderCardState();
@@ -886,7 +1160,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
         }
         if (status == 'store_confirmed_return') {
           return const Text(
-            'تم تأكيد استلام المحل للمرتجع، والإدارة تقدر تغلق الطلب.',
+            'تم تأكيد استلام المرتجع، والطلب اتقفل.',
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           );
         }
@@ -1074,72 +1348,87 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             ),
           ],
           const Divider(height: 22),
-          for (final line in o.items)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${line.name} × ${line.qty}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: _unavailable.contains(line.name)
-                            ? kDanger
-                            : null,
-                        decoration: _unavailable.contains(line.name)
-                            ? TextDecoration.lineThrough
-                            : null,
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            title: const Text('تفاصيل الطلب'),
+            subtitle: Text('عدد الأصناف: ${o.items.length}'),
+            children: [
+              for (final line in o.items)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${line.name} × ${line.qty}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: _unavailable.contains(line.name)
+                                    ? kDanger
+                                    : null,
+                                decoration: _unavailable.contains(line.name)
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
+                            ),
+                            if (line.options.isNotEmpty)
+                              Text(line.options.join('، '), style: text.bodySmall),
+                          ],
+                        ),
                       ),
+                      Text(formatPrice(line.total)),
+                      if (isNew)
+                        IconButton(
+                          tooltip: _unavailable.contains(line.name)
+                              ? 'الصنف متاح'
+                              : 'صنف غير متاح',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                  if (!_unavailable.remove(line.name)) {
+                                    _unavailable.add(line.name);
+                                  }
+                                }),
+                          icon: Icon(
+                            _unavailable.contains(line.name)
+                                ? Icons.remove_circle
+                                : Icons.remove_circle_outline,
+                            size: 20,
+                            color: kDanger,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (o.specialRequest != null) ...[
+                const SizedBox(height: 10),
+                _SpecialRequestBox(data: o.specialRequest!),
+              ],
+              if (o.notes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('ملاحظات العميل: ${o.notes}'),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    'إجمالي الأصناف:',
+                    style: text.bodyMedium?.copyWith(color: kMuted),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    formatPrice(o.subtotal),
+                    style: text.titleMedium?.copyWith(
+                      color: kPrimary,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(formatPrice(line.total)),
-                  if (isNew)
-                    IconButton(
-                      tooltip: _unavailable.contains(line.name)
-                          ? 'الصنف متاح'
-                          : 'صنف غير متاح',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                              if (!_unavailable.remove(line.name)) {
-                                _unavailable.add(line.name);
-                              }
-                            }),
-                      icon: Icon(
-                        _unavailable.contains(line.name)
-                            ? Icons.remove_circle
-                            : Icons.remove_circle_outline,
-                        size: 20,
-                        color: kDanger,
-                      ),
-                    ),
                 ],
-              ),
-            ),
-          if (o.specialRequest != null) ...[
-            const SizedBox(height: 10),
-            _SpecialRequestBox(data: o.specialRequest!),
-          ],
-          if (o.notes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text('ملاحظات العميل: ${o.notes}'),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                'إجمالي الأصناف:',
-                style: text.bodyMedium?.copyWith(color: kMuted),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                formatPrice(o.subtotal),
-                style: text.titleMedium?.copyWith(
-                  color: kPrimary,
-                  fontWeight: FontWeight.w800,
-                ),
               ),
             ],
           ),
@@ -1315,6 +1604,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   void initState() {
     super.initState();
     _load();
+    // مزامنة قائمة اتقطعت قبل كده (التطبيق اتقفل/النت قطع بعد حفظ صنف): نكمّلها في الخلفية.
+    CatalogSync.resumePending(widget.storeId);
   }
 
   @override
@@ -1329,16 +1620,37 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _load() async {
+  DateTime? _lastServerLoad;
+
+  /// [fromCache]: بعد تعديل من الجهاز ده، Firestore بيطبّق التعديل على الكاش المحلي فورًا،
+  /// فبنقرا من الكاش (صفر قراءات) بدل ما نعيد تحميل كل الأصناف من الخادم (لحد 200 قراءة).
+  /// تعديلات جهاز تاني بتظهر مع أول تحميل من الخادم (فتح الصفحة أو السحب للتحديث).
+  Future<void> _load({bool fromCache = false}) async {
+    // بعد 10 دقايق من آخر تحميل من الخادم نرجع للخادم، عشان تعديلات/حذف جهاز تاني
+    // ما تفضلش مستخبية في الكاش. (ملخص العروض نفسه بيتحسب من الخادم مش من القائمة دي.)
+    final last = _lastServerLoad;
+    if (fromCache &&
+        (last == null ||
+            DateTime.now().difference(last) > const Duration(minutes: 10))) {
+      fromCache = false;
+    }
     setState(() {
       _loading = true;
       _error = false;
     });
     try {
-      final snap = await _col
-          .orderBy('name')
-          .limit(_limit)
-          .get(const GetOptions(source: Source.server));
+      final query = _col.orderBy('name').limit(_limit);
+      QuerySnapshot<_Json>? cached;
+      if (fromCache) {
+        try {
+          final c = await query.get(const GetOptions(source: Source.cache));
+          if (c.docs.isNotEmpty) cached = c;
+        } catch (_) {}
+      }
+      final snap =
+          cached ?? await query.get(const GetOptions(source: Source.server));
+      if (cached == null) _lastServerLoad = DateTime.now();
+      ReadMeter.query('owner:products', snap);
       if (!mounted) return;
       setState(() {
         _docs = snap.docs;
@@ -1362,47 +1674,16 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     });
   }
 
-  /// ملخص العروض والأكثر مبيعًا على مستند المحل (الرئيسية بتقراه من هنا).
-  Future<void> _syncHighlights() async {
-    try {
-      Map<String, dynamic> item(_Json m) => {
-        'name': (m['name'] ?? '').toString(),
-        'price': (m['price'] as num?) ?? 0,
-        if (m['oldPrice'] is num) 'oldPrice': m['oldPrice'],
-        if ((m['offerText'] ?? '').toString().trim().isNotEmpty)
-          'offerText': (m['offerText'] ?? '').toString().trim(),
-        if (m['offerEndsAt'] is Timestamp) 'offerEndsAt': m['offerEndsAt'],
-        'image': (m['image'] ?? '').toString(),
-      };
-      bool on(_Json m) => m['available'] != false && m['isAvailable'] != false;
-      final offers = <Map<String, dynamic>>[];
-      final best = <Map<String, dynamic>>[];
-      for (final d in _docs) {
-        final m = d.data();
-        if (!on(m)) continue;
-        final p = (m['price'] as num?) ?? 0;
-        final o = m['oldPrice'];
-        final e = m['offerEndsAt'];
-        final expired = isOfferExpired(
-          e is Timestamp ? e.toDate() : null,
-          DateTime.now(),
-        );
-        final offerText = (m['offerText'] ?? '').toString().trim();
-        final hasPriceDiscount = o is num && o > p;
-        if ((hasPriceDiscount || offerText.isNotEmpty) &&
-            !expired &&
-            offers.length < 12) {
-          offers.add(item(m));
-        }
-        if (m['bestSeller'] == true && best.length < 12) best.add(item(m));
-      }
-      await _storeRef.update({
-        'offerItems': offers,
-        'bestItems': best,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await CatalogService.bump();
-    } catch (_) {}
+  /// بعد أي تعديل صنف: القائمة المجمّعة ← ملخص العروض ← الفهرس ← رقم الإصدار
+  /// (الترتيب في CatalogSync.afterProductsChanged)، وبعدها إعادة عرض القائمة من الكاش.
+  /// بيرجع true لو ملخص العروض اتحدث.
+  Future<bool> _afterProductChange(String productId) async {
+    final ok = await CatalogSync.afterProductsChanged(
+      widget.storeId,
+      productIds: [productId],
+    );
+    await _load(fromCache: true);
+    return ok;
   }
 
   Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
@@ -1414,8 +1695,12 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     if (result == null || !mounted) return;
 
     try {
-      if (doc == null) {
-        await _col.doc().set({
+      final newRef = doc == null ? _col.doc() : null;
+      final savedId = doc?.id ?? newRef!.id;
+      // قبل الكتابة: لو التطبيق اتقفل قبل مزامنة القائمة، تتكمّل أول ما الصفحة تتفتح.
+      await CatalogSync.markPending(widget.storeId, [savedId]);
+      if (newRef != null) {
+        await newRef.set({
           'name': result.name,
           'price': result.price,
           'image': result.image,
@@ -1429,9 +1714,12 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        await _syncCount();
+        // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+        try {
+          await _syncCount();
+        } catch (_) {}
       } else {
-        await doc.reference.update({
+        await doc!.reference.update({
           'name': result.name,
           'price': result.price,
           'image': result.image,
@@ -1442,10 +1730,8 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }
-      await CatalogService.bump();
-      await _load();
-      await _syncHighlights();
-      _say('تم حفظ الصنف.');
+      final ok = await _afterProductChange(savedId);
+      _say(StoreHighlights.withNote('تم حفظ الصنف', ok));
     } catch (e) {
       _say('تعذر حفظ الصنف: ${_why(e)}');
     }
@@ -1557,11 +1843,13 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         };
       }
       update['updatedAt'] = FieldValue.serverTimestamp();
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.update(update);
-      await CatalogService.bump();
-      await _load();
-      await _syncHighlights();
-      _say(choice.cancel ? 'اتلغى العرض.' : 'تم تفعيل العرض.');
+      final ok = await _afterProductChange(doc.id);
+      _say(StoreHighlights.withNote(
+        choice.cancel ? 'اتلغى العرض' : 'تم تفعيل العرض',
+        ok,
+      ));
     } catch (e) {
       _say('تعذر تفعيل العرض: ${_why(e)}');
     }
@@ -1569,14 +1857,14 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
 
   Future<void> _toggle(QueryDocumentSnapshot<_Json> doc, bool value) async {
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.update({
         'available': value,
         'isAvailable': value,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      await CatalogService.bump();
-      await _load();
-      await _syncHighlights();
+      final ok = await _afterProductChange(doc.id);
+      if (!ok) _say(StoreHighlights.withNote('اتغيرت حالة الصنف', ok));
     } catch (_) {
       _say('تعذر تغيير حالة الصنف.');
     }
@@ -1593,12 +1881,14 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     );
     if (!ok || !mounted) return;
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.delete();
-      await _syncCount();
-      await CatalogService.bump();
-      await _load();
-      await _syncHighlights();
-      _say('تم حذف الصنف.');
+      // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+      try {
+        await _syncCount();
+      } catch (_) {}
+      final ok = await _afterProductChange(doc.id);
+      _say(StoreHighlights.withNote('تم حذف الصنف', ok));
     } catch (_) {
       _say('تعذر حذف الصنف.');
     }
@@ -2276,87 +2566,6 @@ class _OfferDialogState extends State<_OfferDialog> {
 }
 
 
-///// الطلبات الخاصة المرفقة بالطلب العادي في النظام الجديد.
-/// نستخدم نفس قائمة الطلبات المحمّلة بالفعل بدل مستمع Firestore إضافي.
-class _OwnerSpecialRequestsTab extends StatelessWidget {
-  final List<AppOrder> orders;
-  const _OwnerSpecialRequestsTab({required this.orders});
-
-  @override
-  Widget build(BuildContext context) {
-    final specialOrders = orders
-        .where((order) => order.specialRequest != null)
-        .toList(growable: false);
-
-    if (specialOrders.isEmpty) {
-      return const EmptyState(
-        icon: Icons.inbox_outlined,
-        title: 'لا توجد طلبات خاصة',
-        message: 'الطلبات الخاصة المرسلة ضمن الطلبات العادية هتظهر هنا.',
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: specialOrders.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final order = specialOrders[index];
-        final data = order.specialRequest!;
-        final date = order.createdAt;
-
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      order.displayCustomer.isEmpty
-                          ? 'عميل'
-                          : order.displayCustomer,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  OrderStatusPill(status: order.status),
-                ],
-              ),
-              if (date != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Text(
-                    formatDateTime(date),
-                    style: TextStyle(color: kMuted, fontSize: 12),
-                  ),
-                ),
-              const SizedBox(height: 10),
-              _SpecialRequestBox(data: data),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// بوكس «طلب خاص» واضح لصاحب المحل: الوصف + الكمية + الصورة + الصوت.
 class _SpecialRequestBox extends StatelessWidget {
   final Map<String, dynamic> data;
@@ -2366,7 +2575,8 @@ class _SpecialRequestBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = (data['description'] ?? '').toString().trim();
     final imageUrl = (data['imageUrl'] ?? '').toString().trim();
-    final voiceBase64 = (data['voiceBase64'] ?? '').toString().trim();
+    final voiceUrl = (data['voiceUrl'] ?? '').toString().trim();
+    final voice = voiceUrl.isNotEmpty ? voiceUrl : (data['voiceBase64'] ?? '').toString().trim();
     final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -2435,9 +2645,9 @@ class _SpecialRequestBox extends StatelessWidget {
               ),
             ),
           ],
-          if (voiceBase64.isNotEmpty) ...[
+          if (voice.isNotEmpty) ...[
             const SizedBox(height: 8),
-            _SpecialVoicePlayer(encoded: voiceBase64),
+            _SpecialVoicePlayer(encoded: voice),
           ],
         ],
       ),
@@ -2476,7 +2686,10 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
   Future<void> _play() async {
     try {
       await _player.stop();
-      await _player.setSource(audio.BytesSource(base64Decode(widget.encoded)));
+      // الطلبات الجديدة: رابط Cloudinary. القديمة: base64 جوه الطلب.
+      await _player.setSource(widget.encoded.startsWith('https://')
+          ? audio.UrlSource(widget.encoded)
+          : audio.BytesSource(base64Decode(widget.encoded)));
       await _player.resume();
       if (mounted) setState(() => _playing = true);
     } catch (_) {
@@ -2503,4 +2716,62 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
       label: Text(_playing ? 'إيقاف مؤقت' : 'تشغيل الرسالة الصوتية'),
     ),
   );
+}
+
+
+/// رسوم خدمة وصّلي على المحل: المستحق والمدفوع والمتبقي (من كل الطلبات المسلّمة).
+class StoreFeeSummaryView extends StatefulWidget {
+  final String storeId;
+
+  /// لو اتبعت، بنستخدمه بدل قراءة جديدة (عشان الصفحة اللي فوق ما تقراش مرتين).
+  final Future<StoreFeeSummary>? future;
+  const StoreFeeSummaryView({super.key, required this.storeId, this.future});
+
+  @override
+  State<StoreFeeSummaryView> createState() => _StoreFeeSummaryViewState();
+}
+
+class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
+  late Future<StoreFeeSummary> _future = widget.future ?? StoreFeeService.load(widget.storeId);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<StoreFeeSummary>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Row(children: [
+            const Expanded(child: Text('تعذر تحميل رسوم وصّلي.', style: TextStyle(fontSize: 12.5))),
+            TextButton(
+              onPressed: () => setState(() => _future = StoreFeeService.load(widget.storeId)),
+              child: const Text('حاول تاني'),
+            ),
+          ]);
+        }
+        final s = snap.data;
+        if (s == null) return const LinearProgressIndicator(minHeight: 2);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('رسوم خدمة وصّلي', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('المستحقة على المحل: ${formatPrice(s.due)}'),
+            Text('المدفوعة: ${formatPrice(s.paid)}'),
+            Text(
+              'المتبقي: ${formatPrice(s.outstanding)}',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: s.outstandingMinor > 0 ? kDanger : kSuccess,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'العميل بيدفع رسوم الخدمة (2%، من 5 لـ15 جنيه) ضمن إجمالي الطلب، فالمحل بيستلمها ويوردها لوصّلي.',
+              style: TextStyle(fontSize: 11.5),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }

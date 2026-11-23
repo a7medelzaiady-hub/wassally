@@ -1,4 +1,23 @@
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import {
+  OrderGroupError,
+  orderGroupCode,
+  parseOrderGroupId,
+  planOrderGroup,
+} from "./order_groups";
+import { DELIVERY_PIN_MAX_ATTEMPTS, deriveDeliveryPin, equalPin, isDeliveryPin } from "./delivery_pin";
+import {
+  QUICK_PIN_STATUSES,
+  QuickRuleError,
+  applyQuickAction,
+  newQuickOrder,
+  quickDeliveredPatch,
+  quickDeliveryBlocker,
+  resolveQuickSettings,
+  validateQuickNotes,
+  validateQuickStores,
+  type QuickActor,
+} from "./quick_orders";
 
 interface Env {
   FIREBASE_PROJECT_ID: string;
@@ -8,25 +27,92 @@ interface Env {
   DEFAULT_DELIVERY_FEE?: string;
   MAX_ORDER_LINES?: string;
   MAX_LINE_QTY?: string;
+  // الحد الأقصى لطلبات العميل الواحد في اليوم (بتوقيت القاهرة). الافتراضي 10.
+  MAX_ORDERS_PER_DAY?: string;
   CLOUDINARY_CLOUD_NAME?: string;
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
   UPLOAD_RATE_LIMITER: RateLimit;
+  // حد تقريبي لطلبات الإنشاء/التعديل لكل عميل (قبل أي قراءة Firestore). اختياري: لو مش مضبوط السلوك زي ما كان.
+  ORDER_RATE_LIMITER?: RateLimit;
+  // App Check: off (الافتراضي، بدون أي تغيير) | monitor (تسجيل فقط) | enforce (رفض الطلب بدون رمز صالح).
+  APP_CHECK_MODE?: string;
+  // رقم مشروع Firebase (Project number) المطلوب للتحقق من رموز App Check.
+  FIREBASE_PROJECT_NUMBER?: string;
+  // سر اشتقاق رمز التسليم (secret في Cloudflare، مش في wrangler.toml). من غيره ميزة الرمز متوقفة.
+  DELIVERY_PIN_SECRET?: string;
 }
 
 type JsonMap = Record<string, unknown>;
 type FirestoreDoc = { name: string; fields?: Record<string, unknown>; updateTime?: string };
 
 class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  // code: machine-readable reason for the app (e.g. "catalog_mismatch" = the customer's cached
+  // catalog is behind; the app then stops trusting its aggregated menu for that store).
+  constructor(readonly status: number, message: string, readonly code?: string) {
     super(message);
   }
 }
+
+const CATALOG_MISMATCH = "catalog_mismatch";
 
 const firebaseKeys = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),
 );
 let cachedAccessToken: { token: string; expiresAt: number } | undefined;
+const appCheckKeys = createRemoteJWKSet(new URL("https://firebaseappcheck.googleapis.com/v1/jwks"));
+
+export type AppCheckMode = "off" | "monitor" | "enforce";
+
+export function appCheckMode(value: unknown): AppCheckMode {
+  const mode = String(value ?? "").trim().toLowerCase();
+  return mode === "monitor" || mode === "enforce" ? mode : "off";
+}
+
+/**
+ * يتحقق من رمز Firebase App Check في الهيدر X-Firebase-AppCheck.
+ * off: لا يفعل شيئًا. monitor: يسجّل الفشل ويكمل. enforce: يرفض الطلب.
+ */
+async function assertAppCheck(request: Request, env: Env): Promise<void> {
+  const mode = appCheckMode(env.APP_CHECK_MODE);
+  if (mode === "off") return;
+  const projectNumber = String(env.FIREBASE_PROJECT_NUMBER ?? "").trim();
+  if (!/^[0-9]{6,20}$/.test(projectNumber)) {
+    if (mode === "enforce") throw new HttpError(503, "إعدادات التحقق من التطبيق غير مكتملة.");
+    console.warn("App Check monitor skipped: FIREBASE_PROJECT_NUMBER is not configured");
+    return;
+  }
+  const token = request.headers.get("X-Firebase-AppCheck") ?? "";
+  let failure = "";
+  let keysUnavailable = false;
+  if (!token) {
+    failure = "missing";
+  } else {
+    try {
+      const { payload } = await jwtVerify(token, appCheckKeys, {
+        issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
+        audience: `projects/${projectNumber}`,
+        algorithms: ["RS256"],
+      });
+      if (typeof payload.sub !== "string" || !payload.sub) failure = "no-app-id";
+    } catch (error) {
+      // تعذر جلب مفاتيح Google (شبكة/مهلة) ≠ رمز غير صالح؛ لا نلوم نسخة التطبيق على عطل خارجي.
+      const code = String((error as { code?: unknown })?.code ?? "");
+      // ERR_JOSE_GENERIC: رد غير 200 أو JSON تالف من خادم مفاتيح Google.
+      keysUnavailable = !code || code === "ERR_JWKS_TIMEOUT" || code === "ERR_JWKS_INVALID" ||
+        code === "ERR_JOSE_GENERIC";
+      failure = keysUnavailable ? "keys-unavailable" : "invalid";
+    }
+  }
+  if (!failure) return;
+  if (mode === "enforce") {
+    if (keysUnavailable) {
+      throw new HttpError(503, "تعذر التحقق من التطبيق حاليًا. حاول مرة أخرى بعد قليل.");
+    }
+    throw new HttpError(401, "تعذر التحقق من نسخة التطبيق. حدّث التطبيق وحاول تاني.");
+  }
+  console.warn("App Check monitor: request without a valid token", failure);
+}
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   validSince: number;
@@ -50,7 +136,7 @@ function corsHeaders(request: Request, env: Env): Headers {
   }
   if (origin && allowed.includes(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Firebase-AppCheck");
     headers.set("Access-Control-Allow-Methods", "POST, PATCH, OPTIONS");
     headers.set("Access-Control-Max-Age", "600");
   }
@@ -99,7 +185,7 @@ export function shouldRequeueCourierOrder(data: JsonMap): boolean {
 
 export const COURIER_FEED_FIELDS = [
   "storeId", "storeName", "area", "items", "subtotal", "deliveryFee",
-  "finalDeliveryFee", "discount", "total", "status", "createdAt",
+  "finalDeliveryFee", "discount", "total", "status", "createdAt", "groupCode",
 ] as const;
 
 export function sanitizeCourierFeed(data: JsonMap): JsonMap {
@@ -123,6 +209,8 @@ export function courierAvailableFeedData(data: JsonMap): JsonMap {
     total: data.total,
     status: "preparing",
     createdAt: data.createdAt,
+    // كود التجميع بس (6 حروف) من غير groupId الكامل ولا أي بيانات للعميل.
+    ...(typeof data.groupCode === "string" && data.groupCode ? { groupCode: data.groupCode } : {}),
   };
   return sanitizeCourierFeed(feed);
 }
@@ -261,7 +349,7 @@ export function resolveCatalogOptions(
   for (const name of selected) {
     const indexes = matches.get(name) ?? [];
     if (indexes.length !== 1) {
-      throw new HttpError(409, "أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.");
+      throw new HttpError(409, "أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.", CATALOG_MISMATCH);
     }
     const groupIndex = indexes[0];
     counts[groupIndex] += 1;
@@ -280,7 +368,7 @@ export function resolveCatalogOptions(
   optionsTotal = money(optionsTotal);
   if (!Number.isFinite(expectedOptionsTotal) ||
       Math.abs(expectedOptionsTotal - optionsTotal) >= 0.01) {
-    throw new HttpError(409, "سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.");
+    throw new HttpError(409, "سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.", CATALOG_MISMATCH);
   }
   return { options: selected, optionsTotal };
 }
@@ -345,6 +433,7 @@ async function assertFirebaseUserActive(
 }
 
 async function verifyCustomer(request: Request, env: Env): Promise<string> {
+  await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
@@ -403,8 +492,9 @@ function documentPath(projectId: string, path: string): string {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
 }
 
-async function getDocument(env: Env, path: string, token: string): Promise<FirestoreDoc | null> {
+async function getDocument(env: Env, path: string, token: string, signal?: AbortSignal): Promise<FirestoreDoc | null> {
   const result = await fetch(documentPath(env.FIREBASE_PROJECT_ID, path), {
+    signal,
     headers: { Authorization: `Bearer ${token}` },
   });
   if (result.status === 404) return null;
@@ -421,6 +511,7 @@ export function isRecentAuthTime(authTime: number, nowSeconds = Math.floor(Date.
 }
 
 async function verifyRecentCustomer(request: Request, env: Env): Promise<string> {
+  await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) throw new HttpError(401, "سجّل الدخول من جديد.");
@@ -453,6 +544,29 @@ function firestoreDocumentsUrl(env: Env): string {
 
 function firestoreDocumentName(env: Env, path: string): string {
   return `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+// The app shows stores from one aggregated index (app_info/store_index). When a store is
+// deactivated here, nobody is left to remove its entry, so do it now and bump the index version
+// (customers re-read the index once). Best effort: failure must not block account deletion.
+async function removeStoreFromCatalogIndex(env: Env, token: string, storeId: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(storeId)) return;
+  try {
+    await commitFirestoreWrites(env, token, [
+      {
+        update: { name: firestoreDocumentName(env, "app_info/store_index"), fields: {} },
+        updateMask: { fieldPaths: [`\`s_${storeId}\``] },
+      },
+      {
+        transform: {
+          document: firestoreDocumentName(env, "app_info/catalog_versions"),
+          fieldTransforms: [{ fieldPath: "stores", increment: { integerValue: "1" } }],
+        },
+      },
+    ]);
+  } catch (error) {
+    console.error("Catalog index cleanup failed", error instanceof Error ? error.message : error);
+  }
 }
 
 async function commitFirestoreWrites(env: Env, token: string, writes: any[]): Promise<void> {
@@ -730,6 +844,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
         },
         updateMask: { fieldPaths: ["active", "ownerDeleted", "updatedAt", "ownerUid"] },
       }]);
+      if (store) await removeStoreFromCatalogIndex(env, token, ownedStoreId);
     }
   }
 
@@ -808,17 +923,41 @@ async function batchGetDocuments(env: Env, paths: string[], token: string): Prom
     },
   );
   if (!result.ok) throw new HttpError(503, "تعذر تحميل كتالوج الأصناف.");
-  const text = await result.text();
   const docs = new Map<string, JsonMap>();
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    const item = JSON.parse(line) as { found?: FirestoreDoc };
+  for (const item of parseBatchGetResponse(await result.text())) {
     if (item.found?.name) {
       const path = item.found.name.split("/documents/")[1];
       docs.set(path, decodeFields(item.found.fields ?? {}));
     }
   }
   return docs;
+}
+
+/**
+ * رد Firestore REST على documents:batchGet بيرجع JSON array منسّق على كذا سطر
+ * ([{"found": ...}, {"missing": ...}]). الكود القديم كان بيعمل JSON.parse لكل سطر لوحده،
+ * فأول طلب حقيقي فيه أصناف كتالوج كان بيقع بـ SyntaxError = HTTP 500.
+ * بنقبل الـarray (الشكل الحقيقي)، أو object واحد، أو سطر لكل عنصر (NDJSON).
+ */
+export function parseBatchGetResponse(text: string): Array<{ found?: FirestoreDoc; missing?: string }> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) return parsed as Array<{ found?: FirestoreDoc }>;
+    if (parsed && typeof parsed === "object") return [parsed as { found?: FirestoreDoc }];
+  } catch {
+    // مش JSON واحد: نجرب سطر لكل عنصر.
+  }
+  try {
+    return trimmed.split("\n").filter((line) => line.trim()).map((line) => {
+      const item = JSON.parse(line) as unknown;
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("bad item");
+      return item as { found?: FirestoreDoc };
+    });
+  } catch {
+    throw new HttpError(503, "تعذر قراءة كتالوج الأصناف من قاعدة البيانات.");
+  }
 }
 
 function productFromLegacy(store: JsonMap, name: string): JsonMap {
@@ -918,7 +1057,7 @@ async function resolveItems(
     if (productId) {
       const path = `stores/${encodeURIComponent(storeId)}/products/${encodeURIComponent(productId)}`;
       const found = productDocs.get(path);
-      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.");
+      if (!found) throw new HttpError(409, "أحد الأصناف لم يعد موجودًا في كتالوج المحل.", CATALOG_MISMATCH);
       product = found;
     } else {
       const name = String(line?.name ?? "").trim();
@@ -928,7 +1067,7 @@ async function resolveItems(
       isLegacy = true;
     }
     if (product.available === false || product.isAvailable === false) {
-      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.");
+      throw new HttpError(409, "أحد الأصناف غير متاح حاليًا.", CATALOG_MISMATCH);
     }
     const name = String(product.name ?? "").trim();
     if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
@@ -946,7 +1085,7 @@ async function resolveItems(
     }
     // expectedPrice is only a stale-cart check; the saved price and option surcharges come from Firestore.
     if (!catalogPriceMatches(expectedPrice, price)) {
-      throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.");
+      throw new HttpError(409, "سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.", CATALOG_MISMATCH);
     }
     subtotal = money(subtotal + price * qty);
     items.push({
@@ -965,18 +1104,16 @@ async function resolveItems(
   return { items, subtotal };
 }
 
-export function courierTopicMessage(orderId: string, storeName: string) {
-  const shortId = "#" + orderId.slice(0, 5).toUpperCase();
+export function courierTopicMessage(storeName: string) {
   return {
     message: {
       topic: "couriers",
       notification: {
-        title: "طلب توصيل جديد متاح " + shortId,
+        title: "طلب توصيل جديد متاح",
         body: String(storeName || "محل").slice(0, 80) + " • افتح التطبيق لمراجعة الطلب والتقديم عليه",
       },
       data: {
         type: "available_order",
-        orderId,
       },
       android: {
         priority: "HIGH",
@@ -990,7 +1127,6 @@ export function courierTopicMessage(orderId: string, storeName: string) {
 async function notifyCouriersOfNewOrder(
   env: Env,
   accessToken: string,
-  orderId: string,
   storeName: string,
 ): Promise<void> {
   const sent = await fetch(
@@ -1001,13 +1137,83 @@ async function notifyCouriersOfNewOrder(
         Authorization: `Bearer ${accessToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(courierTopicMessage(orderId, storeName)),
+      body: JSON.stringify(courierTopicMessage(storeName)),
     },
   );
   if (!sent.ok) {
     const detail = (await sent.text()).slice(0, 500);
     throw new Error(`FCM send failed (${sent.status}): ${detail}`);
   }
+}
+
+/**
+ * رسوم خدمة وصّلي على العميل: 2% من الأصناف (بعد الخصم)، أقل حاجة 5 وأقصى حاجة 15 جنيه.
+ * بالقروش عشان نتجنب كسور العشرية (نفس WasallyServiceFee في التطبيق).
+ */
+export function serviceFeeFor(itemsAfterDiscount: number): number {
+  if (!Number.isFinite(itemsAfterDiscount) || itemsAfterDiscount <= 0) return 0;
+  const piastres = Math.round(itemsAfterDiscount * 100);
+  const computed = Math.floor((piastres * 200 + 5000) / 10000);
+  return Math.min(1500, Math.max(500, computed)) / 100;
+}
+
+export const ORDERS_PAUSED_MESSAGE = "استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.";
+export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
+/**
+ * حد طلبات لكل عميل على إنشاء/تعديل الطلب، قبل أي قراءة Firestore: طلب مرفوض بالفاصل (20 ثانية)
+ * أو بالحد اليومي كان بيكلّف قراءات كتير، وتعديل الطلب (PATCH) ماكانش عليه أي حد. من غير ده حساب
+ * واحد بتوكن صالح يقدر يستهلك حصة Spark اليومية. لو الـbinding مش مضبوط أو فشل، الطلب بيكمل
+ * (الحماية دي طبقة إضافية، وما تعطّلش العملاء لو Cloudflare نفسه فيه عطل).
+ */
+export async function assertOrderRateLimit(
+  limiter: { limit(options: { key: string }): Promise<{ success: boolean }> } | undefined,
+  uid: string,
+): Promise<void> {
+  if (!limiter) return;
+  let success = true;
+  try {
+    ({ success } = await limiter.limit({ key: `order:${uid}` }));
+  } catch (error) {
+    console.warn("order rate limiter unavailable", error instanceof Error ? error.name : typeof error);
+    return;
+  }
+  if (!success) {
+    throw new HttpError(429, "طلبات كتير في وقت قصير. استنى دقيقة وحاول تاني.", "rate_limited");
+  }
+}
+
+const DAILY_LIMIT_CODE = "daily_limit";
+
+/** مفتاح اليوم بتوقيت القاهرة (YYYY-MM-DD)، بيراعي التوقيت الصيفي تلقائيًا. */
+export function cairoDayKey(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+/**
+ * الحد اليومي المطبّق: قيمة app_info/delivery_areas.maxOrdersPerDay لو رقم صحيح من 1 لـ100
+ * (بدون قراءة إضافية: المستند بيتقرا أصلًا)، وإلا MAX_ORDERS_PER_DAY من الإعدادات، وإلا 10.
+ */
+export function resolveMaxOrdersPerDay(configured: unknown, envValue: unknown): number {
+  const fromDoc = Number(configured);
+  if (typeof configured === "number" && Number.isInteger(fromDoc) && fromDoc >= 1 && fromDoc <= 100) {
+    return fromDoc;
+  }
+  const fromEnv = Number(envValue);
+  if (Number.isInteger(fromEnv) && fromEnv >= 1 && fromEnv <= 100) return fromEnv;
+  return DEFAULT_MAX_ORDERS_PER_DAY;
+}
+
+/** عدد طلبات العميل المسجّلة النهارده (صفر لو آخر عدّاد من يوم تاني). */
+export function ordersCountedToday(limit: JsonMap, dayKey: string): number {
+  const count = limit.dailyCount;
+  return limit.day === dayKey && typeof count === "number" && Number.isFinite(count) && count > 0
+    ? Math.floor(count)
+    : 0;
 }
 
 export function isCustomerRestricted(
@@ -1029,6 +1235,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
   }
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   let input: any;
   try {
     input = await request.json();
@@ -1055,23 +1262,38 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     const description = String(rawSpecialRequest.description ?? "").trim();
     const quantity = Number(rawSpecialRequest.quantity ?? 1);
     const imageUrl = String(rawSpecialRequest.imageUrl ?? "");
-    const voiceBase64 = String(rawSpecialRequest.voiceBase64 ?? "");
+    const voiceUrl = String(rawSpecialRequest.voiceUrl ?? "");
+    // الصوت جوه مستند الطلب (base64) اتلغى: كان بيكبّر الطلب لحد 700KB.
+    if (String(rawSpecialRequest.voiceBase64 ?? "")) {
+      throw new HttpError(400, "حدّث التطبيق عشان تبعت رسالة صوتية.");
+    }
     if (description.length > 300 || !Number.isInteger(quantity) || quantity < 1 || quantity > 99 ||
         (imageUrl && (!isCloudinaryImageUrl(imageUrl) || imageUrl.length > 450)) ||
-        voiceBase64.length > 700000 ||
-        (voiceBase64 && !/^[A-Za-z0-9+/]+={0,2}$/.test(voiceBase64)) ||
-        (!description && !imageUrl && !voiceBase64)) {
+        (voiceUrl && !isCloudinaryVoiceUrl(voiceUrl)) ||
+        (!description && !imageUrl && !voiceUrl)) {
       throw new HttpError(400, "راجع وصف الطلب الخاص والمرفقات.");
+    }
+    if (voiceUrl &&
+        !cloudinaryPublicIdFromUrl(voiceUrl).startsWith(await cloudinarySpecialRequestFolder(uid) + "/")) {
+      throw new HttpError(403, "الرسالة الصوتية لا تخص حسابك.");
     }
     specialRequest = {
       description,
       quantity,
       ...(imageUrl ? { imageUrl } : {}),
-      ...(voiceBase64 ? { voiceBase64 } : {}),
+      ...(voiceUrl ? { voiceUrl } : {}),
       createdAt: String(rawSpecialRequest.createdAt ?? "").slice(0, 40),
     };
   }
   const contact = validateContact(input.contact);
+  // تجميع اختياري يختاره العميل لطلبات نفس رحلة التسوق (محل مختلف لكل طلب).
+  let groupId = "";
+  try {
+    groupId = parseOrderGroupId(input.groupId);
+  } catch (error) {
+    if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+    throw error;
+  }
 
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -1087,20 +1309,34 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const existing = await getDocument(env, orderPath, token);
   if (existing) {
     const old = decodeFields(existing.fields ?? {});
-    if (old.userId === uid) return response({ orderId, reused: true });
+    if (old.userId === uid) {
+      if (!isSameStoreOrderReplay(old.userId, old.storeId, uid, storeId)) {
+        throw new HttpError(409, "معرّف الطلب مرتبط بمحل مختلف. أعد إرسال الطلب.");
+      }
+      return response({ orderId, reused: true });
+    }
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
-  const [storeDoc, restrictionDoc, limitDoc, areasDoc] = await Promise.all([
+  const [storeDoc, restrictionDoc, limitDoc, areasDoc, groupDoc] = await Promise.all([
     getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
     getDocument(env, `customer_restrictions/${uid}`, token),
     getDocument(env, `orderLimits/${uid}`, token),
     getDocument(env, "app_info/delivery_areas", token),
+    groupId ? getDocument(env, `order_groups/${groupId}`, token) : Promise.resolve(null),
   ]);
+  // مفتاح طوارئ من الإدارة: app_info/delivery_areas.ordersPaused = true يوقف الطلبات الجديدة
+  // (المستند ده بيتقري أصلًا هنا، فمفيش قراءة زيادة).
+  if (areasDoc && decodeFields(areasDoc.fields ?? {}).ordersPaused === true) {
+    throw new HttpError(503, ORDERS_PAUSED_MESSAGE, "orders_paused");
+  }
   if (!storeDoc) throw new HttpError(404, "المحل غير موجود.");
   const store = decodeFields(storeDoc.fields ?? {});
   if (store.active !== undefined && store.active !== true) {
     throw new HttpError(409, "المحل مغلق حاليًا.");
+  }
+  if (store.isOpen === false) {
+    throw new HttpError(409, "المحل مغلق الآن. جرّب بعد شوية.", "store_closed");
   }
   const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : null;
   if (isCustomerRestricted(restriction)) {
@@ -1110,6 +1346,21 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const lastAt = previousLimit.lastAt instanceof Date ? previousLimit.lastAt.getTime() : 0;
   if (lastAt && Date.now() - lastAt < 20_000) {
     throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.");
+  }
+  // الحد اليومي: العدّاد في نفس مستند orderLimits وبيتكتب في نفس الـcommit بشرط updateTime،
+  // فطلبين متزامنين مش هيعدّوا الحد (واحد بس بينجح والتاني بياخد 409). مفيش قراءات ولا كتابات زيادة.
+  const dayKey = cairoDayKey(new Date());
+  const todaysOrders = ordersCountedToday(previousLimit, dayKey);
+  const maxPerDay = resolveMaxOrdersPerDay(
+    areasDoc ? decodeFields(areasDoc.fields ?? {}).maxOrdersPerDay : undefined,
+    env.MAX_ORDERS_PER_DAY,
+  );
+  if (todaysOrders >= maxPerDay) {
+    throw new HttpError(
+      429,
+      `وصلت للحد اليومي للطلبات (${maxPerDay} طلبات). جرّب بكرة أو تواصل مع الدعم.`,
+      DAILY_LIMIT_CODE,
+    );
   }
 
   const rawAreas = areasDoc ? decodeFields(areasDoc.fields ?? {}).areas : null;
@@ -1137,24 +1388,30 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 
   const { items, subtotal } = await resolveItems(env, token, storeId, store, lines);
 
-  let discount = 0;
-  let normalizedPromo = "";
-  if (promoCode) {
-    const promoDoc = await getDocument(env, `promos/${promoCode}`, token);
-    const promo = promoDoc ? decodeFields(promoDoc.fields ?? {}) : {};
-    const percent = typeof promo.percent === "number" ? promo.percent : 0;
-    if (promo.active !== true || !Number.isFinite(percent) || percent <= 0 || percent > 50) {
-      throw new HttpError(409, "الكوبون لم يعد صالحًا.");
-    }
-    discount = calculateDiscount(subtotal, percent);
-    if (discount > 0 && discount < subtotal) normalizedPromo = promoCode;
-    else discount = 0;
-  }
-  const total = money(subtotal + deliveryFee - discount);
+  // الكوبونات موقوفة: التطبيق مابقاش يبعت كود. أي كود بيوصل هنا مرفوض بدل ما يتعمله خصم.
+  // للرجوع: استرجع منطق الخصم من تاريخ git (promos/{code}).
+  if (promoCode) throw new HttpError(409, "الكوبونات غير مفعّلة حاليًا.");
+  const discount = 0;
+  const normalizedPromo = "";
+  const serviceFee = serviceFeeFor(subtotal - discount);
+  const total = money(subtotal + deliveryFee - discount + serviceFee);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
     throw new HttpError(409, "إجمالي الطلب اتغير. راجع السلة قبل تأكيد الطلب.");
+  }
+
+  // التجميع بيتراجع بعد كل فحوصات الطلب، والمستند بيتكتب في نفس الـcommit (بشرط).
+  let groupPlan: ReturnType<typeof planOrderGroup> | null = null;
+  if (groupId) {
+    try {
+      groupPlan = planOrderGroup(groupDoc ? decodeFields(groupDoc.fields ?? {}) : null, {
+        uid, orderId, storeId, now: new Date(),
+      });
+    } catch (error) {
+      if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+      throw error;
+    }
   }
 
   const storeName = String(store.name ?? "").trim();
@@ -1168,11 +1425,13 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     ...(specialRequest ? { specialRequest } : {}),
     subtotal,
     deliveryFee,
+    serviceFee,
     total,
     paymentMethod: "cash",
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
+    ...(groupId ? { groupId, groupCode: orderGroupCode(groupId) } : {}),
   };
   if (!storeName || storeName.length > 100) {
     throw new HttpError(409, "بيانات المحل غير مكتملة.");
@@ -1197,13 +1456,22 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     {
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/orderLimits/${uid}`,
-        fields: encodeFields({ lastAt: new Date() }),
+        fields: encodeFields({ lastAt: new Date(), day: dayKey, dailyCount: todaysOrders + 1 }),
       },
       updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
       currentDocument: limitDoc?.updateTime
         ? { updateTime: limitDoc.updateTime }
         : { exists: false },
     },
+    ...(groupPlan ? [{
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/order_groups/${groupId}`,
+        fields: encodeFields(groupPlan.fields),
+      },
+      currentDocument: groupPlan.isNew || !groupDoc?.updateTime
+        ? { exists: false }
+        : { updateTime: groupDoc.updateTime },
+    }] : []),
   ];
   const committed = await fetch(
     `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
@@ -1213,21 +1481,25 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "تم تغيير الطلب بالتزامن. راجع طلباتك قبل إعادة المحاولة.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
   // الإشعار يُرسل من الخادم بعد نجاح حفظ الطلب فقط. فشل FCM لا يلغي الطلب.
   try {
-    await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
+    await notifyCouriersOfNewOrder(env, token, String(order.storeName));
   } catch (error) {
     console.error("Courier push notification failed", error);
   }
-  return response({ orderId, subtotal, deliveryFee, discount, total, items });
+  return response({
+    orderId, subtotal, deliveryFee, discount, total, items,
+    ...(groupId ? { groupCode: orderGroupCode(groupId) } : {}),
+  });
 }
 
 async function updateOrder(request: Request, env: Env, orderId: string): Promise<Response> {
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
   let input: any;
   try {
@@ -1291,7 +1563,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   } else {
     promoCode = "";
   }
-  const total = money(subtotal + deliveryFee - discount);
+  // الطلبات القديمة (قبل رسوم الخدمة) بتفضل من غير رسوم حتى بعد التعديل.
+  const serviceFee = typeof order.serviceFee === "number" ? serviceFeeFor(subtotal - discount) : 0;
+  const total = money(subtotal + deliveryFee - discount + serviceFee);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1302,11 +1576,15 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     ...order,
     items,
     subtotal,
+    ...(typeof order.serviceFee === "number" ? { serviceFee } : {}),
     total,
     notes,
     customerName,
   });
   delete updatedOrder.unavailableItems;
+  // An approval applies to the previous cart and must be renewed after editing.
+  delete updatedOrder.verifiedTotal;
+  delete updatedOrder.verifiedAt;
   if (discount > 0 && promoCode) {
     updatedOrder.discount = discount;
     updatedOrder.promoCode = promoCode;
@@ -1364,7 +1642,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "حالة الطلب اتغيرت أثناء التعديل. حدّث الصفحة وحاول مرة أخرى.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ تعديل الطلب.");
@@ -1387,6 +1665,31 @@ export function isCloudinaryImageUrl(value: unknown): boolean {
   }
 }
 
+/** رابط رسالة صوتية مرفوعة لمجلد الطلبات الخاصة على Cloudinary. */
+export function isCloudinaryVoiceUrl(value: unknown): boolean {
+  if (typeof value !== "string" || value.length > 450) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname === "res.cloudinary.com" &&
+      url.pathname.includes("/video/upload/") &&
+      url.pathname.includes("/special_requests/");
+  } catch {
+    return false;
+  }
+}
+
+/** public_id للأصل من رابط Cloudinary (من غير v123 والامتداد). */
+export function cloudinaryPublicIdFromUrl(value: string): string {
+  const segments = new URL(value).pathname.split("/").filter(Boolean);
+  const uploadIndex = segments.indexOf("upload");
+  if (uploadIndex < 0) return "";
+  const assetSegments = segments.slice(uploadIndex + 1);
+  if (assetSegments[0] && /^v\d+$/.test(assetSegments[0])) assetSegments.shift();
+  const last = assetSegments.pop() ?? "";
+  return [...assetSegments, last.replace(/\.[^.]+$/, "")].join("/");
+}
+
 export async function cloudinarySpecialRequestFolder(uid: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(uid));
   const hash = Array.from(new Uint8Array(digest), (byte) =>
@@ -1399,10 +1702,17 @@ export async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string
     throw new HttpError(503, "تعذر تنظيف صور الطلبات الخاصة من خدمة الصور.");
   }
   const prefix = await cloudinarySpecialRequestFolder(uid);
+  // الصور (image) والرسائل الصوتية (video على Cloudinary).
+  for (const resourceType of ["image", "video"]) {
+    await deleteCloudinaryPrefix(env, resourceType, prefix);
+  }
+}
+
+async function deleteCloudinaryPrefix(env: Env, resourceType: string, prefix: string): Promise<void> {
   let nextCursor = "";
   for (let page = 0; page < 10; page++) {
     const url = new URL(
-      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/image/upload`,
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/resources/${resourceType}/upload`,
     );
     const params = new URLSearchParams({ prefix, invalidate: "true" });
     if (nextCursor) params.set("next_cursor", nextCursor);
@@ -1464,6 +1774,19 @@ export function isUploadRequestLengthAllowed(value: string | null): boolean {
     length <= 5 * 1024 * 1024 + 64 * 1024;
 }
 
+/** رسالة صوتية من التطبيق: m4a (حاوية MP4 = ftyp) أو AAC خام (ADTS). */
+export function detectAudioContent(bytes: Uint8Array): { format: string; mime: string } | null {
+  if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(4, 8)) === "ftyp") {
+    return { format: "m4a", mime: "audio/mp4" };
+  }
+  if (bytes.length >= 7 && bytes[0] === 0xff && (bytes[1] & 0xf6) === 0xf0) {
+    return { format: "aac", mime: "audio/aac" };
+  }
+  return null;
+}
+
+export const MAX_VOICE_UPLOAD_BYTES = 1024 * 1024;
+
 export function detectImageContent(bytes: Uint8Array): { format: string; mime: string } | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return { format: "jpg", mime: "image/jpeg" };
@@ -1510,7 +1833,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners", "special_requests"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests", "quick_receipts"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
@@ -1518,6 +1841,20 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   }
 
   const token = await googleAccessToken(env);
+  // فواتير «طلباتك على السريع»: المندوب المعيّن بس، والطلب «جاري الشراء».
+  if (folder === "quick_receipts") {
+    const quickOrderId = String(input.get("orderId") ?? "");
+    if (!/^[A-Za-z0-9_-]{16,200}$/.test(quickOrderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+    const quickDoc = await getDocument(env, `quick_orders/${encodeURIComponent(quickOrderId)}`, token);
+    const quick = quickDoc ? decodeFields(quickDoc.fields ?? {}) : null;
+    if (!quick || quick.courierId !== uid || quick.status !== "purchasing") {
+      throw new HttpError(403, "مش مسموح لك ترفع فاتورة للطلب ده.");
+    }
+    const receiptBytes = new Uint8Array(await file.arrayBuffer());
+    const receiptImage = detectImageContent(receiptBytes);
+    if (!receiptImage) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+    return await signedCloudinaryImageUpload(env, receiptBytes, receiptImage, `quick_receipts/${quickOrderId}`);
+  }
   const [adminDoc, ownerDoc, roleRequestDoc, specialRequestStoreDoc] = await Promise.all([
     getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
     getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
@@ -1551,8 +1888,15 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const detected = detectImageContent(bytes);
+  const image = detectImageContent(bytes);
+  // الرسائل الصوتية مسموحة في مجلد الطلبات الخاصة بس، وبحد 1MB.
+  const voice = !image && folder === "special_requests" ? detectAudioContent(bytes) : null;
+  const detected = image ?? voice;
   if (!detected) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+  if (voice && bytes.length > MAX_VOICE_UPLOAD_BYTES) {
+    throw new HttpError(413, "الرسالة الصوتية أكبر من 1MB. سجّل رسالة أقصر.");
+  }
+  const resourceType = voice ? "video" : "image";
   const uploadFolder = folder === "special_requests"
     ? await cloudinarySpecialRequestFolder(uid)
     : folder === "banners" || isAdmin
@@ -1561,7 +1905,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = crypto.randomUUID();
   const signedParams = {
-    allowed_formats: "jpg,jpeg,png,webp",
+    allowed_formats: voice ? "m4a,aac,mp4" : "jpg,jpeg,png,webp",
     ...(folder === "special_requests" ? {} : { folder: uploadFolder }),
     overwrite: "false",
     public_id: folder === "special_requests" ? `${uploadFolder}/${publicId}` : publicId,
@@ -1577,7 +1921,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   upload.append("signature", signature);
 
   const uploaded = await fetch(
-    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
     { method: "POST", body: upload },
   );
   if (!uploaded.ok) {
@@ -1591,7 +1935,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
   if (parsedUrl.protocol !== "https:" ||
       !(parsedUrl.hostname === "res.cloudinary.com" || parsedUrl.hostname.endsWith(".res.cloudinary.com")) ||
-      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/`)) {
     throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
   }
   return response({ url: secureUrl });
@@ -1612,35 +1956,66 @@ async function cleanupConfirmedOrderAttachments(
   if (!(order.customerConfirmedAt instanceof Date)) {
     throw new HttpError(409, "لا يمكن حذف المرفقات قبل تأكيد العميل استلام الطلب.");
   }
+  return cleanupOrderAttachmentsFor(env, token, doc, uid, orderId);
+}
+
+/** الطلب فيه مرفقات (صورة/صوت) لسه ما اتمسحتش. */
+export function hasPendingAttachments(order: JsonMap): boolean {
+  const special = order.specialRequest;
+  if (!special || typeof special !== "object") return false;
+  const s = special as JsonMap;
+  if (s.cleanupStatus === "deleted") return false;
+  return Boolean(s.imageUrl) || Boolean(s.voiceUrl) || Boolean(s.voiceBase64);
+}
+
+/** مسح مرفقات الطلب (صورة Cloudinary + الصوت) بعد التسليم. [ownerUid] = عميل الطلب. */
+async function cleanupOrderAttachmentsFor(
+  env: Env,
+  token: string,
+  doc: FirestoreDoc,
+  ownerUid: string,
+  orderId: string,
+): Promise<Response> {
+  const uid = ownerUid;
+  const order = decodeFields(doc.fields ?? {});
   const special = order.specialRequest && typeof order.specialRequest === "object"
     ? Object.assign({}, order.specialRequest as JsonMap)
     : null;
   if (!special) return response({ cleaned: true, alreadyClean: true });
   if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
 
+  const currentDocument = doc.updateTime
+    ? { updateTime: doc.updateTime }
+    : { exists: true };
+  const markFailed = async () => {
+    await commitFirestoreWrites(env, token, [{
+      update: {
+        name: doc.name,
+        fields: encodeFields({ specialRequest: { cleanupStatus: "failed" } }),
+      },
+      updateMask: { fieldPaths: ["specialRequest.cleanupStatus"] },
+      currentDocument,
+    }]);
+  };
+  const assets: Array<{ url: string; resourceType: string }> = [];
   const imageUrl = String(special.imageUrl ?? "");
-  if (imageUrl) {
-    if (!isCloudinaryImageUrl(imageUrl) || !env.CLOUDINARY_CLOUD_NAME ||
+  const voiceUrl = String(special.voiceUrl ?? "");
+  if (imageUrl) assets.push({ url: imageUrl, resourceType: "image" });
+  if (voiceUrl) assets.push({ url: voiceUrl, resourceType: "video" });
+  const expectedPrefix = assets.length ? await cloudinarySpecialRequestFolder(uid) : "";
+  for (const asset of assets) {
+    const validUrl = asset.resourceType === "image"
+      ? isCloudinaryImageUrl(asset.url)
+      : isCloudinaryVoiceUrl(asset.url);
+    if (!validUrl || !env.CLOUDINARY_CLOUD_NAME ||
         !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-        currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
-      }]);
-      throw new HttpError(503, "تعذر التحقق من الصورة أو إعدادات حذفها. يمكن إعادة المحاولة.");
+      await markFailed();
+      throw new HttpError(503, "تعذر التحقق من المرفق أو إعدادات حذفه. يمكن إعادة المحاولة.");
     }
-    const parsed = new URL(imageUrl);
-    const segments = parsed.pathname.split("/").filter(Boolean);
-    const uploadIndex = segments.indexOf("upload");
-    if (uploadIndex < 0) throw new HttpError(400, "مسار الصورة غير صالح.");
-    const assetSegments = segments.slice(uploadIndex + 1);
-    if (assetSegments[0]?.startsWith("v") && /^v\d+$/.test(assetSegments[0])) assetSegments.shift();
-    const last = assetSegments.pop() ?? "";
-    const publicId = [...assetSegments, last.replace(/\.[^.]+$/, "")].join("/");
-    const expectedPrefix = await cloudinarySpecialRequestFolder(uid);
+    const publicId = cloudinaryPublicIdFromUrl(asset.url);
+    if (!publicId) throw new HttpError(400, "مسار المرفق غير صالح.");
     if (!publicId.startsWith(expectedPrefix + "/")) {
-      throw new HttpError(403, "الصورة لا تخص مرفقات هذا العميل.");
+      throw new HttpError(403, "المرفق لا يخص هذا العميل.");
     }
     const timestamp = String(Math.floor(Date.now() / 1000));
     const signature = await cloudinarySignature(
@@ -1654,36 +2029,29 @@ async function cleanupConfirmedOrderAttachments(
     form.append("api_key", env.CLOUDINARY_API_KEY);
     form.append("signature", signature);
     const deleted = await fetch(
-      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`,
+      `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${asset.resourceType}/destroy`,
       { method: "POST", body: form },
     );
     if (!deleted.ok) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-      }]);
-      throw new HttpError(503, "تعذر حذف الصورة من التخزين. أعد المحاولة.");
+      await markFailed();
+      throw new HttpError(503, "تعذر حذف المرفق من التخزين. أعد المحاولة.");
     }
     const result = await deleted.json() as { result?: string };
     if (!["ok", "not found"].includes(String(result.result ?? ""))) {
-      special.cleanupStatus = "failed";
-      await commitFirestoreWrites(env, token, [{
-        update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-        updateMask: { fieldPaths: ["specialRequest"] },
-      }]);
+      await markFailed();
       throw new HttpError(503, "لم تؤكد خدمة الصور حذف المرفق. أعد المحاولة.");
     }
   }
 
   delete special.imageUrl;
+  delete special.voiceUrl;
   delete special.voiceBase64;
   special.cleanupStatus = "deleted";
   special.cleanedAt = new Date();
   await commitFirestoreWrites(env, token, [{
     update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
     updateMask: { fieldPaths: ["specialRequest"] },
-    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+    currentDocument,
   }]);
   return response({ cleaned: true, orderId });
 }
@@ -1735,6 +2103,58 @@ export default {
         ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
         : "";
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
+    if (request.method === "POST" && url.pathname === "/v1/order-events") {
+      try {
+        const result = await notifyOrderEvent(request, env);
+        return response(result, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر إرسال إشعار الطلب.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/notify-admins") {
+      try {
+        const result = await notifyAdmins(request, env);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      }
+    }
+    if (url.pathname === "/v1/quick" || url.pathname.startsWith("/v1/quick/")) {
+      try {
+        const result = await routeQuick(request, env, url.pathname) ?? response({ error: "Not found." }, 404);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        if (!(error instanceof HttpError)) {
+          console.error("quick_order_unexpected_exception", error instanceof Error ? error.name : typeof error);
+        }
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
+        return response(code ? { error: e.message, code } : { error: e.message }, e.status, headers);
+      }
+    }
+    const pinMatch = url.pathname.match(/^\/v1\/orders\/([^/]+)\/(delivery-pin|deliver)$/);
+    if (pinMatch) {
+      try {
+        const id = decodeURIComponent(pinMatch[1]);
+        const result = pinMatch[2] === "delivery-pin" && request.method === "GET"
+          ? await getDeliveryPin(request, env, id)
+          : pinMatch[2] === "deliver" && request.method === "POST"
+            ? await deliverWithPin(request, env, id)
+            : response({ error: "Not found." }, 404);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      }
+    }
     const isCreate = request.method === "POST" && url.pathname === "/v1/orders";
     const isEdit = request.method === "PATCH" && rawEditId.length > 0 && !rawEditId.includes("/");
     if (!isCreate && !isEdit && !isCleanup) return response({ error: "Not found." }, 404, headers);
@@ -1751,8 +2171,837 @@ export default {
         headers: mergedHeaders,
       });
     } catch (error) {
+      if (!(error instanceof HttpError)) {
+        // Do not log request bodies, tokens, user data, or raw error messages.
+        const errorType = error instanceof Error ? error.name : typeof error;
+        const stackLocations = error instanceof Error
+          ? (error.stack ?? "").split("\n").slice(1, 5)
+              .map((frame) => frame.match(/(?:index|worker|bundle)\.(?:ts|js):\d+:\d+/)?.[0] ?? "unknown")
+          : [];
+        console.error("order_gateway_unexpected_exception", {
+          route: isCreate ? "create" : isCleanup ? "cleanup" : "edit",
+          errorType,
+          stackLocations,
+        });
+      }
       const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع أثناء إنشاء الطلب.");
-      return response({ error: e.message }, e.status, headers);
+      // Business rejections (409) always carry a code so the app never guesses from the text.
+      const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
+      return response(code ? { error: e.message, code } : { error: e.message }, e.status, headers);
     }
   },
 };
+
+// ───────────── رمز التسليم ─────────────
+
+const PIN_DISABLED = "خدمة رمز التسليم غير مفعّلة حاليًا. تواصل مع الدعم.";
+
+/** سبب منع المندوب من تأكيد التسليم، أو null لو مسموح. (نفس شروط بلاغ التسليم القديم.) */
+export function courierDeliveryBlocker(order: JsonMap, uid: string): string | null {
+  if (order.courierId !== uid) return "الطلب غير معيّن لحسابك.";
+  if (order.status !== "on_the_way") return "لازم يكون الطلب «في الطريق».";
+  if (order.ready !== true) return "المحل لم يؤكد جاهزية الطلب بعد.";
+  if (!(order.courierArrivedAt instanceof Date)) return "سجّل وصولك إلى عنوان العميل أولًا.";
+  if (typeof order.activeDeliveryIssueId === "string" && order.activeDeliveryIssueId) {
+    return "يوجد بلاغ توصيل مفتوح لهذا الطلب.";
+  }
+  if (order.customerConfirmedAt instanceof Date) return "تم تأكيد تسليم هذا الطلب بالفعل.";
+  if (order.deliveryMode !== "store" && order.deliveryMode !== "external") {
+    return "نوع المندوب غير محدد على الطلب.";
+  }
+  return null;
+}
+
+/** الحقول اللي بتتكتب على الطلب لما الرمز يطلع صح (نفس اللي كان بيكتبه تأكيد العميل). */
+export function pinDeliveryUpdate(order: JsonMap, uid: string, now: Date): JsonMap {
+  const base: JsonMap = {
+    customerDeliveryReportedAt: now,
+    customerDeliveryReportedBy: uid,
+    customerConfirmedAt: now,
+    deliveryPinVerifiedAt: now,
+  };
+  if (order.deliveryMode !== "store") return base;
+  const fee = typeof order.finalDeliveryFee === "number" ? order.finalDeliveryFee : Number(order.deliveryFee);
+  const total = typeof order.verifiedTotal === "number" ? order.verifiedTotal : Number(order.total);
+  return {
+    ...base,
+    status: "delivered",
+    deliveredBy: uid,
+    deliveredAt: now,
+    collectedAmount: total,
+    courierEarning: fee,
+  };
+}
+
+function docName(env: Env, path: string): string {
+  return `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+async function commitOrConflict(env: Env, token: string, writes: unknown[]): Promise<void> {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes }),
+    },
+  );
+  if ([400, 409, 412].includes(res.status)) {
+    throw new HttpError(409, "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.", "conflict");
+  }
+  if (!res.ok) throw new HttpError(503, "تعذر الحفظ؛ حاول مرة أخرى.");
+}
+
+/** العميل بيجيب رمز تسليم طلبه وهو «في الطريق». */
+async function getDeliveryPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  const token = await googleAccessToken(env);
+  const doc = await getDocument(env, `orders/${encodeURIComponent(orderId)}`, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(doc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
+  // الرمز بيتحسب من رقم الطلب بس (ثابت حتى لو العميل عدّل الطلب)، فبيظهر من أول الطلب
+  // لحد التسليم أو الإلغاء.
+  if (!["new", "preparing", "on_the_way"].includes(String(order.status)) ||
+      order.customerConfirmedAt instanceof Date) {
+    throw new HttpError(409, "الرمز بيظهر طول ما الطلب لسه شغال، وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
+  }
+  return response({ pin: await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET) });
+}
+
+/** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
+async function deliverWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  if (!isDeliveryPin(body?.pin)) throw new HttpError(400, "اكتب رمز من 4 أرقام.", "pin_invalid");
+
+  const token = await googleAccessToken(env);
+  const orderPath = `orders/${encodeURIComponent(orderId)}`;
+  const attemptsPath = `deliveryPinAttempts/${encodeURIComponent(orderId)}`;
+  const [orderDoc, courierDoc, attemptsDoc] = await Promise.all([
+    getDocument(env, orderPath, token),
+    getDocument(env, `couriers/${encodeURIComponent(uid)}`, token),
+    getDocument(env, attemptsPath, token),
+  ]);
+  if (!courierDoc) throw new HttpError(403, "حساب المندوب غير معتمد.");
+  const courier = decodeFields(courierDoc.fields ?? {});
+  if (courier.active !== undefined && courier.active !== true) {
+    throw new HttpError(403, "حساب المندوب غير نشط. راجع الإدارة.");
+  }
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const blocker = courierDeliveryBlocker(order, uid);
+  if (blocker) throw new HttpError(409, blocker, "not_deliverable");
+
+  const prev = attemptsDoc ? decodeFields(attemptsDoc.fields ?? {}) : {};
+  const attempts = Number.isSafeInteger(prev.attempts) ? Number(prev.attempts) : 0;
+  if (prev.locked === true || attempts >= DELIVERY_PIN_MAX_ATTEMPTS) {
+    throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+  }
+  const attemptsPrecondition = attemptsDoc?.updateTime
+    ? { updateTime: attemptsDoc.updateTime }
+    : { exists: false };
+  const orderPrecondition = orderDoc.updateTime ? { updateTime: orderDoc.updateTime } : { exists: true };
+  const expected = await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET);
+
+  if (!equalPin(body.pin, expected)) {
+    const next = attempts + 1;
+    const locked = next >= DELIVERY_PIN_MAX_ATTEMPTS;
+    const writes: unknown[] = [{
+      update: { name: docName(env, attemptsPath), fields: encodeFields({ attempts: next, locked, orderId }) },
+      updateTransforms: [{ fieldPath: "updatedAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: attemptsPrecondition,
+    }];
+    if (locked) {
+      // علامة على الطلب عشان الإدارة تشوفه (الرمز نفسه مش بيتخزن).
+      writes.push({
+        // mask فاضي: مفيش حقل بيتمسح أو يتغيّر غير الطابع الزمني اللي بيتحط بالـtransform.
+        update: { name: docName(env, orderPath), fields: {} },
+        updateMask: { fieldPaths: [] },
+        updateTransforms: [{ fieldPath: "deliveryPinLockedAt", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: orderPrecondition,
+      });
+    }
+    await commitOrConflict(env, token, writes);
+    if (locked) {
+      throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+    }
+    const left = DELIVERY_PIN_MAX_ATTEMPTS - next;
+    throw new HttpError(400, `الرمز غلط. فاضل ${left} محاولات.`, "pin_wrong");
+  }
+
+  const now = new Date();
+  const update = pinDeliveryUpdate(order, uid, now);
+  const stampFields = Object.keys(update).filter((k) => update[k] instanceof Date);
+  const plain: JsonMap = {};
+  for (const [k, v] of Object.entries(update)) if (!(v instanceof Date)) plain[k] = v;
+  const writes: unknown[] = [{
+    update: { name: docName(env, orderPath), fields: encodeFields(plain) },
+    // الطوابع الزمنية بتتحط بالـtransform (وقت السيرفر)، فمش في الـmask.
+    updateMask: { fieldPaths: Object.keys(plain) },
+    updateTransforms: stampFields.map((fieldPath) => ({ fieldPath, setToServerValue: "REQUEST_TIME" })),
+    currentDocument: orderPrecondition,
+  }];
+  if (update.status === "delivered") {
+    writes.push({
+      update: {
+        name: docName(env, `${orderPath}/statusHistory/delivered`),
+        fields: encodeFields({ from: "on_the_way", to: "delivered", actorUid: uid, actorRole: "courier", via: "pin" }),
+      },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+    });
+  }
+  if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
+  await commitOrConflict(env, token, writes);
+  // مرفقات الطلب الخاص كانت بتتمسح لما العميل يدوس تأكيد الاستلام؛ دلوقتي بعد الرمز الصحيح.
+  // محاولة واحدة، وفشلها ما يأثرش على التسليم (العميل لما يفتح الطلب بيعيد المحاولة).
+  if (hasPendingAttachments(order) && typeof order.userId === "string") {
+    try {
+      const fresh = await getDocument(env, orderPath, token);
+      if (fresh) await cleanupOrderAttachmentsFor(env, token, fresh, order.userId, orderId);
+    } catch (error) {
+      console.error("Attachment cleanup after PIN delivery failed", error instanceof HttpError ? error.status : "error");
+    }
+  }
+  await Promise.allSettled([
+    notifyOrderParticipant(env, token, order.userId, orderId, "order_update", "تم تسليم طلبك"),
+    update.status === "delivered" && typeof order.storeId === "string" &&
+      notifyStoreOwners(env, token, order.storeId, orderId, "تم تسليم طلب من المحل", uid),
+  ]);
+  return response({ delivered: update.status === "delivered", confirmed: true });
+}
+
+// ───────────── إشعار الإدارة بطلب انضمام أو بلاغ تعذر تسليم ─────────────
+
+export type AdminNoticeKind = "join_request" | "delivery_issue";
+const ADMIN_NOTICE_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** نص الإشعار من غير أي بيانات شخصية (توبيك admins مش محمي، فالمحتوى عام). */
+export function adminNoticeMessage(kind: AdminNoticeKind, detail: string) {
+  const title = kind === "join_request" ? "طلب انضمام جديد" : "بلاغ تعذر تسليم جديد";
+  const body = kind === "join_request"
+    ? (detail === "store_owner" ? "صاحب محل" : detail === "courier" ? "مندوب" : "طلب") + " • افتح الطلبات والرسائل للمراجعة"
+    : "مندوب سجّل تعذر تسليم • افتح الطلبات والرسائل";
+  return {
+    message: {
+      topic: "admins",
+      notification: { title, body },
+      data: { type: "admin_inbox", kind },
+      android: { priority: "HIGH", ttl: "3600s", notification: { sound: "default" } },
+    },
+  };
+}
+
+/**
+ * سبب رفض إرسال الإشعار أو null لو مسموح: لازم المستند يكون جديد (آخر 10 دقايق)
+ * وصاحبه هو اللي بيطلب الإشعار. ده بيمنع استخدام الـendpoint في إزعاج الإدارة.
+ */
+export function adminNoticeBlocker(kind: AdminNoticeKind, id: string, doc: JsonMap | null, uid: string, now = Date.now()): string | null {
+  if (!doc) return "not_found";
+  const created = doc.createdAt instanceof Date ? doc.createdAt.getTime() : 0;
+  if (!created || now - created > ADMIN_NOTICE_MAX_AGE_MS || created - now > 60_000) return "stale";
+  if (kind === "join_request") {
+    if (doc.userId !== uid || !id.startsWith(uid + "_")) return "forbidden";
+    if (doc.status !== "pending") return "not_pending";
+  } else if (doc.createdBy !== uid) {
+    return "forbidden";
+  }
+  return null;
+}
+
+async function notifyAdmins(request: Request, env: Env): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  const kind = body?.kind;
+  const id = typeof body?.id === "string" ? body.id : "";
+  if ((kind !== "join_request" && kind !== "delivery_issue") || !/^[A-Za-z0-9_-]{1,160}$/.test(id)) {
+    throw new HttpError(400, "بيانات غير صالحة.");
+  }
+  const token = await googleAccessToken(env);
+  const col = kind === "join_request" ? "role_requests" : "delivery_issues";
+  const docRaw = await getDocument(env, `${col}/${encodeURIComponent(id)}`, token);
+  const doc = docRaw ? decodeFields(docRaw.fields ?? {}) : null;
+  const blocker = adminNoticeBlocker(kind, id, doc, uid);
+  if (blocker) throw new HttpError(blocker === "forbidden" ? 403 : 409, "مش ممكن إرسال الإشعار.", blocker);
+
+  // مرة واحدة لكل مستند: مستند تسجيل بشرط exists:false (الطلب المكرر بياخد sent:false).
+  const noticePath = `adminNotices/${kind}_${encodeURIComponent(id)}`;
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ writes: [{
+        update: {
+          name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${noticePath}`,
+          fields: encodeFields({ kind, id, by: uid }),
+        },
+        updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: { exists: false },
+      }] }),
+    },
+  );
+  if (res.status === 409 || res.status === 400) return response({ sent: false, reason: "already_sent" });
+  if (!res.ok) throw new HttpError(503, "تعذر الإرسال حاليًا.");
+
+  const detail = kind === "join_request" ? String(doc?.type ?? "") : "";
+  const [sent] = await Promise.all([
+    fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(adminNoticeMessage(kind, detail)),
+    }),
+    kind === "delivery_issue" && typeof doc?.orderId === "string" &&
+      notifyOrderParticipant(
+        env, token, doc.customerId, doc.orderId, "order_update", "تعذر تسليم طلبك",
+      ),
+  ]);
+  if (!sent.ok) {
+    console.error("Admin FCM send failed", sent.status);
+    throw new HttpError(503, "تعذر إرسال الإشعار.");
+  }
+  return response({ sent: true });
+}
+
+const orderPushTitles = {
+  preparing: "المحل بدأ تجهيز طلبك",
+  on_the_way: "طلبك في الطريق",
+  delivered: "تم تسليم طلبك",
+  cancelled: "تم إلغاء طلبك",
+} as const;
+
+function recentOrderEvent(date: unknown): date is Date {
+  return date instanceof Date &&
+    date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
+}
+
+async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
+  const { orderId, event, status } = await readJsonBody(request);
+  if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
+    typeof event !== "string" || !["created", "assigned", "ready", "status"].includes(event)) {
+    throw new HttpError(400, "بيانات إشعار الطلب غير صالحة.");
+  }
+
+  const token = await googleAccessToken(env);
+  const path = `orders/${orderId}`;
+  const orderDoc = await getDocument(env, path, token);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const storeId = typeof order.storeId === "string" ? order.storeId : "";
+  const courierId = typeof order.courierId === "string" ? order.courierId : "";
+  let key = event;
+  let customerTitle = "";
+  let courierTitle = "";
+  let storeTitle = "";
+  let notifyAvailableCouriers = false;
+
+  if (event === "created") {
+    if (order.userId !== uid) throw new HttpError(403, "الطلب لا يخص حسابك.");
+    if (order.status !== "new" || !recentOrderEvent(order.createdAt)) return { orderId, processed: false };
+    storeTitle = "طلب جديد للمحل";
+  } else if (event === "status") {
+    if (typeof status !== "string" || !Object.hasOwn(orderPushTitles, status)) {
+      throw new HttpError(400, "حالة الطلب غير صالحة.");
+    }
+    if (order.status !== status) return { orderId, processed: false };
+    const historyDoc = await getDocument(env, `${path}/statusHistory/${status}`, token);
+    const history = historyDoc ? decodeFields(historyDoc.fields ?? {}) : {};
+    if (history.actorUid !== uid) throw new HttpError(403, "التحديث لا يخص حسابك.");
+    if (history.to !== status || history.via === "pin" || !recentOrderEvent(history.at)) {
+      return { orderId, processed: false };
+    }
+    key = `status_${status}`;
+    customerTitle = orderPushTitles[status as keyof typeof orderPushTitles];
+    if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
+    if (status === "delivered") storeTitle = "تم تسليم طلب من المحل";
+    if (status === "cancelled") {
+      storeTitle = "تم إلغاء طلب من المحل";
+      courierTitle = "تم إلغاء طلب توصيل";
+    }
+  } else {
+    if (order.status !== "preparing") return { orderId, processed: false };
+    const assigned = event === "assigned";
+    if (assigned
+      ? !courierId || !recentOrderEvent(order.courierAt)
+      : order.ready !== true || !recentOrderEvent(order.readyAt)) {
+      return { orderId, processed: false };
+    }
+    if (assigned && courierId === uid) {
+      const courier = await getDocument(env, `couriers/${encodeURIComponent(uid)}`, token);
+      if (!courier || decodeFields(courier.fields ?? {}).active === false) {
+        throw new HttpError(403, "حساب المندوب غير نشط.");
+      }
+    } else {
+      const [ownerDoc, adminDoc] = await Promise.all([
+        getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
+        getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
+      ]);
+      const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+      if (!adminDoc && (!storeId || owner.storeId !== storeId || owner.active === false)) {
+        throw new HttpError(403, "الطلب لا يخص حسابك.");
+      }
+    }
+    if (assigned) {
+      key = `assigned_${(order.courierAt as Date).getTime()}`;
+      customerTitle = "تم تعيين مندوب لطلبك";
+      if (courierId !== uid) courierTitle = "تم تعيين طلب توصيل لك";
+    } else {
+      customerTitle = "طلبك جاهز للاستلام من المحل";
+      courierTitle = "طلب التوصيل جاهز للاستلام";
+      notifyAvailableCouriers = !courierId;
+    }
+  }
+
+  const claim = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ writes: [{
+      update: {
+        name: firestoreDocumentName(env, `${path}/pushEvents/${key}`),
+        fields: encodeFields({ event }),
+      },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    }] }),
+  });
+  if (!claim.ok) {
+    const error = await claim.json().catch(() => null) as { error?: { status?: string } } | null;
+    if (["ALREADY_EXISTS", "FAILED_PRECONDITION"].includes(error?.error?.status ?? "")) {
+      return { orderId, processed: false };
+    }
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب.");
+  }
+
+  await Promise.allSettled([
+    customerTitle && order.userId !== uid && notifyOrderParticipant(
+      env, token, order.userId, orderId, "order_update", customerTitle,
+    ),
+    courierTitle && courierId !== uid && notifyOrderParticipant(
+      env, token, courierId, orderId, "courier_order_update", courierTitle,
+    ),
+    storeTitle && storeId && notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid),
+    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, String(order.storeName)),
+  ]);
+  return { orderId, processed: true };
+}
+
+async function notifyStoreOwners(
+  env: Env, token: string, storeId: string, orderId: string, title: string, actorUid: string,
+): Promise<void> {
+  const owners = await queryAccountDocuments(env, token, "storeOwners", "storeId", storeId);
+  await Promise.all(owners.map((doc) => {
+    const recipient = doc.name.split("/").pop();
+    if (recipient !== actorUid && decodeFields(doc.fields ?? {}).active !== false) {
+      return notifyOrderParticipant(env, token, recipient, orderId, "store_order_update", title);
+    }
+  }));
+}
+
+export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
+  return existingUserId === userId && existingStoreId === storeId;
+}
+
+// ───────────── «طلباتك على السريع» (quick_orders) ─────────────
+// الـWorker هو الكاتب الوحيد للمجموعة؛ قواعد Firestore بتمنع أي كتابة من التطبيق.
+// كل كتابة بشرط updateTime، فعمليتين متزامنتين (مثلًا مندوبين بيقبلوا نفس الطلب) واحدة بس بتنجح.
+
+const QUICK_ID = /^[A-Za-z0-9_-]{16,180}$/;
+
+/** رفع صورة موقّع على Cloudinary في مجلد محدد (نفس إعدادات رفع صور المحلات). */
+async function signedCloudinaryImageUpload(
+  env: Env,
+  bytes: Uint8Array<ArrayBuffer>,
+  detected: { format: string; mime: string },
+  folder: string,
+): Promise<Response> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const publicId = crypto.randomUUID();
+  const signedParams = {
+    allowed_formats: "jpg,jpeg,png,webp",
+    folder,
+    overwrite: "false",
+    public_id: publicId,
+    timestamp: String(timestamp),
+    unique_filename: "true",
+    use_filename: "false",
+  };
+  const signature = await cloudinarySignature(signedParams, env.CLOUDINARY_API_SECRET!);
+  const upload = new FormData();
+  upload.append("file", new Blob([bytes], { type: detected.mime }), `${publicId}.${detected.format}`);
+  upload.append("api_key", env.CLOUDINARY_API_KEY!);
+  for (const [key, value] of Object.entries(signedParams)) upload.append(key, value);
+  upload.append("signature", signature);
+  const uploaded = await fetch(
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: "POST", body: upload },
+  );
+  if (!uploaded.ok) {
+    console.error("Cloudinary receipt upload failed", uploaded.status);
+    throw new HttpError(502, "تعذر رفع الصورة إلى خدمة الصور. حاول مرة أخرى.");
+  }
+  const result = await uploaded.json() as { secure_url?: string };
+  const secureUrl = typeof result.secure_url === "string" ? result.secure_url : "";
+  let parsedUrl: URL;
+  try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
+  if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "res.cloudinary.com" ||
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+    throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
+  }
+  return response({ url: secureUrl });
+}
+
+function quickError(error: unknown): never {
+  if (error instanceof QuickRuleError) throw new HttpError(error.status, error.message, error.code);
+  throw error;
+}
+
+async function readJsonBody(request: Request): Promise<JsonMap> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, "بيانات غير مفهومة.");
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "صيغة البيانات غير صحيحة.");
+  return body as JsonMap;
+}
+
+function quickTopicMessage() {
+  return {
+    message: {
+      topic: "quick_couriers",
+      notification: {
+        title: "طلب سريع جديد",
+        body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
+      },
+      data: { type: "quick_order" },
+      android: { priority: "HIGH", ttl: "300s", notification: { sound: "default" } },
+    },
+  };
+}
+
+async function notifyOrderParticipant(
+  env: Env,
+  token: string,
+  recipient: unknown,
+  orderId: string,
+  type: "quick_customer_update" | "quick_courier_update" | "order_update" | "store_order_update" | "courier_order_update",
+  title: string,
+): Promise<void> {
+  if (typeof recipient !== "string" || !recipient) return;
+  try {
+    const signal = AbortSignal.timeout(4_000);
+    const user = await getDocument(env, `users/${encodeURIComponent(recipient)}`, token, signal);
+    const tokens = user ? decodeFields(user.fields ?? {}).fcmTokens : null;
+    if (!Array.isArray(tokens)) return;
+    const devices = [...new Set(tokens.filter(
+      (value): value is string => typeof value === "string" && value.length > 0 && value.length <= 4096,
+    ))].slice(-10);
+    const sent = await Promise.allSettled(devices.map((device) =>
+      fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+        method: "POST",
+        signal,
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token: device,
+            notification: { title, body: "افتح وصّلي لمراجعة تفاصيل الطلب." },
+            data: { type, orderId },
+            android: { priority: "HIGH", notification: { sound: "default" } },
+          },
+        }),
+      }),
+    ));
+    if (sent.some((result) => result.status === "rejected" || !result.value.ok)) {
+      console.error("Order participant push failed");
+    }
+  } catch {
+    console.error("Order participant push failed");
+  }
+}
+
+const quickCustomerUpdates: Readonly<Record<string, string>> = {
+  accept: "مندوب قبل طلبك السريع",
+  release: "طلبك السريع بيدوّر على مندوب تاني",
+  "advance-received": "المندوب أكّد استلام المقدم",
+  "submit-summary": "كشف حساب طلبك السريع جاهز للمراجعة",
+};
+
+const quickCourierUpdates: Readonly<Record<string, string>> = {
+  "advance-sent": "العميل سجّل تحويل المقدم",
+  "approve-summary": "العميل وافق على كشف الحساب",
+  "reject-summary": "العميل طلب مراجعة كشف الحساب",
+  cancel: "تم إلغاء الطلب السريع",
+};
+
+/** POST /v1/quick — العميل ينشئ طلب سريع. نفس معرّف الطلب مرتين = نفس الطلب (مفيش تكرار). */
+async function createQuickOrder(request: Request, env: Env): Promise<Response> {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
+      !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
+  }
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
+  const input = await readJsonBody(request);
+  const orderId = String(input.orderId ?? "");
+  if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const customerFirstName = firstName(input.customerName);
+  const area = typeof input.area === "string" ? input.area.trim() : "";
+  if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
+    throw new HttpError(400, "راجع الاسم والمنطقة.");
+  }
+  let stores, notes;
+  try {
+    stores = validateQuickStores(input.stores);
+    notes = validateQuickNotes(input.notes);
+  } catch (error) {
+    quickError(error);
+  }
+  const contact = validateContact(input.contact);
+
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${orderId}`;
+  const existing = await getDocument(env, orderPath, token);
+  if (existing) {
+    const old = decodeFields(existing.fields ?? {});
+    if (old.userId === uid) return response({ orderId, reused: true, order: old });
+    throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.", "id_taken");
+  }
+  const [settingsDoc, restrictionDoc, limitDoc] = await Promise.all([
+    getDocument(env, "app_info/quick_settings", token),
+    getDocument(env, `customer_restrictions/${uid}`, token),
+    getDocument(env, `quickLimits/${uid}`, token),
+  ]);
+  const settings = resolveQuickSettings(settingsDoc ? decodeFields(settingsDoc.fields ?? {}) : null);
+  if (!settings.enabled) {
+    throw new HttpError(503, "خدمة «طلباتك على السريع» غير متاحة حاليًا.", "quick_disabled");
+  }
+  const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : null;
+  if (isCustomerRestricted(restriction)) {
+    throw new HttpError(403, "حسابك مقيّد مؤقتًا أو بيانات التقييد غير مكتملة. راجع الدعم.");
+  }
+  // حد مستقل عن الطلبات العادية (quickLimits) عشان الخدمة ما تأثرش على حد طلبات المحلات.
+  const previousLimit = limitDoc ? decodeFields(limitDoc.fields ?? {}) : {};
+  const lastAt = previousLimit.lastAt instanceof Date ? previousLimit.lastAt.getTime() : 0;
+  if (lastAt && Date.now() - lastAt < 20_000) {
+    throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.", "rate_limited");
+  }
+  const dayKey = cairoDayKey(new Date());
+  const todays = ordersCountedToday(previousLimit, dayKey);
+  if (todays >= settings.maxPerDay) {
+    throw new HttpError(429, `وصلت للحد اليومي للطلبات السريعة (${settings.maxPerDay}). جرّب بكرة.`, DAILY_LIMIT_CODE);
+  }
+
+  const order = newQuickOrder({ uid, customerFirstName, area, notes: notes!, stores: stores!, settings });
+  await commitOrConflict(env, token, [
+    {
+      update: { name: docName(env, orderPath), fields: encodeFields(order) },
+      updateTransforms: [{ fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    },
+    {
+      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields(contact) },
+      currentDocument: { exists: false },
+    },
+    {
+      update: {
+        name: docName(env, `quickLimits/${uid}`),
+        fields: encodeFields({ lastAt: new Date(), day: dayKey, dailyCount: todays + 1 }),
+      },
+      updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: limitDoc?.updateTime ? { updateTime: limitDoc.updateTime } : { exists: false },
+    },
+  ]);
+  try {
+    const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(quickTopicMessage()),
+    });
+    if (!sent.ok) console.error("Quick courier push failed", sent.status);
+  } catch (error) {
+    console.error("Quick courier push failed", error instanceof Error ? error.name : "error");
+  }
+  return response({ orderId, order });
+}
+
+/** مين اللي بيطلب العملية: صاحب الطلب، أو مندوب نشط، أو الإدارة. */
+async function resolveQuickActor(env: Env, token: string, uid: string, order: JsonMap): Promise<QuickActor> {
+  if (order.userId === uid) return { uid, role: "customer" };
+  const courierDoc = await getDocument(env, `couriers/${encodeURIComponent(uid)}`, token);
+  if (courierDoc) {
+    const courier = decodeFields(courierDoc.fields ?? {});
+    if (courier.active === undefined || courier.active === true) {
+      return {
+        uid,
+        role: "courier",
+        name: typeof courier.name === "string" ? courier.name : "",
+        quickEnabled: courier.quickEnabled === true,
+      };
+    }
+  }
+  const adminDoc = await getDocument(env, `admins/${encodeURIComponent(uid)}`, token);
+  if (adminDoc) return { uid, role: "admin" };
+  throw new HttpError(403, "مش مسموح لك بالعملية دي على الطلب ده.", "forbidden");
+}
+
+/** POST /v1/quick/{orderId}/{action} — كل عمليات الطلب بعد الإنشاء (ماعدا التسليم بالرمز). */
+async function quickOrderAction(request: Request, env: Env, orderId: string, action: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const body = await readJsonBody(request);
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${encodeURIComponent(orderId)}`;
+  const doc = await getDocument(env, orderPath, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(doc.fields ?? {});
+  const actor = await resolveQuickActor(env, token, uid, order);
+  let patch: JsonMap;
+  try {
+    patch = applyQuickAction(order, action, actor, body, {
+      orderId,
+      now: new Date(),
+      cloudName: env.CLOUDINARY_CLOUD_NAME,
+    });
+  } catch (error) {
+    quickError(error);
+  }
+  await commitOrConflict(env, token, [{
+    update: { name: doc.name, fields: encodeFields(patch!) },
+    updateMask: { fieldPaths: Object.keys(patch!) },
+    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+  }]);
+  const customerTitle = quickCustomerUpdates[action] ??
+    (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
+  const courierTitle = quickCourierUpdates[action];
+  await Promise.all([
+    customerTitle && notifyOrderParticipant(
+      env, token, order.userId, orderId, "quick_customer_update", customerTitle,
+    ),
+    courierTitle && notifyOrderParticipant(
+      env, token, order.courierId, orderId, "quick_courier_update", courierTitle,
+    ),
+  ]);
+  return response({ orderId, order: { ...order, ...patch! } });
+}
+
+/** GET /v1/quick/{orderId}/delivery-pin — العميل بيجيب رمز التسليم من القبول لحد التسليم. */
+async function getQuickDeliveryPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const token = await googleAccessToken(env);
+  const doc = await getDocument(env, `quick_orders/${encodeURIComponent(orderId)}`, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(doc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
+  if (!QUICK_PIN_STATUSES.includes(String(order.status))) {
+    throw new HttpError(409, "الرمز بيظهر بعد قبول المندوب وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
+  }
+  return response({ pin: await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET) });
+}
+
+/** POST /v1/quick/{orderId}/deliver — المندوب يأكد التسليم برمز العميل. 5 محاولات غلط = قفل. */
+async function deliverQuickWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const body = await readJsonBody(request);
+  if (!isDeliveryPin(body.pin)) throw new HttpError(400, "اكتب رمز من 4 أرقام.", "pin_invalid");
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${encodeURIComponent(orderId)}`;
+  const attemptsPath = `deliveryPinAttempts/${encodeURIComponent("quick_" + orderId)}`;
+  const [orderDoc, courierDoc, attemptsDoc] = await Promise.all([
+    getDocument(env, orderPath, token),
+    getDocument(env, `couriers/${encodeURIComponent(uid)}`, token),
+    getDocument(env, attemptsPath, token),
+  ]);
+  if (!courierDoc) throw new HttpError(403, "حساب المندوب غير معتمد.");
+  const courier = decodeFields(courierDoc.fields ?? {});
+  if (courier.active !== undefined && courier.active !== true) {
+    throw new HttpError(403, "حساب المندوب غير نشط. راجع الإدارة.");
+  }
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const blocker = quickDeliveryBlocker(order, uid);
+  if (blocker) throw new HttpError(409, blocker, "not_deliverable");
+
+  const prev = attemptsDoc ? decodeFields(attemptsDoc.fields ?? {}) : {};
+  const attempts = Number.isSafeInteger(prev.attempts) ? Number(prev.attempts) : 0;
+  if (prev.locked === true || attempts >= DELIVERY_PIN_MAX_ATTEMPTS) {
+    throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+  }
+  const attemptsPrecondition = attemptsDoc?.updateTime ? { updateTime: attemptsDoc.updateTime } : { exists: false };
+  const orderPrecondition = orderDoc.updateTime ? { updateTime: orderDoc.updateTime } : { exists: true };
+  const expected = await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET);
+
+  if (!equalPin(body.pin, expected)) {
+    const next = attempts + 1;
+    const locked = next >= DELIVERY_PIN_MAX_ATTEMPTS;
+    const writes: unknown[] = [{
+      update: { name: docName(env, attemptsPath), fields: encodeFields({ attempts: next, locked, orderId, kind: "quick" }) },
+      updateTransforms: [{ fieldPath: "updatedAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: attemptsPrecondition,
+    }];
+    if (locked) {
+      writes.push({
+        update: { name: docName(env, orderPath), fields: {} },
+        updateMask: { fieldPaths: [] },
+        updateTransforms: [{ fieldPath: "deliveryPinLockedAt", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: orderPrecondition,
+      });
+    }
+    await commitOrConflict(env, token, writes);
+    if (locked) throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+    throw new HttpError(400, `الرمز غلط. فاضل ${DELIVERY_PIN_MAX_ATTEMPTS - next} محاولات.`, "pin_wrong");
+  }
+
+  const patch = quickDeliveredPatch(order, uid, new Date());
+  const writes: unknown[] = [{
+    update: { name: docName(env, orderPath), fields: encodeFields(patch) },
+    updateMask: { fieldPaths: Object.keys(patch) },
+    currentDocument: orderPrecondition,
+  }];
+  if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
+  await commitOrConflict(env, token, writes);
+  await notifyOrderParticipant(
+    env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
+  );
+  return response({ orderId, delivered: true, order: { ...order, ...patch } });
+}
+
+/** توجيه مسارات /v1/quick. بيرجع null لو المسار مش تبع الخدمة. */
+async function routeQuick(request: Request, env: Env, pathname: string): Promise<Response | null> {
+  if (pathname === "/v1/quick") {
+    return request.method === "POST" ? await createQuickOrder(request, env) : response({ error: "Not found." }, 404);
+  }
+  const match = pathname.match(/^\/v1\/quick\/([^/]+)\/([a-z-]+)$/);
+  if (!match) return null;
+  const orderId = decodeURIComponent(match[1]);
+  const action = match[2];
+  if (action === "delivery-pin") {
+    return request.method === "GET" ? await getQuickDeliveryPin(request, env, orderId) : response({ error: "Not found." }, 404);
+  }
+  if (request.method !== "POST") return response({ error: "Not found." }, 404);
+  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId);
+  return await quickOrderAction(request, env, orderId, action);
+}

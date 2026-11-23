@@ -48,7 +48,63 @@ class ImageService {
     if (bytes.length > 5 * 1024 * 1024) {
       throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
     }
+    return _upload(
+      bytes: bytes,
+      filename: picked.name.isEmpty ? 'upload' : picked.name,
+      folder: folder,
+      storeId: storeId,
+    );
+  }
 
+  /// رفع رسالة صوتية للطلب الخاص (m4a) على Cloudinary عن طريق الـWorker.
+  /// الطلب بيشيل الرابط بس، والملف بيتمسح بعد التسليم زي الصور.
+  static Future<String> uploadVoice(List<int> bytes, {required String storeId}) async {
+    if (bytes.isEmpty) throw StateError('التسجيل الصوتي فارغ. حاول مرة أخرى.');
+    if (bytes.length > 1024 * 1024) {
+      throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: 'voice.m4a',
+      folder: 'special_requests',
+      storeId: storeId,
+    );
+  }
+
+  /// صورة فاتورة «طلباتك على السريع»: الكاميرا افتراضيًا، والرفع لمجلد quick_receipts للطلب ده بس.
+  /// الـWorker بيرفض الرفع لو المندوب مش المعيّن أو الطلب مش «جاري الشراء».
+  /// بيرجّع null لو المندوب لغى التصوير.
+  static Future<String?> pickAndUploadQuickReceipt(
+    String orderId, {
+    ImageSource source = ImageSource.camera,
+  }) async {
+    if (orderId.isEmpty) throw ArgumentError('orderId');
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 75,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: picked.name.isEmpty ? 'receipt.jpg' : picked.name,
+      folder: 'quick_receipts',
+      orderId: orderId,
+    );
+  }
+
+  static Future<String> _upload({
+    required List<int> bytes,
+    required String filename,
+    required String folder,
+    String? storeId,
+    String? orderId,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('سجّل الدخول قبل رفع الصورة.');
     if (!OrderGateway.isConfigured) {
@@ -60,19 +116,22 @@ class ImageService {
     }
 
     final root = OrderGateway.baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+    final appCheck = await OrderGateway.appCheckHeaders();
     final request = http.MultipartRequest(
       'POST',
       Uri.parse('$root/v1/uploads'),
     )
+      ..headers.addAll(appCheck)
       ..headers['Authorization'] = 'Bearer $idToken'
       ..headers['Accept'] = 'application/json'
       ..fields['folder'] = folder
       ..fields['storeId'] = storeId ?? ''
+      ..fields['orderId'] = orderId ?? ''
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
           bytes,
-          filename: picked.name.isEmpty ? 'upload' : picked.name,
+          filename: filename,
         ),
       );
 

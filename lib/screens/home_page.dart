@@ -15,6 +15,8 @@ import '../models/app_role.dart';
 import '../models/store.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';
+import '../services/read_meter.dart';
+import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/performance_monitor.dart';
@@ -27,8 +29,11 @@ import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/promo_banners.dart';
 import 'notifications_page.dart';
+import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
+import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 const Map<String, String> kCategoryPhotos = {
   'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
@@ -92,15 +97,17 @@ class _HomePageState extends State<HomePage>
   int _lastUnread = -1;
 
   // المحلات بتتحمّل مرة واحدة (من الكاش لو الكتالوج ما اتغيرش) بدل stream دايم.
-  Future<QuerySnapshot<Map<String, dynamic>>> _storesFuture = _loadStores();
+  // الفهرس المجمّع = قراءة واحدة لكل المحلات؛ لو مش جاهز بنرجع للاستعلام القديم بنفس الكاش.
+  Future<List<CatalogDoc>> _storesFuture = _loadStores();
   Future<List<(_StoreItem, Map<String, dynamic>)>>? _offersFuture;
 
-  static Future<QuerySnapshot<Map<String, dynamic>>> _loadStores() =>
-      CatalogService.get(
-        FirebaseFirestore.instance
-            .collection('stores')
-            .where('active', isEqualTo: true),
-        'stores_active',
+  static Future<List<CatalogDoc>> _loadStores() => CatalogReader.activeStores(
+        () => CatalogService.get(
+          FirebaseFirestore.instance
+              .collection('stores')
+              .where('active', isEqualTo: true),
+          'stores_active',
+        ),
       );
 
   @override
@@ -123,7 +130,7 @@ class _HomePageState extends State<HomePage>
           .where('userId', isEqualTo: uid)
           .where('read', isEqualTo: false)
           .limit(10) // العداد بيعرض 9+ أصلًا، فمفيش داعي نقرأ أكتر من كده.
-          .snapshots();
+          .snapshots().metered('home:unread-notifications');
     }
 
     _loadSavedAddress();
@@ -769,7 +776,8 @@ class _HomePageState extends State<HomePage>
       child: LayoutBuilder(
         builder: (context, c) {
           const gap = 10.0;
-          final w = (c.maxWidth - gap * 3) / 4;
+          // 4 في الصف، صورة واسم تحتها بدون إطار.
+          final w = (c.maxWidth - gap * 3) / 4 - 0.5;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -777,7 +785,6 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 104,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
@@ -801,11 +808,11 @@ class _HomePageState extends State<HomePage>
   // ───────────────────────── تحليل البيانات ─────────────────────────
 
   ({List<_StoreItem> stores, Map<String, String> categoryImages}) _parse(
-    QuerySnapshot<Map<String, dynamic>> snap,
+    List<CatalogDoc> docs,
   ) {
     final stores = <_StoreItem>[];
     final categoryImages = <String, String>{};
-    for (final doc in snap.docs) {
+    for (final doc in docs) {
       try {
         final data = doc.data();
         final store = Store.fromMap(doc.id, data);
@@ -832,50 +839,56 @@ class _HomePageState extends State<HomePage>
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
     for (final store in stores) {
       var hasCatalog = false;
-      try {
-        Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-            .collection('stores')
-            .doc(store.store.id)
-            .collection('products')
-            .limit(200);
-        DocumentSnapshot<Map<String, dynamic>>? cursor;
-        do {
-          if (cursor != null) {
-            query = FirebaseFirestore.instance
-                .collection('stores')
-                .doc(store.store.id)
-                .collection('products')
-                .limit(200)
-                .startAfterDocument(cursor);
-          }
-          final page = await query.get();
-          if (page.docs.isNotEmpty) hasCatalog = true;
-          for (final doc in page.docs) {
-            final item = doc.data();
-            final name = (item['name'] ?? '').toString().trim();
-            final price = (item['price'] as num?)?.toDouble() ?? 0;
-            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-            final text = (item['offerText'] ?? '').toString().trim();
-            final end = item['offerEndsAt'];
-            final expired = isOfferExpired(
-              end is Timestamp ? end.toDate() : null,
-              DateTime.now(),
-            );
-            if (name.isEmpty ||
-                price <= 0 ||
-                expired ||
-                item['available'] == false ||
-                item['isAvailable'] == false ||
-                (!(old > price && old > 0) && text.isEmpty)) {
-              continue;
+      // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
+      // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
+      // مع كل فتحة للرئيسية؛ المسح بقى للمحل اللي ملخصه لسه ما اتحسبش بس.
+      if (store.data['offerItems'] is! List) {
+        try {
+          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+              .collection('stores')
+              .doc(store.store.id)
+              .collection('products')
+              .limit(200);
+          DocumentSnapshot<Map<String, dynamic>>? cursor;
+          do {
+            if (cursor != null) {
+              query = FirebaseFirestore.instance
+                  .collection('stores')
+                  .doc(store.store.id)
+                  .collection('products')
+                  .limit(200)
+                  .startAfterDocument(cursor);
             }
-            offers.add((store, item));
-          }
-          cursor = page.docs.isEmpty ? null : page.docs.last;
-          if (page.docs.length < 200) break;
-        } while (cursor != null);
-      } catch (error) {
-        debugPrint('Home offers load failed for ${store.store.id}: $error');
+            final page = await query.get();
+            ReadMeter.query('home:offers-scan', page);
+            if (page.docs.isNotEmpty) hasCatalog = true;
+            for (final doc in page.docs) {
+              final item = doc.data();
+              final name = (item['name'] ?? '').toString().trim();
+              final price = (item['price'] as num?)?.toDouble() ?? 0;
+              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+              final text = (item['offerText'] ?? '').toString().trim();
+              final end = item['offerEndsAt'];
+              final expired = isOfferExpired(
+                end is Timestamp ? end.toDate() : null,
+                DateTime.now(),
+              );
+              if (name.isEmpty ||
+                  price <= 0 ||
+                  expired ||
+                  item['available'] == false ||
+                  item['isAvailable'] == false ||
+                  (!(old > price && old > 0) && text.isEmpty)) {
+                continue;
+              }
+              offers.add((store, item));
+            }
+            cursor = page.docs.isEmpty ? null : page.docs.last;
+            if (page.docs.length < 200) break;
+          } while (cursor != null);
+        } catch (error) {
+          debugPrint('Home offers load failed for ${store.store.id}: $error');
+        }
       }
       // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
       if (!hasCatalog) {
@@ -940,10 +953,11 @@ class _HomePageState extends State<HomePage>
     List<(_StoreItem, Map<String, dynamic>)> items, {
     bool offer = false,
   }) {
+    // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
     return Container(
       margin: const EdgeInsets.only(top: 18),
       padding: const EdgeInsets.only(bottom: 14),
-      color: offer ? kTileBeige.withValues(alpha: 0.55) : Colors.white,
+      color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1023,11 +1037,10 @@ class _HomePageState extends State<HomePage>
                 children: [
                   img.isEmpty
                       ? fallback
-                      : Image.network(
-                          thumb(img, w: 500),
-                          cacheWidth: 500,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => fallback,
+                      : CachedNetImage(
+                          url: thumb(img, w: 500),
+                          memCacheWidth: 500,
+                          errorWidget: fallback,
                         ),
                   if (badge.isNotEmpty)
                     PositionedDirectional(
@@ -1066,11 +1079,10 @@ class _HomePageState extends State<HomePage>
                       ),
                       child: s.image.isEmpty
                           ? Icon(s.store.icon, size: 20, color: Brand.green)
-                          : Image.network(
-                              thumb(s.image, w: 120),
-                              cacheWidth: 120,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
+                          : CachedNetImage(
+                              url: thumb(s.image, w: 120),
+                              memCacheWidth: 120,
+                              errorWidget:
                                   Icon(s.store.icon, size: 20, color: Brand.green),
                             ),
                     ),
@@ -1210,23 +1222,24 @@ class _HomePageState extends State<HomePage>
                           ),
                           child: item.image.isEmpty
                               ? fallback
-                              : Image.network(
-                                  thumb(item.image, w: 200),
-                                  cacheWidth: 200,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => fallback,
+                              : CachedNetImage(
+                                  url: thumb(item.image, w: 200),
+                                  memCacheWidth: 200,
+                                  errorWidget: fallback,
                                 ),
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          item.store.name,
+                          item.store.isOpen
+                              ? item.store.name
+                              : '${item.store.name} • ${ClosedBadge.label}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: Brand.ink,
+                            color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
                         ),
                       ],
@@ -1247,7 +1260,7 @@ class _HomePageState extends State<HomePage>
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      child: FutureBuilder<List<CatalogDoc>>(
         future: _storesFuture,
         builder: (context, snapshot) {
           final loading = !snapshot.hasData && !snapshot.hasError;
@@ -1267,16 +1280,38 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // الصفحة الرئيسية: بنرات، روابط المحلات، الأقسام، العروض، الأكثر مبيعًا.
-              const SliverToBoxAdapter(
+              // الطلبات السريعة منفصلة عن سلة المحل الواحد.
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: PromoBanners(),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF087B58),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(56),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    icon: const Icon(Icons.delivery_dining_outlined),
+                    label: const Text('طلباتك على السريع'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const QuickOrderCreatePage()),
+                    ),
+                  ),
                 ),
               ),
 
+              // الصفحة الرئيسية: محلات مميزة، البنرات، الأقسام، العروض، الأكثر مبيعًا.
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),
+
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.only(top: 18),
+                  child: PromoBanners(),
+                ),
+              ),
 
               SliverToBoxAdapter(
                 child: Padding(
@@ -1395,47 +1430,37 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: kTileBeige,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: Colors.transparent,
-            width: 2,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: isAll || imageUrl.isEmpty
+                  ? _emojiBox()
+                  : CachedNetImage(
+                      url: thumb(imageUrl, w: 360),
+                      memCacheWidth: 360,
+                      errorWidget: _emojiBox(),
+                    ),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: isAll || imageUrl.isEmpty
-                    ? _emojiBox()
-                    : Image.network(
-                        thumb(imageUrl, w: 200),
-                        cacheWidth: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _emojiBox(),
-                      ),
-              ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+              color: Brand.ink,
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1446,7 +1471,7 @@ class _CategoryTile extends StatelessWidget {
       decoration: BoxDecoration(gradient: Brand.softGradient),
       child: Text(
         _emojiFor(label),
-        style: const TextStyle(fontSize: 32, height: 1.1),
+        style: const TextStyle(fontSize: 34, height: 1.1),
       ),
     );
   }

@@ -174,13 +174,12 @@ describe("trusted catalog pricing", () => {
 describe("courier notification payload", () => {
   it("sends only a minimal new-order notice to the server-controlled couriers topic", async () => {
     const { courierTopicMessage } = await import("../src/index");
-    const payload = courierTopicMessage("abcde_1234567890123456", "متجر تجريبي");
+    const payload = courierTopicMessage("متجر تجريبي");
     expect(payload.message.topic).toBe("couriers");
     expect(payload.message.data).toEqual({
       type: "available_order",
-      orderId: "abcde_1234567890123456",
     });
-    expect(payload.message.notification.title).toContain("#ABCDE");
+    expect(payload.message.notification.title).toBe("طلب توصيل جديد متاح");
     expect(payload.message.notification.body).toContain("متجر تجريبي");
     expect(payload.message.android.ttl).toBe("300s");
     expect(JSON.stringify(payload)).not.toContain("phone");
@@ -591,6 +590,11 @@ describe("Cloudinary account deletion", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         partial: false,
         deleted: { "special_requests/test": "deleted" },
+      }), { status: 200, headers: { "content-type": "application/json" } }))
+      // الرسائل الصوتية (video على Cloudinary) بعد الصور.
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        partial: false,
+        deleted: {},
       }), { status: 200, headers: { "content-type": "application/json" } }));
 
     try {
@@ -604,10 +608,15 @@ describe("Cloudinary account deletion", () => {
         UPLOAD_RATE_LIMITER: { limit: async () => ({ success: true }) },
       }, "customer-uid-123");
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      for (const [input, init] of fetchSpy.mock.calls) {
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      const expectedPaths = [
+        "/v1_1/test-cloud/resources/image/upload",
+        "/v1_1/test-cloud/resources/image/upload",
+        "/v1_1/test-cloud/resources/video/upload",
+      ];
+      for (const [i, [input, init]] of fetchSpy.mock.calls.entries()) {
         const url = new URL(input instanceof Request ? input.url : String(input));
-        expect(url.pathname).toBe("/v1_1/test-cloud/resources/image/upload");
+        expect(url.pathname).toBe(expectedPaths[i]);
         expect(url.search).toBe("");
         expect(init?.method).toBe("DELETE");
         expect(new Headers(init?.headers).get("content-type"))
@@ -626,5 +635,22 @@ describe("Cloudinary account deletion", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+});
+
+import { isSameStoreOrderReplay } from "../src/index";
+
+describe("order replay store isolation", () => {
+  it("accepts a retry for the same customer and original store", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-1", "store-a")).toBe(true);
+  });
+  it("rejects a retry that switches stores", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-1", "store-b")).toBe(false);
+  });
+  it("rejects a retry from a different customer", () => {
+    expect(isSameStoreOrderReplay("customer-1", "store-a", "customer-2", "store-a")).toBe(false);
+  });
+  it("rejects malformed or missing persisted store identity", () => {
+    expect(isSameStoreOrderReplay("customer-1", undefined, "customer-1", "store-a")).toBe(false);
   });
 });

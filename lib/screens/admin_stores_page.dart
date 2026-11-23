@@ -8,12 +8,15 @@ import 'package:flutter/material.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_image.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/dialogs.dart';
+import '../services/store_fee_service.dart';
 
 /// أسماء مختصرة للأنواع الطويلة.
 typedef _Json = Map<String, dynamic>;
@@ -153,6 +156,21 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
     }
   }
 
+  /// فتح/غلق المحل (منفصل عن الإخفاء): المغلق بيفضل ظاهر للعملاء ومكتوب عليه «مغلق الآن».
+  Future<void> _toggleOpen(String id, bool open) async {
+    try {
+      await _stores.doc(id).update({
+        'isOpen': open,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await CatalogSync.storeChanged(id);
+      await CatalogService.bump();
+      _say(open ? 'المحل اتفتح.' : 'المحل اتقفل (ظاهر للعملاء ومكتوب عليه مغلق الآن).');
+    } catch (e) {
+      _say(_errorText(e));
+    }
+  }
+
   Future<void> _toggle(String id, bool active) async {
     try {
       final storeRef = _stores.doc(id);
@@ -169,6 +187,10 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
           _say('لازم صورة واضحة و5 أصناف على الأقل قبل تفعيل المحل.');
           return;
         }
+        if (!await CatalogSync.indexHasRoom(id)) {
+          _say('فهرس المحلات وصل الحد (${CatalogSync.maxIndexStores} محل). قفّل محل قبل تفعيل محل جديد.');
+          return;
+        }
       }
       await storeRef.update({
         'active': active,
@@ -176,6 +198,12 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // أول تفعيل للمحل: نبني قائمته المجمّعة؛ بعدها خانة المحل في الفهرس، وآخر حاجة رقم الإصدار.
+      if (active) {
+        await CatalogSync.rebuildStoreMenu(id, adding: true);
+      } else {
+        await CatalogSync.storeChanged(id);
+      }
       await CatalogService.bump();
     } catch (e) {
       _say(_errorText(e));
@@ -221,6 +249,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
 
       await _stores.doc(id).delete();
 
+      await CatalogSync.storeChanged(id);
       await CatalogService.bump();
 
       _say('تم حذف المحل.');
@@ -312,25 +341,22 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                     final count =
                         (data['productCount'] as num?)?.toInt() ?? legacyCount;
 
-                    return Card(
-                      child: ListTile(
-                        onTap: () => _open(doc.id, data, nextOrder),
-                        title: Text((data['name'] ?? '').toString()),
-                        subtitle: Text(
-                          '${data['category'] ?? ''} • $count صنف',
-                        ),
-                        leading: AppImage(
-                          url: _storeImage(data),
-                          fallbackIcon: Icons.store,
-                          color: kPrimary,
-                          width: 48,
-                          height: 48,
-                          iconSize: 24,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
+                    return AdminStoreCardLayout(
+                      onTap: () => _open(doc.id, data, nextOrder),
+                      title: (data['name'] ?? '').toString(),
+                      subtitle:
+                          '${data['category'] ?? ''} • $count صنف\n'
+                          '${storeVisibilityLabel(data)}',
+                      leading: AppImage(
+                        url: _storeImage(data),
+                        fallbackIcon: Icons.store,
+                        color: kPrimary,
+                        width: 48,
+                        height: 48,
+                        iconSize: 24,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      actions: [
                             IconButton(
                               tooltip: 'حذف المحل',
                               color: kDanger,
@@ -350,13 +376,41 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
                                       (data['name'] ?? '').toString(),
                                     ),
                             ),
-                            Switch(
-                              value: (data['active'] as bool?) ?? true,
-                              onChanged: (value) => _toggle(doc.id, value),
+                            IconButton(
+                              tooltip: 'رسوم وصّلي على المحل',
+                              icon: const Icon(Icons.account_balance_wallet_outlined),
+                              onPressed: () => showModalBottomSheet<void>(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (_) => AdminStoreFeeSheet(
+                                  storeId: doc.id,
+                                  storeName: (data['name'] ?? '').toString(),
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
+                            IconButton(
+                              tooltip: ((data['isOpen'] as bool?) ?? true)
+                                  ? 'غلق المحل (يفضل ظاهر)'
+                                  : 'فتح المحل',
+                              color: ((data['isOpen'] as bool?) ?? true)
+                                  ? kSuccess
+                                  : kDanger,
+                              icon: Icon(((data['isOpen'] as bool?) ?? true)
+                                  ? Icons.lock_open_rounded
+                                  : Icons.lock_rounded),
+                              onPressed: () => _toggleOpen(
+                                doc.id,
+                                !((data['isOpen'] as bool?) ?? true),
+                              ),
+                            ),
+                            Tooltip(
+                              message: 'إظهار/إخفاء المحل للعملاء',
+                              child: Switch(
+                                value: (data['active'] as bool?) ?? true,
+                                onChanged: (value) => _toggle(doc.id, value),
+                              ),
+                            ),
+                      ],
                     );
                   },
                 ),
@@ -494,12 +548,14 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
+      // محل جديد بيتنشر على طول: لازم مكان في فهرس المحلات، وإلا بيتحفظ مقفول.
+      final hasRoom = _id != null || await CatalogSync.indexHasRoom('');
       if (_id == null) {
         final ref = await _stores.add({
           ...fields,
           'color': kPrimary.toARGB32(),
           'rating': 0,
-          'active': true,
+          'active': hasRoom,
           'order': widget.nextOrder,
           'productCount': 0,
         });
@@ -509,12 +565,16 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         await _stores.doc(_id).update(fields);
       }
 
+      final savedId = _id;
+      if (savedId != null) await CatalogSync.storeChanged(savedId, adding: true);
       await CatalogService.bump();
 
       if (!mounted) return;
 
       setState(() {});
-      _say('تم حفظ المحل بنجاح.');
+      _say(hasRoom
+          ? 'تم حفظ المحل بنجاح.'
+          : 'اتحفظ المحل مقفول: فهرس المحلات وصل الحد (${CatalogSync.maxIndexStores} محل).');
     } catch (e) {
       _say(_errorText(e));
     } finally {
@@ -544,6 +604,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
 
     try {
       final col = _stores.doc(id).collection('products');
+      await CatalogSync.markPending(id);
 
       final total = _products.length;
 
@@ -593,7 +654,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (إعادة بناء كاملة).
+      final highlightsOk = await CatalogSync.afterProductsChanged(id);
 
       if (!mounted) return;
 
@@ -601,7 +663,7 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
         _products.clear();
       });
 
-      _say('تم ترحيل $total صنف بنجاح.');
+      _say(StoreHighlights.withNote('تم ترحيل $total صنف بنجاح', highlightsOk));
     } catch (e) {
       _say('تعذر إكمال الترحيل. لم يتم حذف القائمة القديمة. ${_errorText(e)}');
     } finally {
@@ -691,6 +753,8 @@ class _AdminStoreEditPageState extends State<AdminStoreEditPage> {
 
       await _stores.doc(_id).delete();
 
+      final deletedId = _id;
+      if (deletedId != null) await CatalogSync.storeChanged(deletedId);
       await CatalogService.bump();
 
       if (mounted) {
@@ -1071,6 +1135,8 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
   void initState() {
     super.initState();
     _load(reset: true);
+    // مزامنة قائمة اتقطعت قبل كده على الجهاز ده: نكمّلها في الخلفية.
+    CatalogSync.resumePending(widget.storeId);
   }
 
   @override
@@ -1301,6 +1367,8 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       if (!ok || !mounted) return;
 
       setState(() => _uploadingFile = true);
+      // قبل الكتابة: لو التطبيق اتقفل في النص، القائمة تتبني أول ما الصفحة تتفتح.
+      await CatalogSync.markPending(widget.storeId);
 
       for (var start = 0; start < validProducts.length; start += _batchSize) {
         final end = start + _batchSize > validProducts.length
@@ -1322,11 +1390,13 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       }
 
       await _syncCount();
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (إعادة بناء كاملة).
+      final highlightsOk =
+          await CatalogSync.afterProductsChanged(widget.storeId);
 
       if (!mounted) return;
 
-      _say('تم رفع $uploaded صنف بنجاح.');
+      _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));
 
       _load(reset: true);
     } catch (e) {
@@ -1335,14 +1405,17 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
       if (uploaded > 0) {
         try {
           await _syncCount();
-          await CatalogService.bump();
         } catch (_) {}
+        // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (ما بيرميش استثناءات).
+        final highlightsOk =
+            await CatalogSync.afterProductsChanged(widget.storeId);
 
         if (mounted) _load(reset: true);
 
         _say(
           'تم رفع $uploaded صنف قبل حدوث خطأ: ${_errorText(e)} '
-          'يمكنك إعادة رفع نفس الملف بأمان دون تكرار.',
+          'يمكنك إعادة رفع نفس الملف بأمان دون تكرار.'
+          '${highlightsOk ? '' : ' ${StoreHighlights.failedNote}'}',
         );
       } else {
         _say('حدث خطأ أثناء رفع الملف: ${_errorText(e)}');
@@ -1367,23 +1440,33 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     };
 
     try {
-      if (doc == null) {
-        await _col.doc().set({
+      final newRef = doc == null ? _col.doc() : null;
+      final savedId = doc?.id ?? newRef!.id;
+      await CatalogSync.markPending(widget.storeId, [savedId]);
+      if (newRef != null) {
+        await newRef.set({
           ...data,
           'isAvailable': true,
           'createdAt': FieldValue.serverTimestamp(),
         });
 
-        await _syncCount();
+        // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+        try {
+          await _syncCount();
+        } catch (_) {}
       } else {
-        await doc.reference.update(data);
+        await doc!.reference.update(data);
       }
 
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
+      final highlightsOk = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: [savedId],
+      );
 
       await _load(reset: true);
 
-      _say('تم حفظ الصنف.');
+      _say(StoreHighlights.withNote('تم حفظ الصنف', highlightsOk));
     } catch (e) {
       _say(_errorText(e));
     }
@@ -1401,11 +1484,19 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
     if (!ok || !mounted) return;
 
     try {
+      await CatalogSync.markPending(widget.storeId, [doc.id]);
       await doc.reference.delete();
 
-      await _syncCount();
+      // العدّاد ثانوي: فشله ما يمنعش تحديث الملخص والإصدار ولا يخلّي الحفظ يبان فاشل.
+      try {
+        await _syncCount();
+      } catch (_) {}
 
-      await CatalogService.bump();
+      // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
+      final highlightsOk = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: [doc.id],
+      );
 
       if (!mounted) return;
 
@@ -1413,7 +1504,7 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
         _docs.removeWhere((item) => item.id == doc.id);
       });
 
-      _say('تم حذف الصنف.');
+      _say(StoreHighlights.withNote('تم حذف الصنف', highlightsOk));
     } catch (e) {
       _say(_errorText(e));
     }
@@ -1512,6 +1603,205 @@ class _ProductsAdminState extends State<_ProductsAdmin> {
             ),
           ),
       ],
+    );
+  }
+}
+
+
+/// حالة المحل في قائمة الإدارة: ظاهر/مخفي، ومفتوح/مغلق.
+String storeVisibilityLabel(Map<String, dynamic> data) {
+  final visible = (data['active'] as bool?) ?? true;
+  final open = (data['isOpen'] as bool?) ?? true;
+  if (!visible) return 'مخفي عن العملاء';
+  return open ? 'ظاهر • مفتوح' : 'ظاهر • مغلق الآن';
+}
+
+
+/// للأدمن: رصيد رسوم وصّلي على محل، وتسجيل دفعة.
+class AdminStoreFeeSheet extends StatefulWidget {
+  final String storeId;
+  final String storeName;
+  const AdminStoreFeeSheet({super.key, required this.storeId, required this.storeName});
+
+  @override
+  State<AdminStoreFeeSheet> createState() => _AdminStoreFeeSheetState();
+}
+
+class _AdminStoreFeeSheetState extends State<AdminStoreFeeSheet> {
+  late Future<StoreFeeSummary> _future = StoreFeeService.load(widget.storeId);
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
+  bool _busy = false;
+  String? _msg;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _settle() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('تقفيل الحساب؟'),
+        content: const Text('الطلبات المنتهية الحالية هتختفي من صفحة المحل. الفلوس والمدفوعات ما بتتأثرش.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('اقفل الحساب')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    try {
+      await StoreFeeService.settleAccount(widget.storeId);
+      setState(() {
+        _msg = 'تم تقفيل الحساب.';
+        _future = StoreFeeService.load(widget.storeId);
+      });
+    } catch (e) {
+      setState(() => _msg = e is StateError ? e.message : 'تعذر تقفيل الحساب. حاول تاني.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _record() async {
+    final raw = _amount.text.trim().replaceAll('٫', '.').replaceAll(',', '.');
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    var t = raw;
+    for (var i = 0; i < 10; i++) {
+      t = t.replaceAll(ar[i], '$i');
+    }
+    final amount = double.tryParse(t) ?? -1;
+    setState(() {
+      _busy = true;
+      _msg = null;
+    });
+    try {
+      await StoreFeeService.recordPayment(
+        storeId: widget.storeId,
+        amount: amount,
+        note: _note.text,
+      );
+      _amount.clear();
+      _note.clear();
+      setState(() {
+        _msg = 'تم تسجيل الدفعة.';
+        _future = StoreFeeService.load(widget.storeId);
+      });
+    } catch (e) {
+      setState(() => _msg = e is StateError ? e.message : 'تعذر التسجيل. حاول تاني.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+      child: FutureBuilder<StoreFeeSummary>(
+        future: _future,
+        builder: (context, snap) {
+          final s = snap.data;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('رسوم وصّلي • ${widget.storeName}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+              const SizedBox(height: 10),
+              if (snap.hasError)
+                const Text('تعذر تحميل الرصيد.')
+              else if (s == null)
+                const LinearProgressIndicator(minHeight: 2)
+              else ...[
+                Text('المستحقة: ${formatPrice(s.due)}'),
+                Text('المدفوعة: ${formatPrice(s.paid)}'),
+                Text('المتبقي: ${formatPrice(s.outstanding)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _amount,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'المبلغ اللي المحل دفعه (جنيه)'),
+                ),
+                TextField(
+                  controller: _note,
+                  maxLength: 200,
+                  decoration: const InputDecoration(labelText: 'ملاحظة (اختياري): كاش، تحويل...'),
+                ),
+                FilledButton(
+                  onPressed: _busy || s.outstandingMinor <= 0 ? null : _record,
+                  child: Text(_busy ? 'جاري التسجيل...' : 'تسجيل دفعة'),
+                ),
+                const SizedBox(height: 6),
+                OutlinedButton(
+                  onPressed: _busy || s.outstandingMinor > 0 ? null : _settle,
+                  child: Text(s.settledAt == null
+                      ? 'تقفيل الحساب'
+                      : 'تقفيل الحساب (آخر تقفيل ${formatDateTime(s.settledAt!)})'),
+                ),
+              ],
+              if (_msg != null) ...[
+                const SizedBox(height: 8),
+                Text(_msg!, textAlign: TextAlign.center),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+/// كارت المحل في قائمة الإدارة. الإجراءات في صف تحت الاسم (مش trailing)،
+/// لأنها كانت واخدة عرض الشاشة كله وبتكسر اسم المحل حرف حرف على الموبايل.
+class AdminStoreCardLayout extends StatelessWidget {
+  final VoidCallback onTap;
+  final String title;
+  final String subtitle;
+  final Widget leading;
+  final List<Widget> actions;
+
+  const AdminStoreCardLayout({
+    super.key,
+    required this.onTap,
+    required this.title,
+    required this.subtitle,
+    required this.leading,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            onTap: onTap,
+            title: Text(title),
+            subtitle: Text(subtitle),
+            leading: leading,
+          ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 8, end: 8, bottom: 6),
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: actions,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

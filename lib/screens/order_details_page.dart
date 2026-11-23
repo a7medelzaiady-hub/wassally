@@ -3,18 +3,22 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import 'edit_order_page.dart';
+import '../services/delivery_pin_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/star_picker.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -45,7 +49,7 @@ class OrderDetailsPage extends StatelessWidget {
     final ok = await confirmDialog(
       context,
       title: 'حذف الطلب',
-      message: 'الطلب هيتحذف نهائيًا ومش هيظهر في طلباتك. متأكد؟',
+      message: 'الطلب هيتلغي ومش هيظهر في طلباتك. متأكد؟',
       confirmLabel: 'حذف الطلب',
       destructive: true,
     );
@@ -68,7 +72,7 @@ class OrderDetailsPage extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          InnerHeader(title: 'تفاصيل الطلب'),
+          InnerHeader(title: 'تفاصيل الطلب', showHome: false),
           Expanded(
             child: StreamBuilder<AppOrder?>(
               stream: OrderService.watchOrder(orderId),
@@ -122,28 +126,34 @@ class _DetailsWithContact extends StatefulWidget {
 
 class _DetailsWithContactState extends State<_DetailsWithContact> {
   OrderContact? _contact;
-  bool _confirmingDelivery = false;
+  // رمز التسليم: بيتجاب من الـWorker مرة لما الطلب يبقى «في الطريق».
+  String? _pin;
+  String? _pinMessage;
+  bool _pinLoading = false;
 
-  Future<void> _confirmDelivery() async {
-    if (_confirmingDelivery) return;
-    setState(() => _confirmingDelivery = true);
+  bool _needsPin(AppOrder o) => orderShowsDeliveryPin(o);
+
+  Future<void> _loadPin() async {
+    if (_pinLoading || _pin != null || !_needsPin(widget.order)) return;
+    setState(() {
+      _pinLoading = true;
+      _pinMessage = null;
+    });
     try {
-      await OrderService.confirmDelivery(widget.order);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.order.deliveryMode == 'external'
-              ? 'تم تأكيد الاستلام. أكد المحل استلام النقدية لإغلاق الطلب.'
-              : 'تم تأكيد استلام طلبك. شكرًا لك.')),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تأكيد الاستلام. حاول مرة أخرى.')),
-        );
-      }
+      final pin = await DeliveryPinService.fetchPin(widget.order.id);
+      if (mounted) setState(() => _pin = pin);
+    } on DeliveryPinError catch (e) {
+      if (mounted) setState(() => _pinMessage = e.message);
     } finally {
-      if (mounted) setState(() => _confirmingDelivery = false);
+      if (mounted) setState(() => _pinLoading = false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DetailsWithContact oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_needsPin(widget.order) && _pin == null && _pinMessage == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
     }
   }
 
@@ -153,9 +163,16 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
-    if (widget.order.customerConfirmedAt != null) {
+    final request = widget.order.specialRequest;
+    if (widget.order.customerConfirmedAt != null &&
+        request != null &&
+        request['cleanupStatus'] != 'deleted' &&
+        const ['imageUrl', 'voiceUrl', 'voiceBase64'].any(
+          (key) => request[key] is String && (request[key] as String).isNotEmpty,
+        )) {
       OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
   }
 
   @override
@@ -165,7 +182,13 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
       order: order,
       onCancel: widget.onCancel,
       onDelete: widget.onDelete,
-      onConfirmDelivery: _confirmingDelivery ? null : _confirmDelivery,
+      deliveryPin: _needsPin(widget.order) ? _pin : null,
+      pinMessage: _needsPin(widget.order) ? _pinMessage : null,
+      pinLoading: _needsPin(widget.order) && _pinLoading,
+      onRetryPin: () {
+        setState(() => _pinMessage = null);
+        _loadPin();
+      },
       onEdit: () => Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => EditOrderPage(order: order)),
       ),
@@ -178,13 +201,19 @@ class _Details extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
-  final VoidCallback? onConfirmDelivery;
+  final String? deliveryPin;
+  final String? pinMessage;
+  final bool pinLoading;
+  final VoidCallback onRetryPin;
   const _Details({
     required this.order,
     required this.onCancel,
     required this.onDelete,
     required this.onEdit,
-    required this.onConfirmDelivery,
+    required this.deliveryPin,
+    required this.pinMessage,
+    required this.pinLoading,
+    required this.onRetryPin,
   });
 
   BoxDecoration get _card => BoxDecoration(
@@ -222,21 +251,10 @@ class _Details extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: kMuted),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(5, (index) {
-                    final v = index + 1.0;
-                    return IconButton(
-                      iconSize: 28,
-                      onPressed: () => setDialogState(() => storeRating = v),
-                      icon: Icon(
-                        v <= storeRating
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        color: kAccent,
-                      ),
-                    );
-                  }),
+                StarPicker(
+                  value: storeRating,
+                  size: 30,
+                  onChanged: (v) => setDialogState(() => storeRating = v.toDouble()),
                 ),
                 const Divider(),
               ],
@@ -246,21 +264,9 @@ class _Details extends StatelessWidget {
                 style: TextStyle(fontSize: 13, color: kMuted),
               ),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) {
-                  final starVal = index + 1.0;
-                  return IconButton(
-                    iconSize: 32,
-                    onPressed: () => setDialogState(() => rating = starVal),
-                    icon: Icon(
-                      starVal <= rating
-                          ? Icons.star_rounded
-                          : Icons.star_outline_rounded,
-                      color: kAccent,
-                    ),
-                  );
-                }),
+              StarPicker(
+                value: rating,
+                onChanged: (v) => setDialogState(() => rating = v.toDouble()),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -288,19 +294,28 @@ class _Details extends StatelessWidget {
                   : () async {
                       setDialogState(() => submitting = true);
                       String? err;
-                      try {
-                        await DriverService.rateDriver(
-                          orderId: order.id,
-                          driverId: order.courierId,
-                          rating: rating,
-                          comment: commentCtrl.text.trim(),
-                        );
-                      } catch (e) {
-                        err = e is StateError
-                            ? e.message
-                            : 'تعذر تقييم المندوب.';
+                      // اللي اتقيّم فعلًا نتخطاه، فتقييم ناقص قبل كده ما يمنعش إكمال الباقي.
+                      final courierDone = await ReviewLookup.exists('${order.id}_courier');
+                      final storeDone = order.storeId.isEmpty ||
+                          await ReviewLookup.exists('${order.id}_store');
+                      if (courierDone && storeDone) {
+                        err = 'الطلب ده اتقيّم قبل كده.';
                       }
-                      if (order.storeId.isNotEmpty) {
+                      if (!courierDone) {
+                        try {
+                          await DriverService.rateDriver(
+                            orderId: order.id,
+                            driverId: order.courierId,
+                            rating: rating,
+                            comment: commentCtrl.text.trim(),
+                          );
+                        } catch (e) {
+                          err = e is StateError
+                              ? e.message
+                              : 'تعذر تقييم المندوب.';
+                        }
+                      }
+                      if (order.storeId.isNotEmpty && !storeDone) {
                         try {
                           await RatingService.rateStore(
                             orderId: order.id,
@@ -355,16 +370,9 @@ class _Details extends StatelessWidget {
             children: [
               Text(order.storeName, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (i) {
-                  final value = i + 1.0;
-                  return IconButton(
-                    onPressed: () => setDialogState(() => rating = value),
-                    icon: Icon(value <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
-                      color: kAccent, size: 30),
-                  );
-                }),
+              StarPicker(
+                value: rating,
+                onChanged: (v) => setDialogState(() => rating = v.toDouble()),
               ),
             ],
           ),
@@ -397,9 +405,13 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final showPin = orderShowsDeliveryPin(order);
+    return Column(
       children: [
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
         Container(
           padding: const EdgeInsets.all(16),
           decoration: _card,
@@ -423,6 +435,72 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
+
+        // 🔐 رمز التسليم جوه الصفحة (مش شريط ثابت) عشان ما يغطيش أزرار تعديل/إلغاء الطلب.
+        if (showPin) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF7EF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kSuccess),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                if (deliveryPin != null)
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      deliveryPin!.split('').join(' '),
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  )
+                else if (pinLoading)
+                  const SizedBox(
+                    height: 28,
+                    width: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                else if (pinMessage != null) ...[
+                  Text(pinMessage!, textAlign: TextAlign.center),
+                  TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
+                ],
+                const SizedBox(height: 4),
+                const Text(
+                  'ما تديش الرمز لحد قبل ما تستلم الطلب.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _CustomerReturnReason(
+            key: ValueKey((
+              order.activeDeliveryIssueId,
+              order.lastDeliveryIssueId,
+              order.status,
+            )),
+            issueId: order.activeDeliveryIssueId.isNotEmpty
+                ? order.activeDeliveryIssueId : order.lastDeliveryIssueId,
+          ),
+        ],
 
         // 🛵 كارت المندوب مع التقييم
         if (order.courierName.isNotEmpty &&
@@ -480,6 +558,10 @@ class _Details extends StatelessWidget {
               _line('المجموع', formatPrice(order.subtotal)),
               const SizedBox(height: 4),
               _line('رسوم التوصيل', formatPrice(order.courierFee)),
+              if ((order.serviceFee ?? 0) > 0) ...[
+                const SizedBox(height: 4),
+                _line('رسوم الخدمة', formatPrice(order.serviceFee!)),
+              ],
               const SizedBox(height: 8),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
             ],
@@ -514,36 +596,7 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (order.status == OrderStatus.onTheWay &&
-            order.customerDeliveryReportedAt != null &&
-            order.customerConfirmedAt == null) ...[
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF7EF),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: kSuccess),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'المندوب أبلغ إنه سلّمك الطلب. من فضلك أكد الاستلام بعد مراجعة الطلب.',
-                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.5),
-                ),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: onConfirmDelivery,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: Text(order.deliveryMode == 'external'
-                      ? 'تأكيد استلام الطلب'
-                      : 'تأكيد الاستلام وإغلاق الطلب'),
-                ),
-              ],
-            ),
-          ),
-        ] else if (order.customerConfirmedAt != null &&
+        if (order.customerConfirmedAt != null &&
             order.deliveryMode == 'external' &&
             order.status == OrderStatus.onTheWay) ...[
           const SizedBox(height: 12),
@@ -621,6 +674,9 @@ class _Details extends StatelessWidget {
             ],
           ),
         ],
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -905,8 +961,10 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
         if (mounted) setState(() => _playing = false);
         return;
       }
-      final bytes = Uint8List.fromList(base64Decode(encoded));
-      await _player.play(audio.BytesSource(bytes));
+      // الطلبات الجديدة: رابط Cloudinary. القديمة: base64 جوه الطلب.
+      await _player.play(encoded.startsWith('https://')
+          ? audio.UrlSource(encoded)
+          : audio.BytesSource(Uint8List.fromList(base64Decode(encoded))));
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _playing = false);
@@ -925,7 +983,8 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
   Widget build(BuildContext context) {
     final description = (widget.request['description'] ?? '').toString();
     final imageUrl = (widget.request['imageUrl'] ?? '').toString();
-    final voice = (widget.request['voiceBase64'] ?? '').toString();
+    final voiceUrl = (widget.request['voiceUrl'] ?? '').toString();
+    final voice = voiceUrl.isNotEmpty ? voiceUrl : (widget.request['voiceBase64'] ?? '').toString();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -941,6 +1000,11 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
           const SizedBox(height: 8),
           if (description.isNotEmpty) Text(description),
           Text('الكمية المطلوبة: ${widget.request['quantity'] ?? 1}'),
+          if (specialAttachmentNotice(widget.request) case final notice?)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(notice, style: TextStyle(color: kMuted, fontSize: 12, height: 1.4)),
+            ),
           if (imageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             ClipRRect(
@@ -963,3 +1027,90 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
     );
   }
 }
+
+
+/// قراءة واحدة عند فتح تفاصيل المرتجع، بدون مستمع Firestore إضافي.
+class _CustomerReturnReason extends StatefulWidget {
+  const _CustomerReturnReason({super.key, required this.issueId});
+  final String issueId;
+
+  @override
+  State<_CustomerReturnReason> createState() => _CustomerReturnReasonState();
+}
+
+class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
+  late Future<DocumentSnapshot<Map<String, dynamic>>> _issue;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _issue = FirebaseFirestore.instance
+        .collection('delivery_issues')
+        .doc(widget.issueId)
+        .get();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CustomerReturnReason oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.issueId != widget.issueId) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const reasons = <String, String>{
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'عدم توفر قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: _issue,
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        if (data == null) return const SizedBox.shrink();
+        final status = (data['status'] ?? '').toString();
+        final title = switch (status) {
+          'store_confirmed_return' => 'تم تأكيد رجوع الطلب للمحل',
+          'returned_to_store' => 'المندوب رجّع الطلب — بانتظار تأكيد المحل',
+          'return_to_store' => 'تعذر التسليم — جارٍ إرجاع الطلب للمحل',
+          'retry' => 'هيتم إعادة محاولة تسليم الطلب',
+          'resolved' => 'تم استئناف التوصيل',
+          _ => 'تم تسجيل بلاغ تعذر التسليم',
+        };
+        final reason = reasons[(data['reason'] ?? '').toString()] ?? 'تعذر التسليم';
+        final note = (data['note'] ?? '').toString().trim();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('السبب: $reason'),
+                if (note.isNotEmpty) Text('التفاصيل: $note'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+/// رمز التسليم بيظهر للعميل من أول الطلب (جديد/بيتجهز/في الطريق) لحد ما يتسلّم أو يتلغي.
+/// الرمز ثابت للطلب حتى لو اتعدّل (بيتحسب من رقم الطلب في الـWorker).
+bool orderShowsDeliveryPin(AppOrder o) =>
+    (o.status == OrderStatus.newOrder ||
+        o.status == OrderStatus.preparing ||
+        o.status == OrderStatus.onTheWay) &&
+    o.customerConfirmedAt == null;

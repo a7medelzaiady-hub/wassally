@@ -31,9 +31,10 @@
    npm test
    npx wrangler login
    ```
-5. خزّن القيم كـ Cloudflare Secrets (لا تضعها في `wrangler.toml` أو GitHub):
+5. خزّن القيم كـ Cloudflare Secrets (لا تضعها في `wrangler.toml` أو GitHub).
+   `FIREBASE_PROJECT_ID` في الإنتاج مكتوب في `wrangler.toml` لأنه مش سر؛ أي متغير عادي متسجّل من
+   لوحة Cloudflare ومش موجود في الملف بيتمسح مع `wrangler deploy`.
    ```bash
-   npx wrangler secret put FIREBASE_PROJECT_ID
    npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL
    npx wrangler secret put FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
    npx wrangler secret put ALLOWED_ORIGINS

@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
 
-import '../services/chat_service.dart';
+import '../services/admin_inbox_counts.dart';
+import '../services/notifications_query.dart';
 import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/role_request_service.dart';
@@ -11,9 +12,38 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
-import 'support_chat_page.dart';
+import '../utils/dialog_controllers.dart';
 
 typedef _Doc = QueryDocumentSnapshot<Map<String, dynamic>>;
+
+/// اسم التبويب ومعاه عدد اللي محتاج مراجعة (لو فيه).
+class _CountLabel extends StatelessWidget {
+  final String text;
+  final int Function(AdminInboxCounts) pick;
+  const _CountLabel(this.text, this.pick);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AdminInboxCounts>(
+      future: AdminInboxCounts.load(),
+      builder: (context, snap) {
+        final n = snap.data == null ? 0 : pick(snap.data!);
+        if (n == 0) return Text(text);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(text),
+            const SizedBox(width: 6),
+            Badge(
+              label: Text(AdminInboxCounts.badgeText(n)),
+              backgroundColor: const Color(0xFFD32F2F),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 /// صندوق المدير: طلبات الانضمام (قبول/رفض) والشكاوى والاقتراحات.
 class AdminInboxPage extends StatelessWidget {
@@ -22,21 +52,19 @@ class AdminInboxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
           actions: const [HomeActionButton()],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
-              Tab(text: 'طلبات الانضمام'),
-              Tab(text: 'تقديمات المناديب'),
-              Tab(text: 'المحادثات'),
-              Tab(text: 'الشكاوى والاقتراحات'),
-              Tab(text: 'تقييم العملاء'),
-              Tab(text: 'تعذر التسليم'),
+              Tab(child: _CountLabel('طلبات الانضمام', (c) => c.joinRequests)),
+              const Tab(text: 'تقديمات المناديب'),
+              const Tab(text: 'تقييم العملاء'),
+              Tab(child: _CountLabel('تعذر التسليم', (c) => c.deliveryIssues)),
             ],
           ),
         ),
@@ -44,8 +72,6 @@ class AdminInboxPage extends StatelessWidget {
           children: [
             _RequestsTab(),
             _ApplicantsTab(),
-            _ChatsTab(),
-            _ComplaintsTab(),
             _CustomerRatingsTab(),
             _DeliveryIssuesTab(),
           ],
@@ -254,7 +280,7 @@ class _RequestCardState extends State<_RequestCard> {
         },
       ),
     );
-    ctrl.dispose();
+    disposeAfterDialogCloses(ctrl);
     return result;
   }
 
@@ -343,7 +369,7 @@ class _RequestCardState extends State<_RequestCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (reason == null) return;
     await _run(
       () => RoleRequestService.reject(widget.doc, note: reason),
@@ -462,6 +488,7 @@ class _ApplicantsTab extends StatefulWidget {
 }
 
 class _ApplicantsTabState extends State<_ApplicantsTab> {
+  bool _unorderedFallback = false;
   static const int _pageSize = 100;
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _moreDocs = [];
   bool _loadingMore = false;
@@ -476,6 +503,11 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
         : (firstPage.isNotEmpty ? firstPage.last : null);
     if (cursor == null) return;
     setState(() => _loadingMore = true);
+    // من غير الفهرس مفيش صفحات تانية مرتبة؛ أول 100 بس.
+    if (_unorderedFallback) {
+      setState(() => _hasMore = false);
+      return;
+    }
     try {
       final page = await FirebaseFirestore.instance
           .collectionGroup('applicants')
@@ -500,11 +532,24 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       // أول 100 تقديم تظل لحظية؛ الصفحات التالية تُقرأ مرة واحدة عند الطلب.
-      stream: FirebaseFirestore.instance
-          .collectionGroup('applicants')
-          .orderBy('createdAt', descending: true)
-          .limit(_pageSize)
-          .snapshots(),
+      // الاستعلام المرتّب محتاج فهرس collection group على createdAt (متعرّف في
+      // firestore.indexes.json). لحد ما يتنشر: نفس الاستعلام من غير ترتيب وبنفس الحد،
+      // والترتيب بيحصل هنا (من غير مستمع زيادة).
+      stream: withIndexFallback(
+        FirebaseFirestore.instance
+            .collectionGroup('applicants')
+            .orderBy('createdAt', descending: true)
+            .limit(_pageSize)
+            .snapshots(),
+        () {
+          _unorderedFallback = true;
+          return FirebaseFirestore.instance
+              .collectionGroup('applicants')
+              .limit(_pageSize)
+              .snapshots();
+        },
+        label: 'applicants',
+      ),
       builder: (context, snap) {
         if (snap.hasError) {
           return EmptyState(
@@ -682,152 +727,6 @@ class _ApplicantCardState extends State<_ApplicantCard> {
   }
 }
 
-/// محادثات المستخدمين مع الإدارة.
-class _ChatsTab extends StatelessWidget {
-  const _ChatsTab();
-
-  static const _roles = {
-    'courier': 'مندوب',
-    'store_owner': 'صاحب محل',
-    'customer': 'عميل',
-    'admin': 'مدير',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: ChatService.watchAllChats(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return EmptyState(
-            icon: Icons.lock_outline,
-            title: 'تعذر تحميل المحادثات',
-            message: _errText(snap.error),
-          );
-        }
-        if (!snap.hasData) {
-          return Center(child: CircularProgressIndicator(color: kPrimary));
-        }
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) {
-          return const EmptyState(
-            icon: Icons.forum_outlined,
-            title: 'مفيش محادثات لسه',
-            message: 'أي رسالة من المستخدمين هتظهر هنا.',
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (context, i) {
-            final d = docs[i];
-            final m = d.data();
-            final unread = m['unreadForAdmin'] == true;
-            final name = (m['userName'] ?? '').toString().trim();
-            final title = name.isEmpty
-                ? ((m['userEmail'] ?? 'مستخدم').toString())
-                : name;
-            final role = _roles[(m['appRole'] ?? 'customer').toString()] ?? '';
-            return Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        SupportChatPage(chatUid: d.id, title: title),
-                  ),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: unread ? kPrimary : kLine,
-                      width: unread ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                                if (role.isNotEmpty) ...[
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    role,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: kMuted,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              (m['lastMessage'] ?? '').toString(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: unread
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: unread ? kInk : kMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            _date(m['lastAt']),
-                            style: TextStyle(fontSize: 11, color: kMuted),
-                          ),
-                          if (unread)
-                            Container(
-                              margin: const EdgeInsets.only(top: 6),
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: kPrimary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
 class _CustomerRatingsTab extends StatelessWidget {
   const _CustomerRatingsTab();
 
@@ -958,7 +857,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (note == null || !mounted) return;
     setState(() => _busy = true);
     try {
@@ -1059,7 +958,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (reason == null || !mounted) return;
     setState(() => _busy = true);
     try {
@@ -1456,190 +1355,4 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
       ),
     );
   }
-}
-
-class _ComplaintsTab extends StatelessWidget {
-  const _ComplaintsTab();
-
-  static const _status = {
-    'open': 'جديدة',
-    'in_progress': 'قيد المراجعة',
-    'resolved': 'تم الحل',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('complaints')
-          .orderBy('createdAt', descending: true)
-          .limit(100)
-          .snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return EmptyState(
-            icon: Icons.lock_outline,
-            title: 'تعذر تحميل الشكاوى',
-            message: _errText(snap.error),
-          );
-        }
-        if (!snap.hasData) {
-          return Center(child: CircularProgressIndicator(color: kPrimary));
-        }
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) {
-          return const EmptyState(
-            icon: Icons.inbox_outlined,
-            title: 'مفيش شكاوى أو اقتراحات',
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (context, i) {
-            final d = docs[i];
-            final m = d.data();
-            final kind = _kindLabel('${m['kind']}');
-            final st = '${m['status'] ?? 'open'}';
-            return Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: kLine),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Chip(
-                        label: Text(kind),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      const Spacer(),
-                      DropdownButton<String>(
-                        value: _status.containsKey(st) ? st : 'open',
-                        underline: const SizedBox.shrink(),
-                        items: [
-                          for (final e in _status.entries)
-                            DropdownMenuItem(
-                              value: e.key,
-                              child: Text(e.value),
-                            ),
-                        ],
-                        onChanged: (v) {
-                          if (v != null) d.reference.update({'status': v});
-                        },
-                      ),
-                    ],
-                  ),
-                  SelectableText('${m['message'] ?? ''}'),
-                  if ('${m['adminNote'] ?? ''}'.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: kPrimarySoft,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text('ردنا: ${m['adminNote']}'),
-                    ),
-                  Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: TextButton.icon(
-                      onPressed: () => _reply(context, d),
-                      icon: const Icon(Icons.reply, size: 18),
-                      label: Text(
-                        '${m['adminNote'] ?? ''}'.isEmpty
-                            ? 'رد على العميل'
-                            : 'تعديل الرد',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    [
-                      if ('${m['userName'] ?? ''}'.isNotEmpty)
-                        '${m['userName']}',
-                      if ('${m['userEmail'] ?? ''}'.isNotEmpty)
-                        '${m['userEmail']}',
-                      if ('${m['orderId'] ?? ''}'.isNotEmpty) 'بخصوص طلب',
-                      if ('${m['appRole'] ?? ''}'.isNotEmpty) '${m['appRole']}',
-                      _date(m['createdAt']),
-                    ].where((e) => e.isNotEmpty).join(' · '),
-                    style: TextStyle(color: kMuted, fontSize: 12),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static Future<void> _reply(
-    BuildContext context,
-    QueryDocumentSnapshot<Map<String, dynamic>> d,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final m = d.data();
-    final ctrl = TextEditingController(text: '${m['adminNote'] ?? ''}');
-    final text = await showDialog<String>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text('الرد على العميل'),
-          content: TextField(
-            controller: ctrl,
-            maxLines: 4,
-            maxLength: 300,
-            decoration: const InputDecoration(hintText: 'اكتب ردك هنا'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('رجوع'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('إرسال الرد'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (text == null || text.isEmpty) return;
-    try {
-      await d.reference.update({
-        'adminNote': text,
-        'status': 'resolved',
-        'resolvedAt': FieldValue.serverTimestamp(),
-      });
-      final uid = '${m['userId'] ?? ''}';
-      if (uid.isNotEmpty) {
-        await FirebaseFirestore.instance.collection('notifications').add({
-          'userId': uid,
-          'title': 'رد الإدارة على رسالتك',
-          'body': text,
-          'orderId': '',
-          'read': false,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-      messenger.showSnackBar(const SnackBar(content: Text('تم إرسال الرد.')));
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('تعذر إرسال الرد: $e')));
-    }
-  }
-
-  static String _kindLabel(String k) => switch (k) {
-    'suggestion' => 'اقتراح',
-    'order_issue' => 'مشكلة في طلب',
-    'restriction_appeal' => 'اعتراض على تقييد',
-    _ => 'شكوى',
-  };
 }

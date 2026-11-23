@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'catalog_sync.dart';
+import 'read_meter.dart';
+
 class DriverService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -38,9 +41,24 @@ class DriverService {
       await batch.commit();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw StateError('الطلب ده اتقيّم قبل كده أو لسه ما اتسلّمش.');
+        if (await ReviewLookup.exists(reviewId)) {
+          throw StateError('المندوب ده اتقيّم قبل كده على الطلب ده.');
+        }
+        throw StateError('مقدرناش نسجّل تقييم المندوب دلوقتي. حاول تاني بعد شوية.');
       }
       throw StateError('مقدرناش نسجّل التقييم، حاول تاني.');
+    }
+  }
+}
+
+/// هل التقييم ده اتسجّل فعلًا؟ (قراءة واحدة وقت الحاجة بس، من غير مستمعات).
+class ReviewLookup {
+  static Future<bool> exists(String reviewId) async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('reviews').doc(reviewId).get();
+      return snap.exists;
+    } catch (_) {
+      return false;
     }
   }
 }
@@ -50,6 +68,13 @@ class RatingSummary {
   final double avg;
   final int count;
   const RatingSummary(this.avg, this.count);
+
+  /// من ratingSum/ratingCount المحفوظين على مستند المحل (بيتحدثوا مع كل تقييم).
+  factory RatingSummary.fromStore(Map<String, dynamic>? store) {
+    final sum = (store?['ratingSum'] as num?)?.toDouble() ?? 0;
+    final n = (store?['ratingCount'] as num?)?.toInt() ?? 0;
+    return RatingSummary(n <= 0 ? 0 : sum / n, n < 0 ? 0 : n);
+  }
   String get text => count == 0
       ? 'لسه مفيش تقييمات'
       : '${avg.toStringAsFixed(1)} من 5 · $count تقييم';
@@ -72,20 +97,12 @@ class RatingService {
     }
   }
 
-  /// تقييم محل: متوسط آخر 300 تقييم من reviews. مسموح لصاحب المحل وللمدير.
+  /// تقييم محل من ratingSum/ratingCount على مستند المحل: قراءة واحدة بدل لحد 300 تقييم.
   static Future<RatingSummary?> store(String storeId) async {
     try {
-      final snap = await _db
-          .collection('reviews')
-          .where('storeId', isEqualTo: storeId)
-          .limit(300)
-          .get();
-      var sum = 0.0;
-      for (final d in snap.docs) {
-        sum += (d.data()['rating'] as num?)?.toDouble() ?? 0;
-      }
-      final n = snap.docs.length;
-      return RatingSummary(n == 0 ? 0 : sum / n, n);
+      final d = await _db.collection('stores').doc(storeId).get();
+      ReadMeter.document('rating:store', d);
+      return RatingSummary.fromStore(d.data());
     } catch (_) {
       return null;
     }
@@ -122,9 +139,14 @@ class RatingService {
       await batch.commit();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw StateError('المحل ده اتقيّم قبل كده أو الطلب لسه ما اتسلّمش.');
+        if (await ReviewLookup.exists(reviewId)) {
+          throw StateError('المحل ده اتقيّم قبل كده على الطلب ده.');
+        }
+        throw StateError('مقدرناش نسجّل تقييم المحل دلوقتي. حاول تاني بعد شوية.');
       }
       throw StateError('مقدرناش نسجّل تقييم المحل، حاول تاني.');
     }
+    // التقييم اتسجل: نحدّث أرقامه في فهرس المحلات (أفضل محاولة، من غير رفع رقم الإصدار).
+    await CatalogSync.syncRating(storeId);
   }
 }

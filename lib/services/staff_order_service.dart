@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -5,8 +7,11 @@ import 'package:flutter/foundation.dart';
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/store.dart';
+import 'order_gateway.dart';
 import 'order_status_writer.dart';
 import 'price_check.dart';
+import 'read_meter.dart';
+import 'admin_notify.dart';
 
 /// إحصائيات التسليم (للمندوب أو للمدير).
 class DeliveryStats {
@@ -89,7 +94,7 @@ class StaffOrderService {
   static Stream<List<AppOrder>> watchAll({int limit = 50}) => _orders
       .orderBy('createdAt', descending: true)
       .limit(limit)
-      .snapshots()
+      .snapshots().metered('orders:admin')
       .map(_toList);
 
   /// لصاحب المحل: آخر [limit] طلب على محله هو بس (الأحدث الأول).
@@ -101,7 +106,7 @@ class StaffOrderService {
       .where('storeId', isEqualTo: storeId)
       .orderBy('createdAt', descending: true)
       .limit(limit)
-      .snapshots()
+      .snapshots().metered('orders:store')
       .map(_toList);
 
   /// للمندوب: أحدث الطلبات المسندة إليه. القائمة محدودة لتقليل القراءات.
@@ -112,7 +117,7 @@ class StaffOrderService {
       .where('courierId', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
       .limit(limit.clamp(1, 100).toInt())
-      .snapshots()
+      .snapshots().metered('orders:courier')
       .map(_toList);
 
   /// الطلبات المتاحة للمندوبين، مع حد أقصى للقراءة في كل تحديث.
@@ -121,7 +126,7 @@ class StaffOrderService {
           .collection('courier_available_orders')
           .orderBy('createdAt', descending: true)
           .limit(limit.clamp(1, 100).toInt())
-          .snapshots()
+          .snapshots().metered('orders:courier-feed')
           .map((s) => s.docs.map((d) => AppOrder.fromMap(d.id, d.data())).toList());
 
   /// إحصائيات المندوب من Firestore Aggregation، مستقلة عن قائمة الطلبات المعروضة.
@@ -200,6 +205,7 @@ class StaffOrderService {
     });
     batch.delete(db.collection('courier_available_orders').doc(order.id));
     await batch.commit(); // permission-denied = حد سبقك أو الطلب اتغيّر
+    unawaited(OrderGateway.notifyEvent(order.id, 'assigned'));
 
     try {
       final snap = await _orders.doc(order.id).get(); // دلوقتي مسموح لأنه متعيّن لك
@@ -210,55 +216,15 @@ class StaffOrderService {
     }
   }
 
-  /// المندوب يسجل بلاغ التسليم فقط؛ العميل هو من يؤكد الاستلام.
-  /// نعيد قراءة الطلب وملف المندوب مرة واحدة هنا لتقديم سبب واضح قبل الكتابة،
-  /// مع إبقاء قواعد Firestore هي الحاجز الأمني النهائي.
-  static Future<void> reportCustomerDelivery(AppOrder order) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.isEmpty) throw StateError('سجّل دخول الأول.');
-
-    final courierRef = FirebaseFirestore.instance.collection('couriers').doc(uid);
-    final orderRef = _orders.doc(order.id);
-    final results = await Future.wait([orderRef.get(), courierRef.get()]);
-    final orderSnapshot = results[0];
-    final courierSnapshot = results[1];
-
-    if (!courierSnapshot.exists ||
-        (courierSnapshot.data()!.containsKey('active') &&
-            courierSnapshot.data()!['active'] != true)) {
-      throw StateError('حساب المندوب غير نشط أو غير معتمد. راجع الإدارة.');
-    }
-    final data = orderSnapshot.data();
-    if (data == null) throw StateError('الطلب غير موجود أو تم حذفه.');
-    if ((data['courierId'] ?? '').toString() != uid) {
-      throw StateError('الطلب غير معيّن لحسابك. لا يمكن تسجيل التسليم.');
-    }
-    if (data['status'] != OrderStatus.onTheWay.key) {
-      throw StateError('لازم يكون الطلب في حالة «في الطريق» قبل تسجيل التسليم.');
-    }
-    if (data['ready'] != true) {
-      throw StateError('المحل لم يؤكد جاهزية الطلب للاستلام بعد.');
-    }
-    if (data['courierArrivedAt'] is! Timestamp) {
-      throw StateError('سجّل وصولك إلى عنوان العميل أولاً.');
-    }
-    if (data.containsKey('activeDeliveryIssueId')) {
-      throw StateError('يوجد بلاغ توصيل مفتوح لهذا الطلب؛ لا يمكن تسجيل التسليم الآن.');
-    }
-    if (data.containsKey('customerDeliveryReportedAt')) {
-      throw StateError('تم تسجيل بلاغ التسليم بالفعل، انتظر تأكيد العميل.');
-    }
-    if (data['deliveryMode'] != 'store' && data['deliveryMode'] != 'external') {
-      throw StateError('نوع المندوب غير محدد على الطلب. راجع تعيين الطلب.');
-    }
-
-    await orderRef.update({
-      'customerDeliveryReportedAt': FieldValue.serverTimestamp(),
-      'customerDeliveryReportedBy': uid,
+  /// المندوب الخارجي يسجل تسليم النقدية للمحل بعد تأكيد العميل.
+  /// قرار الإدارة بعد قفل رمز التسليم لمندوب خارجي: العميل استلم.
+  /// الطلب يفضل «في الطريق» لحد ما المندوب يسلّم النقدية والمحل يأكد (زي الرمز الصحيح).
+  static Future<void> adminConfirmLockedExternalDelivery(String orderId) async {
+    await _orders.doc(orderId).update({
+      'customerConfirmedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// المندوب الخارجي يسجل تسليم النقدية للمحل بعد تأكيد العميل.
   static Future<void> recordCashHandedToStore(String orderId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('سجّل دخول الأول.');
@@ -431,6 +397,7 @@ class StaffOrderService {
       'ready': true,
       'readyAt': FieldValue.serverTimestamp(),
     });
+    unawaited(OrderGateway.notifyEvent(orderId, 'ready'));
     try {
       final snap = await _orders.doc(orderId).get();
       await _notify(
@@ -460,7 +427,7 @@ class StaffOrderService {
     await ref.update({'courierArrivedAt': FieldValue.serverTimestamp()});
   }
 
-  /// تسجيل تعذر تسليم بعد الوصول ومحاولة التواصل. يظل الطلب في الطريق حتى قرار الإدارة.
+  /// تسجيل تعذر التسليم بعد الوصول: يبدأ الرجوع للمحل مباشرة دون انتظار الإدارة.
   static Future<String> reportDeliveryIssue(
     AppOrder order, {
     required String reason,
@@ -493,6 +460,7 @@ class StaffOrderService {
         data['status'] != 'on_the_way' ||
         data['courierId'] != uid ||
         data['courierArrivedAt'] is! Timestamp ||
+        data['customerConfirmedAt'] != null ||
         (data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
       throw StateError('سجّل وصولك للعنوان أولًا، أو حدّث الطلب قبل المحاولة.');
     }
@@ -507,16 +475,27 @@ class StaffOrderService {
       'reason': reason,
       'note': cleanNote,
       'contactAttempted': true,
-      'status': 'open',
+      'status': 'return_to_store',
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });
     batch.update(orderRef, {'activeDeliveryIssueId': issueRef.id});
     await batch.commit();
+    AdminNotify.deliveryIssue(issueRef.id);
+    const reasonLabels = <String, String>{
+      'no_answer': 'العميل لا يرد',
+      'wrong_address': 'العنوان غير صحيح',
+      'refused_order': 'رفض الاستلام',
+      'no_cash': 'عدم توفر قيمة الطلب النقدي',
+      'customer_requested_delay': 'طلب تأجيل التسليم',
+      'unsafe_location': 'المكان غير آمن',
+      'other': 'سبب آخر',
+    };
+    final reasonText = reasonLabels[reason] ?? 'تعذر التسليم';
     await _notify(
       order.userId,
-      'تعذر تسليم طلبك',
-      'المندوب وصل للعنوان ولم تكتمل عملية التسليم. الإدارة تراجع الموقف وستتواصل معك.',
+      'تعذر تسليم طلبك — جارٍ إرجاعه للمحل',
+      'السبب: $reasonText.${cleanNote.isEmpty ? '' : ' التفاصيل: $cleanNote'}',
       order.id,
     );
     return issueRef.id;
@@ -588,7 +567,8 @@ class StaffOrderService {
     await batch.commit();
   }
 
-  /// صاحب المحل يؤكد استلام المرتجع فعليًا قبل أن تغلق الإدارة الطلب.
+  /// صاحب المحل يؤكد استلام المرتجع، والطلب يتقفل «ملغي (مرتجع)» في نفس الـbatch من غير الإدارة.
+  /// (المندوب لازم يكون سجّل إنه رجّع الطلب الأول.) مفيش عمولة توصيل للمرتجع (مفيش ختم تسليم).
   static Future<void> confirmStoreReceivedReturn({
     required String orderId,
     required String issueId,
@@ -602,11 +582,40 @@ class StaffOrderService {
         data['status'] != 'returned_to_store') {
       throw StateError('البلاغ لا ينتظر تأكيد استلام المحل.');
     }
-    await ref.update({
+    final db = FirebaseFirestore.instance;
+    final orderRef = _orders.doc(orderId);
+    final batch = db.batch();
+    batch.update(ref, {
       'status': 'store_confirmed_return',
       'storeReceivedAt': FieldValue.serverTimestamp(),
       'storeReceivedBy': uid,
     });
+    batch.update(orderRef, {
+      'status': OrderStatus.cancelled.key,
+      'activeDeliveryIssueId': FieldValue.delete(),
+      'lastDeliveryIssueId': issueId,
+    });
+    batch.set(orderRef.collection('statusHistory').doc(OrderStatus.cancelled.key), {
+      'from': OrderStatus.onTheWay.key,
+      'to': OrderStatus.cancelled.key,
+      'actorUid': uid,
+      'actorRole': 'storeOwner',
+      'at': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+    unawaited(OrderGateway.notifyEvent(orderId, 'status', status: 'cancelled'));
+    await _notify(
+      (data['courierId'] ?? '').toString(),
+      'المحل استلم المرتجع',
+      'المحل أكد استلام الطلب المرتجع، والطلب اتقفل.',
+      orderId,
+    );
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'تم استلام مرتجع طلبك في المحل',
+      'أكد المحل استلام الطلب المرتجع. يمكنك مراجعة السبب في تفاصيل الطلب.',
+      orderId,
+    );
   }
 
   /// المندوب يؤكد رجوع الطلب للمحل بعد قرار الإدارة.
@@ -628,6 +637,12 @@ class StaffOrderService {
       'returnedAt': FieldValue.serverTimestamp(),
       'returnedBy': uid,
     });
+    await _notify(
+      (data['customerId'] ?? '').toString(),
+      'المندوب رجّع الطلب للمحل',
+      'تم تسجيل إرجاع طلبك للمحل، وبانتظار تأكيد المحل للاستلام.',
+      orderId,
+    );
   }
 
   /// المحل بيعلّم أصناف «غير متاحة» على طلب جديد (أو بيشيل العلامة لو [names] فاضية).
@@ -886,6 +901,7 @@ class StaffOrderService {
       tx.delete(feedRef);
     });
 
+    unawaited(OrderGateway.notifyEvent(orderId, 'assigned'));
     try {
       final snap = await orderRef.get();
       await _notify(courier.id, 'طلب جديد ليك', 'تم تكليفك بطلب جديد.', orderId);

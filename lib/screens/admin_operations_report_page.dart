@@ -14,7 +14,6 @@ class _OperationsReport {
   final int openDeliveryIssues;
   final int returnsAwaitingStore;
   final int returnsConfirmed;
-  final int openComplaints;
   final double collectedToday;
   final double courierEarningsToday;
   final double settlementsToday;
@@ -28,7 +27,6 @@ class _OperationsReport {
     required this.openDeliveryIssues,
     required this.returnsAwaitingStore,
     required this.returnsConfirmed,
-    required this.openComplaints,
     required this.collectedToday,
     required this.courierEarningsToday,
     required this.settlementsToday,
@@ -37,6 +35,19 @@ class _OperationsReport {
 }
 
 /// ملخص تشغيلي عند الطلب؛ يستخدم تجميعات Firestore بدل تحميل قوائم الطلبات.
+/// أقصى عدد تسويات بنقراه لحساب تسويات اليوم (التسويات اليومية أقل من كده بكتير).
+const int maxSettlementsToday = 300;
+
+/// مجموع حقل amount (الأرقام بس، أي قيمة تانية بتتجاهل).
+double sumAmounts(Iterable<Map<String, dynamic>> docs) {
+  var total = 0.0;
+  for (final d in docs) {
+    final v = d['amount'];
+    if (v is num && v.isFinite) total += v.toDouble();
+  }
+  return total;
+}
+
 class AdminOperationsReportPage extends StatefulWidget {
   const AdminOperationsReportPage({super.key});
 
@@ -61,9 +72,21 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
       'deliveredAt',
       isGreaterThanOrEqualTo: start,
     );
+    // الإجمالي من الأول: نفس شكل استعلام اليوم (status + deliveredAt) عشان يستخدم الفهرس
+    // الموجود (status, deliveredAt, collectedAmount, courierEarning) بدل فهرس جديد
+    // (status, collectedAmount, courierEarning) مش منشور. نفس نطاق كارت إحصائيات المدير.
+    final allDelivered = delivered.where(
+      'deliveredAt',
+      isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime(2020)),
+    );
     final settlements = db.collection('courier_settlements');
 
-    final results = await Future.wait([
+    // تسويات اليوم قليلة: نقراها (بحد) ونجمع هنا، بدل sum مع فلتر تاريخ محتاج فهرس (createdAt, amount).
+    final settlementsTodayFuture = settlements
+        .where('createdAt', isGreaterThanOrEqualTo: start)
+        .limit(maxSettlementsToday)
+        .get();
+    final aggregatesFuture = Future.wait([
       orders.where('status', isEqualTo: 'new').count().get(),
       orders.where('status', isEqualTo: 'preparing').count().get(),
       orders.where('status', isEqualTo: 'on_the_way').count().get(),
@@ -90,25 +113,22 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
           .where('status', isEqualTo: 'store_confirmed_return')
           .count()
           .get(),
-      db.collection('complaints')
-          .where('status', whereIn: ['open', 'in_progress'])
-          .count()
-          .get(),
-      settlements.where('createdAt', isGreaterThanOrEqualTo: start)
-          .aggregate(sum('amount'))
-          .get(),
-      delivered.aggregate(
+      allDelivered.aggregate(
         sum('collectedAmount'),
         sum('courierEarning'),
       ).get(),
       settlements.aggregate(sum('amount')).get(),
     ]);
 
+    // الاتنين بيتنفذوا مع بعض، وأي خطأ في أي واحد بيظهر في شاشة الخطأ (مش بيضيع).
+    final both = await Future.wait<Object>([aggregatesFuture, settlementsTodayFuture]);
+    final results = both[0] as List<AggregateQuerySnapshot>;
+    final todaySettlements = both[1] as QuerySnapshot<Map<String, dynamic>>;
     final todayMoney = results[3];
-    final allMoney = results[9];
+    final allMoney = results[7];
     final totalCollected = _sum(allMoney, 'collectedAmount');
     final totalEarnings = _sum(allMoney, 'courierEarning');
-    final totalSettled = _sum(results[10], 'amount');
+    final totalSettled = _sum(results[8], 'amount');
 
     return _OperationsReport(
       newOrders: results[0].count ?? 0,
@@ -118,10 +138,9 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
       openDeliveryIssues: results[4].count ?? 0,
       returnsAwaitingStore: results[5].count ?? 0,
       returnsConfirmed: results[6].count ?? 0,
-      openComplaints: results[7].count ?? 0,
       collectedToday: _sum(todayMoney, 'collectedAmount'),
       courierEarningsToday: _sum(todayMoney, 'courierEarning'),
-      settlementsToday: _sum(results[8], 'amount'),
+      settlementsToday: sumAmounts(todaySettlements.docs.map((d) => d.data())),
       outstanding: totalCollected - totalEarnings - totalSettled,
     );
   }
@@ -270,8 +289,6 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   _metric('مرتجعات بانتظار تأكيد المحل', '${r.returnsAwaitingStore}', Icons.inventory_2_outlined),
                   const SizedBox(height: 8),
                   _metric('مرتجعات مؤكدة وتنتظر إغلاق الطلب', '${r.returnsConfirmed}', Icons.assignment_turned_in_outlined),
-                  const SizedBox(height: 8),
-                  _metric('شكاوى لم تُغلق', '${r.openComplaints}', Icons.support_agent_outlined),
                   const SizedBox(height: 8),
                   _metric('صافي النقدية المطلوب توريده إجمالًا', outstandingText, Icons.account_balance_outlined),
                 ]),

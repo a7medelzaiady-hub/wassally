@@ -51,11 +51,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    // خط احترافي لشاشة الدخول بس، باقي التطبيق على Tajawal.
+    final baseTheme = Theme.of(context);
+    final loginTheme = baseTheme.copyWith(
+      textTheme: baseTheme.textTheme.apply(fontFamily: _loginFont),
+    );
+    final text = loginTheme.textTheme;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     const ink = Color(0xFF0E0E10);
 
-    return Scaffold(
+    return Theme(
+      data: loginTheme,
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(fontFamily: _loginFont),
+        child: Scaffold(
       backgroundColor: ink,
       body: Stack(
         children: [
@@ -73,9 +82,16 @@ class _LoginScreenState extends State<LoginScreen> {
               ).createShader(r),
               blendMode: BlendMode.dstIn,
               child: Image.network(
+                // الصورة الأصلية لصفحة الدخول (كانت قبل commit 2c223a8)، زي ما كانت بالظبط.
                 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1000',
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                // لو الإنترنت ضعيف أو الصورة ما نزلتش، بنعرض الخلفية المحلية بدل فراغ.
+                errorBuilder: (_, _, _) => Image.asset(
+                  'assets/images/login_bg.webp',
+                  fit: BoxFit.cover,
+                  cacheWidth: 800,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
               ),
             ),
           ),
@@ -106,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -121,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.white,
                             fontSize: 26,
                             height: 1.4,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         TextSpan(
@@ -130,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: kPrimary,
                             fontSize: 26,
                             height: 1.4,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                         const TextSpan(
@@ -139,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.white70,
                             fontSize: 26,
                             height: 1.4,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -170,8 +186,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               foregroundColor: Colors.white,
                               shape: const StadiumBorder(),
                               textStyle: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
+                                fontFamily: _loginFont,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             child: const Text('المتابعة بحساب جوجل'),
@@ -232,9 +249,13 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ],
       ),
+        ),
+      ),
     );
   }
 }
+
+const _loginFont = 'PlexArabic';
 
 class _LegalLink extends StatelessWidget {
   final String label;
@@ -250,7 +271,7 @@ class _LegalLink extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w800, fontSize: 11.5),
+              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 11.5),
         ),
       ),
     );

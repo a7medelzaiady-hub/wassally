@@ -4,6 +4,7 @@ import '../widgets/app_header.dart';
 
 import '../services/role_request_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/dialog_controllers.dart';
 
 /// مراجعة طلبات الانضمام. صلاحية القراءة والقرار محمية أيضًا بقواعد Firestore.
 class AdminJoinRequestsPage extends StatefulWidget {
@@ -85,7 +86,7 @@ class _AdminJoinRequestsPageState extends State<AdminJoinRequestsPage> {
         ),
       ),
     );
-    controller.dispose();
+    disposeAfterDialogCloses(controller);
     if (reason == null || _busyIds.contains(request.id)) return;
 
     setState(() => _busyIds.add(request.id));

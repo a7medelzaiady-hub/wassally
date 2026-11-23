@@ -7,6 +7,7 @@ import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
+import '../utils/dialog_controllers.dart';
 
 class _Row {
   final String id;
@@ -297,7 +298,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
         amount: a,
         note: note.text.trim(),
       );
-      note.dispose();
+      disposeAfterDialogCloses(note);
       if (!mounted) return;
       setState(() => _data = _load());
       messenger.showSnackBar(

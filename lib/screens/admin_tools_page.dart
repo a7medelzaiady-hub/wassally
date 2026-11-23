@@ -1,8 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'quick_price_admin_page.dart';
+import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
+import '../services/read_meter.dart';
+import '../services/store_highlights.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -44,6 +49,12 @@ class AdminToolsPage extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 tile(
+                  Icons.message_outlined,
+                  'رقم واتساب الدعم',
+                  'تغيير رقم التواصل والشكاوى',
+                  const AdminWhatsAppPage(),
+                ),
+                tile(
                   Icons.map_outlined,
                   'مناطق التوصيل',
                   'سعر توصيل لكل منطقة',
@@ -61,10 +72,296 @@ class AdminToolsPage extends StatelessWidget {
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
                 ),
+                tile(
+                  Icons.price_check_outlined,
+                  'أسعار الطلبات السريعة التقريبية',
+                  'إضافة وتعديل وحذف الأصناف والأسعار الإرشادية',
+                  const QuickPriceAdminPage(),
+                ),
+                const _CatalogIndexCard(),
+                const _HighlightsRefreshCard(),
+                tile(
+                  Icons.speed_outlined,
+                  'عدّاد القراءات (تقديري)',
+                  'كل شاشة جابت كام مستند من Firestore (للقياس)',
+                  const AdminReadMeterPage(),
+                ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── ملخص العروض ─────────────────────────
+
+/// تحديث ملخص العروض (offerItems/bestItems) لكل المحلات على دفعات من 50 محل.
+/// الرئيسية بتعرض العروض من الملخص ده، فاعمله مرة بعد التحديث أو لو عرض مش ظاهر صح.
+class _HighlightsRefreshCard extends StatefulWidget {
+  const _HighlightsRefreshCard();
+
+  @override
+  State<_HighlightsRefreshCard> createState() => _HighlightsRefreshCardState();
+}
+
+class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
+  String? _cursor;
+  int _total = 0;
+  int _failed = 0;
+  bool _busy = false;
+  bool _finished = false;
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'تحديث ملخص العروض',
+      message:
+          'هيتحدث ملخص العروض لـ 50 محل في المرة (كل محل بيقرا أصنافه اللي عليها عروض أو الأكثر مبيعًا بس). '
+          'دوس تاني للدفعة اللي بعدها. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final r = await StoreHighlights.refreshBatch(
+        startAfterId: _finished ? null : _cursor,
+        // العروض في الرئيسية بتتقري من فهرس الكتالوج: نحدّث خانة كل محل بعد ملخصه.
+        afterEach: CatalogSync.storeChanged,
+      );
+      await CatalogService.bump();
+      if (!mounted) return;
+      setState(() {
+        if (_finished) {
+          _total = 0;
+          _failed = 0;
+        }
+        _total += r.done;
+        _failed += r.failed;
+        _cursor = r.lastId;
+        _finished = r.lastId == null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذر التحديث: ${_err(e)}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final failedNote = _failed == 0 ? '' : ' (فشل $_failed — شغّل التحديث تاني)';
+    final status = _total == 0
+        ? 'الرئيسية بتعرض العروض من الملخص ده من غير قراءة الأصناف'
+        : _finished
+            ? 'خلص: اتعالج $_total محل$failedNote'
+            : 'اتعالج $_total محل$failedNote — دوس للدفعة الجاية';
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.local_offer_outlined, color: kPrimary),
+        title: const Text(
+          'تحديث ملخص العروض',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(status),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
+      ),
+    );
+  }
+}
+
+// ───────────────────────── عدّاد القراءات ─────────────────────────
+
+/// عرض تقريبي للقراءات اللي الجهاز ده جابها من الخادم من ساعة ما اتفتح التطبيق
+/// (أو من آخر تصفير)، مقسمة حسب الشاشة/الخدمة. قراءات قواعد Firestore والـ Worker مش هنا.
+class AdminReadMeterPage extends StatefulWidget {
+  const AdminReadMeterPage({super.key});
+
+  @override
+  State<AdminReadMeterPage> createState() => _AdminReadMeterPageState();
+}
+
+class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
+  /// من مستند الإصدارات اللي الجلسة قرته أصلًا (من غير أي قراءة جديدة).
+  static String _catalogHealth() {
+    final v = CatalogReader.loadedVersions;
+    if (v == null) {
+      return 'حالة الكتالوج المجمّع: افتح الرئيسية مرة الأول عشان تظهر (من غير قراءة زيادة).';
+    }
+    if (v['indexReady'] != true) {
+      return 'فهرس المحلات مش جاهز: كل العملاء على الطريقة القديمة (دوس «بناء فهرس الكتالوج»).';
+    }
+    final h = CatalogReader.disabledMenus(v);
+    if (h.disabled == 0 && h.big == 0) return 'الكتالوج المجمّع: كل المحلات شغالة.';
+    return 'كتالوجات متعطلة: ${h.disabled} محل على الطريقة القديمة'
+        '${h.big > 0 ? ' (منهم ${h.big} أكبر من الحد)' : ''}. '
+        'بتتصلح تلقائيًا مع أول تعديل صنف ناجح، أو بـ «بناء فهرس الكتالوج».';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = ReadMeter.snapshot();
+    final since = ReadMeter.since;
+    return Scaffold(
+      body: Column(
+        children: [
+          const InnerHeader(title: 'عدّاد القراءات (تقديري)'),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SwitchListTile(
+                  value: ReadMeter.enabled,
+                  onChanged: (v) => setState(() => ReadMeter.enabled = v),
+                  title: const Text(
+                    'تشغيل العدّاد على الجهاز ده',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: const Text(
+                    'شغّله، واستخدم التطبيق زي العميل/المحل، وارجع هنا تشوف الأرقام.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'الإجمالي التقديري: ${ReadMeter.total()} قراءة منذ '
+                  '${since.hour.toString().padLeft(2, '0')}:${since.minute.toString().padLeft(2, '0')}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _catalogHealth(),
+                  style: TextStyle(color: kMuted, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                if (rows.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text('لسه مفيش قراءات متسجلة.'),
+                  ),
+                for (final r in rows)
+                  ListTile(
+                    dense: true,
+                    title: Text(r.key, textDirection: TextDirection.ltr),
+                    trailing: Text(
+                      '${r.value}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(() {}),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('تحديث'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => setState(ReadMeter.reset),
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('تصفير'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'تقريبي: بيعدّ المستندات الجاية من الخادم بس (الكاش المحلي صفر). '
+                  'دي قراءات تقديرية مرصودة من الجهاز ده للمقارنة بين الشاشات، '
+                  'مش فاتورة Firebase. الرقم الرسمي (ومعاه قراءات قواعد الأمان '
+                  'والـ Worker) في Firebase Console ← Usage.',
+                  style: TextStyle(color: kMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── فهرس الكتالوج ─────────────────────────
+
+/// بناء الفهرس المجمّع وقوائم الأصناف من الصفر: أول مرة بعد التحديث، أو للإصلاح.
+/// بيقرا كل المحلات وكل الأصناف مرة واحدة، فمش المفروض يتعمل كتير.
+class _CatalogIndexCard extends StatefulWidget {
+  const _CatalogIndexCard();
+
+  @override
+  State<_CatalogIndexCard> createState() => _CatalogIndexCardState();
+}
+
+class _CatalogIndexCardState extends State<_CatalogIndexCard> {
+  bool _busy = false;
+  String _status = '';
+
+  Future<void> _run() async {
+    final ok = await confirmDialog(
+      context,
+      title: 'بناء فهرس الكتالوج',
+      message:
+          'هيتقرا كل المحلات وكل الأصناف مرة واحدة ويتبني منهم الفهرس اللي '
+          'بيوفّر القراءات على العملاء. اعمله مرة بعد التحديث، أو لو لاحظت محل '
+          'أو صنف مش ظاهر صح. تكمل؟',
+      confirmLabel: 'ابدأ',
+    );
+    if (!ok || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'جاري البناء...';
+    });
+    try {
+      final summary = await CatalogSync.rebuildAll(
+        onProgress: (step) {
+          if (mounted) setState(() => _status = step);
+        },
+      );
+      if (mounted) setState(() => _status = summary);
+    } catch (e) {
+      if (mounted) setState(() => _status = 'فشل: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.inventory_2_outlined, color: kPrimary),
+        title: const Text(
+          'بناء فهرس الكتالوج',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          _status.isEmpty
+              ? 'يقلل قراءات العملاء: المحلات في قراءة واحدة وأصناف كل محل في قراءة واحدة'
+              : _status,
+        ),
+        trailing: _busy
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.refresh),
+        onTap: _busy ? null : _run,
       ),
     );
   }
@@ -81,13 +378,41 @@ class AdminAreasPage extends StatefulWidget {
 
 class _AdminAreasPageState extends State<AdminAreasPage> {
   List<DeliveryArea>? _areas;
+  bool _paused = false;
 
   @override
   void initState() {
     super.initState();
     DeliveryService.load(force: true).then((a) {
-      if (mounted) setState(() => _areas = List.of(a));
+      if (mounted) {
+        setState(() {
+          _areas = List.of(a);
+          _paused = DeliveryService.ordersPaused;
+        });
+      }
     });
+  }
+
+  Future<void> _togglePaused(bool paused) async {
+    if (paused) {
+      final ok = await confirmDialog(
+        context,
+        title: 'إيقاف الطلبات',
+        message: 'العملاء مش هيقدروا يبعتوا طلبات جديدة لحد ما ترجّع التشغيل. الطلبات الحالية مش هتتأثر.',
+        confirmLabel: 'إيقاف',
+        destructive: true,
+      );
+      if (!mounted || !ok) return;
+    }
+    try {
+      await DeliveryService.setOrdersPaused(paused);
+      if (!mounted) return;
+      setState(() => _paused = paused);
+      _say(context, paused ? 'تم إيقاف استقبال الطلبات.' : 'تم تشغيل استقبال الطلبات.');
+    } catch (e) {
+      if (!mounted) return;
+      _say(context, 'تعذر الحفظ: ${_err(e)}');
+    }
   }
 
   Future<void> _save() async {
@@ -190,6 +515,15 @@ class _AdminAreasPageState extends State<AdminAreasPage> {
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 90),
                     children: [
+                      Card(
+                        child: SwitchListTile(
+                          title: const Text('إيقاف استقبال الطلبات مؤقتًا'),
+                          subtitle: const Text('للطوارئ: العملاء مش هيقدروا يبعتوا طلبات جديدة.'),
+                          value: _paused,
+                          onChanged: _togglePaused,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       Text(
                         areas.isEmpty
                             ? 'لسه مفيش مناطق. العملاء بيدفعوا 20 جنيه توصيل. أول ما تضيف منطقة، العميل هيختار منطقته وقت الطلب.'
@@ -613,4 +947,88 @@ class _AdminSupervisorsPageState extends State<AdminSupervisorsPage> {
       ),
     );
   }
+}
+
+ 
+/// رقم دعم واحد للمحادثات والشكاوى. لا توجد مستمعات مستمرة.
+class AdminWhatsAppPage extends StatefulWidget {
+  const AdminWhatsAppPage({super.key});
+
+  @override
+  State<AdminWhatsAppPage> createState() => _AdminWhatsAppPageState();
+}
+
+class _AdminWhatsAppPageState extends State<AdminWhatsAppPage> {
+  final _number = TextEditingController(text: '01000197222');
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('app_info').doc('contact').get();
+      final saved = (snap.data()?['whatsapp'] ?? '').toString().trim();
+      if (saved.isNotEmpty) _number.text = saved;
+    } catch (e) {
+      if (mounted) _say(context, 'تعذر تحميل الرقم: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final digits = _number.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (!RegExp(r'^(01[0-9]{9}|201[0-9]{9})$').hasMatch(digits)) {
+      _say(context, 'اكتب رقم موبايل مصري صحيح');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance.collection('app_info')
+          .doc('contact').set({'whatsapp': digits}, SetOptions(merge: true));
+      if (mounted) _say(context, 'تم حفظ رقم واتساب الدعم');
+    } catch (e) {
+      if (mounted) _say(context, 'تعذر حفظ الرقم: ${_err(e)}');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _number.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Column(children: [
+      const InnerHeader(title: 'رقم واتساب الدعم'),
+      Expanded(child: ListView(padding: const EdgeInsets.all(16), children: [
+        const Text('الرقم ده هيستخدمه العميل للتواصل والشكاوى عبر واتساب.'),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _number,
+          keyboardType: TextInputType.phone,
+          enabled: !_loading && !_saving,
+          decoration: const InputDecoration(
+            labelText: 'رقم واتساب',
+            hintText: '01000197222',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _loading || _saving ? null : _save,
+          child: Text(_saving ? 'جارٍ الحفظ...' : 'حفظ الرقم'),
+        ),
+      ])),
+    ]),
+  );
 }

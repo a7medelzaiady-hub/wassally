@@ -70,7 +70,7 @@ test('orders: الطلب الخاص ومرفقاته تُحفظ داخل نفس 
     description: 'منتج مخصوص',
     quantity: 2,
     imageUrl: 'https://res.cloudinary.com/demo/image/upload/special_requests/sample.jpg',
-    voiceBase64: 'QUJDRA==',
+    voiceUrl: 'https://res.cloudinary.com/demo/video/upload/v1/special_requests/abc/voice.m4a',
     createdAt: new Date().toISOString(),
   };
   await assertSucceeds(setDoc(
@@ -84,6 +84,20 @@ test('orders: الطلب الخاص ومرفقاته تُحفظ داخل نفس 
   await assertFails(setDoc(
     doc(as('cust1'), 'orders/unknown-special-request-key'),
     baseOrder('cust1', { specialRequest: { ...request, customerPhone: '01012345678' } }),
+  ));
+  // الصوت base64 جوه الطلب اتقفل، ورابط الصوت لازم يكون من مجلد الطلبات الخاصة على Cloudinary.
+  const { voiceUrl: _v, ...noVoice } = request;
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-base64'),
+    baseOrder('cust1', { specialRequest: { ...noVoice, voiceBase64: 'QUJDRA==' } }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-foreign'),
+    baseOrder('cust1', { specialRequest: { ...request, voiceUrl: 'https://evil.example/voice.m4a' } }),
+  ));
+  await assertFails(setDoc(
+    doc(as('cust1'), 'orders/voice-other-folder'),
+    baseOrder('cust1', { specialRequest: { ...request, voiceUrl: 'https://res.cloudinary.com/demo/video/upload/products/x.m4a' } }),
   ));
 });
 
@@ -362,10 +376,18 @@ async function seedOnWay(deliveryMode = 'external') {
   });
 }
 
+// بلاغ التسليم وتأكيد العميل مبقوش من التطبيق: الـWorker بيكتبهم لما المندوب يدخل رمز التسليم الصحيح.
 async function reportDelivery(courierId = 'cour1') {
-  await assertSucceeds(updateDoc(doc(as(courierId), 'orders/o1'), {
+  await assertFails(updateDoc(doc(as(courierId), 'orders/o1'), {
     customerDeliveryReportedAt: serverTimestamp(),
     customerDeliveryReportedBy: courierId,
+  }));
+}
+// محاكاة اللي بيكتبه الـWorker للمندوب الخارجي بعد الرمز الصحيح (الطلب يفضل في الطريق لتسوية النقدية).
+async function workerConfirmExternal(courierId = 'cour1') {
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: courierId,
+    customerConfirmedAt: new Date(), deliveryPinVerifiedAt: new Date(),
   }));
 }
 
@@ -396,19 +418,15 @@ test('delivery lifecycle: المندوب يبلغ بالتسليم ولا يست
     actorRole: 'admin', at: serverTimestamp(),
   });
   await assertFails(adminClose.commit());
+  // بلاغ التسليم من التطبيق ممنوع (التسليم بالرمز عن طريق الـWorker)
   await reportDelivery();
-  const afterReport = (await getDoc(doc(as('cust1'), 'orders/o1'))).data();
-  assert.equal(afterReport.status, 'on_the_way');
-  assert.equal(afterReport.customerDeliveryReportedBy, 'cour1');
-  await assertFails(updateDoc(doc(courier, 'orders/o1'), {
-    customerDeliveryReportedAt: serverTimestamp(),
-    customerDeliveryReportedBy: 'cour1',
-  }));
 });
 
-test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب المحل', async () => {
+test('delivery lifecycle: العميل ما يقدرش يأكد الاستلام بنفسه (التأكيد بالرمز من الـWorker)', async () => {
   await seedOnWay('store');
-  await reportDelivery('storecour1');
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'orders/o1'), {
+    customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: 'storecour1',
+  }));
   const db = as('cust1');
   const b = writeBatch(db);
   b.update(doc(db, 'orders/o1'), {
@@ -423,24 +441,22 @@ test('delivery lifecycle: تأكيد العميل يغلق طلب مندوب ا�
     from: 'on_the_way', to: 'delivered', actorUid: 'cust1',
     actorRole: 'customer', at: serverTimestamp(),
   });
-  await assertSucceeds(b.commit());
+  await assertFails(b.commit());
+  await assertFails(updateDoc(doc(db, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
   const order = (await getDoc(doc(db, 'orders/o1'))).data();
-  assert.equal(order.status, 'delivered');
-  assert.equal(order.deliveredBy, 'storecour1');
+  assert.equal(order.status, 'on_the_way');
 });
 
 test('delivery lifecycle: المندوب الخارجي يسلم النقدية والمحل وحده يغلق الطلب', async () => {
   await seedOnWay('external');
   await reportDelivery('cour1');
+  await workerConfirmExternal('cour1');
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
     verifiedTotal: 35,
     verifiedAt: serverTimestamp(),
   }));
   await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), {
     finalDeliveryFee: 15,
-  }));
-  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), {
-    customerConfirmedAt: serverTimestamp(),
   }));
   const owner = as('owner1');
   const earlyClose = writeBatch(owner);
@@ -507,6 +523,19 @@ test('notifications: أدمن ينشئ، عميل يقرأ إشعاراته فق
   await assertFails(setDoc(doc(as('cust1'), 'notifications/n2'), n));
   await assertSucceeds(getDoc(doc(as('cust1'), 'notifications/n1')));
   await assertFails(getDoc(doc(as('cust2'), 'notifications/n1')));
+});
+
+test('notifications: استعلام شاشة الإشعارات (userId + ترتيب createdAt + limit) مسموح لصاحبه ومرفوض لغيره', async () => {
+  const { collection, getDocs, query, where, orderBy, limit } = require('firebase/firestore');
+  const n = { userId: 'cust1', title: 't', body: 'b', orderId: 'o1', read: false, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as('admin1'), 'notifications/n1'), n));
+  const mine = (uid, db) => query(collection(db, 'notifications'), where('userId', '==', uid), orderBy('createdAt', 'desc'), limit(100));
+  const res = await assertSucceeds(getDocs(mine('cust1', as('cust1'))));
+  assert.equal(res.size, 1);
+  // نفس الاستعلام من غير ترتيب (الاستعلام البديل لو الفهرس ناقص) لازم يتقبل برضه
+  await assertSucceeds(getDocs(query(collection(as('cust1'), 'notifications'), where('userId', '==', 'cust1'), limit(100))));
+  // الاستعلام باسم عميل تاني مرفوض
+  await assertFails(getDocs(mine('cust1', as('cust2'))));
 });
 
 async function deliveredWithCourier() {
@@ -770,6 +799,30 @@ test('owner: يعدّل حقول التشغيل في محله فقط', async () 
   await assertFails(setDoc(doc(db, 'stores/newShop'), { name: 'x', active: true, time: '1' }));
 });
 
+test('owner: يفتح ويقفل محله (isOpen) في الاتجاهين، والمغلق ما يستقبلش طلبات', async () => {
+  const db = as('owner1');
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { isOpen: false, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db, 'stores/shop1'), { isOpen: 'no' }));
+  await assertFails(updateDoc(doc(db, 'stores/shop2'), { isOpen: false }));
+  // المحل لسه ظاهر للعميل
+  await assertSucceeds(getDoc(doc(as('cust1'), 'stores/shop1')));
+  // طلب جديد على محل مغلق مرفوض
+  await assertFails(setDoc(doc(as('cust1'), 'orders/closed1'), baseOrder('cust1')));
+  // صاحب المحل يرجّع يفتحه، والطلب يعدّي
+  await assertSucceeds(updateDoc(doc(db, 'stores/shop1'), { isOpen: true, updatedAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/open1'), baseOrder('cust1')));
+});
+
+test('catalog store_index: خانة المحل لازم تطابق isOpen في مستند المحل', async () => {
+  await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'stores/shop1'), { isOpen: false }));
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, isOpen: false } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: true } }, { merge: true }));
+  // merge بيدمج جوه الخانة، فعشان نجرّب خانة من غير isOpen لازم نشيله صراحة.
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, isOpen: deleteField() } }, { merge: true }));
+});
+
 test('owner: يضيف ويعدّل ويحذف أصناف محله فقط، وبحقول سليمة', async () => {
   const db = as('owner1');
   const p = { name: 'صنف', price: 25, image: '', isAvailable: true, available: true, createdAt: serverTimestamp() };
@@ -823,6 +876,39 @@ test('owner: يرفع نسخة الكتالوج +1 فقط، والعميل لا'
   const v = { version: 1, updatedAt: serverTimestamp() };
   await assertSucceeds(setDoc(doc(as('owner1'), 'app_info/catalog'), v, { merge: true }));
   await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog'), v, { merge: true }));
+});
+
+test('catalog: صاحب المحل يزود الإصدار خطوة واحدة فقط، بدون تزوير وقت التحديث', async () => {
+  const ref = doc(as('owner1'), 'app_info/catalog');
+  await assertSucceeds(setDoc(ref, { version: 1, updatedAt: serverTimestamp() }));
+  // آخر زيادة من دقايق: الزيادة الجاية مسموحة
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 1, updatedAt: new Date(Date.now() - 5 * 60 * 1000) }));
+  await assertSucceeds(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp() }));
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 2, updatedAt: new Date(Date.now() - 5 * 60 * 1000) }));
+  await assertFails(updateDoc(ref, { version: 999999, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { version: 2, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { version: increment(1), updatedAt: new Date('2020-01-01') }));
+  await assertFails(updateDoc(ref, { version: increment(1), updatedAt: serverTimestamp(), injected: true }));
+});
+
+test('catalog: حد سرعة لأصحاب المحلات (زيادة كل 60 ثانية)، والمدير بلا حد', async () => {
+  const old = new Date(Date.now() - 2 * 60 * 1000);
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 10, updatedAt: old }));
+  const bump = (uid) => updateDoc(doc(as(uid), 'app_info/catalog'), { version: increment(1), updatedAt: serverTimestamp() });
+  await assertSucceeds(bump('owner1'));
+  // زيادة تانية فورًا مرفوضة (حتى من صاحب محل تاني)
+  await assertFails(bump('owner1'));
+  await assertFails(bump('owner2'));
+  // المدير مش عليه حد
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'app_info/catalog'), { version: 12, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'app_info/catalog'), { version: 13, updatedAt: serverTimestamp() }));
+  // مستند قديم من غير updatedAt: أول زيادة مسموحة
+  await env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'app_info/catalog'), { version: 20 }));
+  await assertSucceeds(bump('owner1'));
 });
 
 test('owner: يبعت إشعار للعميل، وما يكتبش في storeOwners أو admins', async () => {
@@ -929,9 +1015,69 @@ test('delivery issue: الإدارة تختار إعادة المحاولة وي
   });
   resume.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: deleteField() });
   await assertSucceeds(resume.commit());
-  // بعد الاستئناف المندوب يبلّغ بالتسليم فقط؛ الإغلاق لا يتم منه مباشرة.
+  // بعد الاستئناف: الإغلاق لا يتم من المندوب مباشرة، ولا بلاغ تسليم من التطبيق (الرمز عن طريق الـWorker).
   await assertFails(deliver(courier, 'courier', stamp()));
   await reportDelivery('cour1');
+});
+
+test('delivery issue: المندوب يبدأ الرجوع للمحل مباشرة دون موافقة الإدارة', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const batch = writeBatch(courier);
+  batch.set(doc(courier, 'delivery_issues/direct-return'), deliveryIssueData({ status: 'return_to_store' }));
+  batch.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'direct-return' });
+  await assertSucceeds(batch.commit());
+  await assertFails(updateDoc(doc(as('cour2'), 'delivery_issues/direct-return'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour2',
+  }));
+  await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/direct-return'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour1',
+  }));
+  await assertFails(updateDoc(doc(as('owner1'), 'delivery_issues/direct-return'), {
+    status: 'store_confirmed_return', storeReceivedAt: serverTimestamp(), storeReceivedBy: 'owner1',
+  }));
+});
+
+test('المرتجع: تأكيد المحل بيقفل الطلب «ملغي» في نفس الـbatch من غير الإدارة', async () => {
+  await setOrder({ status: 'on_the_way', courierId: 'cour1', pickedUpAt: new Date(), courierArrivedAt: new Date() });
+  const courier = as('cour1');
+  const open = writeBatch(courier);
+  open.set(doc(courier, 'delivery_issues/ret2'), deliveryIssueData({ status: 'return_to_store' }));
+  open.update(doc(courier, 'orders/o1'), { activeDeliveryIssueId: 'ret2' });
+  await assertSucceeds(open.commit());
+
+  const storeClose = (uid) => {
+    const db = as(uid);
+    const b = writeBatch(db);
+    b.update(doc(db, 'delivery_issues/ret2'), {
+      status: 'store_confirmed_return', storeReceivedAt: serverTimestamp(), storeReceivedBy: uid,
+    });
+    b.update(doc(db, 'orders/o1'), { status: 'cancelled', activeDeliveryIssueId: deleteField(), lastDeliveryIssueId: 'ret2' });
+    b.set(doc(db, 'orders/o1/statusHistory/cancelled'), {
+      from: 'on_the_way', to: 'cancelled', actorUid: uid, actorRole: 'storeOwner', at: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  // قبل ما المندوب يسجّل إنه رجّعه: ممنوع
+  await assertFails(storeClose('owner1'));
+  await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/ret2'), {
+    status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour1',
+  }));
+  // صاحب محل تاني: ممنوع
+  await assertFails(storeClose('owner2'));
+  // قفل الطلب من غير تحديث البلاغ في نفس الـbatch: ممنوع
+  const db1 = as('owner1');
+  const noIssue = writeBatch(db1);
+  noIssue.update(doc(db1, 'orders/o1'), { status: 'cancelled', activeDeliveryIssueId: deleteField(), lastDeliveryIssueId: 'ret2' });
+  noIssue.set(doc(db1, 'orders/o1/statusHistory/cancelled'), {
+    from: 'on_the_way', to: 'cancelled', actorUid: 'owner1', actorRole: 'storeOwner', at: serverTimestamp(),
+  });
+  await assertFails(noIssue.commit());
+  await assertSucceeds(storeClose('owner1'));
+  const order = (await getDoc(doc(as('admin1'), 'orders/o1'))).data();
+  assert.equal(order.status, 'cancelled');
+  assert.equal(order.lastDeliveryIssueId, 'ret2');
+  assert.equal(order.deliveredBy, undefined);
 });
 
 test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن تغلق الإدارة الطلب', async () => {
@@ -963,10 +1109,11 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
   });
   await assertFails(closeAttempt.commit()); // لا يكفي تأكيد المندوب وحده.
-  await assertSucceeds(updateDoc(doc(as('owner1'), 'delivery_issues/return1'), {
+  await assertSucceeds(updateDoc(doc(adminDb, 'delivery_issues/return1'), {
     status: 'store_confirmed_return',
-    storeReceivedAt: serverTimestamp(),
-    storeReceivedBy: 'owner1',
+    adminDecision: 'المحل أكد الاستلام',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'admin1',
   }));
   const close = writeBatch(adminDb);
   close.update(doc(adminDb, 'orders/o1'), {
@@ -978,7 +1125,7 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
   });
   await assertSucceeds(close.commit());
-  // المندوب يحتفظ بحق تقييم العميل بعد الإرجاع المؤكد من المحل والإلغاء الإداري.
+  // المندوب يحتفظ بحق تقييم العميل بعد تأكيد الإرجاع والإلغاء الإداري.
   await assertSucceeds(setDoc(
     doc(as('cour1'), 'customer_reviews/o1_courier'),
     customerReview('courier', 'cour1'),
@@ -1108,21 +1255,14 @@ test('delivery: لا يمكن تسجيل التسليم قبل تسجيل الو
   await assertFails(deliver(as('admin1'), 'admin', stamp()));
 });
 
-// الإغلاق لا يتم من المندوب ولا الأدمن مباشرة؛ في طلب مندوب المحل العميل يؤكد الاستلام ويُختم الطلب.
+// الإغلاق العادي بالرمز من الـWorker. من التطبيق: الأدمن بس، ولطلب مندوب المحل اللي رمزه اتقفل.
+// (بنستخدم الإغلاق الإداري هنا عشان نختبر قواعد ختم التسليم.)
 async function seedStoreReported(extra = {}) {
   await seedOnWay('store');
-  await setOrder({ customerDeliveryReportedAt: new Date(), customerDeliveryReportedBy: 'storecour1', ...extra });
+  await setOrder({ deliveryPinLockedAt: new Date(), ...extra });
 }
 const storeStamp = (over = {}) => stamp({ deliveredBy: 'storecour1', ...over });
-const customerClose = (patch) => {
-  const db = as('cust1');
-  const b = writeBatch(db);
-  b.update(doc(db, 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...patch });
-  b.set(doc(db, 'orders/o1/statusHistory/delivered'), {
-    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
-  });
-  return b.commit();
-};
+const customerClose = (patch) => deliver(as('admin1'), 'admin', patch);
 
 test('delivery stamp: الختم إلزامي دائمًا والمندوب لا يزوّر أرقامه', async () => {
   await seedStoreReported();
@@ -1141,9 +1281,44 @@ test('delivery stamp: لا يمكن تعديل ختم التسليم بعد اك
   await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { courierEarning: 500 }));
 });
 
-test('delivery stamp: الأدمن لا يغلق الطلب، والمبلغ المعتمد هو المحصّل', async () => {
-  await seedStoreReported({ verifiedTotal: 28 });
+test('قفل الرمز مع مندوب خارجي: الأدمن يأكد استلام العميل بس، والطلب يفضل لتسوية النقدية', async () => {
+  await seedOnWay('external');
+  const admin = as('admin1');
+  // من غير قفل الرمز: ممنوع
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  // وقت مزوّر ممنوع
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: new Date('2020-01-01') }));
+  // العميل والمندوب ما يقدروش
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(as('cour1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  const after = (await getDoc(doc(admin, 'orders/o1'))).data();
+  assert.equal(after.status, 'on_the_way');
+  // مرة واحدة بس
+  await assertFails(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+});
+
+test('قفل الرمز مع مندوب المحل: الأدمن ما يستخدمش تأكيد الاستلام لوحده (بيقفل بالحالة)', async () => {
+  await seedOnWay('store');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+});
+
+test('delivery stamp: الأدمن يغلق بس بعد قفل الرمز، والمبلغ المعتمد هو المحصّل', async () => {
+  await seedOnWay('store');
+  await setOrder({ verifiedTotal: 28 });
+  // من غير قفل الرمز: الأدمن ما يغلقش
   await assertFails(deliver(as('admin1'), 'admin', storeStamp({ collectedAmount: 28 })));
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  // العميل ما يغلقش حتى بعد القفل
+  const custDb = as('cust1');
+  const cb = writeBatch(custDb);
+  cb.update(doc(custDb, 'orders/o1'), { customerConfirmedAt: serverTimestamp(), ...storeStamp({ collectedAmount: 28 }) });
+  cb.set(doc(custDb, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: 'cust1', actorRole: 'customer', at: serverTimestamp(),
+  });
+  await assertFails(cb.commit());
   await assertFails(customerClose(storeStamp({ collectedAmount: 40 })));
   await assertSucceeds(customerClose(storeStamp({ collectedAmount: 28 })));
 });
@@ -1301,42 +1476,64 @@ test('customer restrictions: Fail-Closed مع مستند تقييد ناقص أ�
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/fc6'), baseOrder('cust1')));
 });
 
-test('complaints: أي مسجّل يبعت باسمه، يقرأ بتاعته، والمدير يقرأ الكل ويقفلها', async () => {
+test('complaints: الإنشاء موقوف (الدعم واتساب)، المستندات القديمة تتقرأ وتتقفل بس', async () => {
   const c = (over = {}) => ({
     userId: 'cust1', userEmail: 'a@x.com', userName: 'Ali', kind: 'complaint', message: 'المندوب اتأخر جدًا',
     appRole: 'customer', status: 'open', createdAt: serverTimestamp(), ...over,
   });
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c1'), c()));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c2'), c({ kind: 'order_issue', orderId: 'o1' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c8'), c({ kind: 'restriction_appeal', orderId: 'o1' })));
-  await assertSucceeds(setDoc(doc(as('admin1'), 'customer_restrictions/cust1'), {
-    customerId: 'cust1', active: true, reason: 'مراجعة واقعة موثقة',
-    sourceOrderId: 'o1', createdAt: serverTimestamp(), createdBy: 'admin1',
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c1'), c()));
+  await assertFails(setDoc(doc(as('cust1'), 'complaints/c2'), c({ kind: 'order_issue', orderId: 'o1' })));
+  await assertFails(setDoc(doc(as('admin1'), 'complaints/c3'), c()));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'complaints/old1'), {
+      userId: 'cust1', kind: 'complaint', message: 'شكوى قديمة', status: 'open', appRole: 'customer',
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('cust1'), 'complaints/old1')));
+  await assertFails(getDoc(doc(as('cust2'), 'complaints/old1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'complaints/old1')));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/old1'), { status: 'resolved', adminNote: 'تم' }));
+  await assertFails(updateDoc(doc(as('cust1'), 'complaints/old1'), { status: 'resolved' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'complaints/old1')));
+});
+
+test('support_chats: الإنشاء والتعديل والرسائل موقوفة، القراءة القديمة فقط', async () => {
+  const chat = {
+    userId: 'cust1', userName: 'Ali', userEmail: 'a@x.com', appRole: 'customer',
+    lastMessage: 'مرحبا', lastSender: 'user', lastAt: serverTimestamp(),
+    unreadForAdmin: true, unreadForUser: false,
+  };
+  await assertFails(setDoc(doc(as('cust1'), 'support_chats/cust1'), chat));
+  await assertFails(setDoc(doc(as('admin1'), 'support_chats/cust1'), chat));
+  await assertFails(setDoc(doc(as('cust1'), 'support_chats/cust1/messages/m1'), {
+    senderId: 'cust1', senderRole: 'user', text: 'مرحبا', createdAt: serverTimestamp(),
   }));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'complaints/c9'), c({
-    kind: 'restriction_appeal', orderId: 'o1',
-  })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c11'), c({
-    kind: 'restriction_appeal', orderId: 'another-order',
-  })));
-  await assertSucceeds(getDoc(doc(as('admin1'), 'complaints/c9')));
-  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/c9'), {
-    status: 'in_progress', adminNote: 'تم استلام الاعتراض وجارٍ مراجعته.',
-  }));
-  await assertFails(setDoc(doc(as('cust2'), 'complaints/c10'), c({
-    userId: 'cust2', kind: 'restriction_appeal', orderId: 'o1',
-  })));
-  await assertFails(setDoc(doc(as('cust2'), 'complaints/c3'), c({ kind: 'order_issue', orderId: 'o1', userId: 'cust2' }))); // طلب مش بتاعه
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c4'), c({ kind: 'order_issue' }))); // من غير طلب
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c5'), c({ userId: 'cust2' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c6'), c({ message: 'ab' })));
-  await assertFails(setDoc(doc(as('cust1'), 'complaints/c7'), c({ status: 'resolved' })));
-  await assertSucceeds(getDoc(doc(as('cust1'), 'complaints/c1')));
-  await assertFails(getDoc(doc(as('cust2'), 'complaints/c1')));
-  await assertSucceeds(updateDoc(doc(as('admin1'), 'complaints/c1'), { status: 'resolved', adminNote: 'تم' }));
-  await assertFails(updateDoc(doc(as('cust1'), 'complaints/c1'), { status: 'resolved' }));
-  await assertFails(deleteDoc(doc(as('admin1'), 'complaints/c1')));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'support_chats/cust1'), { ...chat, lastAt: new Date() });
+    await setDoc(doc(ctx.firestore(), 'support_chats/cust1/messages/m0'), {
+      senderId: 'cust1', senderRole: 'user', text: 'قديمة', createdAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('cust1'), 'support_chats/cust1')));
+  await assertFails(getDoc(doc(as('cust2'), 'support_chats/cust1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'support_chats/cust1')));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'support_chats/cust1/messages/m0')));
+  await assertFails(updateDoc(doc(as('cust1'), 'support_chats/cust1'), { unreadForUser: false }));
+  await assertFails(updateDoc(doc(as('admin1'), 'support_chats/cust1'), { unreadForAdmin: false }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'support_chats/cust1')));
+});
+
+test('الكوبونات موقوفة: طلب جديد بخصم يترفض حتى لو الكود صالح، وبدون خصم يعدّي', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'promos/SAVE10'), { percent: 10, active: true });
+  });
+  const base = baseOrder('cust1');
+  const discounted = {
+    ...base, promoCode: 'SAVE10', discount: 2,
+    total: base.subtotal + base.deliveryFee - 2,
+  };
+  await assertFails(setDoc(doc(as('cust1'), 'orders/promo1'), discounted));
+  await assertSucceeds(setDoc(doc(as('cust1'), 'orders/promo2'), baseOrder('cust1')));
 });
 
 test('finalDeliveryFee: الأدمن بس يحدد الرسوم، والعمولة بتتبعها (رسوم التوصيل الأصلية متغيرة حسب المنطقة)', async () => {
@@ -1397,13 +1594,18 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
   await setOrderState({ status: 'on_the_way' });
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
-  await setOrderState({ status: 'delivered' });
+  // An external courier can still settle cash after PIN confirmation.
+  await setOrderState({ deliveryMode: 'external', customerConfirmedAt: new Date() });
+  await assertFails(getDoc(doc(as('cour1'), contactPath)));
+  await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
+  await assertFails(getDoc(doc(as('owner1'), contactPath)));
+  await setOrderState({ status: 'delivered', customerConfirmedAt: deleteField() });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // بعد التسليم يتقفل
   await setOrderState({ status: 'on_the_way', courierId: 'someone_else' });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
 });
 
-test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل/يحذف وهو new بس', async () => {
+test('خصوصية: العميل والأدمن يقرأوا، وعميل تاني لأ، والعميل يعدّل وهو new/preparing ومفيش حذف', async () => {
   await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
   await assertSucceeds(getDoc(doc(as('admin1'), contactPath)));
   await assertFails(getDoc(doc(as('cust2'), contactPath)));
@@ -1420,9 +1622,9 @@ test('خصوصية: العميل والأدمن يقرأوا، وعميل تان
   // بعد تعيين المندوب تُقفل بيانات التواصل عن العميل.
   await setOrderState({ courierId: 'cour1', pickedUpAt: new Date() });
   await assertFails(updateDoc(doc(as('cust1'), contactPath), { phone: '01212345678' }));
-  // وهو new: الحذف ينجح
+  // حتى وهو new: مفيش حذف لبيانات التواصل (الطلبات ما بتتمسحش من التطبيق)
   await seed();
-  await assertSucceeds(deleteDoc(doc(as('cust1'), contactPath)));
+  await assertFails(deleteDoc(doc(as('cust1'), contactPath)));
 });
 
 test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها عميله أو مندوبه', async () => {
@@ -1435,49 +1637,66 @@ test('إشعارات: لازم تتعلّق بطلب حقيقي ومستلمها
 });
 
 
-test('special_requests: العميل ينشئ طلبًا صالحًا وصاحب المحل المعني فقط يقرأه', async () => {
+test('special_requests: الإنشاء موقوف مؤقتًا للجميع، والقراءة للمستندات القديمة لصاحب المحل المعني والإدارة فقط', async () => {
   const request = {
     storeId: 'shop1', storeName: 'S', userId: 'cust1',
     description: 'منتج مخصوص', quantity: 2, imageUrl: '',
     voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
   };
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/sr1'), request));
-  await assertSucceeds(getDoc(doc(as('owner1'), 'special_requests/sr1')));
-  await assertFails(getDoc(doc(as('owner2'), 'special_requests/sr1')));
-  await assertFails(getDoc(doc(as('cust2'), 'special_requests/sr1')));
-  await assertFails(setDoc(doc(as('cust1'), 'special_requests/bad'), {
-    ...request, quantity: 0,
+  // لا عميل ولا صاحب محل ولا مدير يقدر ينشئ مستندًا جديدًا (التطبيق بيستخدم orders.specialRequest).
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/sr1'), request));
+  await assertFails(setDoc(doc(as('owner1'), 'special_requests/sr2'), request));
+  await assertFails(setDoc(doc(as('admin1'), 'special_requests/sr3'), request));
+  await assertFails(setDoc(doc(as('cust1'), 'special_requests/voice-big'), {
+    ...request, voiceBase64: 'A'.repeat(1000),
   }));
+
+  // مستند قديم موجود: القراءة محصورة في صاحب المحل المعني والإدارة.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'special_requests/old1'), {
+      ...request, createdAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(as('owner1'), 'special_requests/old1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'special_requests/old1')));
+  await assertFails(getDoc(doc(as('owner2'), 'special_requests/old1')));
+  await assertFails(getDoc(doc(as('cust1'), 'special_requests/old1')));
+  await assertFails(updateDoc(doc(as('owner1'), 'special_requests/old1'), { status: 'done' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'special_requests/old1')));
 });
 
-test('special_requests: يقبل مرفق صورة فقط أو صوت فقط ويرفض الصوت المتجاوز للحد', async () => {
-  const base = {
-    storeId: 'shop1', storeName: 'S', userId: 'cust1',
-    description: '', quantity: 1, imageUrl: '',
-    voiceBase64: '', status: 'new', createdAt: serverTimestamp(),
-  };
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/image-only'), {
-    ...base,
-    imageUrl: 'https://res.cloudinary.com/example/image/upload/test.jpg',
-  }));
-  await assertSucceeds(setDoc(doc(as('cust1'), 'special_requests/voice-only'), {
-    ...base,
-    voiceBase64: 'A'.repeat(1000),
-  }));
-  await assertFails(setDoc(doc(as('cust1'), 'special_requests/voice-too-large'), {
-    ...base,
-    voiceBase64: 'A'.repeat(700001),
-  }));
-});
-
-test('store owner: حذف المحل وفك ربط حسابه يتمان في Batch واحدة', async () => {
+test('store owner: لا يستطيع حذف مستند المحل؛ الحذف للإدارة فقط', async () => {
   const db = as('owner1');
+  await assertFails(deleteDoc(doc(db, 'stores/shop1')));
   const batch = writeBatch(db);
   batch.delete(doc(db, 'stores/shop1'));
   batch.delete(doc(db, 'storeOwners/owner1'));
-  await assertSucceeds(batch.commit());
-  const ownerLink = await assertSucceeds(getDoc(doc(db, 'storeOwners/owner1')));
-  if (ownerLink.exists()) throw new Error('Owner link should be removed with the store.');
+  await assertFails(batch.commit());
+  await assertFails(deleteDoc(doc(as('owner2'), 'stores/shop1')));
+  await assertSucceeds(deleteDoc(doc(as('admin1'), 'stores/shop1')));
+});
+
+test('storeOwners: صاحب المحل لا يفك ربط حسابه بنفسه؛ الإدارة فقط', async () => {
+  await assertFails(deleteDoc(doc(as('owner1'), 'storeOwners/owner1')));
+  await assertFails(deleteDoc(doc(as('owner1'), 'storeOwners/owner2')));
+  await assertSucceeds(deleteDoc(doc(as('admin1'), 'storeOwners/owner1')));
+});
+
+test('account_deletions: مستند واحد لكل مستخدم وبحقول محددة', async () => {
+  const db = as('cust1');
+  await assertFails(setDoc(doc(db, 'account_deletions/random-id'), { userId: 'cust1', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', junk: 'A'.repeat(1000) }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust2'), { userId: 'cust2', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust2', reason: 'x' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1' }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 5 }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'A'.repeat(201) }));
+  await assertFails(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', createdAt: 'A'.repeat(5000) }));
+  await assertSucceeds(setDoc(doc(db, 'account_deletions/cust1'), { userId: 'cust1', reason: 'x', createdAt: serverTimestamp() }));
+});
+
+test('account_deletions: الإنشاء بدون createdAt مسموح بحقول صحيحة', async () => {
+  await assertSucceeds(setDoc(doc(as('cust1'), 'account_deletions/cust1'), { userId: 'cust1', reason: 'x' }));
 });
 
 
@@ -1799,8 +2018,107 @@ test('expression limit: مستخدم واحد بكل الأدوار يمرّ ب�
   });
   await assertSucceeds(b.commit());
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { ready: true, readyAt: serverTimestamp() }));
-  // الإخفاء من سجل العميل (فرع العميل بعد مرور بقية الأدوار على نفس المستخدم).
+  // الإخفاء من سجل العميل: ممنوع والطلب لسه شغال، ومسموح بعد ما يخلص
+  // (فرع العميل بعد مرور بقية الأدوار على نفس المستخدم).
+  await assertFails(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
+  await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), 'orders/om1'), { status: 'cancelled' }));
   await assertSucceeds(updateDoc(doc(db, 'orders/om1'), { customerHidden: true }));
+});
+
+test('رسوم وصّلي على المحل: الأدمن بس يسجّل دفعة مع تحديث الرصيد بنفس المبلغ، وصاحب المحل يقرا رصيده', async () => {
+  const pay = (uid, pid, amountMinor, paidAfter, prevPaid = null) => {
+    const db = as(uid);
+    const b = writeBatch(db);
+    b.set(doc(db, `store_fee_payments/${pid}`), {
+      storeId: 'shop1', amount: amountMinor / 100, amountMinor, note: 'كاش', createdBy: uid, createdAt: serverTimestamp(),
+    });
+    b.set(doc(db, 'store_fee_balances/shop1'), {
+      storeId: 'shop1', paidAmountMinor: paidAfter, lastPaymentId: pid, updatedAt: serverTimestamp(),
+    });
+    return b.commit();
+  };
+  await assertFails(pay('owner1', 'p0', 500, 500));
+  await assertFails(pay('cust1', 'p0', 500, 500));
+  // الرصيد لازم يزيد بنفس مبلغ الدفعة بالظبط
+  await assertFails(pay('admin1', 'p1', 500, 900));
+  await assertSucceeds(pay('admin1', 'p1', 500, 500));
+  await assertSucceeds(pay('admin1', 'p2', 1250, 1750));
+  // دفعة من غير تحديث الرصيد ممنوعة
+  await assertFails(setDoc(doc(as('admin1'), 'store_fee_payments/p3'), {
+    storeId: 'shop1', amount: 1, amountMinor: 100, note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+  }));
+  // القراءة
+  await assertSucceeds(getDoc(doc(as('owner1'), 'store_fee_balances/shop1')));
+  await assertFails(getDoc(doc(as('owner2'), 'store_fee_balances/shop1')));
+  await assertFails(getDoc(doc(as('cust1'), 'store_fee_balances/shop1')));
+  await assertSucceeds(getDoc(doc(as('owner1'), 'store_fee_payments/p1')));
+  await assertFails(getDoc(doc(as('owner2'), 'store_fee_payments/p1')));
+  // مفيش تعديل ولا حذف للدفعات
+  await assertFails(updateDoc(doc(as('admin1'), 'store_fee_payments/p1'), { amount: 1 }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'store_fee_payments/p1')));
+});
+
+test('تقفيل الحساب: الأدمن بس يختم settledAt من غير ما يغيّر المدفوع، والدفعة بعده تحافظ عليه', async () => {
+  const settle = (uid, paid, last) => setDoc(doc(as(uid), 'store_fee_balances/shop1'), {
+    storeId: 'shop1', paidAmountMinor: paid, lastPaymentId: last, updatedAt: serverTimestamp(), settledAt: serverTimestamp(),
+  });
+  // أول تقفيل لمحل عمره ما دفع
+  await assertFails(settle('owner1', 0, ''));
+  await assertFails(settle('cust1', 0, ''));
+  await assertFails(settle('admin1', 500, ''));
+  await assertSucceeds(settle('admin1', 0, ''));
+  // دفعة بعد التقفيل لازم تحافظ على settledAt
+  const pay = (pid, amountMinor, paidAfter, keep) => {
+    const db = as('admin1');
+    const b = writeBatch(db);
+    b.set(doc(db, `store_fee_payments/${pid}`), {
+      storeId: 'shop1', amount: amountMinor / 100, amountMinor, note: '', createdBy: 'admin1', createdAt: serverTimestamp(),
+    });
+    const bal = { storeId: 'shop1', paidAmountMinor: paidAfter, lastPaymentId: pid, updatedAt: serverTimestamp() };
+    if (keep) bal.settledAt = (keep);
+    b.set(doc(db, 'store_fee_balances/shop1'), bal);
+    return b.commit();
+  };
+  const cur = (await getDoc(doc(as('admin1'), 'store_fee_balances/shop1'))).data().settledAt;
+  await assertFails(pay('q1', 300, 300, null));
+  await assertSucceeds(pay('q1', 300, 300, cur));
+  // تقفيل ثاني: المدفوع وآخر دفعة ما يتغيروش
+  await assertFails(settle('admin1', 999, 'q1'));
+  await assertFails(settle('admin1', 300, 'other'));
+  await assertSucceeds(settle('admin1', 300, 'q1'));
+});
+
+test('adminNotices: سجل إشعارات الإدارة مقفول على التطبيق', async () => {
+  for (const uid of ['cust1', 'owner1', 'admin1']) {
+    await assertFails(getDoc(doc(as(uid), 'adminNotices/join_request_x')));
+    await assertFails(setDoc(doc(as(uid), 'adminNotices/join_request_x'), { kind: 'join_request' }));
+  }
+});
+
+test('deliveryPinAttempts: مفيش قراءة ولا كتابة من التطبيق لأي دور', async () => {
+  await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'deliveryPinAttempts/o1'), { attempts: 2, locked: false }));
+  for (const uid of ['cust1', 'owner1', 'admin1', 'courier1']) {
+    await assertFails(getDoc(doc(as(uid), 'deliveryPinAttempts/o1')));
+    await assertFails(setDoc(doc(as(uid), 'deliveryPinAttempts/o1'), { attempts: 0, locked: false }));
+    await assertFails(deleteDoc(doc(as(uid), 'deliveryPinAttempts/o1')));
+  }
+});
+
+test('orders: مفيش حذف فعلي من التطبيق، والإخفاء للطلبات المنتهية بس', async () => {
+  // o1 جديد ومملوك لـ cust1 (من seed)
+  await assertFails(deleteDoc(doc(as('cust1'), 'orders/o1')));
+  await assertFails(deleteDoc(doc(as('cust1'), 'orders/o1/private/contact')));
+  await assertFails(deleteDoc(doc(as('owner1'), 'orders/o1')));
+  // إخفاء طلب جديد (لسه شغال) مرفوض
+  await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+  // الإلغاء من العميل وهو جديد مسموح، وبعده الإخفاء مسموح
+  await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+  // عميل تاني ما يقدرش يخفي طلب مش بتاعه
+  await assertFails(updateDoc(doc(as('cust2'), 'orders/o1'), { customerHidden: true }));
+  // الطلب لسه موجود للمحل والإدارة
+  await assertSucceeds(getDoc(doc(as('owner1'), 'orders/o1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'orders/o1')));
 });
 
 test('expression limit: لا تهريب مفاتيح بين أدوار مختلفة في تحديث واحد', async () => {
@@ -1828,4 +2146,507 @@ test('expression limit: طلب بأقصى عدد أصناف (100) ينجح و101
   const order = (n) => baseOrder('cust1', { items: mk(n), subtotal: 10 * n, total: 10 * n + 20 });
   await assertSucceeds(setDoc(doc(as('cust1'), 'orders/big100'), order(100)));
   await assertFails(setDoc(doc(as('cust1'), 'orders/big101'), order(101)));
+});
+
+// ───────────── الكتالوج المجمّع (catalog_versions / store_index / menu) ─────────────
+test('catalog menu: صاحب المحل يكتب قائمة محله فقط، والعميل يقرأ قائمة المحل النشط', async () => {
+  const menu = { items: { p1: { name: 'p', price: 10 } }, count: 1, updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(as('owner1'), 'stores/shop1/menu/current'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop2/menu/current'), menu));
+  await assertFails(setDoc(doc(as('cust1'), 'stores/shop1/menu/current'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop1/menu/other'), menu));
+  await assertFails(setDoc(doc(as('owner1'), 'stores/shop1/menu/current'), { ...menu, junk: 1 }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'stores/shop1/menu/current')));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'stores/shop2/menu/current'), menu));
+  await assertFails(deleteDoc(doc(as('owner1'), 'stores/shop1/menu/current')));
+});
+
+test('catalog menu: قائمة محل غير نشط لا يقرأها العميل', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop2'), { active: false });
+    await setDoc(doc(db, 'stores/shop2/menu/current'), { items: {}, count: 0 });
+  });
+  await assertFails(getDoc(doc(as('cust1'), 'stores/shop2/menu/current')));
+  await assertSucceeds(getDoc(doc(as('owner2'), 'stores/shop2/menu/current')));
+});
+
+test('catalog versions: صاحب المحل يزوّد إصدار محله والفهرس بواحد فقط', async () => {
+  const owner = as('owner1');
+  const ref = doc(owner, 'app_info/catalog_versions');
+  await assertSucceeds(setDoc(ref, { m_shop1: increment(1), stores: increment(1), updatedAt: serverTimestamp() }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: increment(1) }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: increment(2) }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop2: increment(1) }, { merge: true }));
+  await assertFails(setDoc(ref, { stores: -1 }, { merge: true }));
+  await assertFails(setDoc(ref, { stores: increment(5) }, { merge: true }));
+  // التعطيل = سالب آخر إصدار صالح (الإصدار كان 2).
+  await assertFails(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -2 }, { merge: true }));
+  // indexReady للمدير بس (بيتكتب بعد بناء الفهرس الكامل).
+  await assertFails(setDoc(ref, { indexReady: true }, { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'app_info/catalog_versions'), { stores: -1, m_shop2: 7 }, { merge: true }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'app_info/catalog_versions')));
+});
+
+test('catalog store_index: صاحب المحل يحدّث خانة محله بنفس الاسم فقط', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const owner = as('owner1');
+  const ref = doc(owner, 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: entry, updatedAt: serverTimestamp() }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, name: 'اسم مزيف' } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, category: 'مطاعم' } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, active: false } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop2: { ...entry, name: 'S2' } }, { merge: true }));
+  // محل نشط: صاحبه ما يقدرش يخفيه من الفهرس (الشيل مسموح بس لمحل مقفول/محذوف).
+  await assertFails(setDoc(ref, { s_shop1: deleteField() }, { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/store_index'), { s_shop1: entry }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('admin1'), 'app_info/store_index'), { s_shop2: { name: 'S2', active: true } }, { merge: true }));
+  await assertSucceeds(getDoc(doc(as('cust1'), 'app_info/store_index')));
+});
+
+test('catalog store_index: حد أمان 250 محل — صاحب محل جديد ما يضيفش خانة لو الفهرس مليان', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const full = { updatedAt: new Date() };
+  for (let i = 0; i < 250; i++) full[`s_x${i}`] = { name: `X${i}`, active: true };
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/store_index'), full);
+  });
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertFails(setDoc(ref, { s_shop1: entry, updatedAt: serverTimestamp() }, { merge: true }));
+  // لو محله موجود ضمن الـ 250، تحديثه مسموح (العدد ما زادش).
+  const withShop = { ...full };
+  delete withShop.s_x0;
+  withShop.s_shop1 = entry;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/store_index'), withShop);
+  });
+  await assertSucceeds(setDoc(ref, { s_shop1: entry, updatedAt: serverTimestamp() }, { merge: true }));
+});
+
+test('catalog versions: تعديل موجّه وقت ما القائمة معطلة بيترفض، وإعادة البناء ما تكررش رقم', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/catalog_versions'), { m_shop1: -2 });
+  });
+  const ref = doc(as('owner1'), 'app_info/catalog_versions');
+  // جهاز تاني عطّل القائمة: الزيادة الموجّهة (-2 → -1) لازم تترفض، فالمزامنة تعيد البناء.
+  await assertFails(setDoc(ref, { m_shop1: increment(1) }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 2 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -3 }, { merge: true }));
+  // رجوع لرقم اتستخدم قبل كده (3) مرفوض: لازم 4.
+  await assertFails(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 4 }, { merge: true }));
+});
+
+test('catalog store_index: محل موقوف لا يضاف للفهرس، وصاحب محل موقوف الحساب لا يكتب', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'stores/shop1'), { active: false });
+  });
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  await assertFails(setDoc(doc(as('owner1'), 'app_info/store_index'), { s_shop1: entry }, { merge: true }));
+  await assertSucceeds(setDoc(doc(as('owner1'), 'app_info/store_index'), { s_shop1: deleteField() }, { merge: true }));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'storeOwners/owner1'), { active: false });
+  });
+  await assertFails(setDoc(doc(as('owner1'), 'app_info/catalog_versions'), { m_shop1: increment(1) }, { merge: true }));
+});
+
+test('catalog store_index: صاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو يضيف حقول', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: entry }, { merge: true }));
+  for (const forged of [
+    { rating: 5 }, { order: 0 }, { storePhone: '01099999999' }, { ratingSum: 50, ratingCount: 10 },
+    { ownerUid: 'owner1' }, { approved: true }, { junk: 'x' }, { image: 'https://x' },
+  ]) {
+    await assertFails(setDoc(ref, { s_shop1: { ...entry, ...forged } }, { merge: true }));
+  }
+  // حذف حقل عرض موجود في مستند المحل (زي التقييم أو الترتيب) مرفوض برضه.
+  // (merge بيدمج الخريطة الداخلية، فالحذف لازم deleteField.)
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, rating: deleteField() } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, order: deleteField() } }, { merge: true }));
+});
+
+test('catalog store_index: العروض نص مضغوط واحد "hl" بطول محدود', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  const hl = JSON.stringify({ o: Array(4).fill({ n: 'عرض', p: 10, op: 12, i: 'https://img' }), b: [] });
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl } }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl: 'x'.repeat(1400) } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: 'x'.repeat(1401) } }, { merge: true }));
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: ['x'] } }, { merge: true }));
+  // الشكل القديم (قوائم) مبقاش مقبول في الفهرس.
+  await assertFails(setDoc(ref, { s_shop1: { ...entry, hl: deleteField(), offerItems: [] } }, { merge: true }));
+});
+
+test('catalog rating sync: آخر عميل قيّم يحدّث رقمي التقييم في الفهرس بقيم المحل بالظبط وبس', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4, ratingSum: 5, ratingCount: 1 };
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop1'), { ratingSum: 9, ratingCount: 2, lastReviewId: 'r1' });
+    await setDoc(doc(db, 'reviews/r1'), { userId: 'cust1', storeId: 'shop1', rating: 4, orderId: 'o1' });
+    await setDoc(doc(db, 'app_info/store_index'), { s_shop1: entry, s_shop2: { name: 'S2', active: true } });
+    await setDoc(doc(db, 'app_info/catalog_versions'), { stores: 5, indexReady: true });
+  });
+  const ref = (uid) => doc(as(uid), 'app_info/store_index');
+  const sync = (sum, count, sid = 'shop1') =>
+    ({ [`s_${sid}`]: { ratingSum: sum, ratingCount: count }, ratingSync: sid });
+
+  // تزوير أرقام أو عميل تاني: مرفوض.
+  await assertFails(setDoc(ref('cust1'), sync(10, 2), { merge: true }));
+  await assertFails(setDoc(ref('cust2'), sync(9, 2), { merge: true }));
+  // حقل تاني في الخانة أو حقل في المستند غير ratingSync: مرفوض.
+  await assertFails(setDoc(ref('cust1'), { s_shop1: { ratingSum: 9, ratingCount: 2, order: 0 }, ratingSync: 'shop1' }, { merge: true }));
+  await assertFails(setDoc(ref('cust1'), { ...sync(9, 2), updatedAt: serverTimestamp() }, { merge: true }));
+  // محل تاني (آخر تقييم مش بتاعه) أو خانة مش موجودة: مرفوض.
+  await assertFails(setDoc(ref('cust1'), sync(0, 0, 'shop2'), { merge: true }));
+  await assertFails(setDoc(ref('cust1'), sync(0, 0, 'shop9'), { merge: true }));
+  // القيم الصحيحة من آخر عميل قيّم: مسموح، ورقم إصدار الفهرس ما بيتغيرش.
+  await assertSucceeds(setDoc(ref('cust1'), sync(9, 2), { merge: true }));
+  await assertFails(setDoc(doc(as('cust1'), 'app_info/catalog_versions'), { stores: 6 }, { merge: true }));
+
+  // تقييم أحدث وصل: الكتابة القديمة (9/2) مرفوضة حتى من صاحبها، والأحدث بس اللي يتقبل.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, 'stores/shop1'), { ratingSum: 14, ratingCount: 3, lastReviewId: 'r2' });
+    await setDoc(doc(db, 'reviews/r2'), { userId: 'cust2', storeId: 'shop1', rating: 5, orderId: 'o2' });
+  });
+  await assertFails(setDoc(ref('cust1'), sync(9, 2), { merge: true }));
+  await assertFails(setDoc(ref('cust1'), sync(14, 3), { merge: true }));
+  await assertSucceeds(setDoc(ref('cust2'), sync(14, 3), { merge: true }));
+
+  // تحديث صاحب المحل لخانته بعد كده (بالأرقام الجديدة) شغال عادي مع وجود ratingSync.
+  await assertSucceeds(setDoc(ref('owner1'), {
+    s_shop1: { ...entry, ratingSum: 14, ratingCount: 3 }, updatedAt: serverTimestamp(),
+  }, { merge: true }));
+  let snap;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    snap = (await getDoc(doc(ctx.firestore(), 'app_info/store_index'))).data();
+  });
+  assert.equal(snap.s_shop1.ratingSum, 14);
+  assert.equal(snap.s_shop1.ratingCount, 3);
+  assert.equal(snap.s_shop1.name, 'S');
+});
+
+test('catalog store_index: فوق حد الـ 250، تعديل خانة موجودة مسموح طالما العدد ما زادش', async () => {
+  const entry = { name: 'S', active: true, time: '20-30', order: 1, rating: 4 };
+  const over = { updatedAt: new Date(), s_shop1: entry };
+  for (let i = 0; i < 260; i++) over[`s_x${i}`] = { name: `X${i}`, active: true };
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'app_info/store_index'), over);
+  });
+  const ref = doc(as('owner1'), 'app_info/store_index');
+  await assertSucceeds(setDoc(ref, { s_shop1: { ...entry, hl: '{}' }, updatedAt: serverTimestamp() }, { merge: true }));
+});
+
+test('catalog versions: الأرقام ما تتكررش بعد التعطيل، وbig_ لمحله بس، وindexReady للمدير بس', async () => {
+  const ref = doc(as('owner1'), 'app_info/catalog_versions');
+  await assertFails(setDoc(ref, { indexReady: true, m_shop1: 1 }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 1 }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 2 }, { merge: true }));
+  // تعطيل = -2 (سالب السابق)، مش أي رقم سالب.
+  await assertFails(setDoc(ref, { m_shop1: -1 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: -2 }, { merge: true }));
+  // الرجوع لازم يبقى 3 (|−2|+1)؛ 1 أو 2 اتستخدموا قبل كده والعميل ممكن يكون مخزّنهم.
+  await assertFails(setDoc(ref, { m_shop1: 1 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 2 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 5 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  // التعطيل من حالة معطلة أو صفر مرفوض (ما فيش سالب لسالب).
+  await assertSucceeds(setDoc(ref, { m_shop1: -3 }, { merge: true }));
+  await assertFails(setDoc(ref, { m_shop1: 3 }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { big_shop1: true }, { merge: true }));
+  await assertFails(setDoc(ref, { big_shop2: true }, { merge: true }));
+  await assertFails(setDoc(ref, { big_shop1: 'yes' }, { merge: true }));
+  await assertFails(setDoc(ref, { indexReady: false }, { merge: true }));
+});
+
+test('catalog: صاحب طلب انضمام يدير قائمة وإصدار مسودته بس، ومسودته ما تدخلش الفهرس', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'stores/draft1'), { name: 'مسودة', category: 'مطاعم', ownerUid: 'app1', active: false, approved: false });
+    await setDoc(doc(db, 'role_requests/app1_store_owner'), { userId: 'app1', type: 'store_owner', status: 'pending', storeId: 'draft1' });
+  });
+  const db = as('app1');
+  await assertSucceeds(setDoc(doc(db, 'stores/draft1/menu/current'), { items: {}, count: 0 }));
+  await assertFails(setDoc(doc(db, 'stores/shop1/menu/current'), { items: {}, count: 0 }));
+  await assertSucceeds(setDoc(doc(db, 'app_info/catalog_versions'), { m_draft1: 1 }, { merge: true }));
+  await assertFails(setDoc(doc(db, 'app_info/catalog_versions'), { m_shop1: 1 }, { merge: true }));
+  await assertFails(setDoc(doc(db, 'app_info/store_index'), { s_draft1: { name: 'مسودة', category: 'مطاعم', active: true } }, { merge: true }));
+  await assertSucceeds(setDoc(doc(db, 'app_info/store_index'), { s_draft1: deleteField() }, { merge: true }));
+});
+
+test('بعد تأكيد العميل الاستلام (مندوب خارجي): الإدارة لا تلغي ولا ترجّع ولا تغلق الطلب؛ الإغلاق لصاحب المحل بعد النقدية', async () => {
+  await seedOnWay('external');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  const admin = as('admin1');
+  // تحكم إيجابي: قرار الإدارة بتأكيد الاستلام نفسه ينجح (يثبت إن الرفض اللي بعده بسبب الحالة مش بسبب إعداد ناقص).
+  await assertSucceeds(updateDoc(doc(admin, 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'cancelled', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'preparing', 'admin'));
+  await assertFails(changeStatus(admin, 'o1', 'on_the_way', 'new', 'admin'));
+  const close = writeBatch(admin);
+  close.update(doc(admin, 'orders/o1'), stamp());
+  close.set(doc(admin, 'orders/o1/statusHistory/delivered'), {
+    from: 'on_the_way', to: 'delivered', actorUid: actorUidOf('admin'), actorRole: 'admin', at: serverTimestamp(),
+  });
+  await assertFails(close.commit());
+  const after = (await getDoc(doc(admin, 'orders/o1'))).data();
+  assert.equal(after.status, 'on_the_way');
+});
+
+// ───────────── serverOrders: اختبارات بعلامة تحكّم (positive control) ─────────────
+// كل رفض هنا له نظير ناجح بنفس العملية والبيانات من غير الفلاج، فالرفض سببه الفلاج مش خطأ في البيانات.
+const setServerOrders = (value) => (db) =>
+  setDoc(doc(db, 'app_info/security'), { serverOrders: value });
+
+function directCreateBatch(db, id) {
+  const b = writeBatch(db);
+  b.set(doc(db, `orders/${id}`), baseOrder('cust1'));
+  b.set(doc(db, `orders/${id}/private/contact`), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+  b.set(doc(db, 'orderLimits/cust1'), { lastAt: serverTimestamp() });
+  return b;
+}
+function directEditBatch(db, orderId = 'o1') {
+  const b = writeBatch(db);
+  b.update(doc(db, `orders/${orderId}`), {
+    items: [{ name: 'p', price: 10, qty: 3, productId: 'p1' }],
+    subtotal: 30, total: 50, editedAt: serverTimestamp(),
+  });
+  b.update(doc(db, `orders/${orderId}/private/contact`), { address: 'عنوان تجريبي 2' });
+  return b;
+}
+
+test('serverOrders control: الإنشاء المباشر الكامل (طلب + تواصل + orderLimits) ينجح بدون الفلاج أو مع false ويُرفض مع true', async () => {
+  await seed();
+  await assertSucceeds(directCreateBatch(as('cust1'), 'direct-no-flag').commit());
+  await seed(setServerOrders(false));
+  await assertSucceeds(directCreateBatch(as('cust1'), 'direct-flag-false').commit());
+  await seed(setServerOrders(true));
+  await assertFails(directCreateBatch(as('cust1'), 'direct-flag-true').commit());
+  // ولا عن طريق كتابة الطلب لوحده
+  await assertFails(setDoc(doc(as('cust1'), 'orders/direct-flag-true-2'), baseOrder('cust1')));
+});
+
+test('serverOrders control: تعديل الأصناف والإجمالي المباشر (طلب + تواصل) ينجح بدون الفلاج ويُرفض مع true', async () => {
+  await seed();
+  await assertSucceeds(directEditBatch(as('cust1')).commit());
+  await seed(setServerOrders(true));
+  await assertFails(directEditBatch(as('cust1')).commit());
+});
+
+test('customer edits invalidate the previous administrative price approval', async () => {
+  await setOrderState({ verifiedTotal: 40, verifiedAt: new Date() });
+  const order = doc(as('cust1'), 'orders/o1');
+  await assertFails(updateDoc(order, { notes: 'updated', editedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(order, {
+    notes: 'updated', editedAt: serverTimestamp(),
+    verifiedTotal: deleteField(), verifiedAt: deleteField(),
+  }));
+});
+
+test('orders priced by the Worker keep server-only cart edits with serverOrders off', async () => {
+  await seed(setServerOrders(false));
+  await setOrderState({ serviceFee: 5, total: 45 });
+  await assertFails(directEditBatch(as('cust1')).commit());
+});
+
+test('serverOrders: أي محاولة من العميل لتغيير حقول السعر مباشرة تُرفض مع تفعيل البوابة', async () => {
+  await seed(setServerOrders(true));
+  const attempts = [
+    { subtotal: 1, total: 21 },
+    { total: 1 },
+    { deliveryFee: 0, total: 20 },
+    { discount: 5, total: 35 },
+    { serviceFee: 0 },
+    { items: [{ name: 'p', price: 1, qty: 2, productId: 'p1' }], subtotal: 2, total: 22 },
+  ];
+  for (const patch of attempts) {
+    await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), { ...patch, editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(as('cust1'), 'orders/o1'), patch));
+  }
+});
+
+test('serverOrders: الإلغاء والإخفاء من العميل يفضلوا شغالين مع تفعيل البوابة (نفس اللي اتجرّب على الـcanary)', async () => {
+  await seed(setServerOrders(true));
+  await assertSucceeds(changeStatus(as('cust1'), 'o1', 'new', 'cancelled', 'customer'));
+  await assertSucceeds(updateDoc(doc(as('cust1'), 'orders/o1'), { customerHidden: true }));
+});
+
+test('اعتماد السعر: ينجح وهو بيتجهز، ويترفض بعد خروج الطلب وتأكيد العميل الاستلام', async () => {
+  // تحكم إيجابي: الاعتماد وهو «preparing» ينجح.
+  await setOrder({ status: 'preparing', courierId: 'cour1', deliveryMode: 'external', ready: true });
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 40, verifiedAt: serverTimestamp() }));
+  // بعد خروج الطلب للتوصيل وتأكيد الاستلام: مرفوض.
+  await seedOnWay('external');
+  await setOrder({ deliveryPinLockedAt: new Date() });
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 41, verifiedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'orders/o1'), { customerConfirmedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(as('admin1'), 'orders/o1'), { verifiedTotal: 42, verifiedAt: serverTimestamp() }));
+});
+
+// ───────────── «طلباتك على السريع» ─────────────
+const quickOrder = (over = {}) => ({
+  userId: 'cust1', customerFirstName: 'Ali', area: '', notes: '',
+  stores: [{ name: '', items: 'عيش' }], status: 'open', courierId: '', courierName: '',
+  paymentMode: '', receipts: [], summaryRevision: 0, rev: 1, ...over,
+});
+async function seedQuick(over = {}) {
+  await seed(async (db) => {
+    await setDoc(doc(db, 'couriers/quick1'), { name: 'Q', active: true, quickEnabled: true });
+    await setDoc(doc(db, 'couriers/quickOff'), { name: 'Q2', active: false, quickEnabled: true });
+    await setDoc(doc(db, 'quick_orders/q1'), quickOrder(over));
+    await setDoc(doc(db, 'quick_orders/q1/private/contact'), { userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1' });
+  });
+}
+
+test('quick_orders: الطلب المفتوح يشوفه صاحبه والإدارة والمندوب المعتمد بس', async () => {
+  await seedQuick();
+  await assertSucceeds(getDoc(doc(as('cust1'), 'quick_orders/q1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'quick_orders/q1')));
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1')));
+  // المندوب العادي (من غير quickEnabled) والمندوب الموقوف وأي عميل تاني: مرفوض.
+  await assertFails(getDoc(doc(as('cour1'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('quickOff'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('cust2'), 'quick_orders/q1')));
+  const { collection, getDocs, query, where } = require('firebase/firestore');
+  await assertSucceeds(getDocs(query(collection(as('quick1'), 'quick_orders'), where('status', '==', 'open'))));
+  await assertFails(getDocs(query(collection(as('cour1'), 'quick_orders'), where('status', '==', 'open'))));
+  // من غير فلتر الحالة القايمة مرفوضة للمندوب (ممكن تكشف طلبات مقبولة لمندوب تاني).
+  await assertFails(getDocs(collection(as('quick1'), 'quick_orders')));
+});
+
+test('quick_orders: بعد القبول الطلب يختفي عن باقي المناديب المعتمدين', async () => {
+  await seedQuick({ status: 'accepted', courierId: 'cour1' });
+  await assertSucceeds(getDoc(doc(as('cour1'), 'quick_orders/q1')));
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1')));
+});
+
+test('quick_orders: رقم العميل وعنوانه للمندوب المعيّن بعد القبول بس', async () => {
+  await seedQuick();
+  await assertSucceeds(getDoc(doc(as('cust1'), 'quick_orders/q1/private/contact')));
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'purchasing', courierId: 'quick1' });
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+  await assertFails(getDoc(doc(as('cour1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'summary_approved', courierId: 'quick1' });
+  await assertSucceeds(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+  await seedQuick({ status: 'delivered', courierId: 'quick1' });
+  await assertFails(getDoc(doc(as('quick1'), 'quick_orders/q1/private/contact')));
+});
+
+test('quick_orders: أي كتابة من التطبيق مرفوضة (الـWorker بس)', async () => {
+  await seedQuick();
+  await assertFails(setDoc(doc(as('cust1'), 'quick_orders/q2'), quickOrder()));
+  await assertFails(updateDoc(doc(as('cust1'), 'quick_orders/q1'), { status: 'cancelled' }));
+  await assertFails(updateDoc(doc(as('quick1'), 'quick_orders/q1'), { status: 'accepted', courierId: 'quick1' }));
+  await assertFails(updateDoc(doc(as('admin1'), 'quick_orders/q1'), { status: 'delivered' }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'quick_orders/q1')));
+  await assertFails(setDoc(doc(as('cust1'), 'quick_orders/q1/private/contact'), { phone: '01000000000' }));
+  await assertFails(getDoc(doc(as('cust1'), 'quickLimits/cust1')));
+});
+
+test('quick_orders: quickEnabled على المندوب يكتبه المدير بس', async () => {
+  await seedQuick();
+  await assertFails(updateDoc(doc(as('cour1'), 'couriers/cour1'), { quickEnabled: true }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'couriers/cour1'), { quickEnabled: true }));
+});
+
+// ───────────── تجميع طلبات العميل (groupCode) ─────────────
+async function seedGroupedOrders() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const createdAt = new Date();
+    for (const [id, storeId] of [['g1', 'shop1'], ['g2', 'shop2']]) {
+      await setDoc(doc(db, `orders/${id}`), {
+        ...baseOrder('cust1', { status: 'new', createdAt }),
+        storeId, groupId: 'grp_AbCdEfGhIjKlMnOpQr12', groupCode: 'OPQR12',
+      });
+      await setDoc(doc(db, `orders/${id}/private/contact`), {
+        userName: 'Ali Hassan', phone: '01012345678', address: 'عنوان تجريبي 1',
+      });
+    }
+    await setDoc(doc(db, 'order_groups/grp_AbCdEfGhIjKlMnOpQr12'), {
+      userId: 'cust1', orderIds: ['g1', 'g2'], storeIds: ['shop1', 'shop2'], count: 2,
+    });
+  });
+}
+
+function preparingBatch(db, orderId, feedExtra = {}) {
+  return getDoc(doc(db, `orders/${orderId}`)).then((snap) => {
+    const o = snap.data();
+    const b = writeBatch(db);
+    b.update(doc(db, `orders/${orderId}`), { status: 'preparing' });
+    b.set(doc(db, `orders/${orderId}/statusHistory/preparing`), {
+      from: 'new', to: 'preparing', actorUid: 'owner1', actorRole: 'owner', at: serverTimestamp(),
+    });
+    b.set(doc(db, `courier_available_orders/${orderId}`), {
+      storeId: o.storeId, storeName: o.storeName, area: o.area ?? '', items: o.items,
+      subtotal: o.subtotal, deliveryFee: o.deliveryFee, discount: o.discount ?? 0, total: o.total,
+      status: 'preparing', createdAt: o.createdAt, ...feedExtra,
+    });
+    return b;
+  });
+}
+
+test('groups: كود التجميع بيظهر في قايمة المناديب ولازم يطابق الطلب', async () => {
+  await seedGroupedOrders();
+  const owner = as('owner1');
+  // المحل ما يقدرش يخترع كود أو يشيله من نسخة القايمة.
+  await assertFails((await preparingBatch(owner, 'g1', { groupCode: 'FAKE01' })).commit());
+  await assertFails((await preparingBatch(owner, 'g1')).commit());
+  await assertSucceeds((await preparingBatch(owner, 'g1', { groupCode: 'OPQR12' })).commit());
+  const feed = (await getDoc(doc(as('cour1'), 'courier_available_orders/g1'))).data();
+  assert.equal(feed.groupCode, 'OPQR12');
+  // من غير أي بيانات للعميل ولا رقم المجموعة الكامل.
+  for (const key of ['groupId', 'userId', 'customerName', 'phone', 'address']) {
+    assert.equal(key in feed, false, key);
+  }
+  // المندوب ما يقدرش يقرا بيانات العميل قبل ما يتعيّن.
+  await assertFails(getDoc(doc(as('cour1'), 'orders/g1/private/contact')));
+});
+
+test('groups: استلام طلب من المجموعة ما بيستلمش باقي الطلبات', async () => {
+  await seedGroupedOrders();
+  await assertSucceeds((await preparingBatch(as('owner1'), 'g1', { groupCode: 'OPQR12' })).commit());
+  // الطلب التاني في المجموعة (محل تاني) جاهز في القايمة بنفس الكود.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const o = (await getDoc(doc(db, 'orders/g2'))).data();
+    await updateDoc(doc(db, 'orders/g2'), { status: 'preparing' });
+    await setDoc(doc(db, 'courier_available_orders/g2'), {
+      storeId: o.storeId, storeName: o.storeName, area: '', items: o.items, subtotal: o.subtotal,
+      deliveryFee: o.deliveryFee, discount: 0, total: o.total, status: 'preparing',
+      createdAt: o.createdAt, groupCode: 'OPQR12',
+    });
+  });
+  const courierDb = as('cour1');
+  const claim = writeBatch(courierDb);
+  claim.update(doc(courierDb, 'orders/g1'), {
+    courierId: 'cour1', courierName: 'C', courierPhone: '01012345678', courierAt: serverTimestamp(), deliveryMode: 'external',
+  });
+  claim.delete(doc(courierDb, 'courier_available_orders/g1'));
+  await assertSucceeds(claim.commit());
+  const second = (await getDoc(doc(courierDb, 'courier_available_orders/g2'))).data();
+  assert.equal(second.groupCode, 'OPQR12');
+  const secondOrder = (await getDoc(doc(as('admin1'), 'orders/g2'))).data();
+  assert.equal(secondOrder.courierId ?? '', '');
+  // بعد التعيين: المندوب يشوف بيانات تواصل طلبه هو بس.
+  await assertSucceeds(getDoc(doc(courierDb, 'orders/g1/private/contact')));
+  await assertFails(getDoc(doc(courierDb, 'orders/g2/private/contact')));
+});
+
+test('groups: العميل ما يقدرش يربط أو يغيّر مجموعة من التطبيق', async () => {
+  await seedGroupedOrders();
+  const db = as('cust1');
+  // مستند المجموعة للـWorker بس.
+  await assertFails(getDoc(doc(db, 'order_groups/grp_AbCdEfGhIjKlMnOpQr12')));
+  await assertFails(setDoc(doc(db, 'order_groups/grp_mine0000000000000000'), { userId: 'cust1' }));
+  await assertFails(getDoc(doc(as('cour1'), 'order_groups/grp_AbCdEfGhIjKlMnOpQr12')));
+  // ولا إنشاء طلب بكود تجميع، ولا تغيير الكود على طلب موجود.
+  await assertFails(setDoc(doc(db, 'orders/new-grouped'), { ...baseOrder('cust1'), groupId: 'grp_AbCdEfGhIjKlMnOpQr12', groupCode: 'OPQR12' }));
+  await assertFails(updateDoc(doc(db, 'orders/g1'), { groupCode: 'OTHER1' }));
+  await assertFails(updateDoc(doc(as('owner1'), 'orders/g1'), { groupId: 'grp_ZZZZZZZZZZZZZZZZZZZZ' }));
 });

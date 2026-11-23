@@ -2,10 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
-import 'support_chat_page.dart';
 
 /// من نحن
 class AboutPage extends StatelessWidget {
@@ -121,7 +121,44 @@ class AboutPage extends StatelessWidget {
   }
 }
 
-/// تواصل معنا: الشات دايمًا موجود، والباقي (تليفون/واتساب/إيميل) من Firestore app_info/contact.
+/// وسائل التواصل الخارجية من إعدادات الاتصال، بدون مستمع Firestore مستمر.
+
+/// Opens WhatsApp directly for support or complaints.
+/// The fallback number is temporary and can be changed by an admin.
+/// رقم واتساب الدعم الافتراضي لو app_info/contact مش متظبط أو مش متاح.
+const String kDefaultSupportWhatsApp = '01000197222';
+
+/// بيحوّل رقم مصري (01xxxxxxxxx أو +20...) لصيغة wa.me الدولية (20xxxxxxxxxx).
+/// لو فاضي بيرجع الرقم الافتراضي.
+String normalizeWhatsAppNumber(String raw) {
+  var digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.isEmpty) digits = kDefaultSupportWhatsApp;
+  if (digits.startsWith('00')) digits = digits.substring(2);
+  if (digits.startsWith('0')) digits = '20${digits.substring(1)}';
+  return digits;
+}
+
+Future<void> openWasallyWhatsApp(String message) async {
+  var number = normalizeWhatsAppNumber('');
+  try {
+    final doc = await FirebaseFirestore.instance
+        .collection('app_info').doc('contact').get();
+    number = normalizeWhatsAppNumber((doc.data()?['whatsapp'] ?? '').toString());
+  } catch (_) {
+    // Fall back to the default number if offline.
+  }
+  final uri = Uri.https('wa.me', '/$number', {'text': message});
+  var opened = false;
+  try {
+    opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (_) {}
+  if (!opened) {
+    NotificationService.messengerKey.currentState?.showSnackBar(
+      const SnackBar(content: Text('تعذر فتح واتساب. تأكد إنه متثبّت على جهازك.')),
+    );
+  }
+}
+
 class ContactPage extends StatelessWidget {
   const ContactPage({super.key});
 
@@ -172,41 +209,37 @@ class ContactPage extends StatelessWidget {
         children: [
           const InnerHeader(title: 'تواصل معنا'),
           Expanded(
-            child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
+            child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              future: FirebaseFirestore.instance
                   .collection('app_info')
                   .doc('contact')
-                  .snapshots(),
+                  .get(),
               builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                // لو المستند مش موجود أو القراءة فشلت، واتساب بيظهر بالرقم الافتراضي
+                // بدل ما الصفحة تبقى فاضية.
                 final m = snap.data?.data() ?? const <String, dynamic>{};
                 final phone = (m['phone'] ?? '').toString().trim();
-                final wa = (m['whatsapp'] ?? '').toString().trim();
+                final waRaw = (m['whatsapp'] ?? '').toString().trim();
+                final wa = waRaw.isEmpty ? kDefaultSupportWhatsApp : waRaw;
                 final mail = (m['email'] ?? '').toString().trim();
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                   children: [
-                    tile(Icons.chat_bubble_outline, 'شات مع الإدارة', '', () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SupportChatPage(),
-                        ),
-                      );
-                    }),
+                    tile(
+                      Icons.message_outlined,
+                      'الدعم والشكاوى عبر واتساب',
+                      wa,
+                      () => _open('https://wa.me/${normalizeWhatsAppNumber(wa)}'),
+                    ),
                     if (phone.isNotEmpty)
                       tile(
                         Icons.call_outlined,
                         'اتصل بينا',
                         phone,
                         () => _open('tel:$phone'),
-                      ),
-                    if (wa.isNotEmpty)
-                      tile(
-                        Icons.message_outlined,
-                        'واتساب',
-                        wa,
-                        () => _open(
-                          'https://wa.me/${wa.replaceAll(RegExp(r'[^0-9]'), '')}',
-                        ),
                       ),
                     if (mail.isNotEmpty)
                       tile(

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../services/catalog_service.dart';
 import '../theme/brand.dart';
+import '../utils/img.dart';
+import 'cached_net_image.dart';
 
 class _Slide {
   final String? image;
@@ -119,23 +121,21 @@ class _PromoBannersState extends State<PromoBanners> {
 
   Widget _slideView(_Slide s) {
     if (s.image != null) {
-      return Image.network(
-        s.image!,
-        fit: BoxFit.cover,
+      return CachedNetImage(
+        url: thumb(s.image!, w: 900),
         width: double.infinity,
         height: double.infinity,
-        loadingBuilder: (context, child, progress) => progress == null
-            ? child
-            : Container(
-                color: Brand.green.withValues(alpha: 0.10),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    color: Brand.green,
-                    strokeWidth: 2,
-                  ),
-                ),
-              ),
-        errorBuilder: (_, _, _) => Container(
+        memCacheWidth: 900,
+        placeholder: Container(
+          color: Brand.green.withValues(alpha: 0.10),
+          child: Center(
+            child: CircularProgressIndicator(
+              color: Brand.green,
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+        errorWidget: Container(
           color: Brand.green.withValues(alpha: 0.10),
           child: Icon(
             Icons.image_not_supported_outlined,

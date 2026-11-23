@@ -45,7 +45,7 @@ class OptionGroup {
     if (raw is! Map) return null;
     final title = (raw['title'] ?? '').toString().trim();
     final opts = <ProductOption>[
-      for (final o in (raw['options'] as List? ?? const []))
+      for (final o in (raw['options'] is List ? raw['options'] as List : const []))
         if (ProductOption.tryParse(o) case final parsed?) parsed,
     ];
     if (title.isEmpty || opts.isEmpty) return null;
@@ -59,7 +59,7 @@ class OptionGroup {
 
 /// بيقرا مجموعات الخيارات من حقل `optionGroups` في مستند الصنف (بيتجاهل الغلط).
 List<OptionGroup> parseOptionGroups(Object? raw) => [
-  for (final g in (raw as List? ?? const []))
+  for (final g in (raw is List ? raw : const []))
     if (OptionGroup.tryParse(g) case final parsed?) parsed,
 ];
 

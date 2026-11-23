@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
+import 'read_meter.dart';
 
 class RoleInfo {
   final AppRole role;
@@ -18,6 +19,7 @@ class RoleInfo {
 
   /// صاحب محل مسجل ومسودته ما زالت في انتظار مراجعة الإدارة.
   final bool pendingStoreOwner;
+  final bool quickCourier;
 
   const RoleInfo(
     this.role, [
@@ -25,6 +27,7 @@ class RoleInfo {
     this.storeId = '',
     this.roles = const {},
     this.pendingStoreOwner = false,
+    this.quickCourier = false,
   ]);
 
   Set<AppRole> get held => roles.isEmpty ? {role} : roles;
@@ -110,7 +113,9 @@ class RoleService {
       DocumentReference<Map<String, dynamic>> ref,
     ) async {
       try {
-        return await ref.get();
+        final snap = await ref.get();
+        ReadMeter.document('role:lookup', snap);
+        return snap;
       } catch (_) {
         lookupFailed = true;
         return null;
@@ -143,6 +148,7 @@ class RoleService {
         final claims = (await user.getIdTokenResult()).claims;
 
         final admin = await db.collection('admins').doc(user.uid).get();
+        ReadMeter.document('role:lookup', admin);
 
         adminChecked = true;
 
@@ -226,6 +232,7 @@ class RoleService {
       isOwner ? storeId : (isPendingStoreOwner ? pendingStoreId : ''),
       roles,
       isPendingStoreOwner,
+      isCourier && cData?['quickEnabled'] == true,
     );
 
     // نتيجة «عميل» غير مؤكدة (فشل تحقق الأدمن أو قراءة دور): نرجّع آخر دور محفوظ

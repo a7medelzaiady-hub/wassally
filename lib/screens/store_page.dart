@@ -16,12 +16,16 @@ import '../models/app_role.dart';
 import '../models/product.dart';
 import '../models/product_offer.dart';
 import '../models/store.dart';
+import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../services/catalog_service.dart';
+import '../services/store_highlights.dart';
+import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
+import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../widgets/app_image.dart';
@@ -30,6 +34,7 @@ import '../widgets/option_groups_editor.dart';
 import '../widgets/product_sheet.dart';
 import '../widgets/qty_stepper.dart';
 import 'cart_page.dart';
+import '../widgets/cached_net_image.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -60,6 +65,17 @@ class _StorePageState extends State<StorePage> {
   final _scroll = ScrollController();
   final _searchCtrl = TextEditingController();
   final List<Product> _items = [];
+
+  /// آخر قائمة كاملة للمحل (عشان نراجع أسعار سلة راجعة من آخر مرة).
+  List<Product>? _lastMenu;
+
+  /// لو سلة المحل ده راجعة من «سلّاتي» والأسعار اتغيرت، نحدّثها ونبلّغ العميل.
+  void _syncCartWithMenu() {
+    final menu = _lastMenu;
+    if (menu == null) return;
+    final changes = cart.syncWithMenu(store.id, menu);
+    if (changes.isNotEmpty && mounted) _say(changes.join('\n'));
+  }
   DocumentSnapshot? _last;
   Timer? _debounce;
   bool _loading = false;
@@ -175,10 +191,7 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _pickSpecialImage() async {
     if (_sendingSpecial) return;
-    if (!cart.canAddFrom(store.id)) {
-      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
-      return;
-    }
+    if (!await _ensureCartForStore()) return;
     try {
       final url = await ImageService.pickAndUpload('special_requests', storeId: store.id);
       if (url != null && mounted) setState(() => _specialImageUrl = url);
@@ -270,10 +283,7 @@ class _StorePageState extends State<StorePage> {
       _say('سجّل الدخول الأول لإرسال الطلب.');
       return;
     }
-    if (!cart.canAddFrom(store.id)) {
-      _say('سلتك فيها طلب من محل آخر. أنهِ الطلب أو أفرغ السلة أولًا.');
-      return;
-    }
+    if (!await _ensureCartForStore()) return;
     if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
       _say('اكتب وصف المنتج أو أرفق صورة أو رسالة صوتية.');
       return;
@@ -285,18 +295,15 @@ class _StorePageState extends State<StorePage> {
     final sentVoicePath = _voicePath;
     setState(() => _sendingSpecial = true);
     try {
-      String? voiceBase64;
+      String? voiceUrl;
       if (sentVoicePath != null) {
         final voiceFile = File(sentVoicePath);
         if (!await voiceFile.exists()) {
           throw StateError('ملف التسجيل غير موجود. سجّل الرسالة مرة أخرى.');
         }
         final bytes = await voiceFile.readAsBytes();
-        if (bytes.isEmpty) throw StateError('التسجيل الصوتي فارغ. حاول مرة أخرى.');
-        voiceBase64 = base64Encode(bytes);
-        if (voiceBase64.length > 700000) {
-          throw StateError('الرسالة الصوتية أكبر من الحد المسموح. سجل رسالة أقصر.');
-        }
+        // الصوت بيترفع على Cloudinary والطلب بيشيل الرابط بس (مستند صغير).
+        voiceUrl = await ImageService.uploadVoice(bytes, storeId: store.id);
       }
       final attached = cart.setSpecialRequest(
         storeId: store.id,
@@ -305,7 +312,7 @@ class _StorePageState extends State<StorePage> {
           'description': description,
           'quantity': _specialQty,
           if ((_specialImageUrl ?? '').isNotEmpty) 'imageUrl': _specialImageUrl,
-          if ((voiceBase64 ?? '').isNotEmpty) 'voiceBase64': voiceBase64,
+          if ((voiceUrl ?? '').isNotEmpty) 'voiceUrl': voiceUrl,
           'createdAt': DateTime.now().toIso8601String(),
         },
       );
@@ -428,6 +435,12 @@ class _StorePageState extends State<StorePage> {
               child: Text('المرفقات جاهزة للإرسال',
                   style: TextStyle(color: Brand.greenDark, fontWeight: FontWeight.w700)),
             ),
+          if (_specialImageUrl != null || _voicePath != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(kAttachmentsWillBeDeleted,
+                  style: TextStyle(fontSize: 12, height: 1.4)),
+            ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -506,6 +519,44 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
+  /// كل أصناف المحل من مستند القائمة المجمّع (للعميل فقط). null = استخدم الاستعلام المباشر.
+  List<Product>? _menuAll;
+  bool _menuUnavailable = false;
+
+  /// المدير وصاحب المحل يكملوا على الاستعلام المباشر (بيانات لحظية لأزرار التعديل).
+  /// لو الدور لسه مش معروف، الأمان إننا نستخدم الاستعلام المباشر.
+  bool get _mayEdit {
+    if (_canEditStore) return true;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    final known = RoleService.cachedFor(uid);
+    if (known == null) return true;
+    if (known.role == AppRole.admin || known.roles.contains(AppRole.admin)) {
+      return true;
+    }
+    // صاحب المحل أو صاحب طلب الانضمام لنفس المحل.
+    return known.storeId.isNotEmpty && known.storeId == store.id;
+  }
+
+  Future<List<Product>?> _menuProducts() async {
+    if (_menuAll != null) return _menuAll;
+    if (_menuUnavailable || _mayEdit) return null;
+    final docs = await CatalogReader.menu(store.id);
+    if (docs == null) {
+      _menuUnavailable = true;
+      return null;
+    }
+    final list = <Product>[];
+    for (final d in docs) {
+      try {
+        list.add(_parse(d.id, d.data()));
+      } catch (_) {}
+    }
+    list.sort((a, b) => a.name.compareTo(b.name));
+    _menuAll = list;
+    return list;
+  }
+
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       _gen++;
@@ -519,6 +570,27 @@ class _StorePageState extends State<StorePage> {
     final gen = _gen;
     setState(() => _loading = true);
     try {
+      // العميل: قراءة واحدة لكل الأصناف (أو صفر لو القائمة متخزنة)، والبحث محلي من غير قراءات.
+      final menu = await _menuProducts();
+      if (menu != null) {
+        if (!mounted || gen != _gen) return;
+        final term = _term.toLowerCase();
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(term.isEmpty
+                ? menu
+                : menu.where((p) => p.name.toLowerCase().contains(term)));
+          _hasMore = false;
+          _loading = false;
+        });
+        if (_term.isEmpty) {
+          _lastMenu = menu;
+          _syncCartWithMenu();
+        }
+        return;
+      }
+
       Query<_Json> q = _col.orderBy('name');
       if (_term.isNotEmpty) {
         q = q
@@ -630,10 +702,10 @@ class _StorePageState extends State<StorePage> {
           children: [
             store.imageUrl.isEmpty
                 ? fallback
-                : Image.network(
-                    thumb(store.imageUrl, w: 900),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => fallback,
+                : CachedNetImage(
+                    url: thumb(store.imageUrl, w: 900),
+                    memCacheWidth: 900,
+                    errorWidget: fallback,
                   ),
             DecoratedBox(
               decoration: BoxDecoration(
@@ -997,6 +1069,7 @@ class _StorePageState extends State<StorePage> {
       var content = utf8.decode(bytes, allowMalformed: true);
       if (content.startsWith('\uFEFF')) content = content.substring(1);
 
+      var highlightsOk = true;
       final rows = <_Json>[];
       for (final line in content.split(RegExp(r'\r?\n'))) {
         if (line.trim().isEmpty) continue;
@@ -1026,6 +1099,9 @@ class _StorePageState extends State<StorePage> {
       }
 
       var uploaded = 0;
+      Object? uploadError;
+      // رفع جماعي: إعادة بناء القائمة المجمّعة مرة واحدة بعده (والعلامة بتضمنها لو التطبيق اتقفل).
+      await CatalogSync.markPending(store.id);
       try {
         for (var start = 0; start < rows.length; start += 400) {
           final end = start + 400 > rows.length ? rows.length : start + 400;
@@ -1044,14 +1120,30 @@ class _StorePageState extends State<StorePage> {
           await batch.commit();
           uploaded += end - start;
         }
-      } finally {
-        if (uploaded > 0) {
-          await CatalogService.bump();
-          _load(reset: true);
-        }
+      } catch (e) {
+        uploadError = e;
       }
 
-      _say('تم رفع $uploaded صنف بنجاح!');
+      if (uploaded > 0) {
+        // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار (ما بيرميش استثناءات).
+        highlightsOk = await CatalogSync.afterProductsChanged(store.id);
+        _load(reset: true);
+      }
+
+      if (uploadError != null) {
+        debugPrint('CSV upload error: $uploadError');
+        if (uploaded == 0) {
+          _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
+        } else {
+          _say(StoreHighlights.withNote(
+            'تم رفع $uploaded صنف قبل حدوث خطأ؛ باقي الملف ما اترفعش',
+            highlightsOk,
+          ));
+        }
+        return;
+      }
+
+      _say(StoreHighlights.withNote('تم رفع $uploaded صنف بنجاح', highlightsOk));
     } catch (e) {
       debugPrint('CSV upload error: $e');
       _say('حدث خطأ أثناء رفع الملف. تأكد أن حسابك مدير وحاول تاني.');
@@ -1213,9 +1305,12 @@ class _StorePageState extends State<StorePage> {
                         }
 
                         try {
-                          if (product == null) {
+                          final newRef = product == null ? _col.doc() : null;
+                          final savedId = product?.id ?? newRef!.id;
+                          await CatalogSync.markPending(store.id, [savedId]);
+                          if (newRef != null) {
                             final batch = FirebaseFirestore.instance.batch();
-                            batch.set(_col.doc(), {
+                            batch.set(newRef, {
                               'name': name,
                               'price': price,
                               'image': image,
@@ -1233,8 +1328,8 @@ class _StorePageState extends State<StorePage> {
                               'updatedAt': FieldValue.serverTimestamp(),
                             });
                             await batch.commit();
-                          } else if (product.id.isNotEmpty) {
-                            await _col.doc(product.id).update({
+                          } else if (savedId.isNotEmpty) {
+                            await _col.doc(savedId).update({
                               'name': name,
                               'price': price,
                               'image': image,
@@ -1246,10 +1341,19 @@ class _StorePageState extends State<StorePage> {
                             });
                           }
 
-                          await CatalogService.bump();
+                          // القائمة ← ملخص العروض ← الفهرس ← رقم الإصدار.
+                          final highlightsOk =
+                              await CatalogSync.afterProductsChanged(
+                            store.id,
+                            productIds: [savedId],
+                          );
 
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);
+                          if (!highlightsOk) {
+                            _say(StoreHighlights.withNote(
+                                'تم حفظ الصنف', false));
+                          }
                         } catch (e) {
                           debugPrint('Save product error: $e');
                           _say('تعذر حفظ الصنف. تأكد أن حسابك مدير.');
@@ -1275,44 +1379,102 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _add(BuildContext context, Product p, {int qty = 1}) async {
+    if (!store.isOpen) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('المحل مغلق الآن. تقدر تتفرج على الأصناف وتطلب لما يفتح.'),
+      ));
+      return;
+    }
+    carts.rememberStore(store);
     if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
+    if (!await _ensureCartForStore()) return;
+    cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
+  }
 
-    final startNew = await showDialog<bool>(
+  /// العميل معاه سلة من محل تاني: بننبهه بالتفاصيل، ولو وافق سلته القديمة تتحفظ في «سلّاتي»
+  /// زي ما هي ونبدأ (أو نكمّل) سلة للمحل ده. مفيش حاجة بتتمسح من غير ما يختار.
+  Future<bool> _ensureCartForStore() async {
+    carts.rememberStore(store);
+    if (cart.canAddFrom(store.id)) return true;
+    final other = cart.storeName ?? 'محل تاني';
+    final saved = carts.parkedFor(store.id);
+    final otherCarts = carts.cartsCount;
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'تبدأ طلب جديد؟',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          'خلي بالك: معاك سلة من $other',
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        content: Text(
-          'سلتك فيها منتجات من ${cart.storeName}. لو ضفت من ${store.name} هنفرّغ السلة الأول.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'سلة $other فيها ${cart.count} صنف بـ ${formatPrice(cart.subtotal)}'
+              '${cart.specialRequest != null ? ' + طلب خاص' : ''}.',
+              style: const TextStyle(height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              saved != null
+                  ? 'عندك كمان سلة محفوظة من ${store.name} فيها ${saved.count} صنف، هنكمّل عليها.'
+                  : 'لو كمّلت من ${store.name} هنعملك سلة جديدة، وسلة $other هتتحفظ في «سلّاتي» زي ما هي.',
+              style: const TextStyle(height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. '
+              'قبل التأكيد هتلاقي كل سلالك${otherCarts > 1 ? ' ($otherCarts دلوقتي)' : ''} في «سلّاتي»: تأكد أو تعدّل أو تمسح.',
+              style: TextStyle(height: 1.5, color: kMuted),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('إلغاء'),
+            child: const Text('رجوع'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('فرّغ السلة وأضف'),
+            child: Text(saved != null ? 'كمّل سلة ${store.name}' : 'سلة جديدة وكمّل'),
           ),
         ],
       ),
     );
-    if (startNew == true) {
-      cart.clear();
-      cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
-    }
+    if (ok != true || !mounted) return false;
+    carts.switchTo(store.id);
+    _syncCartWithMenu();
+    return true;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: _body(),
+      body: store.isOpen
+          ? _body()
+          : Column(
+              children: [
+                Expanded(child: _body()),
+                SafeArea(
+                  top: false,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    color: kDanger.withValues(alpha: 0.08),
+                    child: Text(
+                      'المحل مغلق الآن ومش بيستقبل طلبات. تقدر تتفرج على الأصناف.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: kDanger, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
       bottomNavigationBar: ListenableBuilder(
         listenable: cart,
         builder: (context, _) {
@@ -1483,14 +1645,13 @@ class _ProductRow extends StatelessWidget {
 
   Widget _image() {
     if (product.imageUrl.isEmpty) return _fallback();
-    return Image.network(
-      thumb(product.imageUrl, w: 300),
-      fit: BoxFit.cover,
+    return CachedNetImage(
+      url: thumb(product.imageUrl, w: 300),
       width: double.infinity,
       height: double.infinity,
-      loadingBuilder: (context, child, progress) =>
-          progress == null ? child : _fallback(),
-      errorBuilder: (_, _, _) => _fallback(),
+      memCacheWidth: 300,
+      placeholder: _fallback(),
+      errorWidget: _fallback(),
     );
   }
 

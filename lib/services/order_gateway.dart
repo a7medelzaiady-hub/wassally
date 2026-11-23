@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'performance_monitor.dart';
@@ -17,6 +20,21 @@ class OrderGateway {
 
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
 
+  /// هيدر App Check (لو متاح) لكل طلبات الـ Worker.
+  /// الفشل هنا لا يوقف الطلب أبدًا: الـ Worker هو اللي يقرر (off / monitor / enforce).
+  static Future<Map<String, String>> appCheckHeaders() async {
+    if (kIsWeb) return const {};
+    try {
+      final token = await FirebaseAppCheck.instance
+          .getToken()
+          .timeout(const Duration(seconds: 3));
+      if (token == null || token.isEmpty) return const {};
+      return {'X-Firebase-AppCheck': token};
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// Order writes stay on Firestore's Spark-compatible path until the Worker
   /// has been deployed, verified, and Firestore serverOrders is enabled.
   /// The same Worker URL can still be used for signed image uploads.
@@ -24,6 +42,31 @@ class OrderGateway {
     'WASALLY_SERVER_ORDERS',
     defaultValue: false,
   );
+
+  /// Sends a push for a Firestore change that already committed.
+  static Future<void> notifyEvent(
+    String orderId,
+    String event, {
+    String? status,
+  }) async {
+    if (!isConfigured) return;
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) return;
+      await _send(
+        idToken: token,
+        method: 'POST',
+        path: '/v1/order-events',
+        payload: {
+          'orderId': orderId,
+          'event': event,
+          if (status != null) 'status': status,
+        },
+      );
+    } catch (_) {
+      debugPrint('تعذر إرسال إشعار حالة الطلب.');
+    }
+  }
 
   static Future<void> submit({
     required String idToken,
@@ -59,11 +102,13 @@ class OrderGateway {
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw StateError('خدمة تنظيف مرفقات الطلب غير مهيأة.');
     }
+    final appCheck = await appCheckHeaders();
     final client = http.Client();
     late final http.Response result;
     try {
       final request = http.Request('POST', uri)
         ..headers.addAll({
+          ...appCheck,
           'Authorization': 'Bearer ' + idToken,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -91,12 +136,14 @@ class OrderGateway {
       throw StateError('خدمة حذف الحساب غير مهيأة. حدّث التطبيق أو تواصل مع الدعم.');
     }
 
+    final appCheck = await appCheckHeaders();
     final client = http.Client();
     late final http.Response result;
     try {
       final streamed = await client
           .send(http.Request('POST', uri)
             ..headers.addAll({
+              ...appCheck,
               'Authorization': 'Bearer $idToken',
               'Content-Type': 'application/json',
               'Accept': 'application/json',
@@ -126,6 +173,28 @@ class OrderGateway {
     }
   }
 
+  /// البوابة رفضت لأن سعر/توفر صنف في السلة مختلف عن الكتالوج الحالي (مش أي خطأ تاني).
+  /// الـ Worker الجديد بيبعت code = catalog_mismatch؛ النسخة القديمة بنعرفها من الرسالة.
+  @visibleForTesting
+  static bool isCatalogMismatch({
+    required int status,
+    String? code,
+    required String message,
+  }) {
+    if (code != null && code.isNotEmpty) return code == 'catalog_mismatch';
+    if (status != 409) return false;
+    // الـ Worker القديم (من غير code): الرسايل دي بالظبط بس، مش أي رسالة فيها "اتغير".
+    return _legacyMismatchMessages.contains(message.trim());
+  }
+
+  static const _legacyMismatchMessages = {
+    'أحد الأصناف لم يعد موجودًا في كتالوج المحل.',
+    'أحد الأصناف غير متاح حاليًا.',
+    'سعر أحد الأصناف أو إضافاته اتغير. راجع السلة قبل تأكيد الطلب.',
+    'سعر إضافات أحد الأصناف اتغير. راجع اختياراتك.',
+    'أحد الاختيارات لم يعد متاحًا أو اسمه مكرر في الكتالوج.',
+  };
+
   static Future<void> _send({
     required String idToken,
     required String method,
@@ -138,11 +207,13 @@ class OrderGateway {
       throw StateError('إعداد بوابة الطلبات غير صحيح.');
     }
 
+    final appCheck = await appCheckHeaders();
     late final http.Response result;
     final client = http.Client();
     try {
       final request = http.Request(method, uri)
         ..headers.addAll({
+          ...appCheck,
           'Authorization': 'Bearer $idToken',
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -171,14 +242,34 @@ class OrderGateway {
 
     if (result.statusCode < 200 || result.statusCode >= 300) {
       final message = (body['error'] ?? '').toString().trim();
-      throw StateError(
-        message.isNotEmpty
-            ? message
-            : 'تعذر تنفيذ الطلب (${result.statusCode}).',
-      );
+      final text = message.isNotEmpty
+          ? message
+          : 'تعذر تنفيذ الطلب (${result.statusCode}).';
+      if (isCatalogMismatch(
+        status: result.statusCode,
+        code: body['code']?.toString(),
+        message: message,
+      )) {
+        throw CatalogMismatchError(text);
+      }
+      final code = body['code']?.toString() ?? '';
+      if (code == 'invalid_group' || code.startsWith('group_')) {
+        throw OrderGroupError(text);
+      }
+      throw StateError(text);
     }
     if ((body['orderId'] ?? '').toString().isEmpty) {
       throw StateError('لم يصل تأكيد العملية من الخادم.');
     }
   }
+}
+
+/// سعر أو توفر صنف اتغير عن اللي في سلة العميل (القائمة المجمّعة عنده ممكن تكون متأخرة).
+class CatalogMismatchError extends StateError {
+  CatalogMismatchError(super.message);
+}
+
+/// رقم التجميع اترفض (انتهى، اتملا، محل متكرر، أو مش تبع الحساب). الطلب نفسه ما اتعملش.
+class OrderGroupError extends StateError {
+  OrderGroupError(super.message);
 }

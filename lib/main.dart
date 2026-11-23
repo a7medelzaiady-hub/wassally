@@ -14,12 +14,12 @@ import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
-import 'theme/brand.dart';
-import 'theme/theme_controller.dart';
+import 'services/cart_book.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
 Future<void> _bootstrap() async {
+  final startup = Stopwatch()..start();
   WidgetsFlutterBinding.ensureInitialized();
   // على أندرويد Firebase بيقرا الإعدادات من android/app/google-services.json،
   // فمش محتاجين نحدّث appId يدويًا لما نسجّل تطبيق جديد.
@@ -27,16 +27,36 @@ Future<void> _bootstrap() async {
   await Firebase.initializeApp(
     options: isAndroid ? null : DefaultFirebaseOptions.currentPlatform,
   );
-  if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.macOS)) {
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
-  }
   await E2eSupport.connectEmulators();
-  await PerformanceMonitor.configure();
-  await _activateAppCheck();
-  await ThemeController.instance.load();
+  // الخطوات دي مستقلة عن بعض، فبتشتغل مع بعض بدل ورا بعض (كلها لازم تخلص قبل runApp).
+  await Future.wait([
+    _configureCrashlytics(),
+    PerformanceMonitor.configure(),
+    if (!E2eSupport.enabled) _activateAppCheck(),
+    carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
+  ]);
+  final bootstrap = startup.elapsed;
   runApp(const WasallyApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    PerformanceMonitor.recordStartup(PerformanceMonitor.startupMetrics(
+      bootstrap: bootstrap,
+      firstFrame: startup.elapsed,
+    ));
+  });
+}
+
+Future<void> _configureCrashlytics() async {
+  if (kIsWeb) return;
+  if (defaultTargetPlatform != TargetPlatform.android &&
+      defaultTargetPlatform != TargetPlatform.iOS &&
+      defaultTargetPlatform != TargetPlatform.macOS) {
+    return;
+  }
+  try {
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+  } catch (e) {
+    debugPrint('Crashlytics config failed: $e');
+  }
 }
 
 /// App Check: بيثبت إن الطلبات جاية من تطبيق وصلي الأصلي (Play Integrity على أندرويد)،
@@ -63,41 +83,32 @@ class WasallyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // لما المستخدم يغيّر السمة، التطبيق كله بيتبني من جديد بالألوان الجديدة.
-    return ListenableBuilder(
-      listenable: ThemeController.instance,
-      builder: (context, _) => MaterialApp(
-        title: 'وصلي',
-        debugShowCheckedModeBanner: false,
-        navigatorKey: rootNavigatorKey,
-        scaffoldMessengerKey: NotificationService.messengerKey,
-        theme: buildAppTheme(),
-        locale: const Locale('ar'),
-        supportedLocales: const [Locale('ar')],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        builder: (context, child) {
-          // نحترم إعدادات حجم الخط وإمكانية الوصول في الجهاز دون تصغير إجباري.
-          // خطوط أصغر في التطبيق كله (بدل التكبير الافتراضي).
-          final mq = MediaQuery.of(context);
-          return MediaQuery(
-            data: mq.copyWith(
-              textScaler: mq.textScaler.clamp(
-                minScaleFactor: 0.8,
-                maxScaleFactor: 0.88,
-              ),
+    return MaterialApp(
+      title: 'وصلي',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: rootNavigatorKey,
+      scaffoldMessengerKey: NotificationService.messengerKey,
+      theme: buildAppTheme(),
+      locale: const Locale('ar'),
+      supportedLocales: const [Locale('ar')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: mq.textScaler.clamp(
+              minScaleFactor: 0.8,
+              maxScaleFactor: 0.88,
             ),
-            child: KeyedSubtree(
-              key: ValueKey(Brand.palette.id),
-              child: child ?? const SizedBox.shrink(),
-            ),
-          );
-        },
-        home: const AuthGate(),
-      ),
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+      home: const AuthGate(),
     );
   }
 }

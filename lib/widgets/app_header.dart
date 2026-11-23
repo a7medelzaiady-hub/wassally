@@ -60,7 +60,8 @@ class HomeActionButton extends StatelessWidget {
 class InnerHeader extends StatelessWidget {
   final String title;
   final Widget? trailing;
-  const InnerHeader({super.key, required this.title, this.trailing});
+  final bool showHome;
+  const InnerHeader({super.key, required this.title, this.trailing, this.showHome = true});
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +82,7 @@ class InnerHeader extends StatelessWidget {
                   ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
             ),
           ),
-          const HomeActionButton(),
+          if (showHome) const HomeActionButton(),
           ?trailing,
         ],
       ),

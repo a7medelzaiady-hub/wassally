@@ -1,6 +1,7 @@
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/store.dart';
+import 'wasally_service_fee.dart';
 
 /// نتيجة مقارنة أسعار الطلب بالكتالوج الحالي.
 enum PriceCheckStatus {
@@ -92,7 +93,10 @@ PriceCheck checkOrderPrices(
 
   if (anyMissing) return PriceCheck(PriceCheckStatus.unknown, 0, issues);
 
-  final expected = catalogSubtotal + order.deliveryFee - order.discount;
+  final expected = catalogSubtotal + order.deliveryFee - order.discount +
+      (order.serviceFee == null
+          ? 0
+          : WasallyServiceFee.forItems(catalogSubtotal - order.discount));
   final totalDiff = (order.total - expected).abs() >= 0.01;
   final status = (anyDiff || totalDiff)
       ? PriceCheckStatus.mismatch

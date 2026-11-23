@@ -90,7 +90,7 @@ jobs:
 
       - name: Verify production Worker health endpoint
         run: |
-          curl --fail --silent --show-error https://throbbing-water-4ef7.a7ef7.workers.dev/health | jq -e '.ok == true and .service == "wasally-order-gateway"'
+          curl --fail --silent --show-error https://throbbing-water-4ef7.a7medelzaiady.workers.dev/health | jq -e '.ok == true and .service == "wasally-order-gateway"'
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -104,7 +104,7 @@ jobs:
       - name: Build signed Play App Bundle
         run: |
           flutter build appbundle --release \
-            --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7ef7.workers.dev \
+            --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
             --dart-define=WASALLY_SERVER_ORDERS=true
 
       - name: Verify AAB exists and is a valid ZIP archive

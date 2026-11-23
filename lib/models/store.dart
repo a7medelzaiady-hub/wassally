@@ -52,6 +52,8 @@ class Store {
   final double rating;
   final String time;
   final bool active;
+  /// مفتوح/مغلق (منفصل عن active اللي هو الظهور). المغلق بيظهر للعميل بس مايقدرش يطلب منه.
+  final bool isOpen;
   final int order;
   final List<Product> products;
 
@@ -67,6 +69,7 @@ class Store {
     this.imageUrl = '',
     this.storePhone = '',
     this.active = true,
+    this.isOpen = true,
     this.order = 0,
   });
 
@@ -104,6 +107,7 @@ class Store {
       rating: _avg(m),
       time: (m['time'] ?? '').toString(),
       active: (m['active'] as bool?) ?? true,
+      isOpen: (m['isOpen'] as bool?) ?? true,
       order: (m['order'] as num?)?.toInt() ?? 0,
       products: products,
     );

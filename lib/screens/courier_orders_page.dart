@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/order.dart';
 import '../services/customer_rating_service.dart';
+import '../services/delivery_pin_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
@@ -19,6 +20,8 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
+import '../utils/dialog_controllers.dart';
+import 'quick_courier_orders_page.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -272,6 +275,8 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
               ].join(' · '),
             ),
           ),
+          // «الطلبات السريعة»: بيظهر للمناديب المعتمدين (quickEnabled) بس.
+          const QuickCourierEntry(),
           Expanded(
             child: StreamBuilder<List<AppOrder>>(
               stream: _orders,
@@ -385,7 +390,10 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                   itemBuilder: (context, i) =>
                                       _tab == _Tab.available
                                       ? _AvailableOrderCard(order: shown[i])
-                                      : _CourierOrderCard(order: shown[i]),
+                                      : _CourierOrderCard(
+                                          key: ValueKey(shown[i].id),
+                                          order: shown[i],
+                                        ),
                                 ),
                         ),
                       ],
@@ -414,19 +422,24 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
   bool _busy = false;
 
   Future<void> _claim() async {
+    if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await StaffOrderService.claimOrder(widget.order);
-      messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+      }
     } on FirebaseException catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(e.code == 'permission-denied'
-            ? 'الطلب اتاخد من مندوب تاني.'
-            : 'تعذر الاستلام (${e.code}).'),
-      ));
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(e.code == 'permission-denied'
+              ? 'الطلب اتاخد من مندوب تاني.'
+              : 'تعذر الاستلام (${e.code}).'),
+        ));
+      }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -459,17 +472,24 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                         color: Brand.ink,
                       ),
                     ),
-                    // المناديب المتاحين يشوفوا المنطقة بس. العنوان والموبايل بيظهروا
-                    // للمندوب اللي استلم الطلب فقط.
-                    if (o.area.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        o.area,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12.5, color: kMuted),
+                    if (o.groupCode.isNotEmpty) GroupCodeBadge(code: o.groupCode),
+                    // وجهة مختصرة فقط قبل الاستلام؛ لا نعرض عنوان العميل أو هاتفه.
+                    const SizedBox(height: 5),
+                    Text(
+                      'رايح: ${o.area.trim().isEmpty ? 'المنطقة غير محددة' : o.area.trim()}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Brand.green,
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'طلب #${o.id.length > 8 ? o.id.substring(0, 8) : o.id}',
+                      style: TextStyle(fontSize: 11, color: kMuted),
+                    ),
                   ],
                 ),
               ),
@@ -489,6 +509,13 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            'محتوى الطلب: ${o.items.length} صنف • الحالة: ${o.status.label}',
+            style: TextStyle(fontSize: 12, color: Brand.ink),
+          ),
+          const SizedBox(height: 6),
+          const Text('العنوان التفصيلي ورقم العميل يظهران في «طلباتي» بعد استلام الطلب وتعيينه لك.'),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -496,6 +523,8 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
             child: FilledButton(
               onPressed: _busy ? null : _claim,
               style: FilledButton.styleFrom(
+                backgroundColor: Brand.green,
+                foregroundColor: Colors.white,
                 shape: const StadiumBorder(),
                 textStyle: const TextStyle(
                   fontSize: 15,
@@ -522,7 +551,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
 
 class _CourierOrderCard extends StatefulWidget {
   final AppOrder order;
-  const _CourierOrderCard({required this.order});
+  const _CourierOrderCard({super.key, required this.order});
 
   @override
   State<_CourierOrderCard> createState() => _CourierOrderCardState();
@@ -539,77 +568,119 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   AppOrder get _o => widget.order.withContact(_contact);
 
+  bool get _canSeeContact =>
+      widget.order.customerConfirmedAt == null &&
+      widget.order.courierId == FirebaseAuth.instance.currentUser?.uid &&
+      (widget.order.status == OrderStatus.preparing ||
+          widget.order.status == OrderStatus.onTheWay);
+
+  int _contactRequest = 0;
+
   @override
   void initState() {
     super.initState();
-    if (widget.order.status != OrderStatus.delivered &&
-        widget.order.status != OrderStatus.cancelled) {
-      _loadContact();
-    }
+    if (_canSeeContact) _loadContact();
   }
 
   @override
   void didUpdateWidget(covariant _CourierOrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.order.id != widget.order.id ||
-        oldWidget.order.status != widget.order.status) {
+        oldWidget.order.status != widget.order.status ||
+        oldWidget.order.customerConfirmedAt != widget.order.customerConfirmedAt ||
+        oldWidget.order.courierId != widget.order.courierId) {
+      _contactRequest++;
       _contact = null;
       _contactFailed = false;
-      if (widget.order.status != OrderStatus.delivered &&
-          widget.order.status != OrderStatus.cancelled) {
-        _loadContact();
-      }
+      if (_canSeeContact) _loadContact();
     }
   }
 
   Future<void> _loadContact() async {
-    if (mounted) {
-      setState(() {
-        _contactFailed = false;
-      });
-    }
+    if (!_canSeeContact) return;
+    final request = ++_contactRequest;
+    setState(() => _contactFailed = false);
     try {
-      final contact = await OrderContactService.load(widget.order.id);
-      if (mounted) setState(() => _contact = contact);
+      final contact = await OrderContactService.load(
+        widget.order.id,
+        options: const GetOptions(source: Source.server),
+      );
+      if (mounted && request == _contactRequest && _canSeeContact) {
+        setState(() => _contact = contact);
+      }
     } catch (error) {
       debugPrint('Courier contact load failed: $error');
-      if (mounted) setState(() => _contactFailed = true);
+      if (mounted && request == _contactRequest && _canSeeContact) {
+        setState(() => _contactFailed = true);
+      }
+    }
+  }
+
+  /// التسليم بقى برمز من 4 أرقام بياخده المندوب من العميل، والـWorker هو اللي بيتحقق.
+  Future<void> _deliverWithPin() async {
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (ctx) => const _DeliveryPinDialog(),
+    );
+    if (pin == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      final orderId = widget.order.id;
+      final payable = widget.order.payable;
+      final delivered = await DeliveryPinService.deliver(orderId, pin);
+      if (!mounted || widget.order.id != orderId) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(delivered
+            ? 'تم تأكيد التسليم. حصّل ${formatPrice(payable)} من العميل.'
+            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
+      ));
+    } on DeliveryPinError catch (e) {
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (error) {
+      debugPrint('Delivery PIN verification failed: $error');
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _advance() async {
     final next = widget.order.status.courierNext;
     if (next == null || _busy || widget.order.status.courierMustWait) return;
+    if (courierPinLocked(widget.order)) return;
     if (next == OrderStatus.onTheWay &&
         kCourierWaitsForReady &&
         !widget.order.ready) {
       return;
     }
     final delivering = next == OrderStatus.delivered;
+    if (delivering) {
+      await _deliverWithPin();
+      return;
+    }
 
     final ok = await confirmDialog(
       context,
-      title: delivering ? 'تأكيد التسليم' : 'تأكيد الاستلام',
-      message: delivering
-          ? 'سلّمت الطلب وحصّلت ${formatPrice(widget.order.payable)} من العميل؟'
-          : 'هتبدأ توصيل الطلب؟',
-      confirmLabel: delivering ? 'إبلاغ العميل بالتسليم' : 'ابدأ التوصيل',
+      title: 'تأكيد الاستلام',
+      message: 'هتبدأ توصيل الطلب؟',
+      confirmLabel: 'ابدأ التوصيل',
     );
     if (!ok || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      if (delivering) {
-        await StaffOrderService.reportCustomerDelivery(widget.order);
-      } else {
-        await StaffOrderService.setStatus(
-          widget.order.id,
-          next,
-          from: widget.order.status,
-          actorRole: 'courier',
-        );
-      }
+      await StaffOrderService.setStatus(
+        widget.order.id,
+        next,
+        from: widget.order.status,
+        actorRole: 'courier',
+      );
     } on FirebaseException catch (error) {
       final message = switch (error.code) {
         'permission-denied' =>
@@ -749,7 +820,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     controlAffinity: ListTileControlAffinity.leading,
                   ),
                   const Text(
-                    'الطلب سيظل في عهدتك وفي حالة «في الطريق» حتى تراجع الإدارة البلاغ وتحدد إعادة المحاولة أو الإرجاع.',
+                    'بعد تسجيل السبب تقدر ترجع الطلب للمحل مباشرة، والمحل يؤكد استلامه.',
                     style: TextStyle(fontSize: 11.5, color: Colors.black54),
                   ),
                 ],
@@ -767,14 +838,14 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                           (reason: reason, note: note.text.trim()),
                         )
                     : null,
-                child: const Text('إرسال البلاغ'),
+                child: const Text('ابدأ إرجاع الطلب'),
               ),
             ],
           ),
         ),
       ),
     );
-    note.dispose();
+    disposeAfterDialogCloses(note);
     if (result == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
@@ -786,7 +857,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         contactAttempted: true,
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم إرسال البلاغ للإدارة. انتظر القرار قبل إكمال التسليم.')),
+        const SnackBar(content: Text('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.')),
       );
     } catch (error) {
       messenger.showSnackBar(
@@ -802,10 +873,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       stream: StaffOrderService.watchDeliveryIssue(order.activeDeliveryIssueId),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return const Text('تعذر تحميل قرار الإدارة بشأن البلاغ.');
+          return const Text('تعذر تحميل حالة إرجاع الطلب.');
         }
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Text('بلاغ تعذر التسليم قيد المراجعة.');
+          return const Text('جارٍ تحميل حالة إرجاع الطلب.');
         }
         final data = snapshot.data!.data() ?? const <String, dynamic>{};
         final status = (data['status'] ?? 'open').toString();
@@ -845,7 +916,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(decision.isEmpty ? 'الإدارة طلبت إرجاع الطلب للمحل.' : decision),
+              Text(decision.isEmpty ? 'ارجع الطلب للمحل ثم أكد الإرجاع.' : decision),
               const SizedBox(height: 8),
               FilledButton.tonalIcon(
                 onPressed: _busy
@@ -881,7 +952,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         }
         if (status == 'returned_to_store') {
           return const Text(
-            'تم تسجيل رجوع الطلب للمحل. الإدارة ستغلق الطلب بعد المراجعة.',
+            'تم تسجيل رجوع الطلب للمحل. الطلب هيتقفل أول ما المحل يأكد استلامه.',
             style: TextStyle(fontWeight: FontWeight.w700),
           );
         }
@@ -895,22 +966,34 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   Future<void> _openMap() async {
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await openInMaps(_o.address);
-    if (!ok) {
-      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+    if (!_canSeeContact) return;
+    try {
+      final ok = await openInMaps(_contact?.address ?? '');
+      if (!ok && mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+      }
     }
   }
 
   Future<void> _call() async {
-    final uri = Uri.parse('tel:${_o.phone}');
+    final phone = _contact?.phone.trim() ?? '';
+    if (!_canSeeContact || phone.isEmpty) return;
+    // Keep phone characters such as # and ? in the dialer number.
+    final uri = Uri(scheme: 'tel', path: phone);
     try {
-      await launchUrl(uri);
+      if (await launchUrl(uri)) return;
     } catch (_) {
-      await Clipboard.setData(ClipboardData(text: _o.phone));
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('تم نسخ الرقم')));
-      }
+      // Some devices throw instead of returning false when no dialer is available.
+    }
+    if (!mounted || !_canSeeContact) return;
+    await Clipboard.setData(ClipboardData(text: phone));
+    if (mounted && _canSeeContact) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('تعذر فتح الاتصال؛ تم نسخ الرقم')));
     }
   }
 
@@ -1003,12 +1086,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ),
                 ),
               ),
+              if (o.groupCode.isNotEmpty) GroupCodeBadge(code: o.groupCode),
               if (o.courierAt != null)
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
           ),
           const SizedBox(height: 12),
-          if (_contactFailed)
+          if (_canSeeContact && _contactFailed)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -1027,14 +1111,14 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 ],
               ),
             ),
-          Row(
+          if (_canSeeContact) Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      o.userName.isEmpty ? 'العميل' : o.userName,
+                      _contact?.name.isNotEmpty == true ? _contact!.name : 'العميل',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -1043,7 +1127,9 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      o.address,
+                      _contact?.address.isNotEmpty == true
+                          ? _contact!.address
+                          : 'العنوان التفصيلي غير متاح',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1055,17 +1141,17 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ],
                 ),
               ),
-              if (o.address.isNotEmpty)
+              if (_contact?.address.trim().isNotEmpty == true)
                 _round(Icons.map_outlined, 'الخريطة', _openMap),
-              if (o.phone.isNotEmpty)
+              if (_contact?.phone.trim().isNotEmpty == true)
                 _round(Icons.call_outlined, 'اتصال', _call),
             ],
           ),
-          if (o.courierNotes.isNotEmpty)
+          if (_canSeeContact && _contact?.courierNotes.isNotEmpty == true)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                'ملاحظات العميل للمندوب: ${o.courierNotes}',
+                'ملاحظات العميل للمندوب: ${_contact!.courierNotes}',
                 style: TextStyle(fontSize: 12.5, color: kMuted),
               ),
             ),
@@ -1075,6 +1161,31 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
+            ],
+          ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            title: const Text('تفاصيل الطلب'),
+            subtitle: Text('${o.status.label} • ${o.items.length} صنف'),
+            children: [
+              Text('رقم الطلب: ${o.id}'),
+              const SizedBox(height: 6),
+              Text('حالة الطلب: ${o.status.label}'),
+              const SizedBox(height: 6),
+              Text('المطلوب تحصيله: ${formatPrice(o.payable)}'),
+              const Divider(height: 20),
+              if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
+              for (final item in o.items)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${item.qty} × ${item.name}'),
+                  subtitle: item.options.isEmpty
+                      ? null
+                      : Text(item.options.join('، ')),
+                  trailing: Text(formatPrice(item.total)),
+                ),
             ],
           ),
           if (o.status == OrderStatus.onTheWay &&
@@ -1116,17 +1227,25 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               )
             else ...[
               const Text(
-                'تم تسجيل وصولك للعميل. تواصل معه، ثم أبلغ عن التسليم أو سجّل تعذر التسليم.',
+                'تم تسجيل وصولك للعميل. سلّمه الطلب وخد منه رمز التسليم (4 أرقام)، أو سجّل تعذر التسليم.',
                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
+              if (courierPinLocked(o))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب، استنى قرارها.',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: kDanger),
+                  ),
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: FilledButton(
-                      onPressed: _busy ? null : _advance,
+                      onPressed: (_busy || courierPinLocked(o)) ? null : _advance,
                       style: FilledButton.styleFrom(shape: const StadiumBorder()),
-                      child: const Text('تم التسليم للعميل'),
+                      child: Text(courierPinLocked(o) ? 'الرمز مقفول' : 'تأكيد التسليم بالرمز'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1171,7 +1290,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               ),
             ),
-          ] else if (next != null) ...[
+          ] else if (showsPickupButton(o)) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -1218,6 +1337,103 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+
+/// حوار إدخال رمز التسليم (4 أرقام) من العميل.
+class _DeliveryPinDialog extends StatefulWidget {
+  const _DeliveryPinDialog();
+
+  @override
+  State<_DeliveryPinDialog> createState() => _DeliveryPinDialogState();
+}
+
+class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
+  final _ctrl = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final pin = DeliveryPinService.normalize(_ctrl.text);
+    if (pin == null) {
+      setState(() => _error = 'اكتب 4 أرقام.');
+      return;
+    }
+    Navigator.pop(context, pin);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        title: const Text('رمز التسليم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('اطلب من العميل رمز التسليم اللي ظاهر عنده في التطبيق.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              maxLength: 4,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
+              style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w800),
+              decoration: InputDecoration(counterText: '', errorText: _error),
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('رجوع')),
+          FilledButton(onPressed: _submit, child: const Text('تأكيد التسليم')),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// رمز التسليم اتقفل بعد محاولات غلط ولسه الإدارة ما قرّرتش: المندوب ما يقدرش يدخل رمز تاني.
+bool courierPinLocked(AppOrder o) =>
+    o.deliveryPinLockedAt != null && o.customerConfirmedAt == null;
+
+/// زرار «استلمت من المحل، في الطريق» بيظهر بس لما الخطوة الجاية فعلًا هي بدء التوصيل.
+/// (كان بيظهر كمان لطلب في الطريق العميل أكّد استلامه ومستني تسوية النقدية مع المحل.)
+bool showsPickupButton(AppOrder o) =>
+    o.status.courierNext == OrderStatus.onTheWay &&
+    !o.status.courierMustWait &&
+    (!kCourierWaitsForReady || o.ready);
+
+/// شارة «مجموعة #CODE»: الطلب ده جزء من رحلة تسوق واحدة لنفس العميل (محلات مختلفة).
+/// استلام طلب منها ما بيستلمش الباقي؛ كل طلب مستقل.
+class GroupCodeBadge extends StatelessWidget {
+  final String code;
+  const GroupCodeBadge({super.key, required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF818CF8)),
+      ),
+      child: Text(
+        'مجموعة #$code',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF3730A3)),
       ),
     );
   }

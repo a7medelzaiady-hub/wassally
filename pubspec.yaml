@@ -2,7 +2,7 @@ name: city_store
 description: "وصّلي - تطبيق توصيل الطعام والبقالة والورد."
 publish_to: 'none'
 
-version: 1.0.0+8
+version: 1.0.0+9
 
 environment:
   sdk: '>=3.13.7 <4.0.0'
@@ -45,6 +45,10 @@ dependencies:
 
   shared_preferences: ^2.3.2
 
+  # كاش صور القرص (للصور العامة فقط، بحدود: راجع lib/services/image_cache.dart)
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -57,6 +61,7 @@ flutter:
   # أصوات التطبيق (جرس التنبيه). الملف متضمّن في المشروع: assets/sounds/bell.wav
   assets:
     - assets/sounds/
+    - assets/images/
 
   # خط Tajawal متضمّن في التطبيق (بيتحمّل وقت البناء في GitHub Actions من مستودع Google Fonts الرسمي).
   fonts:
@@ -72,5 +77,16 @@ flutter:
           weight: 800
         - asset: assets/fonts/Tajawal-Black.ttf
           weight: 900
+    # خط شاشة الدخول (IBM Plex Sans Arabic، رخصة OFL مرفقة في assets/fonts).
+    - family: PlexArabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/IBMPlexSansArabic-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSansArabic-Bold.ttf
+          weight: 700
 
   

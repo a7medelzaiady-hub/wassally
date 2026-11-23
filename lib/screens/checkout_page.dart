@@ -10,8 +10,13 @@ import '../services/navigation.dart';
 import '../services/order_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
+
+/// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
+// ignore: prefer_const_declarations
+final bool kPromoCodesEnabled = false;
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -185,6 +190,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
       return;
     }
     if (!await _confirmAddress() || !mounted) return;
+    if (await DeliveryService.checkOrdersPaused()) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     setState(() => _submitting = true);
     final navigator = Navigator.of(context);
@@ -217,15 +232,45 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
-              content: const Text(
-                'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
-                textAlign: TextAlign.center,
-                style: TextStyle(height: 1.5),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(height: 1.5),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: kPrimary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: kPrimary.withValues(alpha: 0.4)),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.pin_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            kDeliveryPinKeepNotice,
+                            style: TextStyle(height: 1.45, fontSize: 13, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               actionsAlignment: MainAxisAlignment.center,
               actions: [
                 FilledButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () {
+                    shellTab.value = 2; // طلباتي
+                    Navigator.pop(ctx);
+                  },
                   style: FilledButton.styleFrom(
                     shape: const StadiumBorder(),
                     padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -380,35 +425,37 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _promo,
-                          textDirection: TextDirection.ltr,
-                          textCapitalization: TextCapitalization.characters,
-                          decoration: const InputDecoration(
-                            labelText: 'كود خصم (اختياري)',
-                            prefixIcon: Icon(Icons.local_offer_outlined),
+                  if (kPromoCodesEnabled) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _promo,
+                            textDirection: TextDirection.ltr,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: const InputDecoration(
+                              labelText: 'كود خصم (اختياري)',
+                              prefixIcon: Icon(Icons.local_offer_outlined),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _checkingPromo ? null : _applyPromo,
-                        child: _checkingPromo
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('تطبيق'),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _checkingPromo ? null : _applyPromo,
+                          child: _checkingPromo
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('تطبيق'),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   Text(
                     'طريقة الدفع',
@@ -506,6 +553,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             'رسوم التوصيل',
                             formatPrice(cart.fee),
                           ),
+                          if (cart.serviceFee > 0) ...[
+                            const SizedBox(height: 4),
+                            _line('رسوم الخدمة', formatPrice(cart.serviceFee)),
+                          ],
                           if (cart.discount > 0) ...[
                             const SizedBox(height: 4),
                             _line(

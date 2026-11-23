@@ -43,8 +43,11 @@ class OrderContactService {
 
   /// ترجع null فقط لو المستند غير موجود.
   /// أخطاء الصلاحيات/الشبكة تخرج للواجهة كي تعرض السبب وتتيح إعادة المحاولة.
-  static Future<OrderContact?> load(String orderId) async {
-    final snap = await ref(orderId).get();
+  static Future<OrderContact?> load(
+    String orderId, {
+    GetOptions? options,
+  }) async {
+    final snap = await ref(orderId).get(options);
     final data = snap.data();
     return data == null ? null : OrderContact.fromMap(data);
   }

@@ -9,6 +9,7 @@ import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
 import 'order_details_page.dart';
+import 'quick_customer_orders_page.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -25,6 +26,22 @@ class _OrdersPageState extends State<OrdersPage> {
     return Column(
       children: [
         const BrandHeader(title: 'طلباتي', subtitle: 'تابع حالة طلباتك'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Brand.green),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const QuickCustomerOrdersPage(),
+                ),
+              ),
+              icon: const Icon(Icons.flash_on),
+              label: const Text('تابع طلباتك على السريع'),
+            ),
+          ),
+        ),
         Expanded(
           child: Container(
             color: kBg,
@@ -231,7 +248,7 @@ class _OrderCardState extends State<_OrderCard> {
                     const Spacer(),
                     if (_busy)
                       const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-                    else
+                    else if (status.canHideFromHistory)
                       IconButton(
                         tooltip: 'إخفاء الطلب من السجل',
                         visualDensity: VisualDensity.compact,

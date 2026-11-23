@@ -71,6 +71,102 @@ service cloud.firestore {
           .data.get('active', true) == true;
     }
 
+    // ───────────── الكتالوج المجمّع (توفير القراءات) ─────────────
+    // المحل اللي المستخدم الحالي بيديره: صاحب محل نشط، أو صاحب طلب انضمام (مسودة) معلّق/مرفوض.
+    function myCatalogStoreId() {
+      let ownerPath = /databases/$(database)/documents/storeOwners/$(request.auth.uid);
+      let requestPath = /databases/$(database)/documents/role_requests/$(request.auth.uid + '_store_owner');
+      return !signedIn() ? '' :
+        (exists(ownerPath) && get(ownerPath).data.get('active', true) == true)
+          ? get(ownerPath).data.get('storeId', '')
+          : ((exists(requestPath) &&
+              get(requestPath).data.get('status', '') in ['pending', 'rejected'] &&
+              get(/databases/$(database)/documents/stores/$(get(requestPath).data.get('storeId', '')))
+                .data.get('ownerUid', '') == request.auth.uid)
+              ? get(requestPath).data.get('storeId', '')
+              : '');
+    }
+
+    // app_info/catalog_versions = { stores, m_<storeId>, big_<storeId>, indexReady, updatedAt }.
+    // أرقام الإصدار ما تتكررش أبدًا (العميل بيعتمد على الرقم عشان يستخدم الكاش):
+    //   الزيادة = |السابق| + 1، والتعطيل = سالب السابق (من إصدار صالح بس).
+    // big_<storeId>: القائمة أكبر من حد المستند (المحل على المسار القديم).
+    function catalogVersionsWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let mk = 'm_' + sid;
+      let bk = 'big_' + sid;
+      let k = after.diff(before).affectedKeys();
+      let prev = before.get(mk, 0);
+      return sid is string && sid.size() > 0 &&
+        k.hasOnly([mk, bk, 'stores', 'updatedAt']) &&
+        (!(mk in k) ||
+          (after[mk] is int &&
+            (after[mk] == math.abs(prev) + 1 || (prev > 0 && after[mk] == -prev)))) &&
+        (!(bk in k) || after[bk] is bool) &&
+        (!('stores' in k) || after.get('stores', 0) == before.get('stores', 0) + 1);
+    }
+
+    // خانة المحل = نسخة من حقول العرض في مستند المحل بالظبط (لازم تطابق CatalogSync.indexKeys)،
+    // فصاحب المحل ما يقدرش يزوّر التقييم أو الترتيب أو الرقم أو الاسم.
+    // العروض في نص واحد مضغوط "hl" بطول محدود (CatalogSync.maxHighlightsChars): فحص بتعبيرين
+    // بدل فحص كل عنصر، عشان نفضل بعيد عن حد الـ 1000 تعبير لكل طلب، وكمان حجم الخانة محدود.
+    //   e.diff(st): added = في الخانة ومش في المحل، removed = في المحل ومش في الخانة، changed = مختلف.
+    function indexEntryMatchesStore(e, st) {
+      let d = e.diff(st);
+      let free = ['imageUrl', 'hl'];
+      return e is map &&
+        e.keys().hasOnly(['name', 'category', 'icon', 'color', 'imageUrl', 'storePhone',
+                          'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
+                          'products', 'minOrder', 'minimumOrder', 'hl', 'isOpen']) &&
+        e.get('active', false) == true && st.get('active', false) == true &&
+        d.addedKeys().hasOnly(free) &&
+        d.changedKeys().hasOnly(free) &&
+        !d.removedKeys().hasAny(['name', 'category', 'icon', 'color', 'storePhone',
+                                 'rating', 'ratingSum', 'ratingCount', 'time', 'active', 'order',
+                                 'products', 'minOrder', 'minimumOrder', 'isOpen']) &&
+        e.get('imageUrl', null) == st.get('imageUrl', st.get('image', null)) &&
+        e.get('hl', '') is string && e.get('hl', '').size() <= 1400;
+    }
+
+    // app_info/store_index = { s_<storeId>: {حقول العرض}, updatedAt }.
+    // صاحب المحل يعدّل خانة محله بس.
+    // حد أمان للحجم: 250 محل بالكتير (+ updatedAt)، وكل خانة متقصوصة تحت 3.5KB في التطبيق
+    // (CatalogSync.maxIndexStores / maxIndexEntryBytes)، فالمستند يفضل تحت 1MiB.
+    function storeIndexWriteOk(before, after) {
+      let sid = myCatalogStoreId();
+      let key = 's_' + sid;
+      let k = after.diff(before).affectedKeys();
+      let storePath = /databases/$(database)/documents/stores/$(sid);
+      return sid is string && sid.size() > 0 &&
+        // فوق الحد: التعديل مسموح طالما العدد ما زادش (إضافة محل جديد بس اللي بتترفض).
+        (after.size() <= 251 || after.size() <= before.size()) &&
+        k.hasOnly([key, 'updatedAt']) &&
+        ((key in after)
+          ? (exists(storePath) && indexEntryMatchesStore(after[key], get(storePath).data))
+          // شيل الخانة مسموح بس لمحل اتقفل أو اتحذف (ما يقدرش يخفي محل نشط).
+          : (!exists(storePath) || get(storePath).data.get('active', false) != true));
+    }
+
+    // مزامنة تقييم المحل في الفهرس بعد تقييم جديد (من غير رفع رقم إصدار الفهرس):
+    // العميل اللي عمل آخر تقييم للمحل (lastReviewId) يكتب ratingSum/ratingCount بس في خانة
+    // محل موجودة أصلًا، والقيم لازم تساوي مستند المحل دلوقتي بالظبط. فما يقدرش يزوّر أرقام،
+    // وما يقدرش يلمس محل تاني أو حقول تانية، وكتابة قديمة بعد تقييم أحدث بتترفض (القيم مش هتطابق).
+    // ratingSync = معرف المحل اللي بيتزامن (القواعد ما تقدرش تطلّع المعرف من اسم الحقل).
+    function storeIndexRatingSyncOk(before, after) {
+      let sid = after.get('ratingSync', '');
+      let key = 's_' + sid;
+      let st = get(/databases/$(database)/documents/stores/$(sid)).data;
+      return signedIn() && sid is string && sid.size() > 0 &&
+        after.diff(before).affectedKeys().hasOnly([key, 'ratingSync']) &&
+        (key in before) && (key in after) &&
+        after[key].diff(before[key]).affectedKeys().hasOnly(['ratingSum', 'ratingCount']) &&
+        after[key].get('ratingSum', 0) == st.get('ratingSum', 0) &&
+        after[key].get('ratingCount', 0) == st.get('ratingCount', 0) &&
+        st.get('lastReviewId', '') is string && st.get('lastReviewId', '') != '' &&
+        get(/databases/$(database)/documents/reviews/$(st.get('lastReviewId', ''))).data.get('userId', '') ==
+          request.auth.uid;
+    }
+
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
@@ -146,7 +242,14 @@ service cloud.firestore {
             nd.get('pickedUpAt', null) == request.time &&
             cid is string &&
             cid.size() > 0))) ||
-        false; // التسليم لا يتم إداريًا؛ تأكيده حسب نوع المندوب.
+        // قرار الإدارة بعد قفل رمز التسليم (5 محاولات غلط): إغلاق طلب مندوب المحل كـ«تم التسليم».
+        (st == 'on_the_way' &&
+          nst == 'delivered' &&
+          od.get('deliveryPinLockedAt', null) is timestamp &&
+          od.get('deliveryMode', '') == 'store' &&
+          cid is string &&
+          cid.size() > 0) ||
+        false; // غير كده التسليم بيتأكد برمز التسليم من الـWorker بس.
     }
 
     // تغيير الحالة لازم يجي مع حدث في statusHistory (نفس الـ batch) دائمًا.
@@ -212,7 +315,9 @@ service cloud.firestore {
     function eligibleStoreForOrder(d) {
       return d.storeId is string && d.storeId.size() > 0 &&
         exists(/databases/$(database)/documents/stores/$(d.storeId)) &&
-        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true;
+        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('active', true) == true &&
+        // المحل المغلق (isOpen=false) بيظهر للعميل بس مايستقبلش طلبات.
+        get(/databases/$(database)/documents/stores/$(d.storeId)).data.get('isOpen', true) != false;
     }
 
     // فاصل بين طلبين من نفس العميل (يتفعّل بمفتاح orderRateLimit). التطبيق بيكتب orderLimits/{uid}.lastAt
@@ -244,7 +349,8 @@ service cloud.firestore {
     function validSpecialRequest(d) {
       return !('specialRequest' in d) || (
         d.specialRequest is map &&
-        d.specialRequest.keys().hasOnly(['description', 'quantity', 'imageUrl', 'voiceBase64', 'createdAt']) &&
+        // الصوت رابط Cloudinary (voiceUrl)، مش base64 جوه الطلب (كان بيكبّر المستند لحد 700KB).
+        d.specialRequest.keys().hasOnly(['description', 'quantity', 'imageUrl', 'voiceUrl', 'createdAt']) &&
         d.specialRequest.get('description', '') is string &&
         d.specialRequest.get('description', '').size() <= 300 &&
         d.specialRequest.get('quantity', 1) is int &&
@@ -254,13 +360,15 @@ service cloud.firestore {
         d.specialRequest.get('imageUrl', '').size() <= 450 &&
         (d.specialRequest.get('imageUrl', '') == '' ||
           d.specialRequest.get('imageUrl', '').matches('https://res\\.cloudinary\\.com/[^/]+/image/upload/.*')) &&
-        d.specialRequest.get('voiceBase64', '') is string &&
-        d.specialRequest.get('voiceBase64', '').size() <= 700000 &&
+        d.specialRequest.get('voiceUrl', '') is string &&
+        d.specialRequest.get('voiceUrl', '').size() <= 450 &&
+        (d.specialRequest.get('voiceUrl', '') == '' ||
+          d.specialRequest.get('voiceUrl', '').matches('https://res\\.cloudinary\\.com/[^/]+/video/upload/(v[0-9]+/)?special_requests/.*')) &&
         d.specialRequest.get('createdAt', '') is string &&
         d.specialRequest.get('createdAt', '').size() <= 40 &&
         (d.specialRequest.get('description', '').size() > 0 ||
           d.specialRequest.get('imageUrl', '').size() > 0 ||
-          d.specialRequest.get('voiceBase64', '').size() > 0)
+          d.specialRequest.get('voiceUrl', '').size() > 0)
       );
     }
 
@@ -269,7 +377,8 @@ service cloud.firestore {
         d.keys().hasAll(orderKeys()) &&
         (!('freeDelivery' in d) || (d.freeDelivery == true && d.deliveryFee == 0)) &&
         d.get('area', '') is string && d.get('area', '').size() <= 60 &&
-        promoOk(d) &&
+        // الكوبونات موقوفة: أي طلب جديد لازم يكون من غير خصم (التعديل على طلب قديم فيه خصم لسه بيعدّي promoOk).
+        d.get('discount', 0) == 0 &&
         validSpecialRequest(d) &&
         customerNotRestricted(request.auth.uid) &&
         d.userId == request.auth.uid &&
@@ -308,7 +417,10 @@ service cloud.firestore {
         math.abs(n.total - (n.subtotal + o.deliveryFee - n.get('discount', 0))) < 0.01 &&
         n.notes is string && n.notes.size() <= 500 &&
         n.customerName is string && n.customerName.size() >= 1 && n.customerName.size() <= 30 &&
-        promoOk(n) &&
+        // Preserve existing coupons on legacy orders without allowing a new coupon.
+        (n.get('discount', 0) == 0 ||
+          (o.get('discount', 0) > 0 && n.get('promoCode', '') == o.get('promoCode', '') &&
+           o.subtotal > 0 && n.discount * o.subtotal <= o.discount * n.subtotal && promoOk(n))) &&
         n.get('editedAt', null) == request.time;
     }
 
@@ -331,7 +443,8 @@ service cloud.firestore {
     function feedDataMatchesOrder(f, orderData) {
       return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
           'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt',
-          'editedAt']) &&
+          'editedAt', 'groupCode']) &&
+        f.get('groupCode', '') == orderData.get('groupCode', '') &&
         f.get('storeId', '') == orderData.get('storeId', '') &&
         f.get('storeName', '') == orderData.get('storeName', '') &&
         f.get('area', '') == orderData.get('area', '') &&
@@ -444,13 +557,17 @@ service cloud.firestore {
         isStoreApplicant(storeId) || resource.data.get('active', true) == true;
       allow list: if isAdmin() || resource.data.get('active', true) == true;
       allow create: if isAdmin() || validStoreDraft(storeId, request.resource.data);
-      allow delete: if isAdmin() || isStoreOwner(storeId);
+      // الحذف للإدارة فقط: حذف المحل من صاحبه كان بيسيب منتجات يتيمة وطلبات جارية بتشاور على محل
+      // مش موجود. حذف حساب صاحب المحل بيتم من Worker (حساب خدمة) ومش محتاج الصلاحية دي.
+      allow delete: if isAdmin();
       allow update: if isAdmin() ||
         (isStoreOwner(storeId) &&
-          changedKeys().hasOnly(['active', 'time', 'image', 'imageUrl',
+          changedKeys().hasOnly(['active', 'isOpen', 'time', 'image', 'imageUrl',
                                  'productCount', 'offerItems', 'bestItems',
                                  'updatedAt']) &&
           request.resource.data.get('active', true) is bool &&
+          // فتح/غلق المحل: صاحب المحل يقدر يغيّره في الاتجاهين.
+          request.resource.data.get('isOpen', true) is bool &&
           (!('active' in changedKeys()) || request.resource.data.active == false) &&
           request.resource.data.get('time', '') is string &&
           request.resource.data.get('time', '').size() <= 60 &&
@@ -510,6 +627,19 @@ service cloud.firestore {
           resource.data.get('ratingSum', 0) +
           getAfter(/databases/$(database)/documents/reviews/$(request.resource.data.lastReviewId)).data.rating;
 
+      // قائمة أصناف المحل المجمّعة (قراءة واحدة للعميل). عرض فقط: البوابة بتسعّر من products.
+      match /menu/{doc} {
+        allow read: if isAdmin() || isStoreOwner(storeId) ||
+          isStoreApplicant(storeId) || isPublicStore(storeId);
+        allow create, update: if doc == 'current' &&
+          (isAdmin() || isStoreOwner(storeId) || isStoreApplicant(storeId)) &&
+          request.resource.data.keys().hasOnly(['items', 'count', 'updatedAt']) &&
+          request.resource.data.get('items', {}) is map &&
+          request.resource.data.get('items', {}).size() <= 5000 &&
+          request.resource.data.get('count', 0) is int;
+        allow delete: if isAdmin();
+      }
+
       match /products/{productId} {
         allow read: if isAdmin() || isStoreOwner(storeId) ||
           isStoreApplicant(storeId) || isPublicStore(storeId);
@@ -521,10 +651,15 @@ service cloud.firestore {
       }
     }
 
+    // مستند واحد لكل مستخدم (المعرّف = uid) وبحقول محددة، عشان مايتستخدمش لإغراق قاعدة البيانات.
+    // التطبيق الحالي ما بيكتبش هنا (الحذف من Worker)، والقاعدة فاضلة للنسخ القديمة بس.
     match /account_deletions/{id} {
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid
+      allow create: if signedIn() && id == request.auth.uid
+        && request.resource.data.keys().hasOnly(['userId', 'reason', 'createdAt'])
+        && request.resource.data.userId == request.auth.uid
         && request.resource.data.reason is string
-        && request.resource.data.reason.size() <= 200;
+        && request.resource.data.reason.size() <= 200
+        && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp);
       allow read: if isAdmin();
     }
 
@@ -547,6 +682,12 @@ service cloud.firestore {
 
     // قائمة الطلبات المتاحة للمندوبين (من غير بيانات العميل). بتتكتب من التطبيق (بدون Cloud Functions):
     // المدير أو صاحب المحل بتاع الطلب، لما الطلب يبقى preparing وبدون مندوب.
+    // تجميع طلبات العميل (رقم مشترك لطلبات من محلات مختلفة): الـWorker بس بيكتب ويقرا.
+    // groupId نفسه مش بيظهر للمناديب؛ اللي بيظهر groupCode على الطلب ونسخة القايمة.
+    match /order_groups/{groupId} {
+      allow read, write: if false;
+    }
+
     match /courier_available_orders/{orderId} {
       allow get, list: if isCourier();
 
@@ -557,8 +698,11 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
         request.resource.data.storeId ==
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.storeId &&
+        // كود التجميع (لو موجود) لازم يطابق الطلب نفسه: المحل ما يقدرش يخترع أو يغيّر مجموعة.
+        request.resource.data.get('groupCode', '') ==
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('groupCode', '') &&
         request.resource.data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
-          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']);
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt', 'groupCode']);
 
       // العميل صاحب الطلب يحدّث نسخة القائمة في نفس Batch تعديل الطلب فقط.
       // getAfter يربط المستندين بالقيم النهائية ويمنع إدخال أي PII.
@@ -583,38 +727,22 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let dm = od.get('deliveryMode', '');
         let editKeys = ['items', 'subtotal', 'total', 'notes', 'discount',
-          'promoCode', 'customerName', 'editedAt', 'unavailableItems'];
-        let confirmKeys = ['status', 'customerConfirmedAt', 'deliveredBy',
-          'deliveredAt', 'collectedAmount', 'courierEarning'];
+          'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'verifiedTotal', 'verifiedAt'];
         return k.hasOnly(editKeys) ? (
           !securityFlag('serverOrders') &&
+          !('serviceFee' in od) &&
           st in ['new', 'preparing'] &&
           cid == '' &&
           'editedAt' in k &&
           !('unavailableItems' in nd) &&
+          !('verifiedTotal' in nd) && !('verifiedAt' in nd) &&
           validCustomerEdit(nd, od) &&
           (st != 'preparing' || feedUpdatedForCustomerEdit(orderId))
         ) : k.hasOnly(['status']) ? (
           st == 'new' &&
           nst == 'cancelled' &&
           historyGate(nd, orderId, k)
-        ) : k.hasAny(['customerConfirmedAt']) ? (
-          st == 'on_the_way' &&
-          cid is string &&
-          cid.size() > 0 &&
-          od.get('customerDeliveryReportedAt', null) is timestamp &&
-          od.get('customerDeliveryReportedBy', '') == cid &&
-          !('customerConfirmedAt' in od) &&
-          nd.get('customerConfirmedAt', null) == request.time &&
-          (dm == 'external'
-            ? k.hasOnly(['customerConfirmedAt'])
-            : dm == 'store' &&
-              k.hasOnly(confirmKeys) &&
-              nst == 'delivered' &&
-              nd.get('deliveredBy', '') == cid &&
-              deliveryStampOk(nd, cid, k) &&
-              stampRequired(nd, k) &&
-              historyGate(nd, orderId, k))
+        // تأكيد الاستلام مبقاش من العميل: بيتم من الـWorker لما المندوب يدخل رمز التسليم الصحيح.
         ) : false;
       }
 
@@ -625,7 +753,7 @@ service cloud.firestore {
         let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
         return d.get('orderId', '') == orderId &&
           d.get('courierId', '') == request.auth.uid &&
-          d.get('status', '') == 'open';
+          d.get('status', '') in ['open', 'return_to_store'];
       }
       function issueResumedOk(id) {
         let d = getAfter(/databases/$(database)/documents/delivery_issues/$(id)).data;
@@ -666,6 +794,7 @@ service cloud.firestore {
         ) : k.hasOnly(['activeDeliveryIssueId']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
+          od.get('customerConfirmedAt', null) == null &&
           ( !('activeDeliveryIssueId' in od)
             ? (nai is string && nai.size() > 0 &&
                existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
@@ -681,15 +810,7 @@ service cloud.firestore {
           nst == 'on_the_way' &&
           nd.get('pickedUpAt', null) == request.time &&
           historyGate(nd, orderId, k)
-        ) : k.hasOnly(['customerDeliveryReportedAt', 'customerDeliveryReportedBy']) ? (
-          st == 'on_the_way' &&
-          cid == request.auth.uid &&
-          od.get('courierArrivedAt', null) is timestamp &&
-          dm in ['store', 'external'] &&
-          !('activeDeliveryIssueId' in od) &&
-          !('customerDeliveryReportedAt' in od) &&
-          nd.get('customerDeliveryReportedAt', null) == request.time &&
-          nd.get('customerDeliveryReportedBy', '') == request.auth.uid
+        // بلاغ التسليم من التطبيق اتشال: التسليم بيتأكد برمز التسليم عن طريق الـWorker بس.
         ) : k.hasOnly(['cashHandedToStoreAt', 'cashHandedToStoreBy']) ? (
           cid == request.auth.uid &&
           st == 'on_the_way' &&
@@ -738,6 +859,19 @@ service cloud.firestore {
           nd.get('courierAt', null) == request.time &&
           validCourierForOrder(nd.get('courierId', ''), sid, 'store') &&
           !existsAfter(/databases/$(database)/documents/courier_available_orders/$(orderId))
+        ) : (k.hasOnly(['status', 'activeDeliveryIssueId', 'lastDeliveryIssueId']) &&
+             k.hasAny(['activeDeliveryIssueId', 'lastDeliveryIssueId'])) ? (
+          // المرتجع: المحل يأكد استلامه والطلب يتقفل «ملغي (مرتجع)» في نفس الـbatch، من غير الإدارة.
+          // البلاغ لازم يكون «المندوب رجّعه» قبل الـbatch و«المحل استلمه» بعده.
+          st == 'on_the_way' &&
+          nst == 'cancelled' &&
+          od.get('activeDeliveryIssueId', '') is string &&
+          od.get('activeDeliveryIssueId', '').size() > 0 &&
+          get(/databases/$(database)/documents/delivery_issues/$(od.activeDeliveryIssueId)).data.get('status', '') == 'returned_to_store' &&
+          getAfter(/databases/$(database)/documents/delivery_issues/$(od.activeDeliveryIssueId)).data.get('status', '') == 'store_confirmed_return' &&
+          !('activeDeliveryIssueId' in nd) &&
+          nd.get('lastDeliveryIssueId', '') == od.activeDeliveryIssueId &&
+          historyGate(nd, orderId, k)
         ) : k.hasOnly(closeKeys) ? (
           st == 'on_the_way' &&
           dm == 'external' &&
@@ -766,7 +900,15 @@ service cloud.firestore {
         let generalKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning', 'finalDeliveryFee'];
-        return k.hasOnly(['ready', 'readyAt']) ? (
+        return k.hasOnly(['customerConfirmedAt']) ? (
+          // قرار الإدارة بعد قفل رمز التسليم لمندوب خارجي: تأكيد إن العميل استلم،
+          // والطلب يفضل في الطريق لحد ما المحل يأكد استلام النقدية (نفس مسار الرمز الصحيح).
+          st == 'on_the_way' &&
+          od.get('deliveryMode', '') == 'external' &&
+          od.get('deliveryPinLockedAt', null) is timestamp &&
+          !('customerConfirmedAt' in od) &&
+          nd.get('customerConfirmedAt', null) == request.time
+        ) : k.hasOnly(['ready', 'readyAt']) ? (
           st == 'preparing' &&
           nd.get('ready', false) == true &&
           nd.get('readyAt', null) == request.time
@@ -824,9 +966,12 @@ service cloud.firestore {
         let adminKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',
           'courierPhone', 'courierAt', 'deliveryMode', 'verifiedTotal', 'verifiedAt',
           'deliveredBy', 'deliveredAt', 'collectedAmount', 'courierEarning',
-          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId'];
+          'finalDeliveryFee', 'activeDeliveryIssueId', 'lastDeliveryIssueId',
+          'customerConfirmedAt'];
         return (od.get('userId', '') == uid &&
-            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true) ||
+            // الإخفاء من سجل العميل للطلبات المنتهية بس (اتسلّم أو اتلغى)، عشان ما يخفيش طلب لسه جاي.
+            ((k.hasOnly(['customerHidden']) && nd.get('customerHidden', false) == true &&
+              od.get('status', '') in ['delivered', 'cancelled']) ||
              (k.hasAny(customerKeys) && canCustomerUpdate(nd, od, k)))) ||
           ((cid == uid || cid == '') &&
             k.hasAny(courierKeys) && isCourier() && canCourierUpdate(nd, od, k)) ||
@@ -849,10 +994,18 @@ service cloud.firestore {
 
       allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);
 
-      // العميل يحذف طلبه طالما لسه جديد (المحل ما قبلهوش). باقي الحالات: إلغاء بس.
-      allow delete: if signedIn() &&
-        resource.data.userId == request.auth.uid &&
-        resource.data.status == 'new';
+      // مفيش حذف فعلي للطلبات من التطبيق: الطلب بيكون وصل للمحل، ومسحه بيضيّع السجل.
+      // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).
+      allow delete: if false;
+
+      function canReadOrderContact() {
+        let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return order.get('userId', '') == request.auth.uid ||
+          isAdmin() ||
+          (order.get('courierId', '') == request.auth.uid &&
+            order.get('status', '') in ['preparing', 'on_the_way'] &&
+            order.get('customerConfirmedAt', null) == null && isCourier());
+      }
 
       function customerContactUpdateAllowed(orderId) {
         let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;
@@ -869,23 +1022,16 @@ service cloud.firestore {
       //    (preparing / on_the_way). صاحب المحل والمناديب التانيين مفيش لهم وصول.
       //  • الإنشاء: العميل مع طلبه في نفس الـ batch فقط. مفيش تعديل ولا حذف من التطبيق.
       match /private/{doc} {
-        allow read: if signedIn() && doc == 'contact' && (
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
-          isAdmin() ||
-          (isCourier() &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['preparing', 'on_the_way']));
+        allow read: if signedIn() && doc == 'contact' && canReadOrderContact();
         allow create: if signedIn() && doc == 'contact' &&
           !exists(/databases/$(database)/documents/orders/$(orderId)) &&
           existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
           validContact(request.resource.data);
-        // العميل يعدّل بيانات التواصل حتى استلام المندوب، ويحذفها فقط مع طلب new.
+        // العميل يعدّل بيانات التواصل حتى استلام المندوب.
         allow update: if doc == 'contact' && customerContactUpdateAllowed(orderId);
-        allow delete: if signedIn() && doc == 'contact' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.status == 'new' &&
-          get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '';
+        // بيانات التواصل بتفضل مع الطلب (مفيش حذف فعلي للطلبات من التطبيق).
+        allow delete: if false;
       }
 
       // سجل الحالات: create فقط. معرّف المستند = الحالة الجديدة، فمفيش حدث بيتكرر.
@@ -942,7 +1088,8 @@ service cloud.firestore {
 
     // بيانات المستخدم: صاحبها بس.
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      // دليل المستخدمين للإدارة فقط؛ لا يتيح القراءة لأي مستخدم آخر.
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       // ممنوع المستخدم يكتب حقل role (أو أي حقل صلاحيات) في مستنده.
       // الحقول المسموحة بس (whitelist). أي حقل جديد (محفظة، صلاحيات...) لازم يتضاف هنا صراحةً.
       allow create: if signedIn() && request.auth.uid == uid &&
@@ -963,7 +1110,25 @@ service cloud.firestore {
       allow write: if isAdmin() ||
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
-          request.resource.data.version is number);
+          request.resource.data.keys().hasAll(['version', 'updatedAt']) &&
+          request.resource.data.version is number &&
+          request.resource.data.updatedAt == request.time &&
+          (resource == null
+            ? request.resource.data.version == 1
+            : (resource.data.get('version', 0) is number &&
+               request.resource.data.version == resource.data.get('version', 0) + 1 &&
+               // حد سرعة: زيادة واحدة كل 60 ثانية من أصحاب المحلات (المدير بلا حد)،
+               // عشان صاحب محل ما يستهلكش حصة الكتابة اليومية على Spark بزيادات متكررة.
+               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's'))));
+      allow create: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk({}, request.resource.data);
+      allow update: if doc == 'catalog_versions' &&
+        catalogVersionsWriteOk(resource.data, request.resource.data);
+      allow create: if doc == 'store_index' &&
+        storeIndexWriteOk({}, request.resource.data);
+      allow update: if doc == 'store_index' &&
+        (storeIndexWriteOk(resource.data, request.resource.data) ||
+         storeIndexRatingSyncOk(resource.data, request.resource.data));
     }
 
     // آخر وقت طلب لكل عميل (للفاصل بين الطلبات). العميل يكتبه بس مع طلبه؛ مفيش قراءة ولا حذف.
@@ -974,9 +1139,19 @@ service cloud.firestore {
       allow read, delete: if false;
     }
 
+    // سجل إشعارات الإدارة (مرة لكل طلب انضمام/بلاغ): الـWorker بس.
+    match /adminNotices/{noticeId} {
+      allow read, write: if false;
+    }
+
+    // عدّاد محاولات رمز التسليم: الـWorker بس (حساب الخدمة) بيقرا ويكتب. مفيش وصول من التطبيق.
+    match /deliveryPinAttempts/{orderId} {
+      allow read, write: if false;
+    }
+
     // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
     match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if false;
     }
 
@@ -1126,7 +1301,7 @@ service cloud.firestore {
         d.reason in ['no_answer', 'wrong_address', 'refused_order', 'no_cash',
                      'customer_requested_delay', 'unsafe_location', 'other'] &&
         d.note is string && d.note.size() <= 300 &&
-        d.contactAttempted == true && d.status == 'open' &&
+        d.contactAttempted == true && d.status in ['open', 'return_to_store'] &&
         d.createdBy == request.auth.uid && d.createdAt == request.time &&
         order != null &&
         order.get('status', '') == 'on_the_way' &&
@@ -1134,6 +1309,8 @@ service cloud.firestore {
         (order.get('pickedUpAt', null) is timestamp ||
          order.get('courierAt', null) is timestamp) &&
         order.get('courierArrivedAt', null) is timestamp &&
+        order.get('customerConfirmedAt', null) == null &&
+        getAfter(/databases/$(database)/documents/orders/$(d.orderId)).data.get('activeDeliveryIssueId', '') == issueId &&
         order.get('userId', '') == d.customerId &&
         order.get('storeId', '') == d.storeId;
     }
@@ -1191,6 +1368,8 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'on_the_way' &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'cancelled' &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('lastDeliveryIssueId', '') == issueId &&
         request.resource.data.get('status', '') == 'store_confirmed_return' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'storeReceivedAt', 'storeReceivedBy'
@@ -1363,7 +1542,9 @@ service cloud.firestore {
     }
 
     match /complaints/{cid} {
-      allow create: if signedIn() && validComplaint(request.resource.data);
+      // موقوف: الشكاوى بقت عبر واتساب. المستندات القديمة تتقرأ وتتقفل من الإدارة فقط.
+      // للرجوع: استرجع الشرط `signedIn() && validComplaint(request.resource.data)` من تاريخ git.
+      allow create: if false;
       allow read: if signedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow update: if isAdmin() &&
         changedKeys().hasOnly(['status', 'adminNote', 'resolvedAt']) &&
@@ -1384,48 +1565,55 @@ service cloud.firestore {
         request.resource.data.name is string && request.resource.data.name.size() <= 80 &&
         request.resource.data.storeId is string && request.resource.data.storeId.size() > 0 &&
         request.resource.data.get('active', true) is bool;
-      // صاحب المحل يقدر يحذف ربط حسابه فقط مع حذف محله في نفس الـ batch.
-      allow delete: if isAdmin() ||
-        (signedIn() && request.auth.uid == uid &&
-         resource.data.get('storeId', '') is string &&
-         isStoreOwner(resource.data.get('storeId', '')));
+      // فك ربط صاحب المحل للإدارة فقط. حذف حساب صاحب المحل بيتم من Worker (حساب خدمة)
+      // وبيقفل المحل في نفس العملية، فمفيش محل نشط بيفضل من غير صاحب.
+      allow delete: if isAdmin();
     }
 
     // طلبات المنتجات غير الموجودة: العميل ينشئ طلبًا لمحـل نشط،
     // وصاحب المحل المعني فقط (أو الإدارة) يقرأ الطلبات.
     match /special_requests/{requestId} {
-      allow create: if signedIn() &&
-        request.resource.data.keys().hasOnly([
-          'storeId', 'storeName', 'userId', 'description', 'quantity',
-          'imageUrl', 'voiceBase64', 'status', 'createdAt'
-        ]) &&
-        request.resource.data.keys().hasAll([
-          'storeId', 'storeName', 'userId', 'description', 'quantity',
-          'imageUrl', 'voiceBase64', 'status', 'createdAt'
-        ]) &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.storeId is string &&
-        request.resource.data.storeId.size() > 0 &&
-        exists(/databases/$(database)/documents/stores/$(request.resource.data.storeId)) &&
-        get(/databases/$(database)/documents/stores/$(request.resource.data.storeId)).data.get('active', true) == true &&
-        request.resource.data.storeName is string &&
-        request.resource.data.storeName.size() <= 100 &&
-        request.resource.data.description is string &&
-        request.resource.data.description.size() <= 300 &&
-        request.resource.data.quantity is int &&
-        request.resource.data.quantity >= 1 && request.resource.data.quantity <= 99 &&
-        request.resource.data.imageUrl is string &&
-        request.resource.data.imageUrl.size() <= 500 &&
-        request.resource.data.voiceBase64 is string &&
-        request.resource.data.voiceBase64.size() <= 700000 &&
-        (request.resource.data.description.size() > 0 ||
-         request.resource.data.imageUrl.size() > 0 ||
-         request.resource.data.voiceBase64.size() > 0) &&
-        request.resource.data.status == 'new' &&
-        request.resource.data.createdAt == request.time;
+      // موقوف مؤقتًا: التطبيق الحالي بيبعت الطلب الخاص جوه الطلب نفسه (orders.specialRequest) عبر الـWorker،
+      // وفتح الإنشاء هنا لأي حساب بدون حد عدد بيعرّض حصة التخزين والكتابة للاستنزاف.
+      // للرجوع: استرجع شرط الإنشاء من تاريخ git (قبل هذا التعديل). القراءة متروكة كما هي للمستندات القديمة.
+      allow create: if false;
       allow read: if isAdmin() ||
         (signedIn() && isStoreOwner(resource.data.get('storeId', '')));
       allow update, delete: if false;
+    }
+
+    // ───────────── «طلباتك على السريع» (quick_orders) ─────────────
+    // الـWorker هو الكاتب الوحيد (حساب الخدمة بيتخطى القواعد)، فكل الكتابة من التطبيق ممنوعة.
+    // القراءة: صاحب الطلب، والمندوب المعيّن، والإدارة، والمناديب المعتمدين للخدمة للطلبات المفتوحة بس.
+    // مستند الطلب العام مفيهوش رقم ولا عنوان؛ دول في private/contact.
+    function isQuickCourier() {
+      return isCourier() &&
+        get(/databases/$(database)/documents/couriers/$(request.auth.uid)).data.get('quickEnabled', false) == true;
+    }
+
+    match /quick_orders/{orderId} {
+      allow get, list: if signedIn() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('courierId', '') == request.auth.uid ||
+        isAdmin() ||
+        (resource.data.status == 'open' && isQuickCourier()));
+      allow create, update, delete: if false;
+
+      match /private/{doc} {
+        allow get: if signedIn() && doc == 'contact' && (
+          get(/databases/$(database)/documents/quick_orders/$(orderId)).data.userId == request.auth.uid ||
+          isAdmin() ||
+          (isCourier() &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('status', '') in
+              ['accepted', 'awaiting_advance', 'purchasing', 'summary_pending', 'summary_approved']));
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    // حد الطلبات السريعة لكل عميل: الـWorker بس.
+    match /quickLimits/{uid} {
+      allow read, write: if false;
     }
 
     // المناديب: المدير يقرأ الكل (عشان التعيين)، والمندوب يقرأ مستنده هو.
@@ -1540,6 +1728,68 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ───────────── رسوم خدمة وصّلي على المحلات ─────────────
+    // العميل بيدفع رسوم الخدمة كاش ضمن الإجمالي، فالمحل بيبقى ماسكها ومستحقة عليه لوصّلي.
+    // المستحق = مجموع serviceFee للطلبات المسلّمة (aggregate). المدفوع = store_fee_balances.
+    // كل دفعة مستند في store_fee_payments + تحديث الرصيد في نفس المعاملة (نفس نمط تسويات المناديب).
+    match /store_fee_payments/{pid} {
+      allow create: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'amount', 'amountMinor', 'note', 'createdBy', 'createdAt']) &&
+        request.resource.data.storeId is string &&
+        request.resource.data.storeId.size() > 0 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 && request.resource.data.amount <= 1000000 &&
+        request.resource.data.amountMinor is int &&
+        request.resource.data.amountMinor > 0 && request.resource.data.amountMinor <= 100000000 &&
+        request.resource.data.amountMinor >= request.resource.data.amount * 100 - 0.0001 &&
+        request.resource.data.amountMinor <= request.resource.data.amount * 100 + 0.0001 &&
+        request.resource.data.note is string &&
+        request.resource.data.note.size() <= 200 &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/store_fee_balances/$(request.resource.data.storeId)) &&
+        getAfter(/databases/$(database)/documents/store_fee_balances/$(request.resource.data.storeId)).data.get('lastPaymentId', '') == pid;
+      allow read: if signedIn() && (isAdmin() || isStoreOwner(resource.data.get('storeId', '')));
+      allow update, delete: if false;
+    }
+
+    match /store_fee_balances/{storeId} {
+      allow get: if isAdmin() || isStoreOwner(storeId);
+      allow list: if false;
+      // settledAt (اختياري) = وقت آخر «تقفيل حساب»؛ الدفعة العادية بتحافظ عليه زي ما هو.
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.get('settledAt', null) == (resource == null ? null : resource.data.get('settledAt', null)) &&
+        request.resource.data.storeId == storeId &&
+        request.resource.data.paidAmountMinor is int &&
+        request.resource.data.lastPaymentId is string &&
+        request.resource.data.lastPaymentId.size() > 0 &&
+        request.resource.data.updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)) &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('storeId', '') == storeId &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdBy', '') == request.auth.uid &&
+        getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdAt', null) == request.time &&
+        request.resource.data.paidAmountMinor - (resource == null ? 0 : resource.data.get('paidAmountMinor', 0)) ==
+          getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('amountMinor', 0);
+      // «تقفيل الحساب»: الأدمن بيختم وقت التقفيل من غير ما يلمس المبلغ المدفوع ولا آخر دفعة.
+      // (إن المتبقي صفر بيتحقق منه التطبيق؛ القواعد مش بتقدر تجمّع الطلبات.)
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.storeId == storeId &&
+        request.resource.data.settledAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.paidAmountMinor is int &&
+        request.resource.data.lastPaymentId is string &&
+        (resource == null
+          ? (request.resource.data.paidAmountMinor == 0 && request.resource.data.lastPaymentId == '')
+          : (request.resource.data.paidAmountMinor == resource.data.get('paidAmountMinor', 0) &&
+             request.resource.data.lastPaymentId == resource.data.get('lastPaymentId', '')));
+      allow delete: if false;
+    }
+
     // كوبونات الخصم: العميل يقرأ كود واحد بالاسم، والمدير يدير الكل.
     match /promos/{code} {
       allow get: if signedIn();
@@ -1571,66 +1821,15 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
 
-      allow create: if signedIn() && request.auth.uid == uid &&
-        request.resource.data.keys().hasOnly(['userId', 'userName', 'userEmail', 'appRole',
-          'lastMessage', 'lastSender', 'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
-        request.resource.data.keys().hasAll(['userId', 'lastMessage', 'lastSender', 'lastAt',
-          'unreadForAdmin', 'unreadForUser']) &&
-        request.resource.data.userId == uid &&
-        request.resource.data.lastSender == 'user' &&
-        request.resource.data.lastAt == request.time &&
-        request.resource.data.unreadForAdmin == true &&
-        request.resource.data.unreadForUser == false &&
-        chatTextOk(request.resource.data.lastMessage) &&
-        request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
-        optStr(request.resource.data, 'userName', 80) &&
-        optStr(request.resource.data, 'appRole', 20);
-
-      allow update: if signedIn() && (
-        // صاحب المحادثة بيبعت رسالة
-        (request.auth.uid == uid &&
-          changedKeys().hasOnly(['userName', 'userEmail', 'appRole', 'lastMessage', 'lastSender',
-            'lastAt', 'unreadForAdmin', 'unreadForUser']) &&
-          request.resource.data.lastSender == 'user' &&
-          request.resource.data.lastAt == request.time &&
-          request.resource.data.unreadForAdmin == true &&
-          request.resource.data.unreadForUser == false &&
-          chatTextOk(request.resource.data.lastMessage) &&
-          request.resource.data.get('userEmail', '') == request.auth.token.get('email', '') &&
-          optStr(request.resource.data, 'userName', 80) &&
-          optStr(request.resource.data, 'appRole', 20)) ||
-        // صاحب المحادثة فتحها (قرأ ردّ الإدارة)
-        (request.auth.uid == uid &&
-          changedKeys().hasOnly(['unreadForUser']) &&
-          request.resource.data.unreadForUser == false) ||
-        // المدير بيرد
-        (isAdmin() &&
-          changedKeys().hasOnly(['lastMessage', 'lastSender', 'lastAt', 'unreadForUser',
-            'unreadForAdmin']) &&
-          request.resource.data.lastSender == 'admin' &&
-          request.resource.data.lastAt == request.time &&
-          request.resource.data.unreadForUser == true &&
-          request.resource.data.unreadForAdmin == false &&
-          chatTextOk(request.resource.data.lastMessage)) ||
-        // المدير فتح المحادثة
-        (isAdmin() &&
-          changedKeys().hasOnly(['unreadForAdmin']) &&
-          request.resource.data.unreadForAdmin == false));
+      // موقوف: الدعم بقى عبر واتساب. المحادثات القديمة تتقرأ فقط (العميل بتاعه، والإدارة الكل).
+      // للرجوع: استرجع شروط الإنشاء والتعديل من تاريخ git قبل هذا التعديل.
+      allow create, update: if false;
 
       allow delete: if false;
 
       match /messages/{mid} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow create: if signedIn() &&
-          request.resource.data.keys().hasOnly(['senderId', 'senderRole', 'text', 'createdAt']) &&
-          request.resource.data.keys().hasAll(['senderId', 'senderRole', 'text', 'createdAt']) &&
-          request.resource.data.senderId == request.auth.uid &&
-          request.resource.data.text is string &&
-          request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000 &&
-          request.resource.data.createdAt == request.time &&
-          ((request.resource.data.senderRole == 'user' && request.auth.uid == uid) ||
-           (request.resource.data.senderRole == 'admin' && isAdmin()));
-        allow update, delete: if false;
+        allow create, update, delete: if false;
       }
     }
   }

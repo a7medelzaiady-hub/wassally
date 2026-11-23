@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
+import 'cached_net_image.dart';
 
 /// أقصى كمية بتتضاف من الشاشة دي في المرة الواحدة.
 const int _kMaxSheetQty = 20;
@@ -185,12 +186,12 @@ class _ProductSheetState extends State<_ProductSheet> {
                         borderRadius: BorderRadius.circular(16),
                         child: p.imageUrl.isEmpty
                             ? fallback
-                            : Image.network(
-                                thumb(p.imageUrl, w: 300),
+                            : CachedNetImage(
+                                url: thumb(p.imageUrl, w: 300),
                                 width: 84,
                                 height: 84,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => fallback,
+                                memCacheWidth: 300,
+                                errorWidget: fallback,
                               ),
                       ),
                     ],

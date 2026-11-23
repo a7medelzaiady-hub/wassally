@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import '../models/store.dart';
 import '../screens/store_page.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
+import 'cached_net_image.dart';
 
 class _S {
   final Store store;
@@ -34,12 +36,17 @@ class _LandingHighlightsState extends State<LandingHighlights> {
   late final Future<List<_S>> _future = _load();
 
   Future<List<_S>> _load() async {
-    final snap = await CatalogService.get(
-      FirebaseFirestore.instance.collection('stores'),
-      'stores',
+    // الفهرس المجمّع أولًا؛ الاستعلام القديم لازم يفلتر active عشان قواعد Firestore تسمح بيه للعميل.
+    final docs = await CatalogReader.activeStores(
+      () => CatalogService.get(
+        FirebaseFirestore.instance
+            .collection('stores')
+            .where('active', isEqualTo: true),
+        'stores',
+      ),
     );
     final out = <_S>[];
-    for (final d in snap.docs) {
+    for (final d in docs) {
       try {
         final data = d.data();
         if (data['active'] == false) continue;
@@ -131,10 +138,10 @@ class _LandingHighlightsState extends State<LandingHighlights> {
 
   Widget _photo(String img) => img.isEmpty
       ? Container(decoration: BoxDecoration(gradient: Brand.softGradient))
-      : Image.network(
-          thumb(img, w: 300),
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(
+      : CachedNetImage(
+          url: thumb(img, w: 300),
+          memCacheWidth: 300,
+          errorWidget: Container(
             decoration: BoxDecoration(gradient: Brand.softGradient),
           ),
         );

@@ -202,7 +202,7 @@ flutter build appbundle          # ملف للرفع على Google Play
 - **قبل النشر لازم** تستبدل في الأماكن دي `wasally` (اسم الجهة المشغّلة) و`a7medelzaiady@gmail.com` (بريد الدعم):
   `lib/legal/legal_content.dart` وكل ملفات `legal/*.html` (Find & Replace في كل الملفات).
   وراجع النصوص (خصوصاً "القانون الواجب التطبيق") مع محامٍ لو أمكن.
-- حذف الحساب: حسابي ← حذف حسابي. الدالة `onUserDeleted` في `functions/` بتشيل البيانات الشخصية من الطلبات القديمة.
+- حذف الحساب: حسابي ← حذف حسابي. التطبيق بيطلب إعادة تأكيد الهوية بجوجل، وبعدين بيبعت للـWorker (`POST /v1/account/delete`) في `cloudflare-order-gateway/`. الـWorker بيشيل البيانات الشخصية وروابط الحساب من Firestore الأول، ويحذف حساب Firebase Auth في الآخر؛ لو أي خطوة فشلت الحساب بيفضل موجود. مجلد `functions/` (`onUserDeleted`) **غير منشور** على Spark ومش مستخدم.
 - نشر الصفحات على رابط عام (Firebase Hosting، بيشتغل على الخطة المجانية): `firebase deploy --only hosting`
   والروابط بتبقى:
   - `https://wasally-12259.web.app/privacy.html`

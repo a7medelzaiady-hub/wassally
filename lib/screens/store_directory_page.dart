@@ -1,12 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/promo_banners.dart';
 import '../widgets/app_header.dart';
 
 import '../models/store.dart';
 import '../services/catalog_service.dart';
+import '../services/catalog_sync.dart';
 import '../theme/brand.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
+import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 /// دليل المحلات: قائمة رأسية مريحة، مع الاحتفاظ بنفس بيانات كتالوج المحلات.
 class StoreDirectoryPage extends StatefulWidget {
@@ -20,7 +24,7 @@ class StoreDirectoryPage extends StatefulWidget {
 class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
   late String? _category = widget.initialCategory;
   final _search = TextEditingController();
-  late Future<QuerySnapshot<Map<String, dynamic>>> _future;
+  late Future<List<CatalogDoc>> _future;
 
   @override
   void initState() {
@@ -28,10 +32,14 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     _future = _load();
   }
 
-  Future<QuerySnapshot<Map<String, dynamic>>> _load() => CatalogService.get(
-    FirebaseFirestore.instance.collection('stores').where('active', isEqualTo: true),
-    'stores',
-  );
+  Future<List<CatalogDoc>> _load() => CatalogReader.activeStores(
+        () => CatalogService.get(
+          FirebaseFirestore.instance
+              .collection('stores')
+              .where('active', isEqualTo: true),
+          'stores',
+        ),
+      );
 
   @override
   void dispose() {
@@ -44,7 +52,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F5F7),
+        backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
@@ -52,7 +60,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
           centerTitle: true,
           actions: const [HomeActionButton()],
         ),
-        body: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        body: FutureBuilder<List<CatalogDoc>>(
           future: _future,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -71,7 +79,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
               );
             }
             final stores = <({Store store, Map<String, dynamic> data})>[];
-            for (final doc in snapshot.data?.docs ?? []) {
+            for (final doc in snapshot.data ?? const <CatalogDoc>[]) {
               try {
                 final data = doc.data();
                 final store = Store.fromMap(doc.id, data);
@@ -92,6 +100,11 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
 
             final categories = stores.map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category).where((e) => e.trim().isNotEmpty).toSet().toList()..sort();
             return Column(children: [
+              // صورة (بوستر) في الهيدر؛ من نفس كاش بوسترات الرئيسية.
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: PromoBanners(),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: TextField(
@@ -153,8 +166,8 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                                 color: Brand.softGradient.colors.first,
                                                 child: Icon(store.icon, size: 42, color: Brand.green),
                                               )
-                                            : Image.network(thumb(store.imageUrl, w: 260), fit: BoxFit.cover,
-                                                errorBuilder: (_, _, _) => Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
+                                            : CachedNetImage(url: thumb(store.imageUrl, w: 260), memCacheWidth: 260,
+                                                errorWidget: Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
                                       ),
                                     ),
                                     const SizedBox(width: 14),
@@ -163,8 +176,16 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                                          Row(children: [
+                                            Flexible(
+                                              child: Text(store.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                                            ),
+                                            if (!store.isOpen) ...[
+                                              const SizedBox(width: 6),
+                                              const ClosedBadge(),
+                                            ],
+                                          ]),
                                           const SizedBox(height: 7),
                                           Row(children: [
                                             const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 19),
