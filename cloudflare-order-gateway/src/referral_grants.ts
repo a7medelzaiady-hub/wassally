@@ -69,6 +69,14 @@ export function buildReferralGrantWrites(
     grant.grantId.startsWith("marketer_") ? "marketer" :
     grant.grantId.startsWith("store_owner_") ? "store_owner" : null;
   if (!channel) throw new Error("invalid referral grant channel");
+  if (grant.grantId !== `${channel}_${channel === "store_owner" ? grant.grantId.slice("store_owner_".length) : grant.invitedUid}`) {
+    throw new Error("referral grant identity mismatch");
+  }
+  if ((channel === "customer" && grant.unit !== "points") ||
+      (channel === "marketer" && grant.unit !== "cash_minor") ||
+      (channel === "store_owner" && grant.unit === "points")) {
+    throw new Error("referral reward channel/unit mismatch");
+  }
   const counterField = channel === "customer" ? "customerAwardsCount" :
     channel === "marketer" ? "marketerAwardsCount" : "storeOwnerAwardsCount";
   const field = balanceField[grant.unit];
