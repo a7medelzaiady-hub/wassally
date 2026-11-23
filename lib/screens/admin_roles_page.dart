@@ -85,6 +85,17 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
     }
   }
 
+  Future<void> _toggleQuick(String id, bool enabled) async {
+    try {
+      await _col.doc(id).update({'quickEnabled': enabled});
+      _toast(enabled ? 'تم تفعيل صلاحية الطلبات السريعة.' : 'تم إيقاف صلاحية الطلبات السريعة.');
+    } on FirebaseException catch (e) {
+      _toast(e.code == 'permission-denied'
+          ? 'مفيش صلاحية لتعديل المندوب. تأكد إنك مدير.'
+          : 'تعذر تعديل صلاحية الطلبات السريعة. جرّب تاني.');
+    }
+  }
+
   Future<void> _delete(String id, String name) async {
     final ok = await confirmDialog(
       context,
@@ -183,7 +194,9 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
                 children: [
                   for (final d in docs)
                     Card(
-                      child: ListTile(
+                      child: Column(
+                        children: [
+                          ListTile(
                         title: Text((d.data()['name'] ?? 'مندوب').toString()),
                         subtitle: Text(
                           [
@@ -206,6 +219,21 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
                             (d.data()['name'] ?? 'مندوب').toString(),
                           ),
                         ),
+                          Padding(
+                            padding: const EdgeInsetsDirectional.only(start: 12, end: 12, bottom: 8),
+                            child: Row(
+                              children: [
+                                const Expanded(child: Text('صلاحية الطلبات السريعة')),
+                                Switch(
+                                  value: d.data()['quickEnabled'] == true,
+                                  onChanged: ((d.data()['active'] as bool?) ?? true)
+                                      ? (v) => _toggleQuick(d.id, v)
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                 ],
