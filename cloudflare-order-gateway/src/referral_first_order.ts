@@ -42,9 +42,10 @@ export async function verifyFirstOrderReferral(
       typeof attribution.inviterUid !== "string" ||
       !validId(attribution.inviterUid) ||
       attribution.inviterUid === evidence.invitedUid ||
+      typeof attribution.claimedAtMs !== "number" ||
       !Number.isSafeInteger(attribution.claimedAtMs) ||
-      (attribution.claimedAtMs as number) <= 0 ||
-      (attribution.claimedAtMs as number) > (firstOrder.completedAtMs as number) ||
+      attribution.claimedAtMs <= 0 ||
+      attribution.claimedAtMs > (firstOrder.completedAtMs as number) ||
       order.userId !== evidence.invitedUid ||
       order.status !== "delivered" ||
       typeof order.deliveredAt !== "number" ||
