@@ -13,7 +13,7 @@ const records: Record<string, Record<string, unknown>> = {
     invitedUid: sv("invited"), inviterUid: sv("inviter"), channel: sv("customer"), claimedAtMs: iv(100),
   },
   "orders/order1": { customerId: sv("invited"), status: sv("delivered"), deliveredAtMs: iv(200) },
-  "referral_first_orders/invited": { invitedUid: sv("invited"), firstCompletedOrderId: sv("order1") },
+  "referral_first_orders/invited": { invitedUid: sv("invited"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(200) },
   "app_info/referral_config": {
     version: iv(2),
     policies: { mapValue: { fields: {
@@ -63,10 +63,21 @@ describe("canonical first-order referral verifier", () => {
     delete records["referral_first_orders/invited"];
     await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
     records["referral_first_orders/invited"] = {
-      invitedUid: sv("invited"), firstCompletedOrderId: sv("another_order"),
+      invitedUid: sv("invited"), firstCompletedOrderId: sv("another_order"), completedAtMs: iv(200),
     };
     await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
     records["referral_first_orders/invited"] = original;
+  });
+  it("rejects a first-order index whose completion time disagrees with the order", async () => {
+    const original = records["referral_first_orders/invited"]!;
+    records["referral_first_orders/invited"] = {
+      invitedUid: sv("invited"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(201),
+    };
+    try {
+      await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+    } finally {
+      records["referral_first_orders/invited"] = original;
+    }
   });
   it("rejects wrong customer, missing attribution and unfinished order", async () => {
     const original = records["orders/order1"]!;
