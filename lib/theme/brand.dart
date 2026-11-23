@@ -112,13 +112,28 @@ class AppPalette {
     soft: Color(0xFFFFE4EA),
   );
 
-  static const all = <AppPalette>[orange, green, blue, purple, rose];
+  static const wasally = AppPalette(
+    id: 'wasally',
+    name: 'وصّلي الأصلي',
+    primary: Color(0xFFFF7900),
+    primaryDark: Color(0xFFE65F00),
+    primaryLight: Color(0xFFFFA340),
+    accent: Color(0xFF102344),
+    accentDeep: Color(0xFF08182F),
+    bg: Color(0xFFF5F6FA),
+    ink: Color(0xFF102344),
+    muted: Color(0xFF69758B),
+    line: Color(0xFFE0E5ED),
+    soft: Color(0xFFFFE9D5),
+  );
+
+  static const all = <AppPalette>[wasally, orange, green, blue, purple, rose];
 
   static AppPalette byId(String? id) {
     for (final p in all) {
       if (p.id == id) return p;
     }
-    return green;
+    return wasally;
   }
 }
 
@@ -127,7 +142,7 @@ class AppPalette {
 class Brand {
   Brand._();
 
-  static AppPalette palette = AppPalette.green;
+  static AppPalette palette = AppPalette.wasally;
 
   static Color get green => palette.primary;
   static Color get greenDark => palette.primaryDark;
