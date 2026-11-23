@@ -234,7 +234,7 @@ class OrderService {
         final security = await FirebaseFirestore.instance
             .collection('app_info').doc('security').get();
         serverOrders = security.data()?['serverOrders'] == true;
-      } on FirebaseException {
+      } catch (_) {
         // Fail closed: never attempt a direct write when the security gate
         // cannot be verified. The Worker validates all order fields itself.
         serverOrders = true;
@@ -524,7 +524,7 @@ class OrderService {
         final security = await FirebaseFirestore.instance
             .collection('app_info').doc('security').get();
         serverOrders = security.data()?['serverOrders'] == true;
-      } on FirebaseException {
+      } catch (_) {
         // Fail closed if the security setting cannot be checked.
         serverOrders = true;
       }
