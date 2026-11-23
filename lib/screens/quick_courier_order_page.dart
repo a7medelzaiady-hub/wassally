@@ -525,10 +525,28 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
             children: [
               if (_busy) const LinearProgressIndicator(),
-              if (_error != null) Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(_error!, textAlign: TextAlign.center),
-              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      if (o == null) ...[
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _busy ? null : _refresh,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('إعادة المحاولة'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              if (o == null && _busy)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 28),
+                  child: Center(child: Text('جاري تحميل تفاصيل الطلب...')),
+                ),
               if (o != null) ...[
                 if (o.step == QuickCourierStep.available) _requestCard(o),
                 _contactCard(o),
