@@ -33,3 +33,38 @@ Status: **isolated implementation in draft PR; no endpoint, grant, balance, or p
 
 ## Important
 The pure `decideReferralReward` function is a defense-in-depth helper, **not** proof of order completion. All its inputs must come from verified server-side Firestore records. This PR is intentionally incomplete and must remain draft until server integration, rules, UI, and full tests are complete.
+
+
+## Verified integration blockers (reviewed against main Worker delivery flow)
+
+The live Worker order schema uses `orders/{id}.userId` and Firestore
+`timestampValue` at `deliveredAt`; the referral verifier now reads those
+fields. **Do not activate payouts yet.**
+
+The actual `deliverWithPin` flow in `src/index.ts` updates delivery using
+`REQUEST_TIME` transforms and only sets `status=delivered` for
+`deliveryMode=store`. External courier confirmation currently does **not**
+set that status. The index cannot safely be written from a guessed
+`Date.now()` alongside a server timestamp: the verifier requires an exact
+timestamp match.
+
+Required integration before release:
+
+1. Define a single server-owned, auditable `first successful order` rule for
+   both internal and external delivery, including existing customers and orders.
+2. Populate `referral_first_orders/{uid}` from the trusted delivery transition
+   with a canonical timestamp, preserving the first successful order even when
+   multiple deliveries race. A create-only write appended unconditionally to
+   every delivery commit would incorrectly reject second and later deliveries.
+3. Read and validate the canonical first-order index in the same Firestore
+   transaction as the reward grant and award-count increment.
+4. Verify existing order history or backfill a trusted first-success index before
+   enabling rewards for previously registered customers.
+5. Wire the internal settlement service only after the completion transition
+   and authorization are settled. Never expose a client-accessible grant route.
+6. Add integration tests for internal/external couriers, two simultaneous
+   deliveries, existing successful orders, retries, and a failed grant commit.
+
+These steps require coordinated edits to the active Worker order lifecycle and
+Firestore rules. This isolated PR deliberately does not modify those files while
+another workstream is changing them.
