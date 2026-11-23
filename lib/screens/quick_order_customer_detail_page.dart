@@ -111,6 +111,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         ? Map<String, dynamic>.from(order!['totals'] as Map)
         : <String, dynamic>{};
     final receipts = order?['receipts'] is List ? order!['receipts'] as List : const [];
+    final stores = order?['stores'] is List ? order!['stores'] as List : const [];
+    final notes = (order?['notes'] ?? '').toString().trim();
+    final area = (order?['area'] ?? '').toString().trim();
     return Scaffold(
       appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
         actions: [IconButton(onPressed: _busy ? null : _refresh,
@@ -122,6 +125,24 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
           Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
         else ...[
           Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          if (area.isNotEmpty) Text('المنطقة: $area'),
+          const Text('محتويات الطلب', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
+          for (final raw in stores)
+            if (raw is Map) ...[
+              const SizedBox(height: 8),
+              Text((raw['name'] ?? '').toString().trim().isEmpty
+                  ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+              if ((raw['items'] ?? '').toString().trim().isNotEmpty)
+                Text((raw['items'] ?? '').toString()),
+              if (raw['pricedItems'] is List)
+                for (final line in raw['pricedItems'] as List)
+                  if (line is Map)
+                    Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+            ],
+          if (notes.isNotEmpty) Text('ملاحظات: $notes'),
           const SizedBox(height: 12),
           if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
             Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
