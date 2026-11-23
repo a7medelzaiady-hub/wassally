@@ -231,8 +231,8 @@ describe("PATCH /v1/orders/{id} (customer edit) against simulated Firebase", () 
     } finally { sim.restore(); }
   });
 
-  it("a concurrent status change (Firestore precondition 409) is reported, not swallowed", async () => {
-    const sim = simulateFirebase({ commitStatus: 409 });
+  it.each([400, 409, 412])("maps Firestore commit conflict %i to HTTP 409", async (commitStatus) => {
+    const sim = simulateFirebase({ commitStatus });
     try {
       const res = await worker.fetch(patch(body()), env);
       expect(res.status).toBe(409);

@@ -1033,7 +1033,7 @@ test('delivery issue: المندوب يبدأ الرجوع للمحل مباشر
   await assertSucceeds(updateDoc(doc(courier, 'delivery_issues/direct-return'), {
     status: 'returned_to_store', returnedAt: serverTimestamp(), returnedBy: 'cour1',
   }));
-  await assertSucceeds(updateDoc(doc(as('owner1'), 'delivery_issues/direct-return'), {
+  await assertFails(updateDoc(doc(as('owner1'), 'delivery_issues/direct-return'), {
     status: 'store_confirmed_return', storeReceivedAt: serverTimestamp(), storeReceivedBy: 'owner1',
   }));
 });
@@ -1109,10 +1109,11 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
   });
   await assertFails(closeAttempt.commit()); // لا يكفي تأكيد المندوب وحده.
-  await assertSucceeds(updateDoc(doc(as('owner1'), 'delivery_issues/return1'), {
+  await assertSucceeds(updateDoc(doc(adminDb, 'delivery_issues/return1'), {
     status: 'store_confirmed_return',
-    storeReceivedAt: serverTimestamp(),
-    storeReceivedBy: 'owner1',
+    adminDecision: 'المحل أكد الاستلام',
+    updatedAt: serverTimestamp(),
+    updatedBy: 'admin1',
   }));
   const close = writeBatch(adminDb);
   close.update(doc(adminDb, 'orders/o1'), {
@@ -1124,7 +1125,7 @@ test('delivery issue: الإرجاع للمحل يجب تأكيده قبل أن 
     from: 'on_the_way', to: 'cancelled', actorUid: 'admin1', actorRole: 'admin', at: serverTimestamp(),
   });
   await assertSucceeds(close.commit());
-  // المندوب يحتفظ بحق تقييم العميل بعد الإرجاع المؤكد من المحل والإلغاء الإداري.
+  // المندوب يحتفظ بحق تقييم العميل بعد تأكيد الإرجاع والإلغاء الإداري.
   await assertSucceeds(setDoc(
     doc(as('cour1'), 'customer_reviews/o1_courier'),
     customerReview('courier', 'cour1'),
@@ -1593,7 +1594,12 @@ test('خصوصية: المندوب يقرأ بيانات التواصل فقط �
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
   await setOrderState({ status: 'on_the_way' });
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
-  await setOrderState({ status: 'delivered' });
+  // An external courier can still settle cash after PIN confirmation.
+  await setOrderState({ deliveryMode: 'external', customerConfirmedAt: new Date() });
+  await assertFails(getDoc(doc(as('cour1'), contactPath)));
+  await assertSucceeds(getDoc(doc(as('cust1'), contactPath)));
+  await assertFails(getDoc(doc(as('owner1'), contactPath)));
+  await setOrderState({ status: 'delivered', customerConfirmedAt: deleteField() });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // بعد التسليم يتقفل
   await setOrderState({ status: 'on_the_way', courierId: 'someone_else' });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // مندوب تاني
@@ -2428,6 +2434,22 @@ test('serverOrders control: تعديل الأصناف والإجمالي الم�
   await seed();
   await assertSucceeds(directEditBatch(as('cust1')).commit());
   await seed(setServerOrders(true));
+  await assertFails(directEditBatch(as('cust1')).commit());
+});
+
+test('customer edits invalidate the previous administrative price approval', async () => {
+  await setOrderState({ verifiedTotal: 40, verifiedAt: new Date() });
+  const order = doc(as('cust1'), 'orders/o1');
+  await assertFails(updateDoc(order, { notes: 'updated', editedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(order, {
+    notes: 'updated', editedAt: serverTimestamp(),
+    verifiedTotal: deleteField(), verifiedAt: deleteField(),
+  }));
+});
+
+test('orders priced by the Worker keep server-only cart edits with serverOrders off', async () => {
+  await seed(setServerOrders(false));
+  await setOrderState({ serviceFee: 5, total: 45 });
   await assertFails(directEditBatch(as('cust1')).commit());
 });
 
