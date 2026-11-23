@@ -68,6 +68,17 @@ class OrderGateway {
     }
   }
 
+  static Future<void> claimRegistrationReferral({
+    required String idToken,
+    required String code,
+  }) => _send(
+        idToken: idToken,
+        method: 'POST',
+        path: '/v1/referrals/registration',
+        payload: {'code': code},
+        connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+      );
+
   static Future<void> submit({
     required String idToken,
     required Map<String, dynamic> payload,
@@ -200,6 +211,7 @@ class OrderGateway {
     required String method,
     required String path,
     required Map<String, dynamic> payload,
+    String connectivityMessage = 'تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.',
   }) async {
     final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
     final uri = Uri.tryParse('$root$path');
@@ -229,7 +241,7 @@ class OrderGateway {
         },
       );
     } catch (_) {
-      throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
+      throw StateError(connectivityMessage);
     } finally {
       client.close();
     }

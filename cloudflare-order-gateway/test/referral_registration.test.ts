@@ -1,0 +1,120 @@
+import { afterEach, expect, it, vi } from "vitest";
+
+const auth = vi.hoisted(() => ({ time: 0 }));
+vi.mock("jose", () => ({
+  createRemoteJWKSet: () => () => ({}),
+  jwtVerify: async (uid: string) => ({
+    payload: { sub: uid, auth_time: auth.time, firebase: { sign_in_provider: "google.com" } },
+  }),
+  importPKCS8: async () => ({}),
+  SignJWT: class {
+    setProtectedHeader() { return this; }
+    setIssuer() { return this; }
+    setAudience() { return this; }
+    setIssuedAt() { return this; }
+    setExpirationTime() { return this; }
+    async sign() { return "mock-jwt"; }
+  },
+}));
+
+import worker from "../src/index";
+
+const root = "projects/referral-test/databases/(default)/documents/";
+const env = {
+  FIREBASE_PROJECT_ID: "referral-test",
+  FIREBASE_SERVICE_ACCOUNT_EMAIL: "test@example.com",
+  FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "mock-key",
+  REFERRAL_REGISTRATION_ENABLED: "true",
+  APP_CHECK_MODE: "off",
+};
+
+function call(uid: string, code = "ABC123", enabled = true) {
+  return worker.fetch(new Request("https://worker.test/v1/referrals/registration", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${uid}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ code, inviterUid: "untrusted" }),
+  }), { ...env, REFERRAL_REGISTRATION_ENABLED: String(enabled) } as never);
+}
+
+function setup(uid: string, channel = "customer", creationOffset = 0) {
+  const now = Date.now();
+  const created = now - creationOffset;
+  auth.time = Math.floor(now / 1000);
+  const str = (stringValue: string) => ({ stringValue });
+  const int = (n: number) => ({ integerValue: String(n) });
+  const yes = { booleanValue: true };
+  const policy = (name: string, unit: string) => ({ mapValue: { fields: {
+    channel: str(name), unit: str(unit), amount: int(10), enabled: yes,
+  } } });
+  const docs: Record<string, Record<string, unknown>> = {
+    "referral_codes/ABC123": {
+      code: str("ABC123"), inviterUid: str("inviter"), channel: str(channel),
+      active: yes, issuedByUid: str("admin"),
+    },
+    "app_info/referral_config": { version: int(1), policies: { mapValue: { fields: {
+      customer: policy("customer", "points"), marketer: policy("marketer", "cash_minor"),
+      store_owner: policy("store_owner", "commission_discount_minor"),
+    } } } },
+  };
+  const saves: string[] = [];
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (resource, init) => {
+    const url = String(resource);
+    const body = init?.body && String(init.body).startsWith("{") ? JSON.parse(String(init.body)) : {};
+    if (url.includes("oauth2.googleapis.com/token")) {
+      return Response.json({ access_token: "mock-token", expires_in: 3600 });
+    }
+    if (url.endsWith(":lookup")) {
+      expect(body.localId).toEqual([uid]);
+      return Response.json({ users: [{ localId: uid, createdAt: String(created), validSince: "1" }] });
+    }
+    if (url.endsWith(":beginTransaction")) return Response.json({ transaction: "abc" });
+    expect(body.transaction).toBe("abc");
+    if (url.endsWith(":batchGet")) {
+      const [name] = body.documents;
+      const fields = docs[name.slice(root.length)];
+      return Response.json(fields ? { found: { name, fields } } : { missing: name });
+    }
+    if (url.endsWith(":rollback")) return Response.json({});
+    if (url.endsWith(":commit")) {
+      const [{ update: { name, fields }, currentDocument }] = body.writes;
+      expect(currentDocument).toEqual({ exists: false });
+      expect(name).toBe(root + `referral_attributions/${uid}`);
+      expect(fields.inviterUid).toEqual(str("inviter"));
+      docs[name.slice(root.length)] = fields;
+      saves.push(name);
+      return Response.json({});
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  return { fetchMock, saves, docs };
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+it("binds the first registration once and accepts a retry of the same code", async () => {
+  const { saves } = setup("new-client");
+  expect((await call("new-client", " abc123 ")).status).toBe(200);
+  expect((await call("new-client")).status).toBe(200);
+  expect((await call("new-client", "OTHER1")).status).toBe(409);
+  expect(saves).toHaveLength(1);
+});
+
+it("rejects a later login before opening a Firestore transaction", async () => {
+  const { fetchMock } = setup("returning-client", "customer", 10_000);
+  expect((await call("returning-client")).status).toBe(403);
+  expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(":beginTransaction"))).toBe(false);
+});
+
+it("requires a marketer code issued by an administrator", async () => {
+  const { docs, saves } = setup("marketer-client", "marketer");
+  expect((await call("marketer-client")).status).toBe(409);
+  docs["admins/admin"] = {};
+  expect((await call("marketer-client")).status).toBe(200);
+  expect(saves).toHaveLength(1);
+});
+
+it("keeps the disabled route away from Firebase", async () => {
+  const { fetchMock } = setup("disabled-client");
+  expect((await call("disabled-client", "ABC123", false)).status).toBe(404);
+  expect(fetchMock).not.toHaveBeenCalled();
+});

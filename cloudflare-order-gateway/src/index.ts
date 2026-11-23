@@ -1,3 +1,4 @@
+import { registerReferral } from "./referral_registration";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -21,6 +22,7 @@ import {
 
 interface Env {
   FIREBASE_PROJECT_ID: string;
+  REFERRAL_REGISTRATION_ENABLED?: string;
   FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   ALLOWED_ORIGINS?: string;
@@ -115,6 +117,7 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
 }
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
+  createdAtMs: number;
   validSince: number;
   disabled: boolean;
 }>();
@@ -408,7 +411,7 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean }>;
+      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
@@ -419,7 +422,7 @@ async function assertFirebaseUserActive(
     if (!Number.isFinite(validSince)) {
       throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
     }
-    state = { checkedAt: now, validSince, disabled: user.disabled === true };
+    state = { checkedAt: now, validSince, disabled: user.disabled === true, createdAtMs: Number(user.createdAt) };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
       const oldestUid = firebaseUserStateCache.keys().next().value;
@@ -432,7 +435,7 @@ async function assertFirebaseUserActive(
   }
 }
 
-async function verifyCustomer(request: Request, env: Env): Promise<string> {
+async function verifyCustomer(request: Request, env: Env, firstRegistration = false): Promise<string> {
   await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -451,6 +454,14 @@ async function verifyCustomer(request: Request, env: Env): Promise<string> {
     throw new HttpError(401, "يلزم تسجيل الدخول بحساب جوجل صالح.");
   }
   await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
+  if (firstRegistration) {
+    const createdAtMs = firebaseUserStateCache.get(payload.sub)?.createdAtMs ?? 0;
+    const age = Date.now() - createdAtMs;
+    if (!Number.isSafeInteger(createdAtMs) || age < 0 || age > 300_000 ||
+        Number(payload.auth_time) !== Math.floor(createdAtMs / 1000)) {
+      throw new HttpError(403, "كود الإحالة متاح عند التسجيل الأول فقط.");
+    }
+  }
   return payload.sub;
 }
 
@@ -2069,6 +2080,34 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/registration") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "التسجيل بكود الإحالة غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        const uid = await verifyCustomer(request, env, true);
+        const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-registration:" + uid });
+        if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+        const body = await request.json().catch(() => null) as { code?: unknown } | null;
+        if (typeof body?.code !== "string" || body.code.length > 32) {
+          throw new HttpError(400, "اكتب كود إحالة صحيح.");
+        }
+        const token = await googleAccessToken(env);
+        const accepted = await registerReferral({
+          projectId: env.FIREBASE_PROJECT_ID,
+          token,
+          uid,
+          code: body.code,
+          createdAtMs: firebaseUserStateCache.get(uid)?.createdAtMs ?? 0,
+          now: Date.now(),
+        }, fetch);
+        if (!accepted) throw new HttpError(409, "كود الإحالة غير متاح لهذا التسجيل.");
+        return response({ accepted: true }, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر حفظ كود الإحالة حاليًا.");
+        return response({ error: e.message }, e.status, headers);
+      }
     }
     if (request.method === "POST" && url.pathname === "/v1/account/delete") {
       try {
