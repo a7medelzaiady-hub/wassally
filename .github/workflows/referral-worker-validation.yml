@@ -37,10 +37,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: cloudflare-order-gateway/package-lock.json
-      - name: Install locked dependencies
-        run: npm ci
+      - name: Install dependencies (repository has no package-lock.json)
+        run: npm install --no-package-lock
       - name: Typecheck Worker
         run: npm run typecheck
       - name: Run referral unit tests
