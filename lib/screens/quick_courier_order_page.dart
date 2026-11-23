@@ -75,7 +75,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     } catch (_) {
       if (mounted && generation == _loadGeneration) {
         setState(() {
+          // Never display an old order or contact details after a failed reload.
           _order = null;
+          _contact = null;
           _error = 'تعذر تحميل الطلب. اسحب للتحديث.';
         });
       }
