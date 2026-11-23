@@ -15,6 +15,7 @@ const units: Record<ReferralChannel, readonly RewardUnit[]> = {
 export interface ReferralSettings {
   version: number;
   policies: Record<ReferralChannel, ReferralPolicy>;
+  redemption?: { pointValueMinor: number; maxDiscountMinor: number };
 }
 
 export function parseReferralSettings(input: unknown): ReferralSettings {
@@ -57,5 +58,21 @@ export function parseReferralSettings(input: unknown): ReferralSettings {
       ...(p.maxPerInviter === undefined ? {} : { maxPerInviter: p.maxPerInviter as number }),
     };
   }
-  return { version: obj.version as number, policies };
+  const redemption = obj.redemption as ReferralSettings["redemption"];
+  if (redemption !== undefined &&
+      (!redemption || typeof redemption !== "object" || Array.isArray(redemption) ||
+        !Number.isSafeInteger(redemption.pointValueMinor) || redemption.pointValueMinor < 1 ||
+        !Number.isSafeInteger(redemption.maxDiscountMinor) ||
+        redemption.maxDiscountMinor < redemption.pointValueMinor ||
+        redemption.maxDiscountMinor > 10_000_000)) {
+    throw new Error("invalid referral redemption settings");
+  }
+  return {
+    version: obj.version as number,
+    policies,
+    ...(redemption ? { redemption: {
+      pointValueMinor: redemption.pointValueMinor,
+      maxDiscountMinor: redemption.maxDiscountMinor,
+    } } : {}),
+  };
 }

@@ -43,10 +43,14 @@ cash twice.
 
 ## Remaining release decisions
 
-- Points are tracked in the referral ledger. They still need an approved
-  redemption rule and integration with order pricing before launch.
-- Commission credits are tracked in the referral ledger. Applying them requires
-  an authoritative Wasally store commission calculation.
+- The administration sets the value of a point and the maximum discount per
+  order in minor units. Points remain in the referral ledger until checkout and
+  cancellation accounting is integrated.
+- To settle recorded store commission, an administrator supplies the store ID,
+  the mapped owner UID, the commission reference, and the amount due. Firestore
+  records the due amount, applied referral credit, and remaining amount in the
+  same commit as the credit deduction. Reusing the reference returns the saved
+  settlement for the same owner and amount.
 - Cash transfers are handled outside the app. Production confirmation requires a
   test of the team's chosen payout channel and a reconciliation with its transfer
   reference. The Worker records the confirmation and does not send money.

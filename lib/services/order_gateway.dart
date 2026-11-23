@@ -105,6 +105,28 @@ class OrderGateway {
     return response['settings'] as Map<String, dynamic>?;
   }
 
+  static Future<Map<String, dynamic>> settleReferralCommission({
+    required String ownerUid,
+    required String storeId,
+    required String reference,
+    required int dueMinor,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/commissions',
+      payload: {
+        'ownerUid': ownerUid,
+        'storeId': storeId,
+        'reference': reference,
+        'dueMinor': dueMinor,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة تسوية عمولة الإحالة.',
+    );
+  }
+
   static Future<Map<String, dynamic>> referralPayout({
     required String action,
     String? requestId,

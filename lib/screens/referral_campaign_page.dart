@@ -221,6 +221,12 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
             )),
             child: const Text('طلبات الصرف'),
           ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const _ReferralCommissionPage(),
+            )),
+            child: const Text('تسوية عمولة محل'),
+          ),
         ],
       ),
     );
@@ -241,6 +247,8 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
   late final _initial = OrderGateway.referralSettings();
   final _form = GlobalKey<FormState>();
   bool _saving = false;
+  int _pointValueMinor = 0;
+  int _maxDiscountMinor = 0;
   String? _error;
 
   Future<void> _save(int version, Map<String, Map<String, dynamic>> policies) async {
@@ -252,7 +260,15 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
     });
     try {
       await OrderGateway.referralSettings(
-        settings: {'version': version + 1, 'policies': policies},
+        settings: {
+          'version': version + 1,
+          'policies': policies,
+          if (_pointValueMinor > 0)
+            'redemption': {
+              'pointValueMinor': _pointValueMinor,
+              'maxDiscountMinor': _maxDiscountMinor,
+            },
+        },
       );
       if (mounted) Navigator.pop(context);
     } catch (error) {
@@ -276,6 +292,7 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
           final settings = snapshot.data;
           final raw = settings?['policies'] as Map<String, dynamic>?;
           final policies = <String, Map<String, dynamic>>{};
+          final redemption = settings?['redemption'] as Map<String, dynamic>?;
           return Form(
             key: _form,
             child: SingleChildScrollView(
@@ -296,6 +313,36 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
                     initial: raw?[channel] as Map<String, dynamic>?,
                     onSave: (policy) => policies[channel] = policy,
                   ),
+                TextFormField(
+                  initialValue: redemption?['pointValueMinor']?.toString() ?? '0',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'قيمة النقطة بالقروش (صفر لإيقاف استخدام النقاط)',
+                  ),
+                  validator: (value) {
+                    final amount = int.tryParse(value?.trim() ?? '');
+                    _pointValueMinor = amount ?? 0;
+                    return amount == null || amount < 0 || amount > 10000000
+                        ? 'اكتب قيمة صحيحة للنقطة.'
+                        : null;
+                  },
+                  onSaved: (value) => _pointValueMinor = int.parse(value!.trim()),
+                ),
+                TextFormField(
+                  initialValue: redemption?['maxDiscountMinor']?.toString() ?? '0',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'أقصى خصم للطلب بالقروش',
+                  ),
+                  validator: (value) {
+                    final amount = int.tryParse(value?.trim() ?? '');
+                    final minimum = _pointValueMinor;
+                    return amount == null || amount < minimum || amount > 10000000
+                        ? 'اكتب حدًا صحيحًا لا يقل عن قيمة النقطة.'
+                        : null;
+                  },
+                  onSaved: (value) => _maxDiscountMinor = int.parse(value!.trim()),
+                ),
                 if (_error != null) Text(_error!),
                 FilledButton(
                   onPressed: _saving ? null : () => _save(settings?['version'] as int? ?? 0, policies),
@@ -393,6 +440,108 @@ class _PolicyEditorState extends State<_PolicyEditor> {
                 });
               },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReferralCommissionPage extends StatefulWidget {
+  const _ReferralCommissionPage();
+
+  @override
+  State<_ReferralCommissionPage> createState() => _ReferralCommissionPageState();
+}
+
+class _ReferralCommissionPageState extends State<_ReferralCommissionPage> {
+  final _form = GlobalKey<FormState>();
+  String _ownerUid = '';
+  String _storeId = '';
+  String _reference = '';
+  int _dueMinor = 0;
+  bool _saving = false;
+  String? _result;
+  String? _error;
+
+  Future<void> _settle() async {
+    if (_saving || !_form.currentState!.validate()) return;
+    _form.currentState!.save();
+    setState(() {
+      _saving = true;
+      _result = null;
+      _error = null;
+    });
+    try {
+      final result = await OrderGateway.settleReferralCommission(
+        ownerUid: _ownerUid,
+        storeId: _storeId,
+        reference: _reference,
+        dueMinor: _dueMinor,
+      );
+      final discount = ((result['discountMinor'] as num) / 100).toStringAsFixed(2);
+      final payable = ((result['payableMinor'] as num) / 100).toStringAsFixed(2);
+      if (mounted) {
+        setState(() => _result = 'الخصم: $discount ج.م. والمتبقي: $payable ج.م.');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = _failureMessage(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _identifier(
+    String label,
+    RegExp pattern,
+    ValueChanged<String> save,
+  ) => TextFormField(
+    enabled: !_saving,
+    textDirection: TextDirection.ltr,
+    decoration: InputDecoration(labelText: label),
+    validator: (value) => pattern.hasMatch(value?.trim() ?? '')
+        ? null
+        : 'راجع $label.',
+    onSaved: (value) => save(value!.trim()),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final identifier = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+    return Scaffold(
+      appBar: AppBar(title: const Text('تسوية عمولة محل')),
+      body: Form(
+        key: _form,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _identifier('معرّف المحل', identifier, (value) => _storeId = value),
+            _identifier('معرّف صاحب المحل', identifier, (value) => _ownerUid = value),
+            _identifier(
+              'مرجع العمولة المسجّلة',
+              RegExp(r'^[A-Za-z0-9_-]{4,64}$'),
+              (value) => _reference = value,
+            ),
+            TextFormField(
+              enabled: !_saving,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'العمولة المستحقة بالقروش'),
+              validator: (value) {
+                final amount = int.tryParse(value?.trim() ?? '');
+                return amount == null || amount < 1 || amount > 10000000
+                    ? 'اكتب قيمة صحيحة للعمولة.'
+                    : null;
+              },
+              onSaved: (value) => _dueMinor = int.parse(value!.trim()),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _saving ? null : _settle,
+              child: const Text('سجّل العمولة وطبّق الخصم'),
+            ),
+            if (_saving) const LinearProgressIndicator(),
+            if (_error != null) Text(_error!),
+            if (_result != null) Text(_result!),
           ],
         ),
       ),

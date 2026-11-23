@@ -1,3 +1,4 @@
+import { commissionAmounts } from "./referral_commission";
 import { buildAdminReferralSettingsWrite } from "./referral_admin_settings";
 import { parseReferralSettings } from "./referral_settings";
 import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout";
@@ -2109,6 +2110,17 @@ export default {
         return response({ error: e.message }, e.status, headers);
       }
     }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/commissions") {
+      if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "تسوية خصم الإحالة غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await settleReferralCommission(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تسجيل تسوية العمولة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/referrals/payouts") {
       if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
         return response({ error: "صرف مكافآت الإحالات غير متاح حاليًا." }, 404, headers);
@@ -2351,6 +2363,76 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
+async function settleReferralCommission(request: Request, env: Env): Promise<JsonMap> {
+  const adminUid = await verifyCustomer(request, env);
+  const safeId = /^[A-Za-z0-9_-]{1,128}$/;
+  if (!safeId.test(adminUid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-commission:" + adminUid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const token = await googleAccessToken(env);
+  if (!await getDocument(env, `admins/${adminUid}`, token)) {
+    throw new HttpError(403, "تسجيل تسوية العمولة من صلاحيات الإدارة.");
+  }
+
+  const { ownerUid, storeId, reference, dueMinor } = await readJsonBody(request);
+  if (typeof ownerUid !== "string" || !safeId.test(ownerUid) ||
+      typeof storeId !== "string" || !safeId.test(storeId) ||
+      typeof reference !== "string" || !/^[A-Za-z0-9_-]{4,64}$/.test(reference) ||
+      typeof dueMinor !== "number" || !Number.isSafeInteger(dueMinor) ||
+      dueMinor < 1 || dueMinor > 10_000_000) {
+    throw new HttpError(400, "راجع بيانات المحل ومرجع العمولة والمبلغ بالقروش.");
+  }
+
+  const settlementPath = `referral_commission_settlements/${storeId.length}-${storeId}-${reference}`;
+  const previous = await getDocument(env, settlementPath, token);
+  if (previous) {
+    const saved = decodeFields(previous.fields ?? {});
+    if (saved.ownerUid !== ownerUid || saved.dueMinor !== dueMinor) {
+      throw new HttpError(409, "مرجع العمولة اتسجل بالفعل ببيانات مختلفة.");
+    }
+    return { dueMinor, discountMinor: saved.discountMinor, payableMinor: saved.payableMinor };
+  }
+
+  const balancePath = `referral_balances/${ownerUid}`;
+  const [mapping, balance] = await Promise.all([
+    getDocument(env, `storeOwners/${ownerUid}`, token),
+    getDocument(env, balancePath, token),
+  ]);
+  const owner = mapping ? decodeFields(mapping.fields ?? {}) : null;
+  if (!mapping?.updateTime || owner?.storeId !== storeId || owner.active === false) {
+    throw new HttpError(409, "الحساب مش صاحب المحل المحدد.");
+  }
+  if (balance && !balance.updateTime) throw new HttpError(503, "تعذر تأكيد إصدار الرصيد.");
+  const amounts = commissionAmounts(
+    dueMinor, balance ? decodeFields(balance.fields ?? {}).commissionDiscountMinor : undefined,
+  );
+  await commitOrConflict(env, token, [
+    {
+      verify: mapping.name,
+      currentDocument: { updateTime: mapping.updateTime },
+    },
+    {
+      update: {
+        name: firestoreDocumentName(env, settlementPath),
+        fields: encodeFields({ ...amounts, ownerUid, storeId, reference, adminUid }),
+      },
+      updateTransforms: [{ fieldPath: "settledAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    },
+    ...(amounts.discountMinor > 0 ? [{
+      transform: {
+        document: firestoreDocumentName(env, balancePath),
+        fieldTransforms: [{
+          fieldPath: "commissionDiscountMinor",
+          increment: { integerValue: String(-amounts.discountMinor) },
+        }],
+      },
+      currentDocument: { updateTime: balance!.updateTime },
+    }] : []),
+  ]);
+  return amounts;
+}
+
 async function referralPayout(request: Request, env: Env): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   if (!/^[A-Za-z0-9_-]{1,96}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");

@@ -41,7 +41,14 @@ export function buildAdminReferralSettingsWrite(
   return {
     update: {
       name: `${root}/app_info/referral_config`,
-      fields: { version: value(settings.version), policies: { mapValue: { fields: policies } } },
+      fields: {
+        version: value(settings.version),
+        policies: { mapValue: { fields: policies } },
+        ...(settings.redemption ? { redemption: { mapValue: { fields: {
+          pointValueMinor: value(settings.redemption.pointValueMinor),
+          maxDiscountMinor: value(settings.redemption.maxDiscountMinor),
+        } } } } : {}),
+      },
     },
     currentDocument: initial ? { exists: false } : { updateTime: currentUpdateTime },
   };

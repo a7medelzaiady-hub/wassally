@@ -18,6 +18,22 @@ describe("referral admin policy decoder", () => {
     expect(parsed.policies.store_owner.enabled).toBe(false);
   });
 
+  it("keeps points redemption off for existing settings", () => {
+    expect(parseReferralSettings(settings()).redemption).toBeUndefined();
+  });
+
+  it("validates the admin-managed point value and per-order cap", () => {
+    const redemption = { pointValueMinor: 25, maxDiscountMinor: 500 };
+    expect(parseReferralSettings({ ...settings(), redemption }).redemption)
+      .toEqual(redemption);
+    expect(() => parseReferralSettings({
+      ...settings(), redemption: { ...redemption, maxDiscountMinor: 24 },
+    })).toThrow();
+    expect(() => parseReferralSettings({
+      ...settings(), redemption: { ...redemption, pointValueMinor: 0 },
+    })).toThrow();
+  });
+
   it("rejects malformed or unsafe settings without fallback rewards", () => {
     expect(() => parseReferralSettings(null)).toThrow();
     expect(() => parseReferralSettings({ ...settings(), version: 0 })).toThrow();
