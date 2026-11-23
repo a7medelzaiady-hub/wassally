@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Referral domain primitives. No Firestore writes or reward payouts happen here.
 ///
 /// IMPORTANT: Only a trusted Cloudflare Worker may create reward grants after
@@ -61,3 +63,18 @@ class ReferralRewardRule {
 
   bool get hasValidAmount => amount > 0;
 }
+
+/// Generates an unpredictable *candidate* referral code. The Worker must
+/// reserve it atomically and retry if it collides with an existing code.
+String generateReferralCode({Random? random, int length = 8}) {
+  if (length < 6 || length > 12) {
+    throw RangeError.range(length, 6, 12, 'length');
+  }
+  final source = random ?? Random.secure();
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return List.generate(length, (_) => alphabet[source.nextInt(alphabet.length)])
+      .join();
+}
+
+/// For UI input only. Never treat a normalized code as proof of ownership.
+String normalizeReferralCode(String code) => code.trim().toUpperCase();
