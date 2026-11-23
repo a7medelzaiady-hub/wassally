@@ -53,7 +53,7 @@ export async function verifyStoreReferral(
   const invitedOwnerRaw = await read("storeOwners", attribution.invitedUid);
   if (!invitedOwnerRaw) return null;
   const invitedOwner = decodeFirestoreReferralFields(invitedOwnerRaw);
-  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active === false) return null;
+  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active !== true) return null;
 
   const balanceRaw = await read("referral_balances", attribution.inviterUid);
   let previousAwards = 0;
