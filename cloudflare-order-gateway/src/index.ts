@@ -2106,6 +2106,15 @@ export default {
         ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
         : "";
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
+    if (request.method === "POST" && url.pathname === "/v1/order-events") {
+      try {
+        const result = await notifyOrderEvent(request, env);
+        return response(result, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر إرسال إشعار الطلب.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/notify-admins") {
       try {
         const result = await notifyAdmins(request, env);
@@ -2364,6 +2373,11 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
       console.error("Attachment cleanup after PIN delivery failed", error instanceof HttpError ? error.status : "error");
     }
   }
+  await Promise.allSettled([
+    notifyOrderParticipant(env, token, order.userId, orderId, "order_update", "تم تسليم طلبك"),
+    update.status === "delivered" && typeof order.storeId === "string" &&
+      notifyStoreOwners(env, token, order.storeId, orderId, "تم تسليم طلب من المحل", uid),
+  ]);
   return response({ delivered: update.status === "delivered", confirmed: true });
 }
 
@@ -2458,6 +2472,142 @@ async function notifyAdmins(request: Request, env: Env): Promise<Response> {
   return response({ sent: true });
 }
 
+const orderPushTitles = {
+  preparing: "المحل بدأ تجهيز طلبك",
+  on_the_way: "طلبك في الطريق",
+  delivered: "تم تسليم طلبك",
+  cancelled: "تم إلغاء طلبك",
+} as const;
+
+function recentOrderEvent(date: unknown): date is Date {
+  return date instanceof Date &&
+    date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
+}
+
+async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
+  const { orderId, event, status } = await readJsonBody(request);
+  if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
+    typeof event !== "string" || !["created", "assigned", "ready", "status"].includes(event)) {
+    throw new HttpError(400, "بيانات إشعار الطلب غير صالحة.");
+  }
+
+  const token = await googleAccessToken(env);
+  const path = `orders/${orderId}`;
+  const orderDoc = await getDocument(env, path, token);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const storeId = typeof order.storeId === "string" ? order.storeId : "";
+  const courierId = typeof order.courierId === "string" ? order.courierId : "";
+  let key = event;
+  let customerTitle = "";
+  let courierTitle = "";
+  let storeTitle = "";
+  let notifyAvailableCouriers = false;
+
+  if (event === "created") {
+    if (order.userId !== uid) throw new HttpError(403, "الطلب لا يخص حسابك.");
+    if (order.status !== "new" || !recentOrderEvent(order.createdAt)) return { orderId, processed: false };
+    storeTitle = "طلب جديد للمحل";
+  } else if (event === "status") {
+    if (typeof status !== "string" || !Object.hasOwn(orderPushTitles, status)) {
+      throw new HttpError(400, "حالة الطلب غير صالحة.");
+    }
+    if (order.status !== status) return { orderId, processed: false };
+    const historyDoc = await getDocument(env, `${path}/statusHistory/${status}`, token);
+    const history = historyDoc ? decodeFields(historyDoc.fields ?? {}) : {};
+    if (history.actorUid !== uid) throw new HttpError(403, "التحديث لا يخص حسابك.");
+    if (history.to !== status || history.via === "pin" || !recentOrderEvent(history.at)) {
+      return { orderId, processed: false };
+    }
+    key = `status_${status}`;
+    customerTitle = orderPushTitles[status as keyof typeof orderPushTitles];
+    if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
+    if (status === "delivered") storeTitle = "تم تسليم طلب من المحل";
+    if (status === "cancelled") {
+      storeTitle = "تم إلغاء طلب من المحل";
+      courierTitle = "تم إلغاء طلب توصيل";
+    }
+  } else {
+    if (order.status !== "preparing") return { orderId, processed: false };
+    const assigned = event === "assigned";
+    if (assigned
+      ? !courierId || !recentOrderEvent(order.courierAt)
+      : order.ready !== true || !recentOrderEvent(order.readyAt)) {
+      return { orderId, processed: false };
+    }
+    if (assigned && courierId === uid) {
+      const courier = await getDocument(env, `couriers/${encodeURIComponent(uid)}`, token);
+      if (!courier || decodeFields(courier.fields ?? {}).active === false) {
+        throw new HttpError(403, "حساب المندوب غير نشط.");
+      }
+    } else {
+      const [ownerDoc, adminDoc] = await Promise.all([
+        getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
+        getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
+      ]);
+      const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+      if (!adminDoc && (!storeId || owner.storeId !== storeId || owner.active === false)) {
+        throw new HttpError(403, "الطلب لا يخص حسابك.");
+      }
+    }
+    if (assigned) {
+      key = `assigned_${(order.courierAt as Date).getTime()}`;
+      customerTitle = "تم تعيين مندوب لطلبك";
+      if (courierId !== uid) courierTitle = "تم تعيين طلب توصيل لك";
+    } else {
+      customerTitle = "طلبك جاهز للاستلام من المحل";
+      courierTitle = "طلب التوصيل جاهز للاستلام";
+      notifyAvailableCouriers = !courierId;
+    }
+  }
+
+  const claim = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ writes: [{
+      update: {
+        name: firestoreDocumentName(env, `${path}/pushEvents/${key}`),
+        fields: encodeFields({ event }),
+      },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    }] }),
+  });
+  if (!claim.ok) {
+    const error = await claim.json().catch(() => null) as { error?: { status?: string } } | null;
+    if (["ALREADY_EXISTS", "FAILED_PRECONDITION"].includes(error?.error?.status ?? "")) {
+      return { orderId, processed: false };
+    }
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب.");
+  }
+
+  await Promise.allSettled([
+    customerTitle && order.userId !== uid && notifyOrderParticipant(
+      env, token, order.userId, orderId, "order_update", customerTitle,
+    ),
+    courierTitle && courierId !== uid && notifyOrderParticipant(
+      env, token, courierId, orderId, "courier_order_update", courierTitle,
+    ),
+    storeTitle && storeId && notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid),
+    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName)),
+  ]);
+  return { orderId, processed: true };
+}
+
+async function notifyStoreOwners(
+  env: Env, token: string, storeId: string, orderId: string, title: string, actorUid: string,
+): Promise<void> {
+  const owners = await queryAccountDocuments(env, token, "storeOwners", "storeId", storeId);
+  await Promise.all(owners.map((doc) => {
+    const recipient = doc.name.split("/").pop();
+    if (recipient !== actorUid && decodeFields(doc.fields ?? {}).active !== false) {
+      return notifyOrderParticipant(env, token, recipient, orderId, "store_order_update", title);
+    }
+  }));
+}
+
 export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
   return existingUserId === userId && existingStoreId === storeId;
 }
@@ -2543,12 +2693,12 @@ function quickTopicMessage() {
   };
 }
 
-async function notifyQuickParticipant(
+async function notifyOrderParticipant(
   env: Env,
   token: string,
   recipient: unknown,
   orderId: string,
-  type: "quick_customer_update" | "quick_courier_update",
+  type: "quick_customer_update" | "quick_courier_update" | "order_update" | "store_order_update" | "courier_order_update",
   title: string,
 ): Promise<void> {
   if (typeof recipient !== "string" || !recipient) return;
@@ -2576,10 +2726,10 @@ async function notifyQuickParticipant(
       }),
     ));
     if (sent.some((result) => result.status === "rejected" || !result.value.ok)) {
-      console.error("Quick participant push failed");
+      console.error("Order participant push failed");
     }
   } catch {
-    console.error("Quick participant push failed");
+    console.error("Order participant push failed");
   }
 }
 
@@ -2741,10 +2891,10 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
     (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
   const courierTitle = quickCourierUpdates[action];
   await Promise.all([
-    customerTitle && notifyQuickParticipant(
+    customerTitle && notifyOrderParticipant(
       env, token, order.userId, orderId, "quick_customer_update", customerTitle,
     ),
-    courierTitle && notifyQuickParticipant(
+    courierTitle && notifyOrderParticipant(
       env, token, order.courierId, orderId, "quick_courier_update", courierTitle,
     ),
   ]);
@@ -2830,7 +2980,7 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
   }];
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
-  await notifyQuickParticipant(
+  await notifyOrderParticipant(
     env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
   );
   return response({ orderId, delivered: true, order: { ...order, ...patch } });

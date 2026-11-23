@@ -1,3 +1,5 @@
+import 'dart:async';
+
 ﻿import 'dart:convert';
 import 'dart:math';
 
@@ -456,6 +458,8 @@ class OrderService {
         }
       }
     }
+
+    unawaited(OrderGateway.notifyEvent(ref.id, 'created'));
 
     try {
       await _clearPendingOrderId(user.uid);

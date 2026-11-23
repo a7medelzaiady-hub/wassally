@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/order.dart';
 import '../models/product.dart';
 import '../models/store.dart';
+import 'order_gateway.dart';
 import 'order_status_writer.dart';
 import 'price_check.dart';
 import 'read_meter.dart';
@@ -202,6 +205,7 @@ class StaffOrderService {
     });
     batch.delete(db.collection('courier_available_orders').doc(order.id));
     await batch.commit(); // permission-denied = حد سبقك أو الطلب اتغيّر
+    unawaited(OrderGateway.notifyEvent(order.id, 'assigned'));
 
     try {
       final snap = await _orders.doc(order.id).get(); // دلوقتي مسموح لأنه متعيّن لك
@@ -393,6 +397,7 @@ class StaffOrderService {
       'ready': true,
       'readyAt': FieldValue.serverTimestamp(),
     });
+    unawaited(OrderGateway.notifyEvent(orderId, 'ready'));
     try {
       final snap = await _orders.doc(orderId).get();
       await _notify(
@@ -598,6 +603,7 @@ class StaffOrderService {
       'at': FieldValue.serverTimestamp(),
     });
     await batch.commit();
+    unawaited(OrderGateway.notifyEvent(orderId, 'status', status: 'cancelled'));
     await _notify(
       (data['courierId'] ?? '').toString(),
       'المحل استلم المرتجع',
@@ -895,6 +901,7 @@ class StaffOrderService {
       tx.delete(feedRef);
     });
 
+    unawaited(OrderGateway.notifyEvent(orderId, 'assigned'));
     try {
       final snap = await orderRef.get();
       await _notify(courier.id, 'طلب جديد ليك', 'تم تكليفك بطلب جديد.', orderId);

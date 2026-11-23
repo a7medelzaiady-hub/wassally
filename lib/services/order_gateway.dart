@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -41,6 +42,31 @@ class OrderGateway {
     'WASALLY_SERVER_ORDERS',
     defaultValue: false,
   );
+
+  /// Sends a push for a Firestore change that already committed.
+  static Future<void> notifyEvent(
+    String orderId,
+    String event, {
+    String? status,
+  }) async {
+    if (!isConfigured) return;
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) return;
+      await _send(
+        idToken: token,
+        method: 'POST',
+        path: '/v1/order-events',
+        payload: {
+          'orderId': orderId,
+          'event': event,
+          if (status != null) 'status': status,
+        },
+      );
+    } catch (_) {
+      debugPrint('تعذر إرسال إشعار حالة الطلب.');
+    }
+  }
 
   static Future<void> submit({
     required String idToken,
