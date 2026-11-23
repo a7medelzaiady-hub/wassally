@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/app_header.dart';
+import '../widgets/dialogs.dart';
+import '../services/auth_service.dart';
 import 'admin_stores_page.dart';
 import 'admin_roles_page.dart';
 import 'admin_store_owners_page.dart';
@@ -12,6 +14,17 @@ import 'admin_inbox_page.dart';
 /// أدوات الإدارة في صفحة مستقلة، مع عناوين واضحة لكل وظيفة.
 class AdminNavigationPage extends StatelessWidget {
   const AdminNavigationPage({super.key});
+
+  Future<void> _logout(BuildContext context) async {
+    final ok = await confirmDialog(
+      context,
+      title: 'تسجيل خروج',
+      message: 'متأكد إنك عايز تسجّل خروج؟',
+      confirmLabel: 'خروج',
+      destructive: true,
+    );
+    if (ok && context.mounted) await AuthService.signOut(context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +39,16 @@ class AdminNavigationPage extends StatelessWidget {
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('أدوات الإدارة'), actions: const [HomeActionButton()]),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: OutlinedButton.icon(
+            onPressed: () => _logout(context),
+            icon: const Icon(Icons.logout_rounded, color: Colors.red),
+            label: const Text('تسجيل الخروج', style: TextStyle(color: Colors.red)),
+          ),
+        ),
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth >= 650 ? 3 : 2;
