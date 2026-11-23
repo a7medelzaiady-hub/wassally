@@ -12,7 +12,7 @@ const docs: Record<string, Record<string, unknown>> = {
     channel: sv("store_owner"), claimedAtMs: iv(100),
   },
   "stores/store1": { active: bv(true), approved: bv(true), approvedAtMs: iv(110), activatedAtMs: iv(120) },
-  "orders/order1": { storeId: sv("store1"), status: sv("delivered"), deliveredAt: iv(200) },
+  "orders/order1": { storeId: sv("store1"), status: sv("delivered"), deliveredAt: { timestampValue: "1970-01-01T00:00:00.200Z" } },
   "referral_store_first_orders/store1": {
     invitedStoreId: sv("store1"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(200),
   },
@@ -29,6 +29,29 @@ describe("store referral verification", () => {
       grantId: "store_owner_store1", inviterUid: "owner1", invitedUid: "owner2",
       unit: "commission_discount_minor", amount: 50,
     });
+  });
+  it("honors a per-channel cap using trusted store owner award count", async () => {
+    const key = "referral_balances/owner1";
+    const originalPolicy = docs["app_info/referral_config"]!;
+    const originalBalance = docs[key];
+    try {
+      const policies = (originalPolicy.policies as { mapValue: { fields: Record<string, unknown> } }).mapValue.fields;
+      const ownerPolicy = policies.store_owner as { mapValue: { fields: Record<string, unknown> } };
+      docs["app_info/referral_config"] = {
+        ...originalPolicy,
+        policies: { mapValue: { fields: {
+          ...policies,
+          store_owner: { mapValue: { fields: { ...ownerPolicy.mapValue.fields, maxPerInviter: iv(1) } } },
+        } } },
+      };
+      docs[key] = { storeOwnerAwardsCount: iv(1), customerAwardsCount: iv(0) };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      docs[key] = { storeOwnerAwardsCount: iv(0), customerAwardsCount: iv(100) };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toMatchObject({ grantId: "store_owner_store1" });
+    } finally {
+      docs["app_info/referral_config"] = originalPolicy;
+      if (originalBalance) docs[key] = originalBalance; else delete docs[key];
+    }
   });
   it("rejects unapproved or inactive stores", async () => {
     const original = docs["stores/store1"]!;
