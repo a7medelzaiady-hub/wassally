@@ -45,7 +45,11 @@ export async function verifyFirstOrderReferral(
   if (channel !== "customer" && channel !== "marketer") return null;
   if (typeof attribution.inviterUid !== "string" ||
       typeof attribution.claimedAtMs !== "number") return null;
-  const decision = decideReferralReward(settings.policies[channel as ReferralChannel], {
+  // A hard cap cannot be enforced from a fabricated zero. Until a trusted
+  // transaction-scoped award counter is wired, reject capped policies.
+  const policy = settings.policies[channel as ReferralChannel];
+  if (policy.maxPerInviter !== undefined) return null;
+  const decision = decideReferralReward(policy, {
     inviterUid: attribution.inviterUid,
     invitedUid: evidence.invitedUid,
     channel,
