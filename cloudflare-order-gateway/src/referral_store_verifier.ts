@@ -48,6 +48,13 @@ export async function verifyStoreReferral(
       !Number.isSafeInteger(order.deliveredAt) ||
       order.deliveredAt !== index.completedAtMs) return null;
 
+  // An attribution naming an owner is not proof that the owner owns this store.
+  // Verify the canonical store-owner assignment in the same transaction.
+  const invitedOwnerRaw = await read("storeOwners", attribution.invitedUid);
+  if (!invitedOwnerRaw) return null;
+  const invitedOwner = decodeFirestoreReferralFields(invitedOwnerRaw);
+  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active === false) return null;
+
   const balanceRaw = await read("referral_balances", attribution.inviterUid);
   let previousAwards = 0;
   if (balanceRaw) {
