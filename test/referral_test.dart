@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wassally/models/referral.dart';
+import 'package:city_store/models/referral.dart';
 
 void main() {
   test('referral code format is strict and case sensitive', () {
