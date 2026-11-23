@@ -55,10 +55,12 @@ export async function verifyStoreReferral(
     read("storeOwners", attribution.inviterUid),
   ]);
   if (!invitedOwnerRaw || !inviterOwnerRaw) return null;
+  // firestore.rules allows storeOwners.active to be omitted (default true).
+  // Match that canonical schema; explicitly false always disqualifies.
   const invitedOwner = decodeFirestoreReferralFields(invitedOwnerRaw);
   const inviterOwner = decodeFirestoreReferralFields(inviterOwnerRaw);
-  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active !== true ||
-      inviterOwner.active !== true || typeof inviterOwner.storeId !== "string" ||
+  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active === false ||
+      inviterOwner.active === false || typeof inviterOwner.storeId !== "string" ||
       !validId(inviterOwner.storeId) ||
       inviterOwner.storeId === evidence.invitedStoreId) return null;
 
