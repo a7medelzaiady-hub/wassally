@@ -696,6 +696,9 @@ class StaffOrderService {
   /// بيجيب المحل من Firestore (قراءة واحدة) ويقارن أسعار الطلب بالكتالوج.
   /// أي فشل في التحميل بيرجّع unknown بدل ما يوقف المدير.
   static Future<PriceCheck> checkPrices(AppOrder order) async {
+    if (order.referralDiscountMinor > 0) {
+      return PriceCheck(PriceCheckStatus.match, order.total, const []);
+    }
     if (order.storeId.isEmpty) return const PriceCheck.unknown();
     try {
       final snap = await FirebaseFirestore.instance

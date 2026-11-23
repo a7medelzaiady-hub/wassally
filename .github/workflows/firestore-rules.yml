@@ -25,6 +25,8 @@ on:
       - "firebase.json"
       - "rules-tests/**"
       - ".github/workflows/firestore-rules.yml"
+      - "cloudflare-order-gateway/src/referral*.ts"
+      - "cloudflare-order-gateway/test/referral_emulator_smoke.test.ts"
 
 permissions:
   contents: read
@@ -75,3 +77,13 @@ jobs:
             exit 1
           fi
           echo "No expression-limit errors in emulator log."
+
+      - name: Install Worker dependencies for referral integration
+        working-directory: cloudflare-order-gateway
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Test referral registration to payout on Firestore Emulator
+        working-directory: rules-tests
+        run: >-
+          npx firebase emulators:exec --config ../firebase.json --only firestore
+          --project demo-wasally "cd ../cloudflare-order-gateway && npx vitest run test/referral_emulator_smoke.test.ts"

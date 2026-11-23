@@ -1413,11 +1413,24 @@ test('role_requests: طلب المحل ينشئ مسودة خاصة ولا تظ�
   approve.set(doc(adminDb, 'storeOwners/cust3'), {
     name: 'صاحب المحل', storeId: 'draft3', active: true,
   });
-  approve.update(doc(adminDb, 'stores/draft3'), { approved: true, active: true, ownerUid: deleteField() });
+  const origin = 'referral_store_origins/draft3';
+  await assertFails(setDoc(doc(as('cust3'), origin), {
+    uid: 'cust3', approvalAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(adminDb, origin), {
+    uid: 'cust3', approvalAt: serverTimestamp(),
+  }));
+  approve.update(doc(adminDb, 'stores/draft3'), {
+    approved: true, active: true, ownerUid: deleteField(),
+    approvedAt: serverTimestamp(), firstActivatedAt: serverTimestamp(),
+  });
+  approve.set(doc(adminDb, origin), { uid: 'cust3', approvalAt: serverTimestamp() });
   approve.update(doc(adminDb, 'role_requests/cust3_store_owner'), {
     status: 'approved', reviewedAt: serverTimestamp(), reviewedBy: 'admin1',
   });
   await assertSucceeds(approve.commit());
+  await assertFails(getDoc(doc(as('cust3'), origin)));
+  await assertFails(updateDoc(doc(adminDb, origin), { uid: 'cust4' }));
   const publicStore = await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3')));
   assert.equal(publicStore.data().ownerUid, undefined);
   await assertSucceeds(getDoc(doc(as('cust2'), 'stores/draft3/products/p1')));
