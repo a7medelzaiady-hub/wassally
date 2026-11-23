@@ -7,6 +7,7 @@ import '../services/quick_courier_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/dialog_controllers.dart';
+import '../utils/maps.dart';
 import 'quick_courier_orders_page.dart' show quickStepLabel;
 
 /// رحلة المندوب في طلب سريع: زرار واحد كبير لكل خطوة، وأقل كتابة ممكنة (أرقام وصور بس).
@@ -53,13 +54,16 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _busy = true);
+    if (!mounted) return;
+    setState(() {
+      _busy = true;
+      _contact = null;
+    });
     try {
       final order = await widget.backend.loadOrder(widget.orderId);
-      QuickContact? contact = _contact;
-      if (order != null && order.canSeeContact && contact == null) {
-        contact = await widget.backend.loadContact(widget.orderId);
-      }
+      final contact = order?.canSeeContact == true
+          ? await widget.backend.loadContact(widget.orderId).catchError((_) => null)
+          : null;
       if (!mounted) return;
       setState(() {
         _order = order;
@@ -67,7 +71,12 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         _error = order == null ? 'الطلب مش موجود أو مش متاح ليك.' : null;
       });
     } catch (_) {
-      if (mounted) setState(() => _error = 'تعذر تحميل الطلب. اسحب للتحديث.');
+      if (mounted) {
+        setState(() {
+          _order = null;
+          _error = 'تعذر تحميل الطلب. اسحب للتحديث.';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -79,7 +88,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     setState(() => _busy = true);
     try {
       final updated = await widget.backend.act(widget.orderId, action, body);
-      QuickContact? contact = _contact;
+      QuickContact? contact = updated.canSeeContact ? _contact : null;
       if (updated.canSeeContact && contact == null) {
         contact = await widget.backend.loadContact(widget.orderId).catchError((_) => null);
       }
@@ -275,13 +284,34 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   Widget _contactCard(QuickCourierOrder o) {
     final c = _contact;
-    if (!o.canSeeContact || c == null) return const SizedBox.shrink();
+    if (!o.canSeeContact) return const SizedBox.shrink();
+    if (c == null) {
+      return _card(children: [
+        const Text('بيانات التواصل غير متاحة حاليًا.'),
+        TextButton(
+          onPressed: _busy ? null : _refresh,
+          child: const Text('إعادة المحاولة'),
+        ),
+      ]);
+    }
     return _card(children: [
       if (c.name.isNotEmpty) Text(c.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       if (c.address.isNotEmpty) Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Text(c.address, style: const TextStyle(height: 1.5)),
       ),
+      if (c.address.isEmpty) const Text('العنوان التفصيلي غير متاح'),
+      if (c.address.isNotEmpty)
+        OutlinedButton.icon(
+          onPressed: _busy
+              ? null
+              : () async {
+                  final opened = await openInMaps(c.address);
+                  if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                },
+          icon: const Icon(Icons.map_outlined),
+          label: const Text('افتح الخريطة'),
+        ),
       if (c.notes.isNotEmpty) Text(c.notes, style: TextStyle(color: kMuted)),
       const SizedBox(height: 10),
       _bigButton('اتصل بالعميل', Icons.call, c.phone.isEmpty ? null : _call,
@@ -487,6 +517,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         body: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
             children: [
               if (_busy) const LinearProgressIndicator(),
@@ -495,10 +526,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                 child: Text(_error!, textAlign: TextAlign.center),
               ),
               if (o != null) ...[
+                _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
-                const SizedBox(height: 4),
-                _requestCard(o),
               ],
             ],
           ),

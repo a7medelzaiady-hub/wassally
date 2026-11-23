@@ -81,7 +81,12 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
 
   @override
   Future<QuickContact?> loadContact(String id) async {
-    final snap = await _db.collection('quick_orders').doc(id).collection('private').doc('contact').get();
+    final snap = await _db
+        .collection('quick_orders')
+        .doc(id)
+        .collection('private')
+        .doc('contact')
+        .get(const GetOptions(source: Source.server));
     final d = snap.data();
     if (d == null) return null;
     String s(Object? v) => v is String ? v.trim() : '';

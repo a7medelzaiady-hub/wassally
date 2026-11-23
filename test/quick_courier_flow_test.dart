@@ -116,10 +116,13 @@ void main() {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
     expect(find.byKey(const Key('quick-call')), findsNothing);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    expect(find.text('شارع التحرير 10'), findsNothing);
     await _tap(tester, const Key('quick-accept'));
     expect(backend.calls.single.key, 'accept');
     expect(find.byKey(const Key('quick-call')), findsOneWidget);
     expect(find.text('شارع التحرير 10'), findsOneWidget);
+    expect(find.text('افتح الخريطة'), findsOneWidget);
   });
 
   testWidgets('التقدير: المندوب يبدأ الشراء على طول مهما كان المبلغ (مفيش حد 200)', (tester) async {

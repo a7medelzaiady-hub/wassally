@@ -390,7 +390,10 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                   itemBuilder: (context, i) =>
                                       _tab == _Tab.available
                                       ? _AvailableOrderCard(order: shown[i])
-                                      : _CourierOrderCard(order: shown[i]),
+                                      : _CourierOrderCard(
+                                          key: ValueKey(shown[i].id),
+                                          order: shown[i],
+                                        ),
                                 ),
                         ),
                       ],
@@ -501,6 +504,8 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const Text('يظهر العنوان ورقم العميل بعد استلام الطلب وتعيينه لك.'),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -536,7 +541,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
 
 class _CourierOrderCard extends StatefulWidget {
   final AppOrder order;
-  const _CourierOrderCard({required this.order});
+  const _CourierOrderCard({super.key, required this.order});
 
   @override
   State<_CourierOrderCard> createState() => _CourierOrderCardState();
@@ -553,41 +558,49 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   AppOrder get _o => widget.order.withContact(_contact);
 
+  bool get _canSeeContact =>
+      widget.order.courierId == FirebaseAuth.instance.currentUser?.uid &&
+      (widget.order.status == OrderStatus.preparing ||
+          widget.order.status == OrderStatus.onTheWay);
+
+  int _contactRequest = 0;
+
   @override
   void initState() {
     super.initState();
-    if (widget.order.status != OrderStatus.delivered &&
-        widget.order.status != OrderStatus.cancelled) {
-      _loadContact();
-    }
+    if (_canSeeContact) _loadContact();
   }
 
   @override
   void didUpdateWidget(covariant _CourierOrderCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.order.id != widget.order.id ||
-        oldWidget.order.status != widget.order.status) {
+        oldWidget.order.status != widget.order.status ||
+        oldWidget.order.courierId != widget.order.courierId) {
+      _contactRequest++;
       _contact = null;
       _contactFailed = false;
-      if (widget.order.status != OrderStatus.delivered &&
-          widget.order.status != OrderStatus.cancelled) {
-        _loadContact();
-      }
+      if (_canSeeContact) _loadContact();
     }
   }
 
   Future<void> _loadContact() async {
-    if (mounted) {
-      setState(() {
-        _contactFailed = false;
-      });
-    }
+    if (!_canSeeContact) return;
+    final request = ++_contactRequest;
+    setState(() => _contactFailed = false);
     try {
-      final contact = await OrderContactService.load(widget.order.id);
-      if (mounted) setState(() => _contact = contact);
+      final contact = await OrderContactService.load(
+        widget.order.id,
+        options: const GetOptions(source: Source.server),
+      );
+      if (mounted && request == _contactRequest && _canSeeContact) {
+        setState(() => _contact = contact);
+      }
     } catch (error) {
       debugPrint('Courier contact load failed: $error');
-      if (mounted) setState(() => _contactFailed = true);
+      if (mounted && request == _contactRequest && _canSeeContact) {
+        setState(() => _contactFailed = true);
+      }
     }
   }
 
@@ -931,18 +944,21 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   Future<void> _openMap() async {
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await openInMaps(_o.address);
+    if (!_canSeeContact) return;
+    final ok = await openInMaps(_contact?.address ?? '');
     if (!ok) {
       messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
     }
   }
 
   Future<void> _call() async {
-    final uri = Uri.parse('tel:${_o.phone}');
+    final phone = _contact?.phone ?? '';
+    if (!_canSeeContact || phone.isEmpty) return;
+    final uri = Uri.parse('tel:$phone');
     try {
       await launchUrl(uri);
     } catch (_) {
-      await Clipboard.setData(ClipboardData(text: _o.phone));
+      await Clipboard.setData(ClipboardData(text: phone));
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('تم نسخ الرقم')));
@@ -1045,7 +1061,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_contactFailed)
+          if (_canSeeContact && _contactFailed)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
@@ -1064,14 +1080,14 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 ],
               ),
             ),
-          Row(
+          if (_canSeeContact) Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      o.userName.isEmpty ? 'العميل' : o.userName,
+                      _contact?.name.isNotEmpty == true ? _contact!.name : 'العميل',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -1080,7 +1096,9 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      o.address,
+                      _contact?.address.isNotEmpty == true
+                          ? _contact!.address
+                          : 'العنوان التفصيلي غير متاح',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1092,13 +1110,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ],
                 ),
               ),
-              if (o.address.isNotEmpty)
+              if (_contact?.address.trim().isNotEmpty == true)
                 _round(Icons.map_outlined, 'الخريطة', _openMap),
-              if (o.phone.isNotEmpty)
+              if (_contact?.phone.trim().isNotEmpty == true)
                 _round(Icons.call_outlined, 'اتصال', _call),
             ],
           ),
-          if (o.courierNotes.isNotEmpty)
+          if (_canSeeContact && _contact?.courierNotes.isNotEmpty == true)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
@@ -1112,6 +1130,26 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
+            ],
+          ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            title: const Text('تفاصيل الطلب'),
+            subtitle: Text(o.status.label),
+            children: [
+              Text('رقم الطلب: ${o.id}'),
+              if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
+              for (final item in o.items)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${item.qty} × ${item.name}'),
+                  subtitle: item.options.isEmpty
+                      ? null
+                      : Text(item.options.join('، ')),
+                  trailing: Text(formatPrice(item.total)),
+                ),
             ],
           ),
           if (o.status == OrderStatus.onTheWay &&
