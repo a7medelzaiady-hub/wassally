@@ -81,6 +81,7 @@ class StaffHeader extends StatelessWidget {
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const MainShell()),
         ),
+      ),
       if (isAdmin)
         _btn(
           tooltip: 'تبديل الأدوار',
