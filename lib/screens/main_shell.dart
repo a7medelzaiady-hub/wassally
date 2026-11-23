@@ -73,8 +73,9 @@ class MainShell extends StatelessWidget {
           bottomNavigationBar: ListenableBuilder(
             listenable: Listenable.merge([cart, carts]),
             builder: (context, _) {
-              // الرئيسية، طلباتي، السلة، حسابي. الإشعارات من جرس الرئيسية.
-              const map = [0, 2, 1, 3];
+              // من اليمين لليسار: الرئيسية، السلة، طلباتي، حسابي.
+              // السلة بجوار الرئيسية في مكانها الجديد، بدون إضافة تبويب أقسام.
+              const map = [0, 1, 2, 3];
               return CurvedNavBar(
                 index: map.indexOf(index),
                 onTap: (i) {
@@ -86,17 +87,16 @@ class MainShell extends StatelessWidget {
                     selectedIcon: Icons.home_rounded,
                     label: 'الرئيسية',
                   ),
-                  const AppNavItem(
-                    icon: Icons.receipt_long_outlined,
-                    selectedIcon: Icons.receipt_long,
-                    label: 'طلباتي',
-                  ),
                   AppNavItem(
                     icon: Icons.shopping_cart_outlined,
                     selectedIcon: Icons.shopping_cart,
                     label: 'السلة',
-                    // أصناف كل السلال (الحالية + «سلّاتي»).
                     badge: carts.totalItems,
+                  ),
+                  const AppNavItem(
+                    icon: Icons.receipt_long_outlined,
+                    selectedIcon: Icons.receipt_long,
+                    label: 'طلباتي',
                   ),
                   const AppNavItem(
                     icon: Icons.person_outline,
