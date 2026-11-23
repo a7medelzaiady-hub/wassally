@@ -224,7 +224,30 @@ class OrderService {
       throw const OrderLimitException('أقصى كمية للصنف الواحد $kMaxLineQty.');
     }
 
-    final serverOrders = OrderGateway.serverOrdersEnabled;
+    // Firestore may already enforce serverOrders while an older APK was built
+    // without WASALLY_SERVER_ORDERS. Match the live security gate before writing.
+    // A one-shot read avoids a permanent listener and prevents permission-denied
+    // from a legacy client batch when direct writes have been disabled.
+    var serverOrders = OrderGateway.serverOrdersEnabled;
+    if (!serverOrders) {
+      try {
+        final security = await FirebaseFirestore.instance
+            .collection('app_info').doc('security').get();
+        serverOrders = security.data()?['serverOrders'] == true;
+      } on FirebaseException {
+        // Fail closed: never attempt a direct write when the security gate
+        // cannot be verified. The Worker validates all order fields itself.
+        serverOrders = true;
+      }
+    }
+    // Do not silently charge a service fee absent from an older APK's cart.
+    // The customer must see the Worker-mode total before confirming.
+    if (serverOrders && !OrderGateway.serverOrdersEnabled) {
+      throw StateError(
+        'تم تحديث نظام تأكيد الطلبات. حدّث تطبيق وصّلي من Google Play '
+        'علشان يظهر الإجمالي الصحيح قبل التأكيد.',
+      );
+    }
     final storeId = (cart.storeId ?? '').trim();
     if (storeId.isEmpty) {
       throw StateError('بيانات المحل غير مكتملة. ارجع للمحل وحاول تاني.');
@@ -343,8 +366,8 @@ class OrderService {
     }
     final ref = _orders.doc(orderId);
     // تجميع اختياري اختاره العميل من «سلّاتي» (بوابة الطلبات بس).
-    final groupId = OrderGateway.serverOrdersEnabled ? carts.groupIdFor(storeId) : null;
-    if (OrderGateway.serverOrdersEnabled) {
+    final groupId = serverOrders ? carts.groupIdFor(storeId) : null;
+    if (serverOrders) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
       }
