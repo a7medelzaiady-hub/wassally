@@ -89,6 +89,9 @@ export function buildReferralGrantWrites(
         fieldTransforms: [{
           fieldPath: field,
           increment: integerValue(grant.amount),
+        }, {
+          fieldPath: "awardsCount",
+          increment: integerValue(1),
         }],
       },
     },
