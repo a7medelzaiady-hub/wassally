@@ -29,9 +29,11 @@ import '../theme/brand.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/promo_banners.dart';
 import 'notifications_page.dart';
+import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 const Map<String, String> kCategoryPhotos = {
   'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
@@ -978,7 +980,8 @@ class _HomePageState extends State<HomePage>
       child: LayoutBuilder(
         builder: (context, c) {
           const gap = 10.0;
-          final w = (c.maxWidth - gap * 3) / 4;
+          // 4 في الصف، صورة واسم تحتها بدون إطار.
+          final w = (c.maxWidth - gap * 3) / 4 - 0.5;
           return Wrap(
             spacing: gap,
             runSpacing: gap,
@@ -986,7 +989,6 @@ class _HomePageState extends State<HomePage>
               for (final info in tiles)
                 SizedBox(
                   width: w,
-                  height: 104,
                   child: _CategoryTile(
                     label: info.category,
                     imageUrl: info.category == 'الكل'
@@ -1239,11 +1241,10 @@ class _HomePageState extends State<HomePage>
                 children: [
                   img.isEmpty
                       ? fallback
-                      : Image.network(
-                          thumb(img, w: 500),
-                          cacheWidth: 500,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => fallback,
+                      : CachedNetImage(
+                          url: thumb(img, w: 500),
+                          memCacheWidth: 500,
+                          errorWidget: fallback,
                         ),
                   if (badge.isNotEmpty)
                     PositionedDirectional(
@@ -1282,11 +1283,10 @@ class _HomePageState extends State<HomePage>
                       ),
                       child: s.image.isEmpty
                           ? Icon(s.store.icon, size: 20, color: Brand.green)
-                          : Image.network(
-                              thumb(s.image, w: 120),
-                              cacheWidth: 120,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
+                          : CachedNetImage(
+                              url: thumb(s.image, w: 120),
+                              memCacheWidth: 120,
+                              errorWidget:
                                   Icon(s.store.icon, size: 20, color: Brand.green),
                             ),
                     ),
@@ -1426,11 +1426,10 @@ class _HomePageState extends State<HomePage>
                           ),
                           child: item.image.isEmpty
                               ? fallback
-                              : Image.network(
-                                  thumb(item.image, w: 200),
-                                  cacheWidth: 200,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => fallback,
+                              : CachedNetImage(
+                                  url: thumb(item.image, w: 200),
+                                  memCacheWidth: 200,
+                                  errorWidget: fallback,
                                 ),
                         ),
                         const SizedBox(height: 6),
@@ -1485,6 +1484,27 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
+              // الطلبات السريعة منفصلة عن سلة المحل الواحد.
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF087B58),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(56),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    icon: const Icon(Icons.delivery_dining_outlined),
+                    label: const Text('طلباتك على السريع'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const QuickOrderCreatePage()),
+                    ),
+                  ),
+                ),
+              ),
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _sareeGuideCard(all)),
 
@@ -1616,47 +1636,37 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFEDEDED),
-            width: 1,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(
+            aspectRatio: 1,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: isAll || imageUrl.isEmpty
+                  ? _emojiBox()
+                  : CachedNetImage(
+                      url: thumb(imageUrl, w: 360),
+                      memCacheWidth: 360,
+                      errorWidget: _emojiBox(),
+                    ),
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 62,
-                height: 62,
-                child: isAll || imageUrl.isEmpty
-                    ? _emojiBox()
-                    : Image.network(
-                        thumb(imageUrl, w: 200),
-                        cacheWidth: 200,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _emojiBox(),
-                      ),
-              ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
+              color: Brand.ink,
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1667,7 +1677,7 @@ class _CategoryTile extends StatelessWidget {
       decoration: BoxDecoration(gradient: Brand.softGradient),
       child: Text(
         _emojiFor(label),
-        style: const TextStyle(fontSize: 32, height: 1.1),
+        style: const TextStyle(fontSize: 34, height: 1.1),
       ),
     );
   }

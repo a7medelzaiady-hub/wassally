@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -41,6 +42,31 @@ class OrderGateway {
     'WASALLY_SERVER_ORDERS',
     defaultValue: false,
   );
+
+  /// Sends a push for a Firestore change that already committed.
+  static Future<void> notifyEvent(
+    String orderId,
+    String event, {
+    String? status,
+  }) async {
+    if (!isConfigured) return;
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token == null || token.isEmpty) return;
+      await _send(
+        idToken: token,
+        method: 'POST',
+        path: '/v1/order-events',
+        payload: {
+          'orderId': orderId,
+          'event': event,
+          if (status != null) 'status': status,
+        },
+      );
+    } catch (_) {
+      debugPrint('تعذر إرسال إشعار حالة الطلب.');
+    }
+  }
 
   static Future<void> submit({
     required String idToken,
@@ -226,6 +252,10 @@ class OrderGateway {
       )) {
         throw CatalogMismatchError(text);
       }
+      final code = body['code']?.toString() ?? '';
+      if (code == 'invalid_group' || code.startsWith('group_')) {
+        throw OrderGroupError(text);
+      }
       throw StateError(text);
     }
     if ((body['orderId'] ?? '').toString().isEmpty) {
@@ -237,4 +267,9 @@ class OrderGateway {
 /// سعر أو توفر صنف اتغير عن اللي في سلة العميل (القائمة المجمّعة عنده ممكن تكون متأخرة).
 class CatalogMismatchError extends StateError {
   CatalogMismatchError(super.message);
+}
+
+/// رقم التجميع اترفض (انتهى، اتملا، محل متكرر، أو مش تبع الحساب). الطلب نفسه ما اتعملش.
+class OrderGroupError extends StateError {
+  OrderGroupError(super.message);
 }

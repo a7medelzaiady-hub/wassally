@@ -1,4 +1,6 @@
-﻿import 'dart:convert';
+import 'dart:async';
+
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import '../models/user_profile.dart';
+import 'cart_book.dart';
 import 'cart_model.dart';
 import 'catalog_sync.dart';
 import 'order_contact_service.dart';
@@ -223,7 +226,30 @@ class OrderService {
       throw const OrderLimitException('أقصى كمية للصنف الواحد $kMaxLineQty.');
     }
 
-    final serverOrders = OrderGateway.serverOrdersEnabled;
+    // Firestore may already enforce serverOrders while an older APK was built
+    // without WASALLY_SERVER_ORDERS. Match the live security gate before writing.
+    // A one-shot read avoids a permanent listener and prevents permission-denied
+    // from a legacy client batch when direct writes have been disabled.
+    var serverOrders = OrderGateway.serverOrdersEnabled;
+    if (!serverOrders) {
+      try {
+        final security = await FirebaseFirestore.instance
+            .collection('app_info').doc('security').get();
+        serverOrders = security.data()?['serverOrders'] == true;
+      } catch (_) {
+        // Fail closed: never attempt a direct write when the security gate
+        // cannot be verified. The Worker validates all order fields itself.
+        serverOrders = true;
+      }
+    }
+    // Do not silently charge a service fee absent from an older APK's cart.
+    // The customer must see the Worker-mode total before confirming.
+    if (serverOrders && !OrderGateway.serverOrdersEnabled) {
+      throw StateError(
+        'تم تحديث نظام تأكيد الطلبات. حدّث تطبيق وصّلي من Google Play '
+        'علشان يظهر الإجمالي الصحيح قبل التأكيد.',
+      );
+    }
     final storeId = (cart.storeId ?? '').trim();
     if (storeId.isEmpty) {
       throw StateError('بيانات المحل غير مكتملة. ارجع للمحل وحاول تاني.');
@@ -341,7 +367,9 @@ class OrderService {
           'fee=${data['deliveryFee']} total=${data['total']}');
     }
     final ref = _orders.doc(orderId);
-    if (OrderGateway.serverOrdersEnabled) {
+    // تجميع اختياري اختاره العميل من «سلّاتي» (بوابة الطلبات بس).
+    final groupId = serverOrders ? carts.groupIdFor(storeId) : null;
+    if (serverOrders) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
       }
@@ -374,8 +402,13 @@ class OrderService {
                 .toList(),
             if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
             'contact': contactData,
+            if (groupId != null) 'groupId': groupId,
           },
         );
+      } on OrderGroupError catch (e) {
+        // الطلب ما اتعملش. نقفل التجميع عشان الضغطة الجاية تبعته لوحده بنفس رقم الطلب.
+        carts.setGrouping(false);
+        throw StateError('${e.message} اضغط تأكيد تاني وهيتبعت كطلب لوحده.');
       } on CatalogMismatchError {
         // سعر أو توفر صنف اتغير والقائمة المجمّعة عند العميل متأخرة: نقرأ أصناف المحل ده مباشرة
         // (القرار محفوظ على الجهاز لحد ما القائمة تتحدث، فبيفضل بعد إعادة فتح التطبيق).
@@ -426,6 +459,8 @@ class OrderService {
       }
     }
 
+    unawaited(OrderGateway.notifyEvent(ref.id, 'created'));
+
     try {
       await _clearPendingOrderId(user.uid);
     } catch (_) {
@@ -440,6 +475,7 @@ class OrderService {
       );
     } catch (_) {}
 
+    if (groupId != null) carts.markGroupedOrder(storeId);
     cart.clear();
     return ref.id;
   }
@@ -484,7 +520,26 @@ class OrderService {
     final total = subtotal + order.deliveryFee - discount + serviceFee;
     final updatedItems = lines.map((l) => l.toMap()).toList();
 
-    if (OrderGateway.serverOrdersEnabled) {
+    // Match the live Firestore gate before editing, just like order creation.
+    // An older APK must not attempt a legacy batch after serverOrders is enabled.
+    var serverOrders = OrderGateway.serverOrdersEnabled;
+    if (!serverOrders) {
+      try {
+        final security = await FirebaseFirestore.instance
+            .collection('app_info').doc('security').get();
+        serverOrders = security.data()?['serverOrders'] == true;
+      } catch (_) {
+        // Fail closed if the security setting cannot be checked.
+        serverOrders = true;
+      }
+    }
+    if (serverOrders && !OrderGateway.serverOrdersEnabled) {
+      throw StateError(
+        'تم تحديث نظام تعديل الطلبات. حدّث تطبيق وصّلي من Google Play '
+        'علشان تعدّل طلبك بأمان.',
+      );
+    }
+    if (serverOrders || order.serviceFee != null) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
       }
@@ -531,6 +586,8 @@ class OrderService {
         if (discount == 0 && order.discount > 0) 'discount': FieldValue.delete(),
         if (discount == 0 && order.discount > 0) 'promoCode': FieldValue.delete(),
         'editedAt': FieldValue.serverTimestamp(),
+        'verifiedTotal': FieldValue.delete(),
+        'verifiedAt': FieldValue.delete(),
         if (order.unavailableItems.isNotEmpty)
           'unavailableItems': FieldValue.delete(),
       });

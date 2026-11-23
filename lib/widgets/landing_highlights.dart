@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
+import 'cached_net_image.dart';
 
 class _S {
   final Store store;
@@ -137,10 +138,10 @@ class _LandingHighlightsState extends State<LandingHighlights> {
 
   Widget _photo(String img) => img.isEmpty
       ? Container(decoration: BoxDecoration(gradient: Brand.softGradient))
-      : Image.network(
-          thumb(img, w: 300),
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(
+      : CachedNetImage(
+          url: thumb(img, w: 300),
+          memCacheWidth: 300,
+          errorWidget: Container(
             decoration: BoxDecoration(gradient: Brand.softGradient),
           ),
         );

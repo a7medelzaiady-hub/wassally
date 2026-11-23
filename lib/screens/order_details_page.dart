@@ -13,6 +13,7 @@ import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
@@ -130,8 +131,7 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
   String? _pinMessage;
   bool _pinLoading = false;
 
-  bool _needsPin(AppOrder o) =>
-      o.status == OrderStatus.onTheWay && o.customerConfirmedAt == null;
+  bool _needsPin(AppOrder o) => orderShowsDeliveryPin(o);
 
   Future<void> _loadPin() async {
     if (_pinLoading || _pin != null || !_needsPin(widget.order)) return;
@@ -163,7 +163,13 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
-    if (widget.order.customerConfirmedAt != null) {
+    final request = widget.order.specialRequest;
+    if (widget.order.customerConfirmedAt != null &&
+        request != null &&
+        request['cleanupStatus'] != 'deleted' &&
+        const ['imageUrl', 'voiceUrl', 'voiceBase64'].any(
+          (key) => request[key] is String && (request[key] as String).isNotEmpty,
+        )) {
       OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
@@ -288,19 +294,28 @@ class _Details extends StatelessWidget {
                   : () async {
                       setDialogState(() => submitting = true);
                       String? err;
-                      try {
-                        await DriverService.rateDriver(
-                          orderId: order.id,
-                          driverId: order.courierId,
-                          rating: rating,
-                          comment: commentCtrl.text.trim(),
-                        );
-                      } catch (e) {
-                        err = e is StateError
-                            ? e.message
-                            : 'تعذر تقييم المندوب.';
+                      // اللي اتقيّم فعلًا نتخطاه، فتقييم ناقص قبل كده ما يمنعش إكمال الباقي.
+                      final courierDone = await ReviewLookup.exists('${order.id}_courier');
+                      final storeDone = order.storeId.isEmpty ||
+                          await ReviewLookup.exists('${order.id}_store');
+                      if (courierDone && storeDone) {
+                        err = 'الطلب ده اتقيّم قبل كده.';
                       }
-                      if (order.storeId.isNotEmpty) {
+                      if (!courierDone) {
+                        try {
+                          await DriverService.rateDriver(
+                            orderId: order.id,
+                            driverId: order.courierId,
+                            rating: rating,
+                            comment: commentCtrl.text.trim(),
+                          );
+                        } catch (e) {
+                          err = e is StateError
+                              ? e.message
+                              : 'تعذر تقييم المندوب.';
+                        }
+                      }
+                      if (order.storeId.isNotEmpty && !storeDone) {
                         try {
                           await RatingService.rateStore(
                             orderId: order.id,
@@ -390,8 +405,7 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
 
-    final showPin = order.status == OrderStatus.onTheWay &&
-        order.customerConfirmedAt == null;
+    final showPin = orderShowsDeliveryPin(order);
     return Column(
       children: [
         Expanded(
@@ -422,11 +436,67 @@ class _Details extends StatelessWidget {
           ),
         ),
 
+        // 🔐 رمز التسليم جوه الصفحة (مش شريط ثابت) عشان ما يغطيش أزرار تعديل/إلغاء الطلب.
+        if (showPin) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF7EF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kSuccess),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                if (deliveryPin != null)
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      deliveryPin!.split('').join(' '),
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  )
+                else if (pinLoading)
+                  const SizedBox(
+                    height: 28,
+                    width: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                else if (pinMessage != null) ...[
+                  Text(pinMessage!, textAlign: TextAlign.center),
+                  TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
+                ],
+                const SizedBox(height: 4),
+                const Text(
+                  'ما تديش الرمز لحد قبل ما تستلم الطلب.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
           const SizedBox(height: 12),
           _CustomerReturnReason(
-            key: ValueKey(order.activeDeliveryIssueId.isNotEmpty
-                ? order.activeDeliveryIssueId : order.lastDeliveryIssueId),
+            key: ValueKey((
+              order.activeDeliveryIssueId,
+              order.lastDeliveryIssueId,
+              order.status,
+            )),
             issueId: order.activeDeliveryIssueId.isNotEmpty
                 ? order.activeDeliveryIssueId : order.lastDeliveryIssueId,
           ),
@@ -607,57 +677,6 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
-        if (showPin)
-          SafeArea(
-            top: false,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF7EF),
-                border: Border(top: BorderSide(color: kSuccess)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  if (deliveryPin != null)
-                    Directionality(
-                      textDirection: TextDirection.ltr,
-                      child: Text(
-                        deliveryPin!.split('').join(' '),
-                        style: const TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                    )
-                  else if (pinLoading)
-                    const SizedBox(
-                      height: 28,
-                      width: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2.5),
-                    )
-                  else if (pinMessage != null) ...[
-                    Text(pinMessage!, textAlign: TextAlign.center),
-                    TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
-                  ],
-                  const SizedBox(height: 4),
-                  const Text(
-                    'ما تديش الرمز لحد قبل ما تستلم الطلب.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5),
-                  ),
-                ],
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -981,6 +1000,11 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
           const SizedBox(height: 8),
           if (description.isNotEmpty) Text(description),
           Text('الكمية المطلوبة: ${widget.request['quantity'] ?? 1}'),
+          if (specialAttachmentNotice(widget.request) case final notice?)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(notice, style: TextStyle(color: kMuted, fontSize: 12, height: 1.4)),
+            ),
           if (imageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             ClipRRect(
@@ -1053,11 +1077,14 @@ class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
         final data = snapshot.data?.data();
         if (data == null) return const SizedBox.shrink();
         final status = (data['status'] ?? '').toString();
-        final title = status == 'store_confirmed_return'
-            ? 'تم تأكيد رجوع الطلب للمحل'
-            : status == 'returned_to_store'
-                ? 'المندوب رجّع الطلب — بانتظار تأكيد المحل'
-                : 'تعذر التسليم — جارٍ إرجاع الطلب للمحل';
+        final title = switch (status) {
+          'store_confirmed_return' => 'تم تأكيد رجوع الطلب للمحل',
+          'returned_to_store' => 'المندوب رجّع الطلب — بانتظار تأكيد المحل',
+          'return_to_store' => 'تعذر التسليم — جارٍ إرجاع الطلب للمحل',
+          'retry' => 'هيتم إعادة محاولة تسليم الطلب',
+          'resolved' => 'تم استئناف التوصيل',
+          _ => 'تم تسجيل بلاغ تعذر التسليم',
+        };
         final reason = reasons[(data['reason'] ?? '').toString()] ?? 'تعذر التسليم';
         final note = (data['note'] ?? '').toString().trim();
         return Card(
@@ -1078,3 +1105,12 @@ class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
     );
   }
 }
+
+
+/// رمز التسليم بيظهر للعميل من أول الطلب (جديد/بيتجهز/في الطريق) لحد ما يتسلّم أو يتلغي.
+/// الرمز ثابت للطلب حتى لو اتعدّل (بيتحسب من رقم الطلب في الـWorker).
+bool orderShowsDeliveryPin(AppOrder o) =>
+    (o.status == OrderStatus.newOrder ||
+        o.status == OrderStatus.preparing ||
+        o.status == OrderStatus.onTheWay) &&
+    o.customerConfirmedAt == null;

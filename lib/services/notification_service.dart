@@ -9,6 +9,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
+import '../screens/quick_courier_order_page.dart';
+import '../screens/quick_courier_orders_page.dart';
+import '../screens/quick_order_customer_detail_page.dart';
 import '../models/app_role.dart';
 import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
@@ -82,7 +85,13 @@ class NotificationService {
   /// Synchronize the courier push topic using the already-loaded, verified role.
   /// No additional Firestore reads or listeners. Do not subscribe based on a
   /// cached role: RoleGate invokes this only after RoleService.load() completes.
-  static Future<void> syncCourierTopic({required bool isCourier}) async {
+  static bool _verifiedQuickCourier = false;
+
+  static Future<void> syncCourierTopic({
+    required bool isCourier,
+    required bool isQuickCourier,
+  }) async {
+    _verifiedQuickCourier = isCourier && isQuickCourier;
     _verifiedCourierRole = isCourier;
     if (!_supported || FirebaseAuth.instance.currentUser == null) return;
     if (!await hasPermission()) return;
@@ -92,6 +101,11 @@ class NotificationService {
         await messaging.subscribeToTopic('couriers');
       } else {
         await messaging.unsubscribeFromTopic('couriers');
+      }
+      if (_verifiedQuickCourier) {
+        await messaging.subscribeToTopic('quick_couriers');
+      } else {
+        await messaging.unsubscribeFromTopic('quick_couriers');
       }
     } catch (e) {
       debugPrint('تعذر تحديث اشتراك إشعارات المندوب: $e');
@@ -137,7 +151,10 @@ class NotificationService {
       await messaging.subscribeToTopic('app_updates');
       final verifiedRole = _verifiedCourierRole;
       if (verifiedRole != null) {
-        await syncCourierTopic(isCourier: verifiedRole);
+        await syncCourierTopic(
+          isCourier: verifiedRole,
+          isQuickCourier: _verifiedQuickCourier,
+        );
       }
       final verifiedAdmin = _verifiedAdminRole;
       if (verifiedAdmin != null) {
@@ -184,6 +201,7 @@ class NotificationService {
     _opened = null;
     _tokenRefresh = null;
     _verifiedCourierRole = null;
+    _verifiedQuickCourier = false;
     _verifiedAdminRole = null;
     if (!_supported) return;
 
@@ -192,6 +210,7 @@ class NotificationService {
       final messaging = FirebaseMessaging.instance;
       await messaging.unsubscribeFromTopic('couriers');
       await messaging.unsubscribeFromTopic('admins');
+      await messaging.unsubscribeFromTopic('quick_couriers');
       await messaging.unsubscribeFromTopic('all');
     } catch (e) {
       debugPrint('تعذر إلغاء اشتراكات الإشعارات: $e');
@@ -253,11 +272,21 @@ class NotificationService {
       ));
       return;
     }
-    if (type == 'available_order') {
+    if (type == 'store_order_update') {
+      activePanel.value = AppRole.storeOwner;
+      return;
+    }
+    if (type == 'available_order' || type == 'courier_order_update') {
       // This is an unassigned order. Couriers may view the available-order
       // queue, but not the private order details until assigned.
       // RoleGate only activates panels held by the signed-in user.
       activePanel.value = AppRole.courier;
+      return;
+    }
+    if (type == 'quick_order') {
+      rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
+        builder: (_) => const QuickCourierOrdersPage(),
+      ));
       return;
     }
     _openOrder(message);
@@ -269,7 +298,11 @@ class NotificationService {
     final navigator = rootNavigatorKey.currentState;
     if (navigator == null) return;
     navigator.push(MaterialPageRoute<void>(
-      builder: (_) => OrderDetailsPage(orderId: orderId),
+      builder: (_) => switch (message.data['type']) {
+        'quick_customer_update' => QuickOrderCustomerDetailPage(orderId: orderId),
+        'quick_courier_update' => QuickCourierOrderPage(orderId: orderId),
+        _ => OrderDetailsPage(orderId: orderId),
+      },
     ));
   }
 
@@ -282,6 +315,17 @@ class NotificationService {
     ].whereType<String>().where((s) => s.isNotEmpty);
     if (parts.isEmpty) return;
 
+    final type = (message.data['type'] ?? '').toString();
+    final orderId = (message.data['orderId'] ?? '').toString().trim();
+    final actionLabel = switch (type) {
+      'available_order' || 'quick_order' => 'عرض الطلبات المتاحة',
+      'store_order_update' || 'courier_order_update' => 'عرض الطلبات',
+      'app_update' => 'تحديث الآن',
+      'admin_inbox' => 'فتح صندوق الإدارة',
+      'support_chat' => null,
+      _ => orderId.isEmpty ? null : 'عرض الطلب',
+    };
+
     messengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
@@ -289,18 +333,12 @@ class NotificationService {
           content: Text(parts.join(' — ')),
           duration: const Duration(seconds: 6),
           behavior: SnackBarBehavior.floating,
-          action: (message.data['orderId'] ?? '').toString().isNotEmpty
-              ? SnackBarAction(
-                  label: 'عرض الطلب', onPressed: () => _openOrder(message))
-              : (message.data['type'] == 'support_chat'
-                  ? SnackBarAction(
-                      label: 'فتح المحادثة',
-                      onPressed: () => _openMessage(message))
-                  : (message.data['type'] == 'app_update'
-                      ? SnackBarAction(
-                          label: 'تحديث الآن',
-                          onPressed: () => _openMessage(message))
-                      : null)),
+          action: actionLabel == null
+              ? null
+              : SnackBarAction(
+                  label: actionLabel,
+                  onPressed: () => _openMessage(message),
+                ),
         ),
       );
   }
