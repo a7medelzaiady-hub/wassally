@@ -1983,11 +1983,17 @@ async function cleanupOrderAttachmentsFor(
   if (!special) return response({ cleaned: true, alreadyClean: true });
   if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
 
+  const currentDocument = doc.updateTime
+    ? { updateTime: doc.updateTime }
+    : { exists: true };
   const markFailed = async () => {
-    special.cleanupStatus = "failed";
     await commitFirestoreWrites(env, token, [{
-      update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-      updateMask: { fieldPaths: ["specialRequest"] },
+      update: {
+        name: doc.name,
+        fields: encodeFields({ specialRequest: { cleanupStatus: "failed" } }),
+      },
+      updateMask: { fieldPaths: ["specialRequest.cleanupStatus"] },
+      currentDocument,
     }]);
   };
   const assets: Array<{ url: string; resourceType: string }> = [];
@@ -2044,7 +2050,7 @@ async function cleanupOrderAttachmentsFor(
   await commitFirestoreWrites(env, token, [{
     update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
     updateMask: { fieldPaths: ["specialRequest"] },
-    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+    currentDocument,
   }]);
   return response({ cleaned: true, orderId });
 }
