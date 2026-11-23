@@ -10,6 +10,12 @@ on:
     branches: [ "main", "codex/pr1-safe-integration-20261115" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      server_orders:
+        description: Use the Worker order gateway in the test APK
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -53,12 +59,12 @@ jobs:
       run: flutter test
 
     # Compile-time canary only: verify the app recognizes the secure Worker order mode.
-    # The installable debug APK below remains on the legacy path until production is verified.
     - name: Test serverOrders-enabled gateway configuration
       run: flutter test --dart-define=WASALLY_SERVER_ORDERS=true test/services/order_gateway_test.dart
 
     # تفريغ مساحة من الأدوات غير المطلوبة قبل تنزيل NDK وبناء Android.
     - name: Free disk space before Android build
+      if: github.event_name == 'workflow_dispatch'
       run: |
         sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
         sudo rm -rf /usr/local/lib/android/sdk/system-images
@@ -70,9 +76,11 @@ jobs:
     # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
+      if: github.event_name == 'workflow_dispatch'
       run: mkdir -p "$HOME/.android"
 
     - name: Restore stable Android debug keystore
+      if: github.event_name == 'workflow_dispatch'
       id: android-debug-key
       uses: actions/cache/restore@v5
       with:
@@ -80,7 +88,7 @@ jobs:
         key: wasally-android-debug-keystore-v1
 
     - name: Generate stable Android debug keystore when absent
-      if: steps.android-debug-key.outputs.cache-hit != 'true'
+      if: github.event_name == 'workflow_dispatch' && steps.android-debug-key.outputs.cache-hit != 'true'
       run: |
         keytool -genkeypair -v \
           -keystore "$HOME/.android/debug.keystore" \
@@ -89,7 +97,7 @@ jobs:
           -dname "CN=Android Debug,O=Android,C=US"
 
     - name: Save stable Android debug keystore
-      if: steps.android-debug-key.outputs.cache-hit != 'true'
+      if: github.event_name == 'workflow_dispatch' && steps.android-debug-key.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: ~/.android/debug.keystore
@@ -97,16 +105,18 @@ jobs:
 
     # تسجيل الدخول عاد لمسار Firebase Provider القديم؛ لا يحتاج فحص SHA-1 داخل google-services.json.
 
-    # نسخة الاختبار تستخدم Firestore مباشرة؛ serverOrders غير مفعّل حسب سجل الأمان.
-    # لا نوجّهها إلى Worker الإنتاج قبل التحقق من نشره واختبار طلب حقيقي عليه.
+    # نسخة الاختبار اليدوية تستخدم Firestore افتراضيًا، ويمكن اختيار وضع Worker عند التشغيل.
     - name: Build debug APK (retry transient dependency failures)
+      if: github.event_name == 'workflow_dispatch'
       shell: bash
+      env:
+        WASALLY_SERVER_ORDERS: ${{ inputs.server_orders }}
       run: |
         for attempt in 1 2 3; do
           echo "Android build attempt ${attempt}/3"
           if flutter build apk --debug \
             --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
-            --dart-define=WASALLY_SERVER_ORDERS=false; then
+            --dart-define=WASALLY_SERVER_ORDERS="$WASALLY_SERVER_ORDERS"; then
             exit 0
           fi
           if [ "$attempt" -lt 3 ]; then
@@ -117,6 +127,7 @@ jobs:
 
     # اطبع بصمة شهادة APK الفعلية للتأكد من تطابق الملف الناتج.
     - name: Report debug APK signing certificate SHA-1
+      if: github.event_name == 'workflow_dispatch'
       run: |
         APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
         test -n "$APKSIGNER"
@@ -125,6 +136,7 @@ jobs:
     # لازم بصمة التوقيع الفعلية للـ APK تكون مسجّلة في Firebase، وإلا دخول جوجل (الأصلي أو
     # عبر المتصفح) بيفشل. الفحص ده على الـ APK الناتج نفسه مش على الـ keystore بس.
     - name: Verify APK signing certificate is registered in Firebase config
+      if: github.event_name == 'workflow_dispatch'
       run: |
         APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
         APK_SHA1="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
@@ -150,25 +162,10 @@ jobs:
         PY
 
     - name: Upload installable debug APK
+      if: github.event_name == 'workflow_dispatch'
       uses: actions/upload-artifact@v4
       with:
         name: wasally-debug-apk
-        path: build/app/outputs/flutter-apk/app-debug.apk
-        if-no-files-found: error
-        retention-days: 7
-
-    # Separate canary build for one real authenticated Worker order test.
-    # Deploy the Worker source first; the normal debug APK stays on the legacy path.
-    - name: Build serverOrders canary APK
-      run: |
-        flutter build apk --debug \
-          --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
-          --dart-define=WASALLY_SERVER_ORDERS=true
-
-    - name: Upload serverOrders canary APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: wasally-server-orders-canary-apk
         path: build/app/outputs/flutter-apk/app-debug.apk
         if-no-files-found: error
         retention-days: 7

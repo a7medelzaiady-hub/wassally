@@ -1,12 +1,7 @@
 name: Maestro Android UI Smoke
 
 on:
-  # Run once for pull requests; run on push only after changes reach main.
-  # Also run the dedicated Maestro fix PR against the server-orders PR branch.
-  push:
-    branches: [ main, 'ci/**' ]
-  pull_request:
-    branches: [ main, hardening/server-orders-gateway-ci ]
+  workflow_dispatch:
 
 concurrency:
   group: maestro-${{ github.event.pull_request.number || github.ref }}
