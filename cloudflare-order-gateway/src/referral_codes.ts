@@ -12,6 +12,8 @@ export interface VerifiedCodeIssuer {
   channel: ReferralChannel;
   issuedAtMs: number;
   issuedByUid: string;
+  /** Verified admin status, resolved by Worker from trusted roles. */
+  issuerIsAdmin: boolean;
 }
 
 const validId = (id: string) => /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -27,6 +29,14 @@ export function buildReferralCodeReservation(root: string, issuer: VerifiedCodeI
   }
   if (!["customer", "marketer", "store_owner"].includes(issuer.channel)) {
     throw new Error("invalid channel");
+  }
+  if (typeof issuer.issuerIsAdmin !== "boolean") throw new Error("invalid issuer role");
+  if (issuer.channel === "marketer" && !issuer.issuerIsAdmin) {
+    throw new Error("marketer codes require admin issuance");
+  }
+  if (issuer.channel !== "marketer" && !issuer.issuerIsAdmin &&
+      issuer.issuedByUid !== issuer.inviterUid) {
+    throw new Error("cannot issue code for another user");
   }
   if (!Number.isSafeInteger(issuer.issuedAtMs) || issuer.issuedAtMs <= 0) {
     throw new Error("invalid server timestamp");
