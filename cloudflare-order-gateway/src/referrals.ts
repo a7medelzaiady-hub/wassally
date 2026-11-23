@@ -18,6 +18,8 @@ export interface ReferralPolicy {
 export interface ReferralFacts {
   inviterUid: string;
   invitedUid: string;
+  /** Required for store invitations: one award per store, not per owner account. */
+  invitedStoreId?: string;
   channel: ReferralChannel;
   /** Set once on registration; never editable by the invited account. */
   attributedAt: number;
@@ -78,6 +80,9 @@ export function decideReferralReward(
     return { eligible: false, reason: "limit_reached" };
   }
   if (facts.channel === "store_owner") {
+    if (!facts.invitedStoreId || !/^[A-Za-z0-9_-]{1,128}$/.test(facts.invitedStoreId)) {
+      return { eligible: false, reason: "missing_store_identity" };
+    }
     if (!Number.isSafeInteger(facts.storeApprovedAt) ||
         !Number.isSafeInteger(facts.storeActivatedAt) ||
         (facts.storeApprovedAt ?? 0) <= 0 || (facts.storeActivatedAt ?? 0) <= 0 ||
@@ -87,7 +92,7 @@ export function decideReferralReward(
   }
   return {
     eligible: true,
-    grantId: referralGrantId(facts.channel, facts.invitedUid),
+    grantId: referralGrantId(facts.channel, facts.channel === "store_owner" ? facts.invitedStoreId ?? "" : facts.invitedUid),
     amount: policy.amount,
     unit: policy.unit,
   };
