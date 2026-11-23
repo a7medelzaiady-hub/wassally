@@ -39,11 +39,11 @@ export async function verifyFirstOrderReferral(
       !Number.isSafeInteger(firstOrder.completedAtMs) ||
       (firstOrder.completedAtMs as number) <= 0) return null;
   if (attribution.invitedUid !== evidence.invitedUid ||
-      order.customerId !== evidence.invitedUid ||
+      order.userId !== evidence.invitedUid ||
       order.status !== "delivered" ||
-      typeof order.deliveredAtMs !== "number" ||
-      !Number.isSafeInteger(order.deliveredAtMs) ||
-      order.deliveredAtMs !== firstOrder.completedAtMs) return null;
+      typeof order.deliveredAt !== "number" ||
+      !Number.isSafeInteger(order.deliveredAt) ||
+      order.deliveredAt !== firstOrder.completedAtMs) return null;
   const channel = attribution.channel;
   if (channel !== "customer" && channel !== "marketer") return null;
   if (typeof attribution.inviterUid !== "string" ||
@@ -62,7 +62,7 @@ export async function verifyFirstOrderReferral(
     invitedUid: evidence.invitedUid,
     channel,
     attributedAt: attribution.claimedAtMs,
-    firstCompletedOrderAt: order.deliveredAtMs,
+    firstCompletedOrderAt: order.deliveredAt,
     previousAwards,
   });
   if (!decision.eligible) return null;
