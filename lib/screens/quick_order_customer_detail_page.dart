@@ -60,6 +60,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (updated is Map) {
         setState(() { _order = Map<String, dynamic>.from(updated); _error = null; });
       } else {
+        setState(() { _busy = false; });
         await _refresh();
       }
     } catch (e) {
@@ -76,88 +77,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       final result = await QuickOrderApi.deliveryPin(widget.orderId);
       if (!mounted) return;
       final pin = (result['pin'] ?? result['deliveryPin'] ?? '').toString();
-      if (!RegExp(r'^[0-9]{4}
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  static String statusLabel(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' || 'assigned' => 'المندوب استلم الطلب',
-    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
-    'awaiting_advance' => 'بانتظار تأكيد المبلغ المقدم',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' || 'canceled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
-
-  String _money(Object? piastres) =>
-      '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
-
-  @override
-  Widget build(BuildContext context) {
-    final order = _order;
-    final status = (order?['status'] ?? '').toString();
-    final totals = order?['totals'] is Map
-        ? Map<String, dynamic>.from(order!['totals'] as Map)
-        : <String, dynamic>{};
-    final receipts = order?['receipts'] is List ? order!['receipts'] as List : const [];
-    return Scaffold(
-      appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
-        actions: [IconButton(onPressed: _busy ? null : _refresh,
-          icon: const Icon(Icons.refresh), tooltip: 'تحديث')]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
-        if (_busy) const LinearProgressIndicator(),
-        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (order == null)
-          Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
-        else ...[
-          Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
-            Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
-          const Text('الأسعار تقريبية وقد تزيد أو تقل حسب المحل'),
-          if (status == 'summary_pending' || status == 'summary_approved' || status == 'delivered') ...[
-            const Divider(),
-            Text('إجمالي الفواتير: ${_money(totals['purchases'])}'),
-            Text('أجرة التوصيل: ${_money(totals['delivery'])}'),
-            Text('رسوم وصّلي: ${_money(totals['serviceFee'])}'),
-            Text('المقدم: ${_money(totals['prepaid'])}'),
-            Text('المتبقي: ${_money(totals['due'])}',
-              style: Theme.of(context).textTheme.titleLarge),
-            for (final raw in receipts)
-              if (raw is Map && raw['imageUrl'] is String)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('فاتورة: ${_money(raw['amountPiastres'])}'),
-                    Image.network(raw['imageUrl'] as String, height: 180,
-                      errorBuilder: (_, _, _) => const Text('تعذر تحميل صورة الفاتورة')),
-                  ])),
-          ],
-          if (status == 'summary_pending') ...[
-            const SizedBox(height: 12),
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act(true),
-              child: const Text('موافق على الحساب النهائي')),
-            OutlinedButton(onPressed: _busy ? null : () => _act(false),
-              child: const Text('مش موافق — راجع الحساب مع المندوب')),
-          ],
-          if (status == 'summary_approved') ...[
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : _showPin,
-              child: const Text('إظهار رمز التسليم')),
-            if (_pin != null && _pin!.isNotEmpty)
-              SelectableText(_pin!, style: Theme.of(context).textTheme.headlineMedium),
-          ],
-        ],
-      ]),
-    );
-  }
-}
-).hasMatch(pin)) {
+      if (pin.length != 4 || !RegExp(r'^[0-9]{4}').hasMatch(pin)) {
         throw StateError('تعذر عرض رمز التسليم. حاول التحديث مرة أخرى.');
       }
       setState(() { _pin = pin; _error = null; });
