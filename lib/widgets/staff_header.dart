@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 
 
 import '../screens/info_pages.dart' show openWasallyWhatsApp;
-import '../services/auth_service.dart';
 import '../screens/main_shell.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
-import 'dialogs.dart';
 import 'panel_switcher.dart';
 
 /// هيدر شاشات المدير والمندوب: العنوان + عرض كعميل + تسجيل خروج.
@@ -20,17 +18,6 @@ class StaffHeader extends StatelessWidget {
     required this.subtitle,
     this.isAdmin = false,
   });
-
-  Future<void> _logout(BuildContext context) async {
-    final ok = await confirmDialog(
-      context,
-      title: 'تسجيل خروج',
-      message: 'متأكد إنك عايز تسجّل خروج؟',
-      confirmLabel: 'خروج',
-      destructive: true,
-    );
-    if (ok && context.mounted) await AuthService.signOut(context);
-  }
 
   Widget _btn({
     required String tooltip,
