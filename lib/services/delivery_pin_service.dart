@@ -43,7 +43,11 @@ class DeliveryPinService {
     final clean = normalize(pin);
     if (clean == null) throw DeliveryPinError('اكتب رمز من 4 أرقام.', 'pin_invalid');
     final body = await _call('POST', orderId, 'deliver', {'pin': clean});
-    return body['delivered'] == true;
+    final delivered = body['delivered'];
+    if (delivered is! bool) {
+      throw DeliveryPinError('رد تأكيد التسليم غير صحيح. تحقق من حالة الطلب وحاول مرة أخرى.', 'bad_response');
+    }
+    return delivered;
   }
 
   static Future<Map<String, dynamic>> _call(
