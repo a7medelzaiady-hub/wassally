@@ -136,7 +136,9 @@ void main() {
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
 
     final mapButton = find.text('افتح الخريطة');
+    ScaffoldMessenger.of(tester.element(mapButton)).removeCurrentSnackBar();
     await tester.ensureVisible(mapButton);
+    await tester.pumpAndSettle();
     await tester.tap(mapButton);
     await tester.pumpAndSettle();
 
