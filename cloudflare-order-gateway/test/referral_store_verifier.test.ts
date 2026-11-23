@@ -13,7 +13,7 @@ const docs: Record<string, Record<string, unknown>> = {
   },
   "storeOwners/owner2": { storeId: sv("store1"), active: bv(true) },
   "storeOwners/owner1": { storeId: sv("originalStore"), active: bv(true) },
-  "stores/store1": { active: bv(true), approved: bv(true), approvedAtMs: iv(110), activatedAtMs: iv(120) },
+  "stores/store1": { ownerUid: sv("owner2"), active: bv(true), approved: bv(true), approvedAtMs: iv(110), activatedAtMs: iv(120) },
   "orders/order1": { storeId: sv("store1"), status: sv("delivered"), deliveredAt: { timestampValue: "1970-01-01T00:00:00.200Z" } },
   "referral_store_first_orders/store1": {
     invitedStoreId: sv("store1"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(200),
@@ -80,6 +80,16 @@ describe("store referral verification", () => {
       delete docs["storeOwners/owner1"];
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs["storeOwners/owner1"] = original; }
+  });
+  it("rejects mismatched canonical store ownerUid despite storeOwners mapping", async () => {
+    const original = docs["stores/store1"]!;
+    try {
+      docs["stores/store1"] = { ...original, ownerUid: sv("someoneElse") };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      const { ownerUid: _removed, ...missingOwner } = original;
+      docs["stores/store1"] = missingOwner;
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+    } finally { docs["stores/store1"] = original; }
   });
   it("rejects unapproved or inactive stores", async () => {
     const original = docs["stores/store1"]!;
