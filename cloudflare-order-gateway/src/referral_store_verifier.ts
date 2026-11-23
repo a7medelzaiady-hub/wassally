@@ -50,10 +50,16 @@ export async function verifyStoreReferral(
 
   // An attribution naming an owner is not proof that the owner owns this store.
   // Verify the canonical store-owner assignment in the same transaction.
-  const invitedOwnerRaw = await read("storeOwners", attribution.invitedUid);
-  if (!invitedOwnerRaw) return null;
+  const [invitedOwnerRaw, inviterOwnerRaw] = await Promise.all([
+    read("storeOwners", attribution.invitedUid),
+    read("storeOwners", attribution.inviterUid),
+  ]);
+  if (!invitedOwnerRaw || !inviterOwnerRaw) return null;
   const invitedOwner = decodeFirestoreReferralFields(invitedOwnerRaw);
-  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active !== true) return null;
+  const inviterOwner = decodeFirestoreReferralFields(inviterOwnerRaw);
+  if (invitedOwner.storeId !== evidence.invitedStoreId || invitedOwner.active !== true ||
+      inviterOwner.active !== true || typeof inviterOwner.storeId !== "string" ||
+      !validId(inviterOwner.storeId)) return null;
 
   const balanceRaw = await read("referral_balances", attribution.inviterUid);
   let previousAwards = 0;
