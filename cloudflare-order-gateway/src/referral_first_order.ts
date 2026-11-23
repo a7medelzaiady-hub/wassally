@@ -35,12 +35,15 @@ export async function verifyFirstOrderReferral(
   const settings = parseReferralSettings(decodeFirestoreReferralFields(settingsRaw));
   const firstOrder = decodeFirestoreReferralFields(firstOrderRaw);
   if (firstOrder.invitedUid !== evidence.invitedUid ||
-      firstOrder.firstCompletedOrderId !== evidence.firstOrderId) return null;
+      firstOrder.firstCompletedOrderId !== evidence.firstOrderId ||
+      !Number.isSafeInteger(firstOrder.completedAtMs) ||
+      (firstOrder.completedAtMs as number) <= 0) return null;
   if (attribution.invitedUid !== evidence.invitedUid ||
       order.customerId !== evidence.invitedUid ||
       order.status !== "delivered" ||
       typeof order.deliveredAtMs !== "number" ||
-      !Number.isSafeInteger(order.deliveredAtMs)) return null;
+      !Number.isSafeInteger(order.deliveredAtMs) ||
+      order.deliveredAtMs !== firstOrder.completedAtMs) return null;
   const channel = attribution.channel;
   if (channel !== "customer" && channel !== "marketer") return null;
   if (typeof attribution.inviterUid !== "string" ||
