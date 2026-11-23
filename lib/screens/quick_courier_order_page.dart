@@ -223,7 +223,18 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         child: Row(
           children: [
             Expanded(child: Text(label, style: TextStyle(fontSize: bold ? 17 : 15))),
-            Text(value, style: TextStyle(fontSize: bold ? 18 : 15, fontWeight: bold ? FontWeight.w900 : FontWeight.w600)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                softWrap: true,
+                style: TextStyle(
+                  fontSize: bold ? 18 : 15,
+                  fontWeight: bold ? FontWeight.w900 : FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       );
