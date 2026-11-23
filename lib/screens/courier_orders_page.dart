@@ -222,7 +222,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
         ),
       );
 
-  Widget _statsCard(int availableToday, DeliveryStats today) {
+  Widget _statsCard(int availableCount, DeliveryStats today) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
@@ -232,7 +232,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
           _stat(
             Icons.inventory_2_outlined,
             'متاحة',
-            '$availableToday',
+            '$availableCount',
             Brand.green,
           ),
           _stat(
@@ -292,14 +292,6 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                   stream: _available,
                   builder: (context, avSnap) {
                     final available = avSnap.data ?? const <AppOrder>[];
-                    final today = startOfToday();
-                    final availableToday = available
-                        .where(
-                          (o) =>
-                              o.createdAt == null ||
-                              !o.createdAt!.isBefore(today),
-                        )
-                        .length;
                     final current = mine.where(_isCurrent).toList();
                     final completed = mine
                         .where((o) =>
@@ -333,7 +325,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                 child: Center(child: CircularProgressIndicator()),
                               );
                             }
-                            return _statsCard(availableToday, statsSnap.data!);
+                            return _statsCard(available.length, statsSnap.data!);
                           },
                         ),
                         Container(
@@ -1080,6 +1072,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   Widget build(BuildContext context) {
     final o = _o;
     final next = o.status.courierNext;
+    final statusLabel = o.status == OrderStatus.onTheWay &&
+            o.customerConfirmedAt != null
+        ? 'تم التسليم • تسوية النقدية'
+        : o.status.label;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1110,7 +1106,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           ),
           const SizedBox(height: 8),
           Text(
-            'طلب ${_courierOrderNumber(o.id)} • ${o.status.label}',
+            'طلب ${_courierOrderNumber(o.id)} • $statusLabel',
             style: TextStyle(fontSize: 12, color: kMuted),
           ),
           if (o.area.trim().isNotEmpty) ...[
