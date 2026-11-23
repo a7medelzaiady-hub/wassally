@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
 import '../theme/brand.dart';
+import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
@@ -174,17 +175,6 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     }
   }
 
-  static String statusLabel(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' || 'assigned' => 'المندوب استلم الطلب',
-    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
-    'awaiting_advance' => 'بانتظار تأكيد المبلغ المقدم',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' || 'canceled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
 
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
@@ -210,7 +200,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (order == null)
           Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
         else ...[
-          Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
+          Text('الحالة: ${quickOrderStatusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           if (area.isNotEmpty) Text('المنطقة: $area'),
           const Text('محتويات الطلب', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
