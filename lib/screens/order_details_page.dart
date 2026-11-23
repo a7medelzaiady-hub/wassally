@@ -163,7 +163,13 @@ class _DetailsWithContactState extends State<_DetailsWithContact> {
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
-    if (widget.order.customerConfirmedAt != null) {
+    final request = widget.order.specialRequest;
+    if (widget.order.customerConfirmedAt != null &&
+        request != null &&
+        request['cleanupStatus'] != 'deleted' &&
+        const ['imageUrl', 'voiceUrl', 'voiceBase64'].any(
+          (key) => request[key] is String && (request[key] as String).isNotEmpty,
+        )) {
       OrderService.cleanupConfirmedAttachments(widget.order.id).catchError((_) {});
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPin());
