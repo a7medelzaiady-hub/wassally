@@ -65,6 +65,7 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
   String? _error;
   List<QuickCourierOrder> _open = const [];
   List<QuickCourierOrder> _mine = const [];
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -73,20 +74,22 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final results = await Future.wait([widget.backend.loadOpen(), widget.backend.loadMine()]);
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _open = results[0];
         _mine = results[1];
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = 'تعذر تحميل الطلبات السريعة. تأكد إن حسابك معتمد وحاول تاني.';

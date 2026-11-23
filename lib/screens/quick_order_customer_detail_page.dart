@@ -27,6 +27,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   }
 
   Future<void> _refresh() async {
+    if (_busy) return;
     setState(() { _busy = true; _error = null; });
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -59,6 +60,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (updated is Map) {
         setState(() { _order = Map<String, dynamic>.from(updated); _error = null; });
       } else {
+        setState(() { _busy = false; });
         await _refresh();
       }
     } catch (e) {
@@ -69,11 +71,16 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   }
 
   Future<void> _showPin() async {
-    setState(() => _busy = true);
+    if (_busy) return;
+    setState(() { _busy = true; _error = null; });
     try {
       final result = await QuickOrderApi.deliveryPin(widget.orderId);
       if (!mounted) return;
-      setState(() => _pin = (result['pin'] ?? result['deliveryPin'] ?? '').toString());
+      final pin = (result['pin'] ?? result['deliveryPin'] ?? '').toString();
+      if (pin.length != 4 || !RegExp(r'^[0-9]{4}').hasMatch(pin)) {
+        throw StateError('تعذر عرض رمز التسليم. حاول التحديث مرة أخرى.');
+      }
+      setState(() { _pin = pin; _error = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
