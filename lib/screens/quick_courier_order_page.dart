@@ -513,7 +513,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           _card(children: const [
             Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
             SizedBox(height: 8),
-            Text('تم التسليم', textAlign: TextAlign.center,
+            Text('الطلب اتسلّم', textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ]),
           if (o.totals != null) _totalsCard(o.totals!, delivered: true),
