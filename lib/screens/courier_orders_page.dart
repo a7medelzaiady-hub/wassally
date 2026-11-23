@@ -980,17 +980,20 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   }
 
   Future<void> _call() async {
-    final phone = _contact?.phone ?? '';
+    final phone = _contact?.phone.trim() ?? '';
     if (!_canSeeContact || phone.isEmpty) return;
-    final uri = Uri.parse('tel:$phone');
+    // Keep phone characters such as # and ? in the dialer number.
+    final uri = Uri(scheme: 'tel', path: phone);
     try {
-      await launchUrl(uri);
+      if (await launchUrl(uri)) return;
     } catch (_) {
-      await Clipboard.setData(ClipboardData(text: phone));
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('تم نسخ الرقم')));
-      }
+      // Some devices throw instead of returning false when no dialer is available.
+    }
+    if (!mounted || !_canSeeContact) return;
+    await Clipboard.setData(ClipboardData(text: phone));
+    if (mounted && _canSeeContact) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('تعذر فتح الاتصال؛ تم نسخ الرقم')));
     }
   }
 
