@@ -526,9 +526,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                 child: Text(_error!, textAlign: TextAlign.center),
               ),
               if (o != null) ...[
-                _requestCard(o),
+                if (o.step == QuickCourierStep.available) _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
+                if (o.step != QuickCourierStep.available) _requestCard(o),
               ],
             ],
           ),
