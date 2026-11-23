@@ -27,6 +27,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   }
 
   Future<void> _refresh() async {
+    if (_busy) return;
     setState(() { _busy = true; _error = null; });
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -69,7 +70,8 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   }
 
   Future<void> _showPin() async {
-    setState(() => _busy = true);
+    if (_busy) return;
+    setState(() { _busy = true; _error = null; });
     try {
       final result = await QuickOrderApi.deliveryPin(widget.orderId);
       if (!mounted) return;
