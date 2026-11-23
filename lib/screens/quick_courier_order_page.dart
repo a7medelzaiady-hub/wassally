@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/quick_courier_order.dart';
+import '../services/delivery_pin_service.dart';
 import '../services/quick_courier_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
@@ -473,7 +474,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ];
 
       case QuickCourierStep.deliver:
-        final pin = _pinCtrl.text.trim();
+        final pin = DeliveryPinService.normalize(_pinCtrl.text);
         return [
           if (o.totals != null) _totalsCard(o.totals!, title: 'العميل وافق على الكشف ✅'),
           _card(children: [
@@ -486,7 +487,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
               maxLength: 4,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
               style: const TextStyle(fontSize: 30, letterSpacing: 12, fontWeight: FontWeight.w900),
               decoration: const InputDecoration(counterText: '', border: OutlineInputBorder()),
             ),
@@ -494,7 +495,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           _bigButton(
             'تم التسليم',
             Icons.done_all,
-            o.canEnterPin && RegExp(r'^\d{4}$').hasMatch(pin)
+            o.canEnterPin && pin != null
                 ? () => _act('deliver', {'pin': pin}, 'تم التسليم. شكرًا!')
                 : null,
             key: const Key('quick-deliver'),
