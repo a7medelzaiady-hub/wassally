@@ -492,8 +492,9 @@ function documentPath(projectId: string, path: string): string {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
 }
 
-async function getDocument(env: Env, path: string, token: string): Promise<FirestoreDoc | null> {
+async function getDocument(env: Env, path: string, token: string, signal?: AbortSignal): Promise<FirestoreDoc | null> {
   const result = await fetch(documentPath(env.FIREBASE_PROJECT_ID, path), {
+    signal,
     headers: { Authorization: `Bearer ${token}` },
   });
   if (result.status === 404) return null;
@@ -2528,19 +2529,73 @@ async function readJsonBody(request: Request): Promise<JsonMap> {
   return body as JsonMap;
 }
 
-export function quickTopicMessage(orderId: string, storesCount: number, area: string) {
+function quickTopicMessage() {
   return {
     message: {
       topic: "quick_couriers",
       notification: {
-        title: "طلب سريع جديد #" + orderId.slice(-5).toUpperCase(),
-        body: `${storesCount} محل${area ? " • " + area.slice(0, 40) : ""} • افتح التطبيق لقبول الطلب`,
+        title: "طلب سريع جديد",
+        body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
       },
-      data: { type: "quick_order", orderId },
+      data: { type: "quick_order" },
       android: { priority: "HIGH", ttl: "300s", notification: { sound: "default" } },
     },
   };
 }
+
+async function notifyQuickParticipant(
+  env: Env,
+  token: string,
+  recipient: unknown,
+  orderId: string,
+  type: "quick_customer_update" | "quick_courier_update",
+  title: string,
+): Promise<void> {
+  if (typeof recipient !== "string" || !recipient) return;
+  try {
+    const signal = AbortSignal.timeout(4_000);
+    const user = await getDocument(env, `users/${encodeURIComponent(recipient)}`, token, signal);
+    const tokens = user ? decodeFields(user.fields ?? {}).fcmTokens : null;
+    if (!Array.isArray(tokens)) return;
+    const devices = [...new Set(tokens.filter(
+      (value): value is string => typeof value === "string" && value.length > 0 && value.length <= 4096,
+    ))].slice(-10);
+    const sent = await Promise.allSettled(devices.map((device) =>
+      fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+        method: "POST",
+        signal,
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token: device,
+            notification: { title, body: "افتح وصّلي لمراجعة تفاصيل الطلب." },
+            data: { type, orderId },
+            android: { priority: "HIGH", notification: { sound: "default" } },
+          },
+        }),
+      }),
+    ));
+    if (sent.some((result) => result.status === "rejected" || !result.value.ok)) {
+      console.error("Quick participant push failed");
+    }
+  } catch {
+    console.error("Quick participant push failed");
+  }
+}
+
+const quickCustomerUpdates: Readonly<Record<string, string>> = {
+  accept: "مندوب قبل طلبك السريع",
+  release: "طلبك السريع بيدوّر على مندوب تاني",
+  "advance-received": "المندوب أكّد استلام المقدم",
+  "submit-summary": "كشف حساب طلبك السريع جاهز للمراجعة",
+};
+
+const quickCourierUpdates: Readonly<Record<string, string>> = {
+  "advance-sent": "العميل سجّل تحويل المقدم",
+  "approve-summary": "العميل وافق على كشف الحساب",
+  "reject-summary": "العميل طلب مراجعة كشف الحساب",
+  cancel: "تم إلغاء الطلب السريع",
+};
 
 /** POST /v1/quick — العميل ينشئ طلب سريع. نفس معرّف الطلب مرتين = نفس الطلب (مفيش تكرار). */
 async function createQuickOrder(request: Request, env: Env): Promise<Response> {
@@ -2626,7 +2681,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
     const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify(quickTopicMessage(orderId, stores!.length, area)),
+      body: JSON.stringify(quickTopicMessage()),
     });
     if (!sent.ok) console.error("Quick courier push failed", sent.status);
   } catch (error) {
@@ -2682,6 +2737,17 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
     updateMask: { fieldPaths: Object.keys(patch!) },
     currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
   }]);
+  const customerTitle = quickCustomerUpdates[action] ??
+    (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
+  const courierTitle = quickCourierUpdates[action];
+  await Promise.all([
+    customerTitle && notifyQuickParticipant(
+      env, token, order.userId, orderId, "quick_customer_update", customerTitle,
+    ),
+    courierTitle && notifyQuickParticipant(
+      env, token, order.courierId, orderId, "quick_courier_update", courierTitle,
+    ),
+  ]);
   return response({ orderId, order: { ...order, ...patch! } });
 }
 
@@ -2764,6 +2830,9 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
   }];
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  await notifyQuickParticipant(
+    env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
+  );
   return response({ orderId, delivered: true, order: { ...order, ...patch } });
 }
 

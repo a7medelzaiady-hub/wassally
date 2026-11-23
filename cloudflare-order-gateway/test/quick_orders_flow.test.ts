@@ -136,6 +136,7 @@ describe("POST /v1/quick (create)", () => {
     expect(writes[1].update.name).toBe(prefix + `quick_orders/${ID}/private/contact`);
     expect(writes[2].update.name).toBe(prefix + "quickLimits/cust1");
     expect(pushes[0].message.topic).toBe("quick_couriers");
+    expect(pushes[0].message.data).toEqual({ type: "quick_order" });
     expect(JSON.stringify(pushes[0])).not.toContain("01012345678");
   });
 
@@ -193,6 +194,7 @@ describe("POST /v1/quick/:id/:action", () => {
     firebase({
       [`quick_orders/${ID}`]: openOrder(),
       "couriers/cour1": { name: "Mido", active: true, quickEnabled: true },
+      "users/cust1": { fcmTokens: ["customer-device", "customer-device"] },
     });
     const res = await call("cour1", `/v1/quick/${ID}/accept`, {});
     expect(res.status).toBe(200);
@@ -200,6 +202,9 @@ describe("POST /v1/quick/:id/:action", () => {
     expect(write.currentDocument).toEqual({ updateTime: UPDATE_TIME });
     expect(write.updateMask.fieldPaths).toContain("courierId");
     expect(((await res.json()) as { order: { status: string } }).order.status).toBe("accepted");
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].message.token).toBe("customer-device");
+    expect(pushes[0].message.data).toEqual({ type: "quick_customer_update", orderId: ID });
   });
 
   it("a concurrent accept that loses the race gets 409 conflict", async () => {

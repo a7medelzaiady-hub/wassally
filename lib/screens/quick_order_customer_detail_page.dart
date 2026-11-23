@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
 import '../theme/brand.dart';
+import '../utils/dialog_controllers.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -46,15 +47,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     }
   }
 
-  Future<void> _act(bool approve) async {
-    final order = _order;
-    if (order == null || _busy) return;
-    setState(() => _busy = true);
+  Future<void> _act(
+    String action, [
+    Map<String, dynamic> body = const {},
+  ]) async {
+    if (_order == null || _busy) return;
+    setState(() { _busy = true; _error = null; });
     try {
-      final result = approve
-          ? await QuickOrderApi.approveSummary(widget.orderId,
-              (order['summaryRevision'] as num?)?.toInt() ?? -1)
-          : await QuickOrderApi.rejectSummary(widget.orderId);
+      final result = await QuickOrderApi.action(widget.orderId, action, body);
       if (!mounted) return;
       final updated = result['order'];
       if (updated is Map) {
@@ -68,6 +68,92 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _edit() async {
+    final order = _order;
+    if (order == null || _busy || order['status'] != 'open') return;
+    final rawStores = order['stores'];
+    if (rawStores is! List || rawStores.isEmpty) return;
+    final stores = rawStores.whereType<Map>().map(Map<String, dynamic>.from).toList();
+    if (stores.isEmpty) return;
+    final names = [
+      for (final store in stores)
+        TextEditingController(text: (store['name'] ?? '').toString()),
+    ];
+    final items = [
+      for (final store in stores)
+        TextEditingController(text: (store['items'] ?? '').toString()),
+    ];
+    final notes = TextEditingController(text: (order['notes'] ?? '').toString());
+    final updated = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('تعديل الطلب السريع'),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < stores.length; i++) ...[
+              TextField(
+                controller: names[i],
+                decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)'),
+              ),
+              TextField(
+                controller: items[i],
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'الأصناف المكتوبة'),
+              ),
+            ],
+            TextField(
+              controller: notes,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'ملاحظات للمندوب'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('رجوع'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, {
+              'stores': [
+                for (var i = 0; i < stores.length; i++)
+                  {...stores[i], 'name': names[i].text.trim(), 'items': items[i].text.trim()},
+              ],
+              'notes': notes.text.trim(),
+            }),
+            child: const Text('حفظ التعديل'),
+          ),
+        ],
+      ),
+    );
+    for (final controller in [...names, ...items, notes]) {
+      disposeAfterDialogCloses(controller);
+    }
+    if (mounted && updated != null) await _act('edit', updated);
+  }
+
+  Future<void> _cancel() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: const Text('تلغي الطلب السريع؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialog, false),
+            child: const Text('رجوع'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, true),
+            child: const Text('إلغاء الطلب'),
+          ),
+        ],
+      ),
+    );
+    if (mounted && confirmed == true) await _act('cancel');
   }
 
   Future<void> _showPin() async {
@@ -164,11 +250,23 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                       errorBuilder: (_, _, _) => const Text('تعذر تحميل صورة الفاتورة')),
                   ])),
           ],
+          if (status == 'open')
+            OutlinedButton(
+              onPressed: _busy ? null : _edit,
+              child: const Text('تعديل الطلب'),
+            ),
+          if (status == 'open' || status == 'accepted')
+            TextButton(
+              onPressed: _busy ? null : _cancel,
+              child: const Text('إلغاء الطلب'),
+            ),
           if (status == 'summary_pending') ...[
             const SizedBox(height: 12),
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act(true),
+            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act('approve-summary', {
+                'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
+              }),
               child: const Text('موافق على الحساب النهائي')),
-            OutlinedButton(onPressed: _busy ? null : () => _act(false),
+            OutlinedButton(onPressed: _busy ? null : () => _act('reject-summary'),
               child: const Text('مش موافق — راجع الحساب مع المندوب')),
           ],
           if (status == 'summary_approved') ...[
