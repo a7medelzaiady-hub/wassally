@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:city_store/models/referral.dart';
 
 void main() {
+  test('generated candidate codes meet format and length constraints', () {
+    for (var i = 0; i < 100; i++) {
+      final code = generateReferralCode();
+      expect(code.length, 8);
+      expect(isReferralCodeFormatValid(code), isTrue);
+    }
+    expect(() => generateReferralCode(length: 5), throwsRangeError);
+    expect(() => generateReferralCode(length: 13), throwsRangeError);
+    expect(normalizeReferralCode(' ab1234 '), 'AB1234');
+  });
+
   test('referral code format is strict and case sensitive', () {
     expect(isReferralCodeFormatValid('ABC123'), isTrue);
     expect(isReferralCodeFormatValid('ABCD12345678'), isTrue);
