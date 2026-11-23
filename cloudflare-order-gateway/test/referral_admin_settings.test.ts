@@ -31,6 +31,9 @@ describe("admin referral policy write plan", () => {
       } },
     }, 2, stamp)).toThrow();
     expect(() => buildAdminReferralSettingsWrite(root, settings, 2, "")).toThrow();
+    expect(() => buildAdminReferralSettingsWrite(root, settings, 2, "2026-11-23T12:00:00")).toThrow();
+    expect(() => buildAdminReferralSettingsWrite(root, settings, 2, "2026-11-23T12:00:00Zjunk")).toThrow();
+    expect(() => buildAdminReferralSettingsWrite(root, settings, 2, "2026-11-23T12:00:00.123456789Z")).not.toThrow();
     expect(() => buildAdminReferralSettingsWrite("bad/root", settings, 2, stamp)).toThrow();
   });
 });
