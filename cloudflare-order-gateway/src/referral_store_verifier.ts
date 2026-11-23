@@ -37,6 +37,7 @@ export async function verifyStoreReferral(
       typeof attribution.invitedUid !== "string" ||
       typeof attribution.claimedAtMs !== "number" ||
       !validId(attribution.inviterUid) || !validId(attribution.invitedUid) ||
+      store.ownerUid !== attribution.invitedUid ||
       store.active !== true || store.approved !== true ||
       !Number.isSafeInteger(store.approvedAtMs) ||
       !Number.isSafeInteger(store.activatedAtMs) ||
