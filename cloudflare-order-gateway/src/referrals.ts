@@ -57,6 +57,7 @@ export function decideReferralReward(
   facts: ReferralFacts,
 ): ReferralDecision {
   if (!policy.enabled) return { eligible: false, reason: "disabled" };
+  if (policy.channel !== facts.channel) return { eligible: false, reason: "channel_mismatch" };
   const allowedUnits: Record<ReferralChannel, readonly RewardUnit[]> = {
     customer: ["points"],
     marketer: ["cash_minor"],
@@ -65,7 +66,6 @@ export function decideReferralReward(
   if (!allowedUnits[policy.channel]?.includes(policy.unit)) {
     return { eligible: false, reason: "invalid_reward_unit" };
   }
-  if (policy.channel !== facts.channel) return { eligible: false, reason: "channel_mismatch" };
   if (!Number.isSafeInteger(policy.amount) || policy.amount <= 0) {
     return { eligible: false, reason: "invalid_amount" };
   }
