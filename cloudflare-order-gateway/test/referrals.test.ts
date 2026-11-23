@@ -30,6 +30,9 @@ describe("referral eligibility (no payout side effects)", () => {
     [{ enabled: false }, {}, "disabled"],
     [{ amount: 0 }, {}, "invalid_amount"],
     [{ amount: 1.5 }, {}, "invalid_amount"],
+    [{ unit: "cash_minor" as const }, {}, "invalid_reward_unit"],
+    [{}, { inviterUid: "bad/id" }, "self_or_missing"],
+    [{}, { invitedUid: "bad/id" }, "self_or_missing"],
     [{ channel: "marketer" as const }, {}, "channel_mismatch"],
     [{}, { inviterUid: "invited" }, "self_or_missing"],
     [{}, { firstCompletedOrderAt: undefined }, "first_order_not_qualified"],
@@ -55,6 +58,9 @@ describe("referral eligibility (no payout side effects)", () => {
     })).toEqual({ eligible: true, grantId: "store_owner_store-001", amount: 100, unit: "commission_discount_minor" });
     expect(decideReferralReward(p, {
       ...f, storeApprovedAt: 120, storeActivatedAt: 210,
+    }).eligible).toBe(false);
+    expect(decideReferralReward(p, {
+      ...f, storeApprovedAt: 210, storeActivatedAt: 150,
     }).eligible).toBe(false);
   });
 
