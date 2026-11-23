@@ -535,7 +535,7 @@ class OrderService {
         'علشان تعدّل طلبك بأمان.',
       );
     }
-    if (serverOrders) {
+    if (serverOrders || order.serviceFee != null) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
       }
@@ -582,6 +582,8 @@ class OrderService {
         if (discount == 0 && order.discount > 0) 'discount': FieldValue.delete(),
         if (discount == 0 && order.discount > 0) 'promoCode': FieldValue.delete(),
         'editedAt': FieldValue.serverTimestamp(),
+        'verifiedTotal': FieldValue.delete(),
+        'verifiedAt': FieldValue.delete(),
         if (order.unavailableItems.isNotEmpty)
           'unavailableItems': FieldValue.delete(),
       });

@@ -1483,7 +1483,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "تم تغيير الطلب بالتزامن. راجع طلباتك قبل إعادة المحاولة.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
@@ -1584,6 +1584,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     customerName,
   });
   delete updatedOrder.unavailableItems;
+  // An approval applies to the previous cart and must be renewed after editing.
+  delete updatedOrder.verifiedTotal;
+  delete updatedOrder.verifiedAt;
   if (discount > 0 && promoCode) {
     updatedOrder.discount = discount;
     updatedOrder.promoCode = promoCode;
@@ -1641,7 +1644,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "حالة الطلب اتغيرت أثناء التعديل. حدّث الصفحة وحاول مرة أخرى.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ تعديل الطلب.");
@@ -2236,7 +2239,7 @@ async function commitOrConflict(env: Env, token: string, writes: unknown[]): Pro
       body: JSON.stringify({ writes }),
     },
   );
-  if (res.status === 409 || res.status === 400) {
+  if ([400, 409, 412].includes(res.status)) {
     throw new HttpError(409, "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.", "conflict");
   }
   if (!res.ok) throw new HttpError(503, "تعذر الحفظ؛ حاول مرة أخرى.");

@@ -569,6 +569,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   AppOrder get _o => widget.order.withContact(_contact);
 
   bool get _canSeeContact =>
+      widget.order.customerConfirmedAt == null &&
       widget.order.courierId == FirebaseAuth.instance.currentUser?.uid &&
       (widget.order.status == OrderStatus.preparing ||
           widget.order.status == OrderStatus.onTheWay);
@@ -586,6 +587,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.order.id != widget.order.id ||
         oldWidget.order.status != widget.order.status ||
+        oldWidget.order.customerConfirmedAt != widget.order.customerConfirmedAt ||
         oldWidget.order.courierId != widget.order.courierId) {
       _contactRequest++;
       _contact = null;

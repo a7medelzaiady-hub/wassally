@@ -455,6 +455,7 @@ class StaffOrderService {
         data['status'] != 'on_the_way' ||
         data['courierId'] != uid ||
         data['courierArrivedAt'] is! Timestamp ||
+        data['customerConfirmedAt'] != null ||
         (data['activeDeliveryIssueId'] ?? '').toString().isNotEmpty) {
       throw StateError('سجّل وصولك للعنوان أولًا، أو حدّث الطلب قبل المحاولة.');
     }

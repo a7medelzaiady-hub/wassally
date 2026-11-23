@@ -417,7 +417,10 @@ service cloud.firestore {
         math.abs(n.total - (n.subtotal + o.deliveryFee - n.get('discount', 0))) < 0.01 &&
         n.notes is string && n.notes.size() <= 500 &&
         n.customerName is string && n.customerName.size() >= 1 && n.customerName.size() <= 30 &&
-        promoOk(n) &&
+        // Preserve existing coupons on legacy orders without allowing a new coupon.
+        (n.get('discount', 0) == 0 ||
+          (o.get('discount', 0) > 0 && n.get('promoCode', '') == o.get('promoCode', '') &&
+           o.subtotal > 0 && n.discount * o.subtotal <= o.discount * n.subtotal && promoOk(n))) &&
         n.get('editedAt', null) == request.time;
     }
 
@@ -724,13 +727,15 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let dm = od.get('deliveryMode', '');
         let editKeys = ['items', 'subtotal', 'total', 'notes', 'discount',
-          'promoCode', 'customerName', 'editedAt', 'unavailableItems'];
+          'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'verifiedTotal', 'verifiedAt'];
         return k.hasOnly(editKeys) ? (
           !securityFlag('serverOrders') &&
+          !('serviceFee' in od) &&
           st in ['new', 'preparing'] &&
           cid == '' &&
           'editedAt' in k &&
           !('unavailableItems' in nd) &&
+          !('verifiedTotal' in nd) && !('verifiedAt' in nd) &&
           validCustomerEdit(nd, od) &&
           (st != 'preparing' || feedUpdatedForCustomerEdit(orderId))
         ) : k.hasOnly(['status']) ? (
@@ -789,6 +794,7 @@ service cloud.firestore {
         ) : k.hasOnly(['activeDeliveryIssueId']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
+          od.get('customerConfirmedAt', null) == null &&
           ( !('activeDeliveryIssueId' in od)
             ? (nai is string && nai.size() > 0 &&
                existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
@@ -992,6 +998,15 @@ service cloud.firestore {
       // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).
       allow delete: if false;
 
+      function canReadOrderContact() {
+        let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return order.get('userId', '') == request.auth.uid ||
+          isAdmin() ||
+          (order.get('courierId', '') == request.auth.uid &&
+            order.get('status', '') in ['preparing', 'on_the_way'] &&
+            order.get('customerConfirmedAt', null) == null && isCourier());
+      }
+
       function customerContactUpdateAllowed(orderId) {
         let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;
         return signedIn() &&
@@ -1007,12 +1022,7 @@ service cloud.firestore {
       //    (preparing / on_the_way). صاحب المحل والمناديب التانيين مفيش لهم وصول.
       //  • الإنشاء: العميل مع طلبه في نفس الـ batch فقط. مفيش تعديل ولا حذف من التطبيق.
       match /private/{doc} {
-        allow read: if signedIn() && doc == 'contact' && (
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
-          isAdmin() ||
-          (isCourier() &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['preparing', 'on_the_way']));
+        allow read: if signedIn() && doc == 'contact' && canReadOrderContact();
         allow create: if signedIn() && doc == 'contact' &&
           !exists(/databases/$(database)/documents/orders/$(orderId)) &&
           existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
@@ -1299,6 +1309,8 @@ service cloud.firestore {
         (order.get('pickedUpAt', null) is timestamp ||
          order.get('courierAt', null) is timestamp) &&
         order.get('courierArrivedAt', null) is timestamp &&
+        order.get('customerConfirmedAt', null) == null &&
+        getAfter(/databases/$(database)/documents/orders/$(d.orderId)).data.get('activeDeliveryIssueId', '') == issueId &&
         order.get('userId', '') == d.customerId &&
         order.get('storeId', '') == d.storeId;
     }
@@ -1356,6 +1368,8 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'on_the_way' &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'cancelled' &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('lastDeliveryIssueId', '') == issueId &&
         request.resource.data.get('status', '') == 'store_confirmed_return' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'storeReceivedAt', 'storeReceivedBy'
