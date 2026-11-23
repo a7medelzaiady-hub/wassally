@@ -39,6 +39,12 @@ export async function verifyFirstOrderReferral(
       !Number.isSafeInteger(firstOrder.completedAtMs) ||
       (firstOrder.completedAtMs as number) <= 0) return null;
   if (attribution.invitedUid !== evidence.invitedUid ||
+      typeof attribution.inviterUid !== "string" ||
+      !validId(attribution.inviterUid) ||
+      attribution.inviterUid === evidence.invitedUid ||
+      !Number.isSafeInteger(attribution.claimedAtMs) ||
+      (attribution.claimedAtMs as number) <= 0 ||
+      (attribution.claimedAtMs as number) > (firstOrder.completedAtMs as number) ||
       order.userId !== evidence.invitedUid ||
       order.status !== "delivered" ||
       typeof order.deliveredAt !== "number" ||
@@ -46,8 +52,6 @@ export async function verifyFirstOrderReferral(
       order.deliveredAt !== firstOrder.completedAtMs) return null;
   const channel = attribution.channel;
   if (channel !== "customer" && channel !== "marketer") return null;
-  if (typeof attribution.inviterUid !== "string" ||
-      typeof attribution.claimedAtMs !== "number") return null;
   const policy = settings.policies[channel as ReferralChannel];
   const balanceRaw = await read("referral_balances", attribution.inviterUid as string);
   const counterField = channel === "customer" ? "customerAwardsCount" : "marketerAwardsCount";
