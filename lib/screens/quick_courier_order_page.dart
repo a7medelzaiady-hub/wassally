@@ -254,7 +254,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ),
       );
 
-  Widget _totalsCard(QuickTotalsView t, {String title = 'الكشف'}) {
+  Widget _totalsCard(
+    QuickTotalsView t, {
+    String title = 'الحساب النهائي',
+    bool delivered = false,
+  }) {
     return _card(children: [
       Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       const SizedBox(height: 6),
@@ -264,8 +268,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       if (t.prepaid > 0) _row('المقدم المحوّل', '- ${formatPiastres(t.prepaid)}'),
       const Divider(),
       t.due >= 0
-          ? _row('تحصّل من العميل', formatPiastres(t.due), bold: true)
-          : _row('ترجّع للعميل', formatPiastres(-t.due), bold: true),
+          ? _row(delivered ? 'المبلغ عند التسليم' : 'تحصّل من العميل',
+              formatPiastres(t.due), bold: true)
+          : _row(delivered ? 'الرد عند التسليم' : 'ترجّع للعميل',
+              formatPiastres(-t.due), bold: true),
     ]);
   }
 
@@ -504,11 +510,13 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
       case QuickCourierStep.delivered:
         return [
-          if (o.totals != null) _totalsCard(o.totals!),
           _card(children: const [
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
-            Text('الطلب اتسلّم', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
+            SizedBox(height: 8),
+            Text('تم التسليم', textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ]),
+          if (o.totals != null) _totalsCard(o.totals!, delivered: true),
         ];
 
       case QuickCourierStep.cancelled:
@@ -528,7 +536,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(o == null ? 'طلب سريع' : quickStepLabel(o.step)),
+          title: const Text('تفاصيل الطلب السريع'),
           actions: [
             if (o != null && o.canRelease)
               TextButton(
@@ -577,6 +585,16 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                   child: Center(child: Text('جاري تحميل تفاصيل الطلب...')),
                 ),
               if (o != null) ...[
+                if (o.step != QuickCourierStep.delivered &&
+                    o.step != QuickCourierStep.cancelled)
+                  _card(children: [
+                    Text(
+                      quickStepLabel(o.step),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ]),
                 if (o.step == QuickCourierStep.available) _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
