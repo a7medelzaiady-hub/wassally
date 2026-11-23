@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/brand.dart';
+import '../utils/quick_order_status.dart';
 import 'quick_order_customer_detail_page.dart';
 
 /// قائمة الطلبات السريعة: قراءة عند الفتح أو التحديث فقط، بدون listener جديد.
@@ -71,7 +72,7 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
                 child: ListTile(
                   leading: Icon(Icons.flash_on, color: Brand.green),
                   title: Text('طلب سريع #${doc.id.length > 8 ? doc.id.substring(0, 8) : doc.id}'),
-                  subtitle: Text(QuickOrderCustomerDetailPageStatus.label(status)),
+                  subtitle: Text(quickOrderStatusLabel(status)),
                   trailing: const Icon(Icons.chevron_left),
                   onTap: () async {
                     await Navigator.of(context).push(MaterialPageRoute<void>(
@@ -87,19 +88,4 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
       },
     ),
   );
-}
-
-/// ترجمة حالات الطلب بدون عرض رموز الـWorker للعميل.
-class QuickOrderCustomerDetailPageStatus {
-  static String label(String status) => switch (status) {
-    'open' => 'بانتظار مندوب',
-    'accepted' || 'assigned' => 'المندوب استلم الطلب',
-    'shopping' || 'purchasing' => 'المندوب بيشتري طلبك',
-    'awaiting_advance' => 'بانتظار تأكيد المبلغ المقدم',
-    'summary_pending' => 'راجع الحساب النهائي',
-    'summary_approved' => 'تمت الموافقة على الحساب',
-    'delivered' => 'تم التسليم',
-    'cancelled' || 'canceled' => 'ملغي',
-    _ => 'جارٍ متابعة الطلب',
-  };
 }

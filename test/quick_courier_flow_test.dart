@@ -204,15 +204,15 @@ void main() {
     expect(find.text('185 ج'), findsOneWidget);
   });
 
-  testWidgets('بعد الموافقة: التسليم بالرمز بس (4 أرقام)', (tester) async {
+  testWidgets('بعد الموافقة: التسليم برمز من 4 أرقام عربية أو إنجليزية', (tester) async {
     final backend = _FakeBackend(_doc('summary_approved', {'totals': _totals, 'summaryRevision': 1}))
       ..next = (_, _) => _doc('delivered', {'totals': _totals});
     await _pumpPage(tester, backend);
     expect(_enabled(tester, const Key('quick-deliver')), isFalse);
-    await tester.enterText(find.byKey(const Key('quick-pin')), '12');
+    await tester.enterText(find.byKey(const Key('quick-pin')), '١2');
     await tester.pumpAndSettle();
     expect(_enabled(tester, const Key('quick-deliver')), isFalse);
-    await tester.enterText(find.byKey(const Key('quick-pin')), '1234');
+    await tester.enterText(find.byKey(const Key('quick-pin')), '١2٣4');
     await tester.pumpAndSettle();
     await _tap(tester, const Key('quick-deliver'));
     expect(backend.calls.single.key, 'deliver');

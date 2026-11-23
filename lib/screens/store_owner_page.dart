@@ -69,6 +69,8 @@ String _priceLine(_Json m, num price, bool available) {
   return b.toString();
 }
 
+const _storeOrderLimit = 100;
+
 /// شاشة صاحب المحل: طلبات محله، أصنافه، وفتح/إغلاق المحل.
 /// الصلاحيات الحقيقية في firestore.rules (isStoreOwner)، والشاشة دي بتعرض بس.
 /// صاحب المحل ما يشوفش عنوان العميل ولا رقمه في الشاشة (المحل مش محتاجهم).
@@ -89,7 +91,7 @@ class StoreOwnerPage extends StatelessWidget {
       return _PendingStoreSetup(storeId: storeId, name: name);
     }
     return StreamBuilder<List<AppOrder>>(
-      stream: StaffOrderService.watchForStore(storeId, limit: 100),
+      stream: StaffOrderService.watchForStore(storeId, limit: _storeOrderLimit),
       builder: (context, snapshot) {
         final orders = snapshot.data ?? const <AppOrder>[];
         return DefaultTabController(
@@ -768,6 +770,14 @@ class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
                   onSelectionChanged: (v) => setState(() => _goods = v.first),
                 ),
               ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  'السجل من أحدث $_storeOrderLimit طلب للمحل، وبيشمل الطلبات المنتهية بعد آخر تقفيل حساب.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12.5),
+                ),
+              ),
               Expanded(
                 child: _goods
                     ? (closed.isEmpty
@@ -843,7 +853,7 @@ class ClosedDayCard extends StatelessWidget {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             'مكتمل ${m.completedCount}${m.cancelledCount > 0 ? '  •  ملغي ${m.cancelledCount}' : ''}\n'
-            'البضاعة: ${formatPrice(m.goodsTotal)}  •  رسوم وصّلي: ${formatPrice(m.serviceFeeTotal)}',
+            'البضاعة: ${formatPrice(m.goodsTotal)}  •  رسوم وصّلي المسجّلة: ${formatPrice(m.serviceFeeTotal)}',
             style: const TextStyle(height: 1.45),
           ),
         ),
@@ -864,7 +874,8 @@ class ClosedDayCard extends StatelessWidget {
                   Text(
                     o.status == OrderStatus.cancelled
                         ? '—'
-                        : '${formatPrice(o.subtotal)} • رسوم ${formatPrice(o.serviceFee ?? 0)}',
+                        : '${formatPrice(o.subtotal)} • '
+                            '${o.serviceFee == null ? 'الرسوم غير مسجّلة' : 'رسوم ${formatPrice(o.serviceFee!)}'}',
                     style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                   ),
                 ],

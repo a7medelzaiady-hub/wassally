@@ -150,4 +150,30 @@ describe("regular order pushes", () => {
     expect(claims.size).toBe(0);
     expect(messages).toEqual([]);
   });
+  it("rejects unauthenticated status events without creating a push claim", async () => {
+    const { claims, messages } = simulate(
+      { status: "preparing" },
+      { actorUid: "owner", to: "preparing", at: new Date() },
+    );
+    const res = await worker.fetch(new Request("https://worker.test/v1/order-events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, event: "status", status: "preparing" }),
+    }), env);
+    expect(res.status).toBe(401);
+    expect(claims.size).toBe(0);
+    expect(messages).toEqual([]);
+  });
+
+  it("never includes private contact details in status push payloads", async () => {
+    const { messages } = simulate(
+      { status: "preparing", phone: "PRIVATE_PHONE_123", address: "PRIVATE_ADDRESS_456" },
+      { actorUid: "owner", to: "preparing", at: new Date() },
+    );
+    expect((await call("owner", "status", "preparing")).status).toBe(200);
+    const payload = JSON.stringify(messages);
+    expect(payload).not.toContain("PRIVATE_PHONE_123");
+    expect(payload).not.toContain("PRIVATE_ADDRESS_456");
+  });
+
 });
