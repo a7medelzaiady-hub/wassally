@@ -65,6 +65,14 @@ export async function verifyStoreReferral(
       !validId(inviterOwner.storeId) ||
       inviterOwner.storeId === evidence.invitedStoreId) return null;
 
+  // The inviter must still own an approved, active store. A stale owner mapping
+  // alone cannot authorize a store-to-store payout.
+  const inviterStoreRaw = await read("stores", inviterOwner.storeId as string);
+  if (!inviterStoreRaw) return null;
+  const inviterStore = decodeFirestoreReferralFields(inviterStoreRaw);
+  if (inviterStore.ownerUid !== attribution.inviterUid ||
+      inviterStore.active !== true || inviterStore.approved !== true) return null;
+
   const balanceRaw = await read("referral_balances", attribution.inviterUid);
   let previousAwards = 0;
   if (balanceRaw) {
