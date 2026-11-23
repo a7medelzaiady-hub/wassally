@@ -65,7 +65,7 @@ describe("referral award transaction coordinator", () => {
       return { ok: true, status: 200, text: async () => JSON.stringify(result) };
     });
     await expect(awardVerifiedReferral("demo", "token", grant.grantId,
-      async () => grant, transport)).rejects.toThrow("referral commit rejected");
+      async (read) => { await read("referral_grants", "customer_invited"); return grant; }, transport)).rejects.toThrow("referral commit rejected");
     expect(commitCalls).toBe(1);
   });
 
@@ -82,6 +82,18 @@ describe("referral award transaction coordinator", () => {
     expect(transport.mock.calls.some(([url]) => url.endsWith(":commit"))).toBe(false);
   });
 
+  it("rejects an award when the verifier performs no canonical reads", async () => {
+    const transport = vi.fn<FirestoreTransport>(async (url) => ({
+      ok: true, status: 200,
+      text: async () => JSON.stringify(url.endsWith(":beginTransaction")
+        ? { transaction: "tx==" }
+        : { missing: `${root}/referral_grants/customer_invited` }),
+    }));
+    await expect(awardVerifiedReferral("demo", "token", grant.grantId,
+      async () => grant, transport)).rejects.toThrow("canonical Firestore reads");
+    expect(transport.mock.calls.some(([url]) => url.endsWith(":commit"))).toBe(false);
+  });
+
   it("fails closed when eligibility is absent or mismatched", async () => {
     const transport = vi.fn<FirestoreTransport>(async (url) => ({
       ok: true, status: 200,
@@ -92,7 +104,7 @@ describe("referral award transaction coordinator", () => {
     await expect(awardVerifiedReferral("demo", "token", grant.grantId,
       async () => null, transport)).resolves.toBe("ineligible");
     await expect(awardVerifiedReferral("demo", "token", grant.grantId,
-      async () => ({ ...grant, grantId: "wrong" }), transport)).rejects.toThrow("mismatch");
+      async (read) => { await read("referral_grants", "customer_invited"); return { ...grant, grantId: "wrong" }; }, transport)).rejects.toThrow("mismatch");
     expect(transport.mock.calls.every(([url]) => !url.endsWith(":commit"))).toBe(true);
   });
 });
