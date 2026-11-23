@@ -13,6 +13,7 @@ const records: Record<string, Record<string, unknown>> = {
     invitedUid: sv("invited"), inviterUid: sv("inviter"), channel: sv("customer"), claimedAtMs: iv(100),
   },
   "orders/order1": { customerId: sv("invited"), status: sv("delivered"), deliveredAtMs: iv(200) },
+  "referral_first_orders/invited": { invitedUid: sv("invited"), firstCompletedOrderId: sv("order1") },
   "app_info/referral_config": {
     version: iv(2),
     policies: { mapValue: { fields: {
@@ -23,7 +24,7 @@ const records: Record<string, Record<string, unknown>> = {
   },
 };
 const read = vi.fn(async (collection: string, id: string) => records[`${collection}/${id}`] ?? null);
-const evidence = { invitedUid: "invited", firstOrderId: "order1", verifiedFirstOrder: true };
+const evidence = { invitedUid: "invited", firstOrderId: "order1" };
 
 describe("canonical first-order referral verifier", () => {
   it("derives reward from server-owned attribution, order and policy", async () => {
@@ -32,11 +33,15 @@ describe("canonical first-order referral verifier", () => {
       sourceOrderId: "order1", amount: 20, unit: "points", policyVersion: 2,
     });
   });
-  it("rejects unverified first-order status without reading anything", async () => {
-    read.mockClear();
-    await expect(verifyFirstOrderReferral(read, { ...evidence, verifiedFirstOrder: false }))
-      .resolves.toBeNull();
-    expect(read).not.toHaveBeenCalled();
+  it("rejects missing or mismatched server-owned first order index", async () => {
+    const original = records["referral_first_orders/invited"]!;
+    delete records["referral_first_orders/invited"];
+    await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+    records["referral_first_orders/invited"] = {
+      invitedUid: sv("invited"), firstCompletedOrderId: sv("another_order"),
+    };
+    await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+    records["referral_first_orders/invited"] = original;
   });
   it("rejects wrong customer, missing attribution and unfinished order", async () => {
     const original = records["orders/order1"]!;
