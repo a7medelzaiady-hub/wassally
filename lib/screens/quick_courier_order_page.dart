@@ -531,7 +531,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                     : () async {
                         if (await _confirm('تسيب الطلب ده لمندوب تاني؟')) {
                           await _act('release', const {}, 'سبت الطلب');
-                          if (mounted) Navigator.of(context).pop();
+                          // Only leave the screen if the Worker confirmed release.
+                          if (mounted && _order?.step == QuickCourierStep.available) {
+                            Navigator.of(context).pop();
+                          }
                         }
                       },
                 child: const Text('سيب الطلب'),
