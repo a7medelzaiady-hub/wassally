@@ -52,6 +52,20 @@ class _Draft {
     options.dispose();
   }
 
+  /// A malformed price must not silently turn a paid extra into a free one.
+  String? get invalidPriceLine {
+    for (final raw in options.text.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      final separator = line.lastIndexOf('=');
+      if (separator < 0) continue;
+      final name = line.substring(0, separator).trim();
+      final price = _price(line.substring(separator + 1));
+      if (name.isEmpty || price == null || price < 0) return line;
+    }
+    return null;
+  }
+
   /// null = المجموعة فاضية/ناقصة (بتتجاهل).
   OptionGroup? build() {
     final name = title.text.trim();
@@ -105,6 +119,7 @@ class _OptionGroupsEditorDialog extends StatefulWidget {
 
 class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
   late final List<_Draft> _drafts = widget.initial.map(_Draft.from).toList();
+  String? _error;
 
   @override
   void dispose() {
@@ -122,6 +137,14 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
 
   void _save() {
     FocusManager.instance.primaryFocus?.unfocus();
+    for (final draft in _drafts) {
+      final invalidLine = draft.invalidPriceLine;
+      if (invalidLine != null) {
+        setState(() => _error = 'سعر غير صحيح في: $invalidLine');
+        return;
+      }
+    }
+    setState(() => _error = null);
     final built = <OptionGroup>[
       for (final draft in _drafts)
         if (draft.build() case final group?) group,
@@ -139,6 +162,10 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_error != null) ...[
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+                const SizedBox(height: 8),
+              ],
               Text(
                 'مثال: مجموعة «السكر» (اختيار واحد): سادة / مظبوط / زيادة. '
                 'ومجموعة «إضافات» (اختياري، متعدد): كوكيز = 90',
