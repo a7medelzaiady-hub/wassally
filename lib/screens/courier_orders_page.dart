@@ -422,19 +422,24 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
   bool _busy = false;
 
   Future<void> _claim() async {
+    if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await StaffOrderService.claimOrder(widget.order);
-      messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+      }
     } on FirebaseException catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(e.code == 'permission-denied'
-            ? 'الطلب اتاخد من مندوب تاني.'
-            : 'تعذر الاستلام (${e.code}).'),
-      ));
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(e.code == 'permission-denied'
+              ? 'الطلب اتاخد من مندوب تاني.'
+              : 'تعذر الاستلام (${e.code}).'),
+        ));
+      }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text('$e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
