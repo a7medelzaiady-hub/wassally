@@ -1136,7 +1136,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                'ملاحظات العميل للمندوب: ${o.courierNotes}',
+                'ملاحظات العميل للمندوب: ${_contact!.courierNotes}',
                 style: TextStyle(fontSize: 12.5, color: kMuted),
               ),
             ),
