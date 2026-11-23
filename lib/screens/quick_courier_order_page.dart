@@ -161,6 +161,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   Future<void> _addReceipt() async {
     final order = _order;
     if (order == null || _busy) return;
+    // Ask for the amount first: cancelling must not upload an orphaned image.
+    final amount = await _askAmount('مبلغ الفاتورة كام جنيه؟');
+    if (amount == null || !mounted || _busy) return;
     setState(() => _busy = true);
     String? url;
     try {
@@ -171,8 +174,6 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       if (mounted) setState(() => _busy = false);
     }
     if (url == null || !mounted) return;
-    final amount = await _askAmount('مبلغ الفاتورة كام جنيه؟');
-    if (amount == null || !mounted) return;
     await _act('receipt', {'imageUrl': url, 'amountPiastres': amount}, 'اتضافت الفاتورة');
   }
 
