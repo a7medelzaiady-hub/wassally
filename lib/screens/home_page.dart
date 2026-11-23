@@ -781,7 +781,7 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // سريع: إرشاد محلي للأقسام المحمّلة بالفعل، بدون طلبات شبكة أو listeners.
+  // صديق السوق: إرشاد محلي للأقسام المحمّلة بالفعل، بدون طلبات شبكة أو listeners.
   static const Map<String, List<String>> _guideKeywords = {
     'سوبرماركت': ['لبن', 'حليب', 'سكر', 'رز', 'زيت', 'مكرونه', 'مكرونة', 'شاي', 'جبنه', 'جبنة', 'بيض'],
     'بقالة': ['بقاله', 'بقالة', 'تموين'],
@@ -844,7 +844,7 @@ class _HomePageState extends State<HomePage>
                   Row(children: [
                     const CircleAvatar(child: Text('⚡')),
                     const SizedBox(width: 10),
-                    const Expanded(child: Text('سريع • دليلك في السوق',
+                    const Expanded(child: Text('صديق السوق',
                         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
                     IconButton(
                       tooltip: 'إغلاق',
@@ -858,7 +858,7 @@ class _HomePageState extends State<HomePage>
                       _setSareeEnabled(false);
                     },
                     icon: const Icon(Icons.visibility_off_outlined),
-                    label: const Text('إيقاف سريع وإخفاؤه من الرئيسية'),
+                    label: const Text('إخفاء صديق السوق من الرئيسية'),
                   ),
                   const SizedBox(height: 12),
                   Text(message, style: const TextStyle(fontSize: 15, height: 1.5)),
@@ -892,7 +892,7 @@ class _HomePageState extends State<HomePage>
                             : 'لقيتها! نروح لقسم $category؟';
                       });
                     },
-                    child: const Text('دوّر مع سريع'),
+                    child: const Text('دوّر مع صديق السوق'),
                   ),
                   if (suggestion != null) ...[
                     const SizedBox(height: 8),
@@ -937,7 +937,7 @@ class _HomePageState extends State<HomePage>
         child: TextButton.icon(
           onPressed: () => _setSareeEnabled(true),
           icon: const Icon(Icons.visibility_outlined, size: 18),
-          label: const Text('إظهار مساعد السوق سريع'),
+          label: const Text('إظهار صديق السوق'),
         ),
       );
     }
@@ -957,9 +957,9 @@ class _HomePageState extends State<HomePage>
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('سريع معاك في السوق', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  Text('صديق السوق', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                   SizedBox(height: 3),
-                  Text('بتدور على إيه؟ أساعدك توصل للقسم الصح',
+                  Text('دوّر على قسم أو نوع منتج',
                       style: TextStyle(fontSize: 12.5)),
                 ],
               )),
