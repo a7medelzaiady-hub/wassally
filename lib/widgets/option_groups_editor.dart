@@ -14,7 +14,8 @@ double? _price(String input) {
     v = v.replaceAll(arabic[i], '$i');
   }
   v = v.replaceAll('٫', '.').replaceAll('،', '.').replaceAll(',', '.');
-  return double.tryParse(v.replaceAll(' ', ''));
+  final price = double.tryParse(v.replaceAll(' ', ''));
+  return price != null && price.isFinite ? price : null;
 }
 
 class _Draft {
@@ -186,6 +187,7 @@ Widget _groupEditor(
 ) {
   final d = drafts[i];
   return Container(
+    key: ObjectKey(d),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       border: Border.all(color: kLine),
