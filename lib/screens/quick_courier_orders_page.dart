@@ -265,6 +265,11 @@ class QuickOrderSummaryCard extends StatelessWidget {
                       quickStepLabel(order.step),
                       style: TextStyle(color: Brand.green, fontWeight: FontWeight.w700),
                     ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'اضغط لعرض تفاصيل الطلب',
+                      style: TextStyle(color: kMuted, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
                   ],
                 ),
               ),
