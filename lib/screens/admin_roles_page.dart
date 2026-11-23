@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
+import 'admin_user_directory_page.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
@@ -119,6 +120,18 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.people_alt_outlined),
+              title: const Text('دليل المستخدمين والصلاحيات'),
+              subtitle: const Text('عرض الأسماء ونسخ UID بضغطة واحدة'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AdminUserDirectoryPage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text(
             'خد الـ UID بتاع المندوب من Firebase Console ثم Authentication ثم Users '
             '(عمود User UID). المندوب لازم يكون سجّل دخول التطبيق مرة.',
