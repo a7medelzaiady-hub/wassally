@@ -3,6 +3,7 @@ import 'package:city_store/screens/quick_courier_order_page.dart';
 import 'package:city_store/screens/quick_courier_orders_page.dart';
 import 'package:city_store/services/quick_courier_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _id = 'cust1_abcdefghijklmnop';
@@ -116,10 +117,45 @@ void main() {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
     expect(find.byKey(const Key('quick-call')), findsNothing);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    expect(find.text('شارع التحرير 10'), findsNothing);
     await _tap(tester, const Key('quick-accept'));
     expect(backend.calls.single.key, 'accept');
     expect(find.byKey(const Key('quick-call')), findsOneWidget);
     expect(find.text('شارع التحرير 10'), findsOneWidget);
+    expect(find.text('افتح الخريطة'), findsOneWidget);
+
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final launches = <MethodCall>[];
+    var canOpenMap = true;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      launches.add(call);
+      return canOpenMap;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+    final mapButton = find.text('افتح الخريطة');
+    ScaffoldMessenger.of(tester.element(mapButton)).removeCurrentSnackBar();
+    await tester.ensureVisible(mapButton);
+    await tester.pumpAndSettle();
+    await tester.tap(mapButton);
+    await tester.pumpAndSettle();
+
+    final launch = launches.single;
+    expect(launch.method, 'launch');
+    final uri = Uri.parse(launch.arguments['url'] as String);
+    expect(uri.scheme, 'https');
+    expect(uri.host, 'www.google.com');
+    expect(uri.path, '/maps/search/');
+    expect(uri.queryParameters['query'], 'شارع التحرير 10');
+    expect(find.text('تعذر فتح الخريطة.'), findsNothing);
+
+    canOpenMap = false;
+    await tester.tap(mapButton);
+    await tester.pumpAndSettle();
+    expect(launches, hasLength(2));
+    expect(find.text('تعذر فتح الخريطة.'), findsOneWidget);
   });
 
   testWidgets('التقدير: المندوب يبدأ الشراء على طول مهما كان المبلغ (مفيش حد 200)', (tester) async {
