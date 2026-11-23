@@ -79,6 +79,21 @@ describe("canonical first-order referral verifier", () => {
       records["referral_first_orders/invited"] = original;
     }
   });
+  it("rejects self-invites, malformed inviter and attribution after delivery", async () => {
+    const key = "referral_attributions/invited";
+    const original = records[key]!;
+    try {
+      for (const invalid of [
+        { ...original, inviterUid: sv("invited") },
+        { ...original, inviterUid: sv("bad/uid") },
+        { ...original, claimedAtMs: iv(201) },
+        { ...original, claimedAtMs: iv(0) },
+      ]) {
+        records[key] = invalid;
+        await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+      }
+    } finally { records[key] = original; }
+  });
   it("rejects wrong customer, missing attribution and unfinished order", async () => {
     const original = records["orders/order1"]!;
     records["orders/order1"] = { ...original, userId: sv("other") };
