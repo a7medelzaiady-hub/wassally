@@ -1104,18 +1104,16 @@ async function resolveItems(
   return { items, subtotal };
 }
 
-export function courierTopicMessage(orderId: string, storeName: string) {
-  const shortId = "#" + orderId.slice(0, 5).toUpperCase();
+export function courierTopicMessage(storeName: string) {
   return {
     message: {
       topic: "couriers",
       notification: {
-        title: "طلب توصيل جديد متاح " + shortId,
+        title: "طلب توصيل جديد متاح",
         body: String(storeName || "محل").slice(0, 80) + " • افتح التطبيق لمراجعة الطلب والتقديم عليه",
       },
       data: {
         type: "available_order",
-        orderId,
       },
       android: {
         priority: "HIGH",
@@ -1129,7 +1127,6 @@ export function courierTopicMessage(orderId: string, storeName: string) {
 async function notifyCouriersOfNewOrder(
   env: Env,
   accessToken: string,
-  orderId: string,
   storeName: string,
 ): Promise<void> {
   const sent = await fetch(
@@ -1140,7 +1137,7 @@ async function notifyCouriersOfNewOrder(
         Authorization: `Bearer ${accessToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(courierTopicMessage(orderId, storeName)),
+      body: JSON.stringify(courierTopicMessage(storeName)),
     },
   );
   if (!sent.ok) {
@@ -1490,7 +1487,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
   // الإشعار يُرسل من الخادم بعد نجاح حفظ الطلب فقط. فشل FCM لا يلغي الطلب.
   try {
-    await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
+    await notifyCouriersOfNewOrder(env, token, String(order.storeName));
   } catch (error) {
     console.error("Courier push notification failed", error);
   }
@@ -2591,7 +2588,7 @@ async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
       env, token, courierId, orderId, "courier_order_update", courierTitle,
     ),
     storeTitle && storeId && notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid),
-    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName)),
+    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, String(order.storeName)),
   ]);
   return { orderId, processed: true };
 }
