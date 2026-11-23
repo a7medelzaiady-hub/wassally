@@ -65,6 +65,12 @@ export function buildReferralGrantWrites(
     cash_minor: "cashMinor",
     commission_discount_minor: "commissionDiscountMinor",
   };
+  const channel = grant.grantId.startsWith("customer_") ? "customer" :
+    grant.grantId.startsWith("marketer_") ? "marketer" :
+    grant.grantId.startsWith("store_owner_") ? "store_owner" : null;
+  if (!channel) throw new Error("invalid referral grant channel");
+  const counterField = channel === "customer" ? "customerAwardsCount" :
+    channel === "marketer" ? "marketerAwardsCount" : "storeOwnerAwardsCount";
   const field = balanceField[grant.unit];
   if (!field) throw new Error("invalid reward unit");
   return [
@@ -90,7 +96,7 @@ export function buildReferralGrantWrites(
           fieldPath: field,
           increment: integerValue(grant.amount),
         }, {
-          fieldPath: "awardsCount",
+          fieldPath: counterField,
           increment: integerValue(1),
         }],
       },
