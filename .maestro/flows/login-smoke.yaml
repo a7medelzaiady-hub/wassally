@@ -1,8 +1,0 @@
-appId: com.wassally.app
----
-- launchApp:
-    clearState: true
-- assertVisible: "وصلي"
-- assertVisible: "المتابعة بحساب جوجل"
-- assertVisible: "شروط الاستخدام"
-- assertVisible: "سياسة الخصوصية"

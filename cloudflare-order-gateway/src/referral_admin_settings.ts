@@ -10,15 +10,16 @@ export function buildAdminReferralSettingsWrite(
   root: string,
   input: unknown,
   currentVersion: number,
-  currentUpdateTime: string,
+  currentUpdateTime: string | null,
 ) {
   if (!/^projects\/[A-Za-z0-9_-]+\/databases\/\(default\)\/documents$/.test(root)) {
     throw new Error("invalid Firestore root");
   }
-  if (!Number.isSafeInteger(currentVersion) || currentVersion < 1 ||
+  const initial = currentVersion === 0 && currentUpdateTime === null;
+  if (!initial && (!Number.isSafeInteger(currentVersion) || currentVersion < 1 ||
       typeof currentUpdateTime !== "string" ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(currentUpdateTime) ||
-      !Number.isFinite(Date.parse(currentUpdateTime))) {
+      !Number.isFinite(Date.parse(currentUpdateTime)))) {
     throw new Error("missing trusted current settings");
   }
   const settings = parseReferralSettings(input);
@@ -42,6 +43,6 @@ export function buildAdminReferralSettingsWrite(
       name: `${root}/app_info/referral_config`,
       fields: { version: value(settings.version), policies: { mapValue: { fields: policies } } },
     },
-    currentDocument: { updateTime: currentUpdateTime },
+    currentDocument: initial ? { exists: false } : { updateTime: currentUpdateTime },
   };
 }

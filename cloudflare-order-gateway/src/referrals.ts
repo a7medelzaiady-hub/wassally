@@ -4,7 +4,8 @@
  * The Worker must fetch all facts from trusted documents, verify the
  * authenticated actor, and atomically reserve a unique grant document.
  */
-export type ReferralChannel = "customer" | "marketer" | "store_owner";
+export type ReferralChannel = "customer" | "marketer" | "store_owner" | "store_customer";
+export type CodeReferralChannel = Exclude<ReferralChannel, "store_customer">;
 export type RewardUnit = "points" | "cash_minor" | "commission_discount_minor";
 
 export interface ReferralPolicy {
@@ -62,6 +63,7 @@ export function decideReferralReward(
     customer: ["points"],
     marketer: ["cash_minor"],
     store_owner: ["cash_minor", "commission_discount_minor"],
+    store_customer: ["cash_minor", "commission_discount_minor"],
   };
   if (!allowedUnits[policy.channel]?.includes(policy.unit)) {
     return { eligible: false, reason: "invalid_reward_unit" };

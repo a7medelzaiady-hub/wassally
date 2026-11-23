@@ -1,4 +1,4 @@
-import { isReferralCode, normalizeReferralCode, type ReferralChannel } from "./referrals";
+import { isReferralCode, normalizeReferralCode, type CodeReferralChannel } from "./referrals";
 
 /**
  * Reserve a unique referral code with Firestore create-only precondition.
@@ -9,7 +9,7 @@ import { isReferralCode, normalizeReferralCode, type ReferralChannel } from "./r
 export interface VerifiedCodeIssuer {
   code: string;
   inviterUid: string;
-  channel: ReferralChannel;
+  channel: CodeReferralChannel;
   issuedAtMs: number;
   issuedByUid: string;
   /** Verified admin status, resolved by Worker from trusted roles. */

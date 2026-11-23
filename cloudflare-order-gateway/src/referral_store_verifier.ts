@@ -18,17 +18,19 @@ export async function verifyStoreReferral(
   if (!validId(evidence.invitedStoreId) || !validId(evidence.firstOrderId)) {
     throw new Error("invalid store referral identity");
   }
-  const [attributionRaw, storeRaw, orderRaw, indexRaw, settingsRaw] = await Promise.all([
+  const [attributionRaw, storeRaw, orderRaw, indexRaw, settingsRaw, originRaw] = await Promise.all([
     read("referral_store_attributions", evidence.invitedStoreId),
     read("stores", evidence.invitedStoreId),
     read("orders", evidence.firstOrderId),
     read("referral_store_first_orders", evidence.invitedStoreId),
     read("app_info", "referral_config"),
+    read("referral_store_origins", evidence.invitedStoreId),
   ]);
-  if (!attributionRaw || !storeRaw || !orderRaw || !indexRaw || !settingsRaw) return null;
+  if (!attributionRaw || !storeRaw || !orderRaw || !indexRaw || !settingsRaw || !originRaw) return null;
   const attribution = decodeFirestoreReferralFields(attributionRaw);
   const store = decodeFirestoreReferralFields(storeRaw);
   const order = decodeFirestoreReferralFields(orderRaw);
+  const origin = decodeFirestoreReferralFields(originRaw);
   const index = decodeFirestoreReferralFields(indexRaw);
   const settings = parseReferralSettings(decodeFirestoreReferralFields(settingsRaw));
   if (attribution.invitedStoreId !== evidence.invitedStoreId ||
@@ -37,10 +39,10 @@ export async function verifyStoreReferral(
       typeof attribution.invitedUid !== "string" ||
       typeof attribution.claimedAtMs !== "number" ||
       !validId(attribution.inviterUid) || !validId(attribution.invitedUid) ||
-      store.ownerUid !== attribution.invitedUid ||
+      origin.uid !== attribution.invitedUid || origin.approvalAt !== store.approvedAt ||
       store.active !== true || store.approved !== true ||
-      !Number.isSafeInteger(store.approvedAtMs) ||
-      !Number.isSafeInteger(store.activatedAtMs) ||
+      !Number.isSafeInteger(store.approvedAt) ||
+      !Number.isSafeInteger(store.firstActivatedAt) ||
       index.invitedStoreId !== evidence.invitedStoreId ||
       index.firstCompletedOrderId !== evidence.firstOrderId ||
       !Number.isSafeInteger(index.completedAtMs) ||
@@ -70,16 +72,15 @@ export async function verifyStoreReferral(
   const inviterStoreRaw = await read("stores", inviterOwner.storeId as string);
   if (!inviterStoreRaw) return null;
   const inviterStore = decodeFirestoreReferralFields(inviterStoreRaw);
-  if (inviterStore.ownerUid !== attribution.inviterUid ||
-      inviterStore.active !== true || inviterStore.approved !== true) return null;
+  if (inviterStore.active !== true || inviterStore.approved !== true) return null;
 
   const balanceRaw = await read("referral_balances", attribution.inviterUid);
   let previousAwards = 0;
   if (balanceRaw) {
     const balance = decodeFirestoreReferralFields(balanceRaw);
-    if (!Number.isSafeInteger(balance.storeOwnerAwardsCount) ||
-        (balance.storeOwnerAwardsCount as number) < 0) return null;
-    previousAwards = balance.storeOwnerAwardsCount as number;
+    const counter = balance.storeOwnerAwardsCount ?? 0;
+    if (typeof counter !== "number" || !Number.isSafeInteger(counter) || counter < 0) return null;
+    previousAwards = counter;
   }
   const decision = decideReferralReward(settings.policies.store_owner, {
     inviterUid: attribution.inviterUid,
@@ -88,8 +89,8 @@ export async function verifyStoreReferral(
     channel: "store_owner",
     attributedAt: attribution.claimedAtMs as number,
     firstCompletedOrderAt: order.deliveredAt as number,
-    storeApprovedAt: store.approvedAtMs as number,
-    storeActivatedAt: store.activatedAtMs as number,
+    storeApprovedAt: store.approvedAt as number,
+    storeActivatedAt: store.firstActivatedAt as number,
     previousAwards,
   });
   if (!decision.eligible) return null;

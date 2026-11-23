@@ -1,3 +1,5 @@
+import 'referral_campaign_page.dart';
+import '../services/order_gateway.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -106,6 +108,8 @@ class StoreOwnerPage extends StatelessWidget {
                             : 'أهلاً $name',
                       ),
                       _ShopStatusBar(storeId: storeId),
+                      if (OrderGateway.referralCampaignEnabled)
+                        const ReferralCampaignLink(storeOwner: true),
                       UnansweredOrdersAlert(orders: orders),
                     ],
                   ),

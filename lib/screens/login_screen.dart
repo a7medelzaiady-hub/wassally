@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../legal/legal_content.dart';
 import '../models/referral.dart';
 import '../services/auth_service.dart';
+import '../services/order_gateway.dart';
 import 'legal_page.dart';
 import '../theme/app_theme.dart';
 
@@ -15,9 +16,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const _referralsEnabled = bool.fromEnvironment(
-    'WASALLY_REFERRAL_REGISTRATION',
-  );
   bool _isLoading = false;
   String? _referralCode;
 
@@ -244,7 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('المتابعة بحساب جوجل'),
                           ),
                   ),
-                  if (_referralsEnabled)
+                  if (OrderGateway.referralCampaignEnabled)
                     TextButton(
                       onPressed: _isLoading ? null : _editReferralCode,
                       child: Text(_referralCode == null

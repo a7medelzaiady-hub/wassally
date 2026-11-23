@@ -14,7 +14,7 @@ export async function settleFirstOrderReferral(
   oauthToken: string,
   invitedUid: string,
   firstOrderId: string,
-  channel: "customer" | "marketer",
+  channel: "customer" | "marketer" | "store_customer",
   transport: FirestoreTransport,
 ): Promise<"granted" | "already_granted" | "ineligible"> {
   const grantId = referralGrantId(channel, invitedUid);

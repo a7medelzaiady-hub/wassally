@@ -1,70 +1,55 @@
-# Wasally referrals — integration contract (not deployed)
+# Wasally referrals — شير بكودك واكسب هدايا
 
-Status: **isolated implementation in draft PR; no endpoint, grant, balance, or payout enabled**.
+The Flutter campaign uses `WASALLY_REFERRAL_REGISTRATION` at build time.
+The Worker keeps `REFERRAL_REGISTRATION_ENABLED` and
+`REFERRAL_DELIVERY_ENABLED` off unless explicitly configured. There are no
+Cloud Functions or new Firestore snapshot listeners.
 
-## Ownership and isolation
-- Work owns existing order, notification, and auth flows.
-- This branch owns only new `referral.dart`, `referrals.ts` and their tests.
-- Do not change `orders`, `serverOrders`, Firestore rules, or production Worker routes without coordination.
+## Registration and campaign
 
-## Proposed server-owned data model (not yet created)
-- `referral_codes/{CODE}`: code, ownerUid, channel, active, createdAt. Create with Firestore precondition `exists=false`; retry collisions. Never trust the client to select ownerUid.
-- `referral_attributions/{invitedUid}`: invitedUid, inviterUid, code, channel, createdAt. Server creates once with `exists=false` at first registration; no updates by clients. For store invites, key by invited store ID instead of invited user ID to prevent multiple owner accounts earning for the same store.
-- `referral_grants/{channel}_{invitedUid}`: inviterUid, invitedUid, sourceOrderId, rewardUnit, amount, policyVersion, createdAt, status. **Use a stable idempotency key**. For store invitations, use the store ID, not the invited UID.
-- `referral_balances/{inviterUid}`: server-owned materialized points and cash ledger totals; no direct client writes.
-- `app_info/referral_config`: admin-managed policy, with positive integer amounts, caps and enabled flags.
+- The optional code travels with the first Google sign-in. The Worker validates
+  the Firebase session and account creation time, checks campaign policy, and
+  writes one immutable attribution using a Firestore transaction.
+- Customers and active, approved store owners can obtain a stable code. The
+  administrator issues a marketer code against an existing account UID. The
+  account screen shows that marketer's code and its own aggregate balances.
+- The administrator can set reward amounts, per-inviter caps, and enabled flags
+  for customer, marketer, store-to-customer, and store-to-store referrals.
+  Store policies support cash or commission credit. Policy updates use Firestore
+  version and document preconditions.
 
-## Required server-side transaction
-1. Authenticate Firebase ID token and enforce actor role; admin settings are admin-only.
-2. Read attribution, policy and canonical completed order, plus approved/active store records where relevant.
-3. Verify that this is the first eligible successful order; client-supplied timestamps/status are ignored.
-4. In a Firestore transaction or equivalent concurrency-safe commit, reserve the grant using `exists=false`, update the balance, and write the audit event **atomically**. If using Firestore REST transactions, all reads and writes must use the same transaction. Retry conflicts with a bounded policy.
-5. Return the existing grant for repeated delivery/retries without crediting the balance twice.
-6. For cash payouts, use a separate approved payout ledger; a grant is **not** evidence of transfer. Store-owner commission discounts must be applied by the authoritative server-side commission calculation.
-7. Ensure refunds, cancellation and reversals have explicit, auditable policy before enabling production.
+## Delivery and rewards
 
-## Security acceptance
-- No self-referral, no reassignment, no reward for signup alone.
-- No PII in referral statistics or marketer views.
-- Rate limit code claims and referral endpoint.
-- Test simultaneous duplicate grants, transaction failure, retry after response loss, disabled policies, admin-only writes, and store activation ordering.
-- No new Firestore listeners; use bounded one-shot reads.
-- Firebase Spark only, no Cloud Functions, no production deployment before explicit approval.
+- A successful regular order has status `delivered` and a canonical
+  `deliveredAt` timestamp. A courier's PIN closes an internal delivery. An
+  external delivery closes after the store confirms cash receipt.
+- The Worker schedules referral settlement after the existing delivery write.
+  A bounded indexed query selects the earliest delivered regular order from
+  history. The first-order record is immutable. Grant creation, the credit,
+  and the per-channel count update commit together.
+- The store approval batch records the approved draft's applicant in a
+  private collection and records initial activation time when the store is
+  published. A store reward requires that provenance, active owner mapping,
+  approval, activation, and the store's first delivery. An existing store
+  assigned to a new owner is ineligible as a new-store referral.
 
-## Important
-The pure `decideReferralReward` function is a defense-in-depth helper, **not** proof of order completion. All its inputs must come from verified server-side Firestore records. This PR is intentionally incomplete and must remain draft until server integration, rules, UI, and full tests are complete.
+## Cash payout
 
+Cash is available for a full-balance withdrawal request. A transaction reserves
+the cash and creates one pending request per account. Administrators can record
+a completed manual transfer by its reference or reject the request and return
+the reserved balance. A repeated resolution cannot decrement or return the same
+cash twice.
 
-## Verified integration blockers (reviewed against main Worker delivery flow)
+## Remaining release decisions
 
-The live Worker order schema uses `orders/{id}.userId` and Firestore
-`timestampValue` at `deliveredAt`; the referral verifier now reads those
-fields. **Do not activate payouts yet.**
-
-The actual `deliverWithPin` flow in `src/index.ts` updates delivery using
-`REQUEST_TIME` transforms and only sets `status=delivered` for
-`deliveryMode=store`. External courier confirmation currently does **not**
-set that status. The index cannot safely be written from a guessed
-`Date.now()` alongside a server timestamp: the verifier requires an exact
-timestamp match.
-
-Required integration before release:
-
-1. Define a single server-owned, auditable `first successful order` rule for
-   both internal and external delivery, including existing customers and orders.
-2. Populate `referral_first_orders/{uid}` from the trusted delivery transition
-   with a canonical timestamp, preserving the first successful order even when
-   multiple deliveries race. A create-only write appended unconditionally to
-   every delivery commit would incorrectly reject second and later deliveries.
-3. Read and validate the canonical first-order index in the same Firestore
-   transaction as the reward grant and award-count increment.
-4. Verify existing order history or backfill a trusted first-success index before
-   enabling rewards for previously registered customers.
-5. Wire the internal settlement service only after the completion transition
-   and authorization are settled. Never expose a client-accessible grant route.
-6. Add integration tests for internal/external couriers, two simultaneous
-   deliveries, existing successful orders, retries, and a failed grant commit.
-
-These steps require coordinated edits to the active Worker order lifecycle and
-Firestore rules. This isolated PR deliberately does not modify those files while
-another workstream is changing them.
+- Points are tracked in the referral ledger. They still need an approved
+  redemption rule and integration with order pricing before launch.
+- Commission credits are tracked in the referral ledger. Applying them requires
+  an authoritative Wasally store commission calculation.
+- Cash transfers are handled outside the app. Production confirmation requires a
+  test of the team's chosen payout channel and a reconciliation with its transfer
+  reference. The Worker records the confirmation and does not send money.
+- Verify deployment of the Firestore indexes and test both courier modes against
+  the staging Worker before enabling delivery settlement. The delivery hook and
+  indexes currently cover ordinary store orders.

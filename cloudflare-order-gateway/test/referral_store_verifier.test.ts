@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { verifyStoreReferral } from "../src/referral_store_verifier";
 const sv = (v: string) => ({ stringValue: v });
 const iv = (v: number) => ({ integerValue: String(v) });
+const ts = (ms: number) => ({ timestampValue: new Date(ms).toISOString() });
 const bv = (v: boolean) => ({ booleanValue: v });
 const policy = (channel: string, unit: string) => ({ mapValue: { fields: {
   enabled: bv(true), channel: sv(channel), unit: sv(unit), amount: iv(50),
@@ -13,8 +14,9 @@ const docs: Record<string, Record<string, unknown>> = {
   },
   "storeOwners/owner2": { storeId: sv("store1"), active: bv(true) },
   "storeOwners/owner1": { storeId: sv("originalStore"), active: bv(true) },
-  "stores/originalStore": { ownerUid: sv("owner1"), active: bv(true), approved: bv(true) },
-  "stores/store1": { ownerUid: sv("owner2"), active: bv(true), approved: bv(true), approvedAtMs: iv(110), activatedAtMs: iv(120) },
+  "stores/originalStore": { active: bv(true), approved: bv(true) },
+  "stores/store1": { active: bv(true), approved: bv(true), approvedAt: ts(110), firstActivatedAt: ts(120) },
+  "referral_store_origins/store1": { uid: sv("owner2"), approvalAt: ts(110) },
   "orders/order1": { storeId: sv("store1"), status: sv("delivered"), deliveredAt: { timestampValue: "1970-01-01T00:00:00.200Z" } },
   "referral_store_first_orders/store1": {
     invitedStoreId: sv("store1"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(200),
@@ -82,14 +84,13 @@ describe("store referral verification", () => {
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs["storeOwners/owner1"] = original; }
   });
-  it("rejects an inviter whose canonical store is inactive, unapproved, missing, or reassigned", async () => {
+  it("rejects an inviter whose canonical store is inactive, unapproved, or missing", async () => {
     const key = "stores/originalStore";
     const original = docs[key]!;
     try {
       for (const invalid of [
         { ...original, active: bv(false) },
         { ...original, approved: bv(false) },
-        { ...original, ownerUid: sv("someoneElse") },
       ]) {
         docs[key] = invalid;
         await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
@@ -98,15 +99,15 @@ describe("store referral verification", () => {
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs[key] = original; }
   });
-  it("rejects mismatched canonical store ownerUid despite storeOwners mapping", async () => {
-    const original = docs["stores/store1"]!;
+  it("rejects mismatched original store approval provenance", async () => {
+    const key = "referral_store_origins/store1";
+    const original = docs[key]!;
     try {
-      docs["stores/store1"] = { ...original, ownerUid: sv("someoneElse") };
+      docs[key] = { ...original, uid: sv("someoneElse") };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
-      const { ownerUid: _removed, ...missingOwner } = original;
-      docs["stores/store1"] = missingOwner;
+      delete docs[key];
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
-    } finally { docs["stores/store1"] = original; }
+    } finally { docs[key] = original; }
   });
   it("rejects unapproved or inactive stores", async () => {
     const original = docs["stores/store1"]!;

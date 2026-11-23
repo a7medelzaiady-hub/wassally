@@ -50,7 +50,10 @@ export async function registerReferral(
       registrationWindowMs: 300_000,
       alreadyAttributed: false,
     });
-    if (!claim.allowed || !parseReferralSettings(config).policies[claim.channel].enabled) return false;
+    if (!claim.allowed) return false;
+    const { policies } = parseReferralSettings(config);
+    if (!policies[claim.channel].enabled &&
+        !(claim.channel === "store_owner" && policies.store_customer.enabled)) return false;
     if (claim.channel === "marketer") {
       if (typeof record.issuedByUid !== "string" || !validId.test(record.issuedByUid) ||
           !await read("admins", record.issuedByUid)) return false;

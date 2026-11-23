@@ -1,4 +1,4 @@
-import { isReferralCode, normalizeReferralCode, type ReferralChannel } from "./referrals";
+import { isReferralCode, normalizeReferralCode, type CodeReferralChannel } from "./referrals";
 
 /**
  * Server-side first-registration attribution write plan.
@@ -10,7 +10,7 @@ export interface VerifiedReferralClaim {
   invitedUid: string;
   inviterUid: string;
   code: string;
-  channel: ReferralChannel;
+  channel: CodeReferralChannel;
   /** Milliseconds from server clock, not a client timestamp. */
   claimedAtMs: number;
 }

@@ -175,3 +175,57 @@ it("credits the inviter once from the earliest canonical delivered order", async
   expect(grants).toBe(1);
   expect(saves).toHaveLength(1);
 });
+
+it("settles a new store invitation through approved origin, activation and first delivery", async () => {
+  const uid = "new-store-owner";
+  const { docs, fetchMock } = setup(uid, "store_owner");
+  const str = (stringValue: string) => ({ stringValue });
+  const yes = { booleanValue: true };
+  const timestamp = (ms: number) => ({ timestampValue: new Date(ms).toISOString() });
+  docs["storeOwners/inviter"] = { storeId: str("original") };
+  docs["stores/original"] = { active: yes, approved: yes };
+  expect((await call(uid)).status).toBe(200);
+
+  const now = Date.now();
+  docs["referral_store_origins/new-store"] = { uid: str(uid), approvalAt: timestamp(now + 1000) };
+  docs["storeOwners/" + uid] = { storeId: str("new-store"), active: yes };
+  docs["stores/new-store"] = {
+    approvedAt: timestamp(now + 1000), firstActivatedAt: timestamp(now + 2000),
+    active: yes, approved: yes,
+  };
+  const fields = {
+    storeId: str("new-store"), status: str("delivered"), deliveredAt: timestamp(now + 3000),
+  };
+  docs["orders/store-order"] = fields;
+  const baseFetch = fetchMock.getMockImplementation()!;
+  let storesCredited = 0;
+  fetchMock.mockImplementation(async (url, init) => {
+    const endpoint = String(url);
+    if (endpoint.endsWith(":runQuery")) {
+      expect(JSON.parse(String(init?.body)).structuredQuery.where.compositeFilter.filters[0])
+        .toMatchObject({ fieldFilter: { field: { fieldPath: "storeId" }, value: str("new-store") } });
+      return Response.json([{ document: { name: root + "orders/store-order", fields } }]);
+    }
+    if (endpoint.endsWith(":commit")) {
+      const { writes } = JSON.parse(String(init?.body));
+      for (const { update } of writes) {
+        if (update) docs[update.name.slice(root.length)] = update.fields;
+      }
+      const balance = writes.find((write: { transform?: unknown }) => write.transform);
+      if (balance) {
+        expect(balance.transform.document).toBe(root + "referral_balances/inviter");
+        expect(balance.transform.fieldTransforms).toContainEqual({
+          fieldPath: "commissionDiscountMinor", increment: { integerValue: "10" },
+        });
+        storesCredited++;
+      }
+      return Response.json({});
+    }
+    return baseFetch(url, init);
+  });
+  const { settleStoreDelivery } = await import("../src/referral_delivery");
+  await settleStoreDelivery("referral-test", "mock-token", "new-store", fetch);
+  await settleStoreDelivery("referral-test", "mock-token", "new-store", fetch);
+  expect(storesCredited).toBe(1);
+  expect(docs["referral_grants/store_owner_new-store"].sourceOrderId).toEqual(str("store-order"));
+});

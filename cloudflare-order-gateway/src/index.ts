@@ -1,4 +1,8 @@
-import { settleCustomerDelivery } from "./referral_delivery";
+import { buildAdminReferralSettingsWrite } from "./referral_admin_settings";
+import { parseReferralSettings } from "./referral_settings";
+import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout";
+import { getOrIssueReferralCode } from "./referral_campaign";
+import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
@@ -2083,6 +2087,41 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
     }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/campaign") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "حملة الإحالات غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralCampaign(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر فتح حملة الإحالات.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/settings") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "حملة الإحالات غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralSettings(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تحديث إعدادات الإحالات.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/payouts") {
+      if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "صرف مكافآت الإحالات غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralPayout(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : error instanceof ReferralPayoutConflict
+          ? new HttpError(409, "مفيش رصيد متاح أو فيه طلب صرف جاري بالفعل. حدّث الصفحة.")
+          : new HttpError(503, "تعذر تحديث طلب صرف المكافأة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/referrals/registration") {
       if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
         return response({ error: "التسجيل بكود الإحالة غير متاح حاليًا." }, 404, headers);
@@ -2312,10 +2351,147 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
-function scheduleReferralDelivery(env: Env, ctx: ExecutionContext | undefined, token: string, uid: unknown): void {
-  if (env.REFERRAL_DELIVERY_ENABLED !== "true" || !ctx || typeof uid !== "string") return;
-  ctx.waitUntil(settleCustomerDelivery(env.FIREBASE_PROJECT_ID, token, uid, fetch).catch(() => {
-    console.error("Referral settlement failed after delivery");
+async function referralPayout(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,96}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-payout:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { action, requestId, payoutId, reference } = await readJsonBody(request);
+  const token = await googleAccessToken(env);
+  if (action === "request") {
+    if (typeof requestId !== "string" || !/^[a-f0-9]{24}$/.test(requestId)) {
+      throw new HttpError(400, "بيانات طلب الصرف غير صالحة.");
+    }
+    return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+      kind: "request", uid, requestId,
+    }, fetch);
+  }
+  if (!await getDocument(env, `admins/${uid}`, token)) throw new HttpError(403, "الإجراء من صلاحيات الإدارة.");
+  if (action === "list") {
+    const query = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "referral_payouts" }],
+        where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "pending" } } },
+        limit: 50,
+      } }),
+    });
+    if (!query.ok) throw new HttpError(503, "تعذر تحميل طلبات الصرف.");
+    const rows = await query.json() as Array<{ document?: FirestoreDoc }>;
+    return { pending: rows.flatMap(({ document }) => document ? [{
+      id: document.name.split("/").at(-1),
+      ...decodeFields(document.fields ?? {}),
+    }] : []) };
+  }
+  if ((action !== "paid" && action !== "rejected") ||
+      typeof payoutId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(payoutId) ||
+      typeof reference !== "string" || reference.trim().length < 5 || reference.length > 120) {
+    throw new HttpError(400, "اكتب رقم مرجع التحويل أو سبب الرفض.");
+  }
+  return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+    kind: action, payoutId, reference: reference.trim(), adminUid: uid,
+  }, fetch);
+}
+
+async function referralSettings(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-settings:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const token = await googleAccessToken(env);
+  if (!await getDocument(env, `admins/${uid}`, token)) throw new HttpError(403, "الإعدادات من صلاحيات الإدارة.");
+  const { settings } = await readJsonBody(request);
+  const doc = await getDocument(env, "app_info/referral_config", token);
+  const current = doc ? parseReferralSettings(decodeFields(doc.fields ?? {})) : null;
+  if (settings === undefined) return { settings: current };
+  let parsed;
+  try {
+    parsed = parseReferralSettings(settings);
+  } catch {
+    throw new HttpError(400, "راجع قيم المكافآت وحدودها.");
+  }
+  const version = current?.version ?? 0;
+  if (parsed.version !== version + 1) throw new HttpError(409, "الإعدادات اتغيرت. حدّث الصفحة وحاول تاني.");
+  if (doc && !doc.updateTime) throw new HttpError(503, "تعذر تأكيد إصدار إعدادات الإحالات.");
+  const write = buildAdminReferralSettingsWrite(
+    firestoreDocumentName(env, "").slice(0, -1), parsed, version, doc?.updateTime ?? null,
+  );
+  const commit = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ writes: [write] }),
+  });
+  if (commit.status === 409 || commit.status === 412) {
+    throw new HttpError(409, "الإعدادات اتغيرت. حدّث الصفحة وحاول تاني.");
+  }
+  if (!commit.ok) throw new HttpError(503, "تعذر حفظ إعدادات الإحالات.");
+  return { settings: parsed };
+}
+
+async function referralCampaign(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  const safeId = /^[A-Za-z0-9_-]{1,128}$/;
+  if (!safeId.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-campaign:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { channel, marketerUid } = await readJsonBody(request);
+  if (channel !== "customer" && channel !== "store_owner" && channel !== "marketer") {
+    throw new HttpError(400, "نوع كود الإحالة غير صالح.");
+  }
+  const token = await googleAccessToken(env);
+  let codeOwnerUid = uid;
+  if (channel === "marketer") {
+    if (typeof marketerUid !== "string" || !safeId.test(marketerUid)) {
+      throw new HttpError(400, "اكتب معرّف حساب المسوّق.");
+    }
+    if (!await getDocument(env, `admins/${uid}`, token)) {
+      throw new HttpError(403, "إصدار أكواد المسوقين من صلاحيات الإدارة.");
+    }
+    if (!await getDocument(env, `users/${marketerUid}`, token)) {
+      throw new HttpError(404, "حساب المسوّق غير موجود.");
+    }
+    codeOwnerUid = marketerUid;
+  } else if (channel === "store_owner") {
+    const mapping = await getDocument(env, `storeOwners/${uid}`, token);
+    const owner = mapping && decodeFields(mapping.fields ?? {});
+    if (owner?.active === false || typeof owner?.storeId !== "string" || !safeId.test(owner.storeId)) {
+      throw new HttpError(403, "الكود متاح لأصحاب المحلات المعتمدة.");
+    }
+    const storeDoc = await getDocument(env, `stores/${owner.storeId}`, token);
+    const store = storeDoc && decodeFields(storeDoc.fields ?? {});
+    if (store?.approved !== true || store.active !== true) {
+      throw new HttpError(403, "الكود متاح بعد اعتماد المحل وتفعيله.");
+    }
+  }
+  const code = await getOrIssueReferralCode(env.FIREBASE_PROJECT_ID, token, {
+    uid: codeOwnerUid, issuerUid: uid, channel,
+  }, fetch);
+  if (channel === "marketer") return { code };
+  const [balance, marketerCode] = await Promise.all([
+    getDocument(env, `referral_balances/${uid}`, token),
+    getDocument(env, `referral_marketer_codes/${uid}`, token),
+  ]);
+  return {
+    code,
+    balance: balance ? decodeFields(balance.fields ?? {}) : {},
+    marketerCode: marketerCode ? decodeFields(marketerCode.fields ?? {}).code : null,
+  };
+}
+
+function scheduleReferralDelivery(env: Env, ctx: ExecutionContext | undefined, token: string, order: JsonMap): void {
+  if (env.REFERRAL_DELIVERY_ENABLED !== "true" || !ctx) return;
+  const jobs = [];
+  if (typeof order.userId === "string") {
+    jobs.push(settleCustomerDelivery(env.FIREBASE_PROJECT_ID, token, order.userId, fetch));
+  }
+  if (typeof order.storeId === "string") {
+    jobs.push(settleStoreDelivery(env.FIREBASE_PROJECT_ID, token, order.storeId, fetch));
+  }
+  ctx.waitUntil(Promise.allSettled(jobs).then((results) => {
+    if (results.some((result) => result.status === "rejected")) {
+      console.error("Referral settlement failed after delivery");
+    }
   }));
 }
 
@@ -2408,7 +2584,7 @@ async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?:
   }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
-  if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order.userId);
+  if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order);
   // مرفقات الطلب الخاص كانت بتتمسح لما العميل يدوس تأكيد الاستلام؛ دلوقتي بعد الرمز الصحيح.
   // محاولة واحدة، وفشلها ما يأثرش على التسليم (العميل لما يفتح الطلب بيعيد المحاولة).
   if (hasPendingAttachments(order) && typeof order.userId === "string") {
@@ -2578,7 +2754,7 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
     if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
     if (status === "delivered") {
       storeTitle = "تم تسليم طلب من المحل";
-      scheduleReferralDelivery(env, ctx, token, order.userId);
+      scheduleReferralDelivery(env, ctx, token, order);
     }
     if (status === "cancelled") {
       storeTitle = "تم إلغاء طلب من المحل";

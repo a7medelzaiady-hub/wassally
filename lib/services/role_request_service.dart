@@ -181,7 +181,12 @@ class RoleRequestService {
           'active': readyToPublish,
           'ownerUid': FieldValue.delete(),
           'approvedAt': FieldValue.serverTimestamp(),
+          if (readyToPublish) 'firstActivatedAt': FieldValue.serverTimestamp(),
           'approvedBy': admin,
+        });
+        batch.set(db.collection('referral_store_origins').doc(draftId), {
+          'uid': uid,
+          'approvalAt': FieldValue.serverTimestamp(),
         });
         storeId = draftId;
       } else {

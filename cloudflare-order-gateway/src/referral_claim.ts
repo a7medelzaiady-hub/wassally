@@ -1,4 +1,4 @@
-import { isReferralCode, normalizeReferralCode, type ReferralChannel } from "./referrals";
+import { isReferralCode, normalizeReferralCode, type CodeReferralChannel } from "./referrals";
 
 /**
  * Validates the server-owned code record and registration evidence before
@@ -8,7 +8,7 @@ import { isReferralCode, normalizeReferralCode, type ReferralChannel } from "./r
 export interface ReferralCodeRecord {
   code: string;
   inviterUid: string;
-  channel: ReferralChannel;
+  channel: CodeReferralChannel;
   active: boolean;
 }
 
@@ -25,7 +25,7 @@ export interface RegistrationEvidence {
 }
 
 export type ReferralClaimDecision =
-  | { allowed: true; code: string; inviterUid: string; channel: ReferralChannel }
+  | { allowed: true; code: string; inviterUid: string; channel: CodeReferralChannel }
   | { allowed: false; reason: string };
 
 const validUid = (id: string) => /^[A-Za-z0-9_-]{1,128}$/.test(id);

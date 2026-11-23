@@ -174,9 +174,11 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
   Future<void> _toggle(String id, bool active) async {
     try {
       final storeRef = _stores.doc(id);
+      var firstActivation = false;
       if (active) {
         final store = await storeRef.get();
         final data = store.data() ?? {};
+        firstActivation = data['firstActivatedAt'] == null;
         if (data['approved'] == false) {
           _say('لازم تعتمد طلب المحل الأول من طلبات الانضمام.');
           return;
@@ -195,6 +197,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       await storeRef.update({
         'active': active,
         if (active) 'approved': true,
+        if (firstActivation) 'firstActivatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

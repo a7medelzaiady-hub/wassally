@@ -18,6 +18,10 @@ class OrderGateway {
     defaultValue: 'https://throbbing-water-4ef7.a7medelzaiady.workers.dev',
   );
 
+  static const referralCampaignEnabled = bool.fromEnvironment(
+    'WASALLY_REFERRAL_REGISTRATION',
+  );
+
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
 
   /// هيدر App Check (لو متاح) لكل طلبات الـ Worker.
@@ -66,6 +70,61 @@ class OrderGateway {
     } catch (_) {
       debugPrint('تعذر إرسال إشعار حالة الطلب.');
     }
+  }
+
+  static Future<Map<String, dynamic>> referralCampaign({
+    required String channel,
+    String? marketerUid,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/campaign',
+      payload: {
+        'channel': channel,
+        if (marketerUid != null) 'marketerUid': marketerUid,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+  }
+
+  static Future<Map<String, dynamic>?> referralSettings({
+    Map<String, dynamic>? settings,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    final response = await _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/settings',
+      payload: {if (settings != null) 'settings': settings},
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+    return response['settings'] as Map<String, dynamic>?;
+  }
+
+  static Future<Map<String, dynamic>> referralPayout({
+    required String action,
+    String? requestId,
+    String? payoutId,
+    String? reference,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/payouts',
+      payload: {
+        'action': action,
+        if (requestId != null) 'requestId': requestId,
+        if (payoutId != null) 'payoutId': payoutId,
+        if (reference != null) 'reference': reference,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة صرف الإحالات.',
+    );
   }
 
   static Future<void> claimRegistrationReferral({

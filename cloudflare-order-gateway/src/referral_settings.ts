@@ -9,6 +9,7 @@ const units: Record<ReferralChannel, readonly RewardUnit[]> = {
   customer: ["points"],
   marketer: ["cash_minor"],
   store_owner: ["cash_minor", "commission_discount_minor"],
+  store_customer: ["cash_minor", "commission_discount_minor"],
 };
 
 export interface ReferralSettings {
@@ -30,8 +31,12 @@ export function parseReferralSettings(input: unknown): ReferralSettings {
   }
   const entries = rawPolicies as Record<string, unknown>;
   const policies = {} as Record<ReferralChannel, ReferralPolicy>;
-  for (const channel of ["customer", "marketer", "store_owner"] as const) {
+  for (const channel of ["customer", "marketer", "store_owner", "store_customer"] as const) {
     const raw = entries[channel];
+    if (channel === "store_customer" && raw === undefined) {
+      policies[channel] = { enabled: false, channel, unit: "cash_minor", amount: 0 };
+      continue;
+    }
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
       throw new Error(`missing policy: ${channel}`);
     }

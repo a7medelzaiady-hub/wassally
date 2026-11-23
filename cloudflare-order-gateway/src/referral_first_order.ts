@@ -1,5 +1,5 @@
 import { decodeFirestoreReferralFields } from "./referral_firestore_values";
-import { decideReferralReward, type ReferralChannel } from "./referrals";
+import { decideReferralReward } from "./referrals";
 import { parseReferralSettings } from "./referral_settings";
 import type { VerifiedReferralGrant } from "./referral_grants";
 
@@ -51,17 +51,34 @@ export async function verifyFirstOrderReferral(
       typeof order.deliveredAt !== "number" ||
       !Number.isSafeInteger(order.deliveredAt) ||
       order.deliveredAt !== firstOrder.completedAtMs) return null;
-  const channel = attribution.channel;
-  if (channel !== "customer" && channel !== "marketer") return null;
-  const policy = settings.policies[channel as ReferralChannel];
-  const balanceRaw = await read("referral_balances", attribution.inviterUid as string);
-  const counterField = channel === "customer" ? "customerAwardsCount" : "marketerAwardsCount";
+  const channel = attribution.channel === "store_owner" ? "store_customer" : attribution.channel;
+  if (channel !== "customer" && channel !== "marketer" && channel !== "store_customer") return null;
+  const policy = settings.policies[channel];
+  if (!policy.enabled) return null;
+  if (channel === "store_customer") {
+    const ownerRaw = await read("storeOwners", attribution.inviterUid);
+    if (!ownerRaw) return null;
+    const owner = decodeFirestoreReferralFields(ownerRaw);
+    if (owner.active === false || typeof owner.storeId !== "string" || !validId(owner.storeId)) return null;
+    const storeRaw = await read("stores", owner.storeId);
+    if (!storeRaw) return null;
+    const store = decodeFirestoreReferralFields(storeRaw);
+    if (store.active !== true || store.approved !== true) return null;
+  }
+  const balanceRaw = await read("referral_balances", attribution.inviterUid);
+  const counterField = channel === "customer" ? "customerAwardsCount" :
+    channel === "marketer" ? "marketerAwardsCount" : "storeCustomerAwardsCount";
   let previousAwards = 0;
   if (balanceRaw !== null) {
     const balance = decodeFirestoreReferralFields(balanceRaw);
-    if (typeof balance[counterField] !== "number" ||
-        !Number.isSafeInteger(balance[counterField]) || balance[counterField] < 0) return null;
-    previousAwards = balance[counterField] as number;
+    const counter = balance[counterField];
+    if (counter === undefined) {
+      if (balance.customerAwardsCount === undefined && balance.marketerAwardsCount === undefined &&
+          balance.storeOwnerAwardsCount === undefined && balance.storeCustomerAwardsCount === undefined) return null;
+    } else {
+      if (typeof counter !== "number" || !Number.isSafeInteger(counter) || counter < 0) return null;
+      previousAwards = counter;
+    }
   }
   const decision = decideReferralReward(policy, {
     inviterUid: attribution.inviterUid,

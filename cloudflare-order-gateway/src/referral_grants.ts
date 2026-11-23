@@ -67,7 +67,8 @@ export function buildReferralGrantWrites(
   };
   const channel = grant.grantId.startsWith("customer_") ? "customer" :
     grant.grantId.startsWith("marketer_") ? "marketer" :
-    grant.grantId.startsWith("store_owner_") ? "store_owner" : null;
+    grant.grantId.startsWith("store_owner_") ? "store_owner" :
+    grant.grantId.startsWith("store_customer_") ? "store_customer" : null;
   if (!channel) throw new Error("invalid referral grant channel");
   const storeSuffix = channel === "store_owner" ? grant.grantId.slice("store_owner_".length) : "";
   if ((channel === "store_owner" && !validId(storeSuffix)) ||
@@ -76,11 +77,12 @@ export function buildReferralGrantWrites(
   }
   if ((channel === "customer" && grant.unit !== "points") ||
       (channel === "marketer" && grant.unit !== "cash_minor") ||
-      (channel === "store_owner" && grant.unit === "points")) {
+      ((channel === "store_owner" || channel === "store_customer") && grant.unit === "points")) {
     throw new Error("referral reward channel/unit mismatch");
   }
   const counterField = channel === "customer" ? "customerAwardsCount" :
-    channel === "marketer" ? "marketerAwardsCount" : "storeOwnerAwardsCount";
+    channel === "marketer" ? "marketerAwardsCount" :
+    channel === "store_customer" ? "storeCustomerAwardsCount" : "storeOwnerAwardsCount";
   const field = balanceField[grant.unit];
   if (!field) throw new Error("invalid reward unit");
   return [

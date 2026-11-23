@@ -1803,6 +1803,25 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    match /referral_store_origins/{storeId} {
+      function isApprovedOriginalDraft() {
+        let data = request.resource.data;
+        let store = /databases/$(database)/documents/stores/$(storeId);
+        let application = /databases/$(database)/documents/role_requests/$(data.uid + '_store_owner');
+        return data.keys().hasOnly(['uid', 'approvalAt']) &&
+          data.approvalAt == request.time &&
+          get(store).data.ownerUid == data.uid &&
+          get(store).data.approved == false &&
+          getAfter(store).data.approved == true &&
+          getAfter(store).data.approvedAt == request.time &&
+          getAfter(application).data.storeId == storeId &&
+          getAfter(application).data.status == 'approved' &&
+          getAfter(application).data.reviewedAt == request.time;
+      }
+      allow create: if isAdmin() && isApprovedOriginalDraft();
+      allow read, update, delete: if false;
+    }
+
     match /referral_store_attributions/{storeId} {
       allow read, write: if false;
     }

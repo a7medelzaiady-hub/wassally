@@ -1,3 +1,5 @@
+import 'referral_campaign_page.dart';
+import '../services/order_gateway.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -339,6 +341,8 @@ class _AccountPageState extends State<AccountPage> {
                 },
               ),
               _joinSection(_profileData),
+              if (OrderGateway.referralCampaignEnabled)
+                const ReferralCampaignLink(),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
