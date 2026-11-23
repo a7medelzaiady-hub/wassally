@@ -59,6 +59,10 @@ describe("store referral verification", () => {
     try {
       docs["storeOwners/owner2"] = { storeId: sv("differentStore"), active: bv(true) };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      docs["storeOwners/owner2"] = { storeId: sv("store1"), active: bv(false) };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      docs["storeOwners/owner2"] = { storeId: sv("store1") };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
       delete docs["storeOwners/owner2"];
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs["storeOwners/owner2"] = original; }
