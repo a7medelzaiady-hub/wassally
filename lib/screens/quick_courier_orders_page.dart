@@ -73,6 +73,12 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
     Future.microtask(_load);
   }
 
+  @override
+  void dispose() {
+    ++_loadGeneration;
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final generation = ++_loadGeneration;
     if (!mounted) return;
