@@ -1078,7 +1078,8 @@ service cloud.firestore {
 
     // بيانات المستخدم: صاحبها بس.
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      // دليل المستخدمين للإدارة فقط؛ لا يتيح القراءة لأي مستخدم آخر.
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       // ممنوع المستخدم يكتب حقل role (أو أي حقل صلاحيات) في مستنده.
       // الحقول المسموحة بس (whitelist). أي حقل جديد (محفظة، صلاحيات...) لازم يتضاف هنا صراحةً.
       allow create: if signedIn() && request.auth.uid == uid &&
@@ -1140,7 +1141,7 @@ service cloud.firestore {
 
     // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
     match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if false;
     }
 
