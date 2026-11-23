@@ -1,0 +1,89 @@
+name: Maestro Android UI Smoke
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: maestro-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  login-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      # Official udev rule from reactivecircus/android-emulator-runner docs.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      # x64 only: the emulator is x86_64, so a fat APK only adds build/install time.
+      - name: Build debug APK for UI smoke test
+        timeout-minutes: 15
+        run: flutter build apk --debug --target-platform android-x64 --dart-define=WASALLY_SERVER_ORDERS=false
+
+      - name: Install Maestro CLI
+        timeout-minutes: 5
+        run: |
+          curl -Ls 'https://get.maestro.mobile.dev' | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Check KVM availability
+        run: |
+          echo "--- /dev/kvm"
+          ls -l /dev/kvm 2>&1 || true
+          echo "--- CPU virtualization flags (count of vmx/svm lines)"
+          grep -c -E 'vmx|svm' /proc/cpuinfo || true
+          echo "--- user: $(id)"
+          if [ -e /dev/kvm ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM is present and accessible: hardware acceleration should be active."
+            echo "KVM: available (read/write OK)" >> "$GITHUB_STEP_SUMMARY"
+          elif [ -e /dev/kvm ]; then
+            echo "::warning title=KVM not accessible::/dev/kvm exists but is not readable and writable by this user. The emulator will NOT be hardware accelerated and may boot very slowly."
+            echo "KVM: PRESENT BUT NOT ACCESSIBLE - no hardware acceleration" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=KVM unavailable::/dev/kvm does not exist on this runner. The emulator will NOT be hardware accelerated and may boot very slowly."
+            echo "KVM: UNAVAILABLE - no hardware acceleration" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Boot alone is not success: the script must install the APK and pass Maestro.
+      - name: Run login screen smoke flow
+        timeout-minutes: 20
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 3072M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: bash .github/scripts/maestro-smoke.sh
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-diagnostics
+          path: diagnostics/
+          if-no-files-found: warn
+          retention-days: 7

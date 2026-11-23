@@ -1,0 +1,37 @@
+name: Cloudflare Order Gateway CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare-order-gateway/**"
+      - ".github/workflows/order-gateway.yml"
+      - ".github/workflows/firestore-rules.yml"
+      - ".github/workflows/firestore-emulator-stress.yml"
+  pull_request:
+    paths:
+      - "cloudflare-order-gateway/**"
+      - ".github/workflows/order-gateway.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-order-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npx wrangler deploy --dry-run
+      - run: npm test

@@ -1,0 +1,77 @@
+name: Firestore Rules Tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "firestore.rules"
+      - "firebase.json"
+      - "rules-tests/**"
+      - "cloudflare-order-gateway/**"
+      - "firestore-debug.log"
+      - ".github/workflows/firestore-rules.yml"
+      - ".github/workflows/firestore-emulator-stress.yml"
+      - ".github/workflows/order-gateway.yml"
+      - "ORDER_LIFECYCLE_AUDIT_AR.md"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "firestore.rules"
+      - "firebase.json"
+      - "rules-tests/**"
+      - ".github/workflows/firestore-rules.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  firestore-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Install test dependencies
+        working-directory: rules-tests
+        run: npm ci
+
+      - name: Remove stale emulator logs
+        run: rm -f rules-tests/firestore-debug.log firestore-debug.log
+
+      - name: Run Firestore security rules tests on Emulator
+        working-directory: rules-tests
+        run: npx firebase emulators:exec --config ../firebase.json --only firestore --project demo-wasally "node --test rules.test.js"
+
+      # assertFails قد ينجح لو الرفض سببه تجاوز حد 1000 تعبير وليس القاعدة نفسها،
+      # فنفشل الفحص إذا ظهر الحد في سجل الـ Emulator.
+      - name: Fail if any rule hit the 1000-expression limit
+        if: always()
+        working-directory: rules-tests
+        run: |
+          if [ ! -s firestore-debug.log ]; then
+            echo "::error::Emulator log firestore-debug.log is missing or empty; cannot verify expression limit"
+            exit 1
+          fi
+          if grep -n "maximum of 1000 expressions" firestore-debug.log; then
+            echo "::error::A Firestore rule exceeded the 1000-expression limit"
+            exit 1
+          fi
+          echo "No expression-limit errors in emulator log."
