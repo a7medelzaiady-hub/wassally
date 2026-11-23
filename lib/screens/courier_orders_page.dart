@@ -624,10 +624,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final delivered = await DeliveryPinService.deliver(widget.order.id, pin);
+      final orderId = widget.order.id;
+      final payable = widget.order.payable;
+      final delivered = await DeliveryPinService.deliver(orderId, pin);
+      if (!mounted || widget.order.id != orderId) return;
       messenger.showSnackBar(SnackBar(
         content: Text(delivered
-            ? 'تم تأكيد التسليم. حصّل ${formatPrice(widget.order.payable)} من العميل.'
+            ? 'تم تأكيد التسليم. حصّل ${formatPrice(payable)} من العميل.'
             : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
       ));
     } on DeliveryPinError catch (e) {
