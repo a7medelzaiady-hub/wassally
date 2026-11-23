@@ -37,7 +37,8 @@ export function decideReferralClaim(
 ): ReferralClaimDecision {
   const code = normalizeReferralCode(requestedCode);
   if (!isReferralCode(code)) return { allowed: false, reason: "invalid_code" };
-  if (!record || !record.active || normalizeReferralCode(record.code) !== code) {
+  if (!record || record.active !== true || typeof record.code !== "string" ||
+      normalizeReferralCode(record.code) !== code) {
     return { allowed: false, reason: "inactive_or_missing_code" };
   }
   if (!validUid(evidence.invitedUid) || !validUid(record.inviterUid) ||
