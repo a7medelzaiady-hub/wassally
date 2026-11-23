@@ -277,15 +277,26 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   Widget _requestCard(QuickCourierOrder o) {
     return _card(children: [
-      Text('طلب ${o.customerFirstName.isEmpty ? 'العميل' : o.customerFirstName}',
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-      if (o.area.isNotEmpty)
-        Text('📍 منطقة العميل: ${o.area}', style: TextStyle(color: kMuted)),
-      if (!o.canSeeContact)
-        Text('العنوان التفصيلي ورقم الهاتف يظهران بعد قبول الطلب فقط.',
-            style: TextStyle(color: kMuted, fontSize: 12)),
+      Row(
+        children: [
+          Icon(Icons.receipt_long_outlined, color: Brand.green, size: 20),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'طلب العميل',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      if (o.area.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
+      ],
+      const Divider(height: 18),
       for (final s in o.stores) ...[
-        const SizedBox(height: 10),
         Row(children: [
           Icon(Icons.storefront, color: Brand.green),
           const SizedBox(width: 6),
@@ -295,10 +306,24 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           ),
         ]),
         for (final p in s.pricedItems)
-          _row('• ${p.name} × ${p.qty}', 'تقريبًا ${formatPiastres(p.subtotalPiastres)}'),
+          Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${p.name} × ${p.qty}',
+                    style: const TextStyle(fontSize: 17, height: 1.45)),
+                Text('تقريبًا ${formatPiastres(p.subtotalPiastres)}',
+                    style: TextStyle(color: kMuted)),
+              ],
+            ),
+          ),
         if (s.items.isNotEmpty) Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(s.items, style: const TextStyle(fontSize: 15, height: 1.5)),
+          child: Text(
+            s.items,
+            style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
       if (o.notes.isNotEmpty) ...[
@@ -333,25 +358,38 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         child: Text(c.address, style: const TextStyle(height: 1.5)),
       ),
       if (c.address.isEmpty) const Text('العنوان التفصيلي غير متاح'),
-      if (c.address.isNotEmpty)
-        OutlinedButton.icon(
-          onPressed: _busy
-              ? null
-              : () async {
-                  try {
-                    final opened = await openInMaps(c.address);
-                    if (!opened && mounted) _toast('تعذر فتح الخريطة.');
-                  } catch (_) {
-                    if (mounted) _toast('تعذر فتح الخريطة.');
-                  }
-                },
-          icon: const Icon(Icons.map_outlined),
-          label: const Text('افتح الخريطة'),
-        ),
       if (c.notes.isNotEmpty) Text(c.notes, style: TextStyle(color: kMuted)),
-      const SizedBox(height: 10),
-      _bigButton('اتصل بالعميل', Icons.call, c.phone.isEmpty ? null : _call,
-          color: const Color(0xFF2563EB), key: const Key('quick-call')),
+      if (c.address.isNotEmpty || c.phone.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            if (c.phone.isNotEmpty)
+              TextButton.icon(
+                key: const Key('quick-call'),
+                onPressed: _busy ? null : _call,
+                icon: const Icon(Icons.call_outlined, size: 18),
+                label: const Text('اتصل بالعميل'),
+              ),
+            if (c.address.isNotEmpty)
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        try {
+                          final opened = await openInMaps(c.address);
+                          if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                        } catch (_) {
+                          if (mounted) _toast('تعذر فتح الخريطة.');
+                        }
+                      },
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('افتح الخريطة'),
+              ),
+          ],
+        ),
+      ],
     ]);
   }
 
@@ -585,20 +623,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                   child: Center(child: Text('جاري تحميل تفاصيل الطلب...')),
                 ),
               if (o != null) ...[
-                if (o.step != QuickCourierStep.delivered &&
-                    o.step != QuickCourierStep.cancelled)
-                  _card(children: [
-                    Text(
-                      quickStepLabel(o.step),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ]),
-                if (o.step == QuickCourierStep.available) _requestCard(o),
+                _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
-                if (o.step != QuickCourierStep.available) _requestCard(o),
               ],
             ],
           ),
