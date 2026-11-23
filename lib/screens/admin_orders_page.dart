@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
+import 'admin_navigation_page.dart';
 import '../services/price_check.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
@@ -295,6 +296,23 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                     : 'المدير: ${widget.name}',
               ),
             ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    leading: const Icon(Icons.grid_view_rounded, color: Color(0xFF087653)),
+                    title: const Text('أدوات الإدارة', style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('المحلات، المناديب، الصلاحيات والتقارير'),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const AdminNavigationPage()),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             SliverToBoxAdapter(child: _bannersShortcut()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
           ];
@@ -583,8 +601,18 @@ class _AdminOrderCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     _info('العميل', customer),
-                    if (order.area.isNotEmpty) _info('المنطقة', order.area),
-                    const SizedBox(height: 12),
+                    _info('عنوان العميل', order.address.isNotEmpty ? order.address : (order.area.isNotEmpty ? '${order.area} — العنوان الكامل داخل التفاصيل' : 'العنوان الكامل داخل التفاصيل')),
+                    _info('عنوان المحل', 'اضغط تفاصيل الطلب لعرض العنوان'),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        onPressed: onTap,
+                        icon: const Icon(Icons.receipt_long_outlined),
+                        label: const Text('عرض تفاصيل الطلب والعناوين'),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -651,6 +679,7 @@ class _ManageSheetState extends State<_ManageSheet> {
   // نسخة حيّة من الطلب: الشيت يفضل مفتوح ويتحدّث بعد كل خطوة.
   late AppOrder _o = widget.order;
   OrderContact? _contact;
+  String? _storeAddress;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSub;
   bool _acted = false;
   bool _finished = false;
@@ -660,6 +689,12 @@ class _ManageSheetState extends State<_ManageSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.order.storeId.isNotEmpty) {
+      FirebaseFirestore.instance.collection('stores').doc(widget.order.storeId).get().then((doc) {
+        final data = doc.data();
+        if (mounted) setState(() => _storeAddress = (data?['address'] ?? data?['locationAddress'] ?? '').toString());
+      }).catchError((Object _) {});
+    }
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
@@ -1349,6 +1384,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                     color: Brand.ink,
                   ),
                 ),
+                Text('عنوان المحل: ${_storeAddress == null ? 'جاري التحميل...' : (_storeAddress!.isEmpty ? 'غير مسجل' : _storeAddress!)}'),
                 if (_contact != null && !_contact!.isEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
