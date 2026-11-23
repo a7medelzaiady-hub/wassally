@@ -54,7 +54,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _refresh() async {
-    if (!mounted) return;
+    if (!mounted || _busy) return;
     setState(() {
       _busy = true;
       _contact = null;
@@ -102,6 +102,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     } catch (e) {
       if (!mounted) return;
       _toast(e is StateError ? e.message : 'تعذر تنفيذ العملية. حاول تاني.');
+      setState(() => _busy = false);
       await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -116,7 +117,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     final phone = _contact?.phone ?? '';
     if (phone.isEmpty) return;
     final uri = Uri.parse('tel:$phone');
-    if (!await launchUrl(uri)) {
+    try {
+      if (!await launchUrl(uri) && mounted) _toast('تعذر فتح الاتصال.');
+    } catch (_) {
       if (mounted) _toast('تعذر فتح الاتصال.');
     }
   }
