@@ -20,10 +20,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   final _area = TextEditingController();
   final _phone = TextEditingController();
   final _address = TextEditingController();
-  final _store = TextEditingController();
   final _notes = TextEditingController();
-  String _unlisted = '';
-  List<QuickPriceSelection> _selected = const [];
+  final _stores = [_QuickStoreDraft()];
   bool _submitting = false;
   String? _pendingOrderId;
 
@@ -49,7 +47,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
 
   @override
   void dispose() {
-    for (final c in [_name, _area, _phone, _address, _store, _notes]) {
+    for (final c in [_name, _area, _phone, _address, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -59,9 +57,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     if (_submitting) return;
     if (_name.text.trim().isEmpty || _area.text.trim().isEmpty ||
         _phone.text.trim().isEmpty || _address.text.trim().isEmpty ||
-        (_selected.isEmpty && _unlisted.trim().isEmpty)) {
+        _stores.any((store) => !store.hasItems)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('اكتب بيانات التواصل وصنف واحد على الأقل'),
+        content: Text('اكتب بيانات التواصل وصنف واحد على الأقل لكل محل'),
       ));
       return;
     }
@@ -78,21 +76,12 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       // retried without creating duplicate orders.
       final user = await _currentUserId();
       final id = _pendingOrderId ??= '${user}_${DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(16, '0')}';
-      final pricedItems = [
-        for (final s in _selected) s.toWorkerMap(),
-      ];
       await QuickOrderApi.create({
         'orderId': id,
         'customerName': _name.text.trim(),
         'area': _area.text.trim(),
         'notes': _notes.text.trim(),
-        'stores': [
-          {
-            'name': _store.text.trim(),
-            'items': _unlisted.trim(),
-            if (pricedItems.isNotEmpty) 'pricedItems': pricedItems,
-          },
-        ],
+        'stores': [for (final store in _stores) store.toWorkerMap()],
         'contact': {
           'userName': _name.text.trim(),
           'phone': phone,
@@ -152,15 +141,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           decoration: const InputDecoration(labelText: 'رقم التليفون')),
         TextField(controller: _address,
           decoration: const InputDecoration(labelText: 'عنوان التوصيل')),
-        TextField(controller: _store,
-          decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)')),
-        const SizedBox(height: 18),
-        Text('الأصناف المطلوبة', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        QuickPricePicker(
-          onChanged: (items) => _selected = items,
-          onUnlistedChanged: (text) => _unlisted = text,
-        ),
+        for (final store in _stores)
+          _storeFields(store),
+        if (_stores.length < 10)
+          OutlinedButton.icon(
+            onPressed: _submitting ? null : () => setState(() => _stores.add(_QuickStoreDraft())),
+            icon: const Icon(Icons.add),
+            label: const Text('أضف محل تاني'),
+          ),
         const SizedBox(height: 12),
         TextField(controller: _notes, maxLines: 2,
           decoration: const InputDecoration(labelText: 'ملاحظات للمندوب')),
@@ -177,4 +165,42 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       ],
     ),
   );
+
+  Widget _storeFields(_QuickStoreDraft store) => Column(
+    key: ObjectKey(store),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SizedBox(height: 16),
+      TextFormField(
+        initialValue: store.name,
+        enabled: !_submitting,
+        maxLength: 60,
+        onChanged: (value) => store.name = value,
+        decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)'),
+      ),
+      QuickPricePicker(
+        onChanged: (items) => store.items = items,
+        onUnlistedChanged: (text) => store.unlisted = text,
+      ),
+      if (_stores.length > 1)
+        TextButton(
+          onPressed: _submitting ? null : () => setState(() => _stores.remove(store)),
+          child: const Text('احذف المحل ده'),
+        ),
+    ],
+  );
+}
+
+class _QuickStoreDraft {
+  String name = '';
+  String unlisted = '';
+  List<QuickPriceSelection> items = const [];
+
+  bool get hasItems => items.isNotEmpty || unlisted.trim().isNotEmpty;
+
+  Map<String, dynamic> toWorkerMap() => {
+    'name': name.trim(),
+    'items': unlisted.trim(),
+    if (items.isNotEmpty) 'pricedItems': [for (final item in items) item.toWorkerMap()],
+  };
 }

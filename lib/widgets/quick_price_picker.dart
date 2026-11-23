@@ -18,7 +18,11 @@ class QuickPricePicker extends StatefulWidget {
   State<QuickPricePicker> createState() => _QuickPricePickerState();
 }
 
-class _QuickPricePickerState extends State<QuickPricePicker> {
+class _QuickPricePickerState extends State<QuickPricePicker>
+    with AutomaticKeepAliveClientMixin<QuickPricePicker> {
+  @override
+  bool get wantKeepAlive => true;
+
   final _search = TextEditingController();
   final _unlisted = TextEditingController();
   final Map<String, int> _quantities = {};
@@ -59,6 +63,7 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return FutureBuilder<QuickPriceGuide?>(
       future: _guide,
       builder: (context, snapshot) {
@@ -139,6 +144,7 @@ class _QuickPricePickerState extends State<QuickPricePicker> {
               decoration: const InputDecoration(
                 labelText: 'أصناف أخرى مش موجودة في القائمة',
                 hintText: 'اكتب الأصناف والكميات المطلوبة',
+                helperText: 'ممكن تملي الطلب بميكروفون لوحة المفاتيح.',
                 border: OutlineInputBorder(),
               ),
             ),

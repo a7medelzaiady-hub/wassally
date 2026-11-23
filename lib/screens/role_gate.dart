@@ -90,6 +90,7 @@ class _RoleGateState extends State<RoleGate> {
         // Only the freshly verified role controls FCM courier subscriptions.
         unawaited(NotificationService.syncCourierTopic(
           isCourier: fresh.held.contains(AppRole.courier),
+          isQuickCourier: fresh.quickCourier,
         ));
         unawaited(NotificationService.syncAdminTopic(
           isAdmin: fresh.held.contains(AppRole.admin),

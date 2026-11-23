@@ -63,8 +63,7 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
   bool _mineTab = false;
   bool _loading = true;
   String? _error;
-  List<QuickCourierOrder> _open = const [];
-  List<QuickCourierOrder> _mine = const [];
+  List<QuickCourierOrder> _orders = const [];
   int _loadGeneration = 0;
 
   @override
@@ -87,19 +86,18 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
       _error = null;
     });
     try {
-      final results = await Future.wait([widget.backend.loadOpen(), widget.backend.loadMine()]);
+      final mine = _mineTab;
+      final orders = mine ? await widget.backend.loadMine() : await widget.backend.loadOpen();
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        _open = results[0];
-        _mine = results[1];
+        _orders = mine ? orders.where((order) => order.isActive).toList() : orders;
         _loading = false;
       });
     } catch (_) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         // A failed refresh must not leave stale available/assigned orders visible.
-        _open = const [];
-        _mine = const [];
+        _orders = const [];
         _loading = false;
         _error = 'تعذر تحميل الطلبات السريعة. تأكد إن حسابك معتمد وحاول تاني.';
       });
@@ -120,7 +118,14 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _mineTab = mine),
+        onTap: () {
+          if (selected) return;
+          setState(() {
+            _mineTab = mine;
+            _orders = const [];
+          });
+          _load();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           alignment: Alignment.center,
@@ -143,8 +148,7 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final active = _mine.where((o) => o.isActive).toList();
-    final shown = _mineTab ? active : _open;
+    final count = _loading || _error != null ? '' : ' (${_orders.length})';
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -161,8 +165,8 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
               ),
               child: Row(
                 children: [
-                  _tab('المتاحة (${_open.length})', false),
-                  _tab('طلباتي (${active.length})', true),
+                  _tab(_mineTab ? 'المتاحة' : 'المتاحة$count', false),
+                  _tab(_mineTab ? 'طلباتي$count' : 'طلباتي', true),
                 ],
               ),
             ),
@@ -192,7 +196,7 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
                               ),
                             ),
                           ])
-                        : shown.isEmpty
+                        : _orders.isEmpty
                             ? ListView(children: [
                                 const SizedBox(height: 80),
                                 Icon(Icons.flash_on, size: 56, color: kMuted),
@@ -207,11 +211,11 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
                               ])
                             : ListView.separated(
                                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
-                                itemCount: shown.length,
+                                itemCount: _orders.length,
                                 separatorBuilder: (_, _) => const SizedBox(height: 12),
                                 itemBuilder: (context, i) => QuickOrderSummaryCard(
-                                  order: shown[i],
-                                  onTap: () => _openOrder(shown[i]),
+                                  order: _orders[i],
+                                  onTap: () => _openOrder(_orders[i]),
                                 ),
                               ),
               ),
