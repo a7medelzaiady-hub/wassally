@@ -179,19 +179,22 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
 
-  Widget _section(String title, List<Widget> children) => Card(
-    margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          ...children,
-        ],
-      ),
+  Widget _receiptDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: CustomPaint(
+      painter: _ReceiptDividerPainter(Brand.palette.line),
+      child: const SizedBox(width: double.infinity, height: 1),
     ),
+  );
+
+  Widget _section(String title, List<Widget> children) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _receiptDivider(),
+      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 6),
+      ...children,
+    ],
   );
 
   Widget _amount(String label, Object? value, {bool emphasis = false}) =>
@@ -240,74 +243,98 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (order == null)
           Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
         else ...[
-          _section(quickOrderStatusLabel(status), [
-            if (area.isNotEmpty)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                leading: const Icon(Icons.location_on_outlined),
-                title: Text(area),
-              ),
-          ]),
-          if (hasFinalBill) ...[
-            _section('الحساب النهائي', [
-              _amount('الفواتير', totals['purchases']),
-              _amount('أجرة التوصيل', totals['delivery']),
-              _amount('رسوم وصّلي', totals['serviceFee']),
-              if (((totals['prepaid'] as num?) ?? 0) > 0)
-                _amount('المقدم', totals['prepaid']),
-              const Divider(height: 20),
-              _amount(
-                delivered
-                    ? (due < 0 ? 'الرد عند التسليم' : 'المبلغ عند التسليم')
-                    : (due < 0 ? 'يُردّ لك' : 'المتبقي عند التسليم'),
-                due.abs(),
-                emphasis: true,
-              ),
-            ]),
-            if (receipts.isNotEmpty)
-              _section('الفواتير', [
-                for (final raw in receipts)
-                  if (raw is Map && raw['imageUrl'] is String) ...[
-                    _amount('فاتورة', raw['amountPiastres']),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        raw['imageUrl'] as String,
-                        height: 180,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) =>
-                            const Text('تعذر تحميل صورة الفاتورة'),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Brand.palette.line),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.receipt_long_outlined, color: Brand.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        quickOrderStatusLabel(status),
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
                   ],
-              ]),
-          ],
-          _section('محتويات الطلب', [
-            if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
-            for (final raw in stores)
-              if (raw is Map) ...[
-                const SizedBox(height: 8),
-                Text((raw['name'] ?? '').toString().trim().isEmpty
-                    ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-                if ((raw['items'] ?? '').toString().trim().isNotEmpty)
-                  Text((raw['items'] ?? '').toString()),
-                if (raw['pricedItems'] is List)
-                  for (final line in raw['pricedItems'] as List)
-                    if (line is Map)
-                      Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+                ),
+                if (area.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('الحي: $area', style: TextStyle(color: Brand.palette.muted)),
+                ],
+                _section('محتويات الطلب', [
+                  if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
+                  for (final raw in stores)
+                    if (raw is Map) ...[
+                      const SizedBox(height: 4),
+                      Text((raw['name'] ?? '').toString().trim().isEmpty
+                          ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                      if ((raw['items'] ?? '').toString().trim().isNotEmpty)
+                        Text((raw['items'] ?? '').toString()),
+                      if (raw['pricedItems'] is List)
+                        for (final line in raw['pricedItems'] as List)
+                          if (line is Map)
+                            Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+                    ],
+                  if (notes.isNotEmpty) Text('ملاحظات: $notes'),
+                  if (!hasFinalBill) ...[
+                    const SizedBox(height: 8),
+                    if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
+                      _amount('التقدير', order['approxTotalPiastres']),
+                    Text('الحساب بيتحدد بعد الشراء.',
+                      style: TextStyle(color: Brand.palette.muted)),
+                  ],
+                ]),
+                if (hasFinalBill) ...[
+                  _section('الحساب النهائي', [
+                    _amount('الفواتير', totals['purchases']),
+                    _amount('أجرة التوصيل', totals['delivery']),
+                    _amount('رسوم وصّلي', totals['serviceFee']),
+                    if (((totals['prepaid'] as num?) ?? 0) > 0)
+                      _amount('المقدم', totals['prepaid']),
+                    _receiptDivider(),
+                    _amount(
+                      delivered
+                          ? (due < 0 ? 'الرد عند التسليم' : 'المبلغ عند التسليم')
+                          : (due < 0 ? 'يُردّ لك' : 'المتبقي عند التسليم'),
+                      due.abs(),
+                      emphasis: true,
+                    ),
+                  ]),
+                  if (receipts.isNotEmpty)
+                    _section('الفواتير', [
+                      for (final raw in receipts)
+                        if (raw is Map && raw['imageUrl'] is String) ...[
+                          _amount('فاتورة', raw['amountPiastres']),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              raw['imageUrl'] as String,
+                              height: 180,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) =>
+                                  const Text('تعذر تحميل صورة الفاتورة'),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                    ]),
+                ],
               ],
-            if (notes.isNotEmpty) Text('ملاحظات: $notes'),
-            if (!hasFinalBill) ...[
-              const SizedBox(height: 8),
-              if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
-                _amount('التقدير', order['approxTotalPiastres']),
-              const Text('الأسعار تقريبية لحد صدور الحساب النهائي.'),
-            ],
-          ]),
+            ),
+          ),
+          const SizedBox(height: 10),
           if (status == 'open')
             OutlinedButton(
               onPressed: _busy ? null : _edit,
@@ -337,4 +364,24 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       ]),
     );
   }
+}
+
+
+class _ReceiptDividerPainter extends CustomPainter {
+  const _ReceiptDividerPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    for (var x = 0.0; x < size.width; x += 8) {
+      final end = (x + 4).clamp(0.0, size.width).toDouble();
+      canvas.drawLine(Offset(x, 0.5), Offset(end, 0.5), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ReceiptDividerPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
