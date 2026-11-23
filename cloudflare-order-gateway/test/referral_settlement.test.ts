@@ -12,7 +12,7 @@ const docs: Record<string, Record<string, unknown>> = {
   "referral_attributions/invited": {
     invitedUid: sv("invited"), inviterUid: sv("inviter"), channel: sv("customer"), claimedAtMs: iv(100),
   },
-  "orders/order1": { customerId: sv("invited"), status: sv("delivered"), deliveredAtMs: iv(200) },
+  "orders/order1": { userId: sv("invited"), status: sv("delivered"), deliveredAt: { timestampValue: "1970-01-01T00:00:00.200Z" } },
   "referral_first_orders/invited": {
     invitedUid: sv("invited"), firstCompletedOrderId: sv("order1"), completedAtMs: iv(200),
   },
