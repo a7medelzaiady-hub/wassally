@@ -945,9 +945,15 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   Future<void> _openMap() async {
     final messenger = ScaffoldMessenger.of(context);
     if (!_canSeeContact) return;
-    final ok = await openInMaps(_contact?.address ?? '');
-    if (!ok) {
-      messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+    try {
+      final ok = await openInMaps(_contact?.address ?? '');
+      if (!ok && mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+      }
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+      }
     }
   }
 
