@@ -123,6 +123,15 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        for (final store in _stores)
+          _storeFields(store),
+        if (_stores.length < 10)
+          OutlinedButton.icon(
+            onPressed: _submitting ? null : () => setState(() => _stores.add(_QuickStoreDraft())),
+            icon: const Icon(Icons.add),
+            label: const Text('أضف محل تاني'),
+          ),
+        const SizedBox(height: 12),
         _section(
           title: 'بيانات التوصيل',
           icon: Icons.location_on_outlined,
@@ -151,14 +160,6 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             ),
           ],
         ),
-        for (final store in _stores)
-          _storeFields(store),
-        if (_stores.length < 10)
-          OutlinedButton.icon(
-            onPressed: _submitting ? null : () => setState(() => _stores.add(_QuickStoreDraft())),
-            icon: const Icon(Icons.add),
-            label: const Text('أضف محل تاني'),
-          ),
         const SizedBox(height: 12),
         TextField(controller: _notes, maxLines: 2,
           decoration: const InputDecoration(labelText: 'ملاحظات للمندوب')),
