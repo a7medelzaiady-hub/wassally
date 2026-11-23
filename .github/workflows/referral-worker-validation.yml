@@ -1,0 +1,47 @@
+name: Referral Worker validation
+
+on:
+  push:
+    branches:
+      - feat/referrals-domain-isolated-20261123
+    paths:
+      - 'cloudflare-order-gateway/src/referral*.ts'
+      - 'cloudflare-order-gateway/test/referral*.test.ts'
+      - 'cloudflare-order-gateway/package*.json'
+      - '.github/workflows/referral-worker-validation.yml'
+  pull_request:
+    paths:
+      - 'cloudflare-order-gateway/src/referral*.ts'
+      - 'cloudflare-order-gateway/test/referral*.test.ts'
+      - 'cloudflare-order-gateway/package*.json'
+      - '.github/workflows/referral-worker-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: referral-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  referral-worker:
+    name: TypeScript and referral tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: cloudflare-order-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cloudflare-order-gateway/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck Worker
+        run: npm run typecheck
+      - name: Run referral unit tests
+        run: npx vitest run test/referral*.test.ts
