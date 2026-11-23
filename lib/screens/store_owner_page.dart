@@ -700,7 +700,10 @@ class _OwnerOrdersTab extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   itemCount: current.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) => _OwnerOrderCard(order: current[i]),
+                  itemBuilder: (context, i) => _OwnerOrderCard(
+                    key: ValueKey(current[i].id),
+                    order: current[i],
+                  ),
                 ),
         ),
       ],
@@ -957,7 +960,7 @@ class ClosedOrderCompactCard extends StatelessWidget {
 
 class _OwnerOrderCard extends StatefulWidget {
   final AppOrder order;
-  const _OwnerOrderCard({required this.order});
+  const _OwnerOrderCard({super.key, required this.order});
 
   @override
   State<_OwnerOrderCard> createState() => _OwnerOrderCardState();
@@ -1334,72 +1337,87 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             ),
           ],
           const Divider(height: 22),
-          for (final line in o.items)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${line.name} × ${line.qty}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: _unavailable.contains(line.name)
-                            ? kDanger
-                            : null,
-                        decoration: _unavailable.contains(line.name)
-                            ? TextDecoration.lineThrough
-                            : null,
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            title: const Text('تفاصيل الطلب'),
+            subtitle: Text('عدد الأصناف: ${o.items.length}'),
+            children: [
+              for (final line in o.items)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${line.name} × ${line.qty}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: _unavailable.contains(line.name)
+                                    ? kDanger
+                                    : null,
+                                decoration: _unavailable.contains(line.name)
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
+                            ),
+                            if (line.options.isNotEmpty)
+                              Text(line.options.join('، '), style: text.bodySmall),
+                          ],
+                        ),
                       ),
+                      Text(formatPrice(line.total)),
+                      if (isNew)
+                        IconButton(
+                          tooltip: _unavailable.contains(line.name)
+                              ? 'الصنف متاح'
+                              : 'صنف غير متاح',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _busy
+                              ? null
+                              : () => setState(() {
+                                  if (!_unavailable.remove(line.name)) {
+                                    _unavailable.add(line.name);
+                                  }
+                                }),
+                          icon: Icon(
+                            _unavailable.contains(line.name)
+                                ? Icons.remove_circle
+                                : Icons.remove_circle_outline,
+                            size: 20,
+                            color: kDanger,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (o.specialRequest != null) ...[
+                const SizedBox(height: 10),
+                _SpecialRequestBox(data: o.specialRequest!),
+              ],
+              if (o.notes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('ملاحظات العميل: ${o.notes}'),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    'إجمالي الأصناف:',
+                    style: text.bodyMedium?.copyWith(color: kMuted),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    formatPrice(o.subtotal),
+                    style: text.titleMedium?.copyWith(
+                      color: kPrimary,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  Text(formatPrice(line.total)),
-                  if (isNew)
-                    IconButton(
-                      tooltip: _unavailable.contains(line.name)
-                          ? 'الصنف متاح'
-                          : 'صنف غير متاح',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                              if (!_unavailable.remove(line.name)) {
-                                _unavailable.add(line.name);
-                              }
-                            }),
-                      icon: Icon(
-                        _unavailable.contains(line.name)
-                            ? Icons.remove_circle
-                            : Icons.remove_circle_outline,
-                        size: 20,
-                        color: kDanger,
-                      ),
-                    ),
                 ],
-              ),
-            ),
-          if (o.specialRequest != null) ...[
-            const SizedBox(height: 10),
-            _SpecialRequestBox(data: o.specialRequest!),
-          ],
-          if (o.notes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text('ملاحظات العميل: ${o.notes}'),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                'إجمالي الأصناف:',
-                style: text.bodyMedium?.copyWith(color: kMuted),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                formatPrice(o.subtotal),
-                style: text.titleMedium?.copyWith(
-                  color: kPrimary,
-                  fontWeight: FontWeight.w800,
-                ),
               ),
             ],
           ),
