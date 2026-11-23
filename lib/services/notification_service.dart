@@ -282,6 +282,16 @@ class NotificationService {
     ].whereType<String>().where((s) => s.isNotEmpty);
     if (parts.isEmpty) return;
 
+    final type = (message.data['type'] ?? '').toString();
+    final orderId = (message.data['orderId'] ?? '').toString().trim();
+    final actionLabel = switch (type) {
+      'available_order' => 'عرض الطلبات المتاحة',
+      'app_update' => 'تحديث الآن',
+      'admin_inbox' => 'فتح صندوق الإدارة',
+      'support_chat' => null,
+      _ => orderId.isEmpty ? null : 'عرض الطلب',
+    };
+
     messengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
@@ -289,18 +299,12 @@ class NotificationService {
           content: Text(parts.join(' — ')),
           duration: const Duration(seconds: 6),
           behavior: SnackBarBehavior.floating,
-          action: (message.data['orderId'] ?? '').toString().isNotEmpty
-              ? SnackBarAction(
-                  label: 'عرض الطلب', onPressed: () => _openOrder(message))
-              : (message.data['type'] == 'support_chat'
-                  ? SnackBarAction(
-                      label: 'فتح المحادثة',
-                      onPressed: () => _openMessage(message))
-                  : (message.data['type'] == 'app_update'
-                      ? SnackBarAction(
-                          label: 'تحديث الآن',
-                          onPressed: () => _openMessage(message))
-                      : null)),
+          action: actionLabel == null
+              ? null
+              : SnackBarAction(
+                  label: actionLabel,
+                  onPressed: () => _openMessage(message),
+                ),
         ),
       );
   }
