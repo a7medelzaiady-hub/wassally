@@ -123,9 +123,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _call() async {
-    final phone = _contact?.phone ?? '';
+    final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
-    final uri = Uri.parse('tel:$phone');
+    // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
+    final uri = Uri(scheme: 'tel', path: phone);
     try {
       if (!await launchUrl(uri) && mounted) _toast('تعذر فتح الاتصال.');
     } catch (_) {
