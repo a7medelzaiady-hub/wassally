@@ -808,6 +808,14 @@ class _StoreClosedOrdersPageState extends State<StoreClosedOrdersPage> {
   }
 }
 
+String _closedOrderLabel(AppOrder order) {
+  if (order.status == OrderStatus.cancelled &&
+      order.lastDeliveryIssueId.isNotEmpty) {
+    return 'مرتجع';
+  }
+  return order.status.label;
+}
+
 /// كارت يوم واحد: عدد الطلبات، البضاعة، ورسوم وصّلي (للمسلّم بس)، وتفاصيل كل فاتورة بالضغط.
 class ClosedDayCard extends StatelessWidget {
   final ClosedDayGroup group;
@@ -842,7 +850,7 @@ class ClosedDayCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       '${formatDateTime(closedOrderTime(o)!)}'
-                      '${o.status == OrderStatus.cancelled ? ' • ملغي' : ''}',
+                      '${o.status == OrderStatus.cancelled ? ' • ${_closedOrderLabel(o)}' : ''}',
                       style: const TextStyle(fontSize: 12.5),
                     ),
                   ),
@@ -879,7 +887,7 @@ class ClosedOrderCompactCard extends StatelessWidget {
           children: [
             Expanded(child: Text(who, style: const TextStyle(fontWeight: FontWeight.w800))),
             Text(
-              o.status.label,
+              _closedOrderLabel(o),
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w800,
