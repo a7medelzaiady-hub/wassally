@@ -123,24 +123,34 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text('اطلب من أي محل، حتى لو مش موجود على وصّلي.'),
-        const SizedBox(height: 12),
-        Text('بيانات التوصيل', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        TextField(controller: _name,
-          decoration: const InputDecoration(labelText: 'اسمك')),
-        TextField(controller: _area,
-          decoration: const InputDecoration(
-            labelText: 'المنطقة العامة (تظهر للمندوب قبل القبول)',
-            hintText: 'مثال: مدينة كفر الشيخ - حي الزهور',
-            helperText: 'اكتب المدينة والحي فقط، بدون شارع أو رقم منزل.',
-            helperMaxLines: 2,
-          )),
-        TextField(controller: _phone,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'رقم التليفون')),
-        TextField(controller: _address,
-          decoration: const InputDecoration(labelText: 'عنوان التوصيل')),
+        _section(
+          title: 'بيانات التوصيل',
+          icon: Icons.location_on_outlined,
+          children: [
+            TextField(
+              controller: _name,
+              decoration: const InputDecoration(labelText: 'اسمك'),
+            ),
+            TextField(
+              controller: _area,
+              decoration: const InputDecoration(
+                labelText: 'المدينة والحي',
+                hintText: 'مثال: بيلا، حي المحطة',
+                helperText: 'الحي بيظهر للمندوب قبل قبول الطلب.',
+                helperMaxLines: 2,
+              ),
+            ),
+            TextField(
+              controller: _phone,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'رقم التليفون'),
+            ),
+            TextField(
+              controller: _address,
+              decoration: const InputDecoration(labelText: 'العنوان بالتفصيل'),
+            ),
+          ],
+        ),
         for (final store in _stores)
           _storeFields(store),
         if (_stores.length < 10)
@@ -155,8 +165,6 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         const SizedBox(height: 16),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF087B58),
-            foregroundColor: Colors.white,
             minimumSize: const Size.fromHeight(54),
           ),
           onPressed: _submitting ? null : _submit,
@@ -166,26 +174,64 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     ),
   );
 
-  Widget _storeFields(_QuickStoreDraft store) => Column(
+  Widget _section({
+    Key? key,
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) => Card(
+    key: key,
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+              ),
+            ],
+          ),
+          for (final child in children) ...[
+            const SizedBox(height: 12),
+            child,
+          ],
+        ],
+      ),
+    ),
+  );
+
+  Widget _storeFields(_QuickStoreDraft store) => _section(
     key: ObjectKey(store),
-    crossAxisAlignment: CrossAxisAlignment.stretch,
+    title: _stores.length == 1
+        ? 'مشترياتك'
+        : 'مشتريات المحل ${_stores.indexOf(store) + 1}',
+    icon: Icons.shopping_basket_outlined,
     children: [
-      const SizedBox(height: 16),
       TextFormField(
         initialValue: store.name,
         enabled: !_submitting,
         maxLength: 60,
         onChanged: (value) => store.name = value,
-        decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)'),
+        decoration: const InputDecoration(
+          labelText: 'اسم المحل (اختياري)',
+          hintText: 'سيبه فاضي لو المندوب هيختار',
+          counterText: '',
+        ),
       ),
       QuickPricePicker(
         onChanged: (items) => store.items = items,
         onUnlistedChanged: (text) => store.unlisted = text,
       ),
       if (_stores.length > 1)
-        TextButton(
+        TextButton.icon(
           onPressed: _submitting ? null : () => setState(() => _stores.remove(store)),
-          child: const Text('احذف المحل ده'),
+          icon: const Icon(Icons.delete_outline),
+          label: const Text('احذف المحل ده'),
         ),
     ],
   );
