@@ -31,6 +31,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   QuickCourierOrder? _order;
   QuickContact? _contact;
   bool _busy = false;
+  int _loadGeneration = 0;
   String? _error;
   final _estimateCtrl = TextEditingController();
   final _deliveryCtrl = TextEditingController();
@@ -54,7 +55,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _refresh() async {
-    if (!mounted) return;
+    if (!mounted || _busy) return;
+    final generation = ++_loadGeneration;
     setState(() {
       _busy = true;
       _contact = null;
@@ -64,27 +66,30 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       final contact = order?.canSeeContact == true
           ? await widget.backend.loadContact(widget.orderId).catchError((_) => null)
           : null;
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _order = order;
         _contact = contact;
         _error = order == null ? 'الطلب مش موجود أو مش متاح ليك.' : null;
       });
     } catch (_) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
+          // Never display an old order or contact details after a failed reload.
           _order = null;
+          _contact = null;
           _error = 'تعذر تحميل الطلب. اسحب للتحديث.';
         });
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _loadGeneration) setState(() => _busy = false);
     }
   }
 
   /// ينفّذ عملية على الـWorker ويحدّث الشاشة من رده.
   Future<void> _act(String action, [Map<String, dynamic> body = const {}, String? done]) async {
     if (_busy) return;
+    ++_loadGeneration;
     setState(() => _busy = true);
     try {
       final updated = await widget.backend.act(widget.orderId, action, body);
@@ -93,6 +98,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         contact = await widget.backend.loadContact(widget.orderId).catchError((_) => null);
       }
       if (!mounted) return;
+      if (action == 'deliver' && updated.step == QuickCourierStep.delivered) {
+        // Do not retain the customer's delivery PIN after successful verification.
+        _pinCtrl.clear();
+      }
       setState(() {
         _order = updated;
         _contact = contact;
@@ -102,6 +111,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     } catch (e) {
       if (!mounted) return;
       _toast(e is StateError ? e.message : 'تعذر تنفيذ العملية. حاول تاني.');
+      setState(() => _busy = false);
       await _refresh();
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -116,7 +126,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     final phone = _contact?.phone ?? '';
     if (phone.isEmpty) return;
     final uri = Uri.parse('tel:$phone');
-    if (!await launchUrl(uri)) {
+    try {
+      if (!await launchUrl(uri) && mounted) _toast('تعذر فتح الاتصال.');
+    } catch (_) {
       if (mounted) _toast('تعذر فتح الاتصال.');
     }
   }
@@ -155,6 +167,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   Future<void> _addReceipt() async {
     final order = _order;
     if (order == null || _busy) return;
+    // Ask for the amount first: cancelling must not upload an orphaned image.
+    final amount = await _askAmount('مبلغ الفاتورة كام جنيه؟');
+    if (amount == null || !mounted || _busy) return;
     setState(() => _busy = true);
     String? url;
     try {
@@ -165,8 +180,6 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       if (mounted) setState(() => _busy = false);
     }
     if (url == null || !mounted) return;
-    final amount = await _askAmount('مبلغ الفاتورة كام جنيه؟');
-    if (amount == null || !mounted) return;
     await _act('receipt', {'imageUrl': url, 'amountPiastres': amount}, 'اتضافت الفاتورة');
   }
 
@@ -522,7 +535,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                     : () async {
                         if (await _confirm('تسيب الطلب ده لمندوب تاني؟')) {
                           await _act('release', const {}, 'سبت الطلب');
-                          if (mounted) Navigator.of(context).pop();
+                          // Only leave the screen if the Worker confirmed release.
+                          if (mounted && _order?.step == QuickCourierStep.available) {
+                            Navigator.of(context).pop();
+                          }
                         }
                       },
                 child: const Text('سيب الطلب'),

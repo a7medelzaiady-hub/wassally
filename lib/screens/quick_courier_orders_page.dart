@@ -73,6 +73,12 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
     Future.microtask(_load);
   }
 
+  @override
+  void dispose() {
+    ++_loadGeneration;
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final generation = ++_loadGeneration;
     if (!mounted) return;
@@ -91,6 +97,9 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
     } catch (_) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
+        // A failed refresh must not leave stale available/assigned orders visible.
+        _open = const [];
+        _mine = const [];
         _loading = false;
         _error = 'تعذر تحميل الطلبات السريعة. تأكد إن حسابك معتمد وحاول تاني.';
       });
