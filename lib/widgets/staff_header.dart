@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../screens/info_pages.dart' show openWasallyWhatsApp;
 import '../services/auth_service.dart';
 import '../screens/main_shell.dart';
-import '../screens/admin_navigation_page.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
@@ -70,14 +69,6 @@ class StaffHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final buttons = <Widget>[
-      if (isAdmin)
-        _btn(
-          tooltip: 'أدوات الإدارة',
-          icon: Icons.grid_view_rounded,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const AdminNavigationPage()),
-          ),
-        ),
       if (!isAdmin)
         _btn(
           tooltip: 'تواصل مع الإدارة',
