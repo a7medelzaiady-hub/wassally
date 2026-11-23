@@ -2457,11 +2457,17 @@ async function notifyAdmins(request: Request, env: Env): Promise<Response> {
   if (!res.ok) throw new HttpError(503, "تعذر الإرسال حاليًا.");
 
   const detail = kind === "join_request" ? String(doc?.type ?? "") : "";
-  const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(adminNoticeMessage(kind, detail)),
-  });
+  const [sent] = await Promise.all([
+    fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(adminNoticeMessage(kind, detail)),
+    }),
+    kind === "delivery_issue" && typeof doc?.orderId === "string" &&
+      notifyOrderParticipant(
+        env, token, doc.customerId, doc.orderId, "order_update", "تعذر تسليم طلبك",
+      ),
+  ]);
   if (!sent.ok) {
     console.error("Admin FCM send failed", sent.status);
     throw new HttpError(503, "تعذر إرسال الإشعار.");
