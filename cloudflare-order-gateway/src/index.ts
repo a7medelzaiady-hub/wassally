@@ -1,3 +1,4 @@
+import { quoteReferralPoints } from "./referral_points";
 import { commissionAmounts } from "./referral_commission";
 import { buildAdminReferralSettingsWrite } from "./referral_admin_settings";
 import { parseReferralSettings } from "./referral_settings";
@@ -2110,6 +2111,18 @@ export default {
         return response({ error: e.message }, e.status, headers);
       }
     }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/points/quote") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true" ||
+          env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "خصم نقاط الإحالة غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralPointsQuote(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر حساب خصم نقاط الإحالة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/referrals/commissions") {
       if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
         return response({ error: "تسوية خصم الإحالة غير متاحة حاليًا." }, 404, headers);
@@ -2363,6 +2376,27 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
+async function referralPointsQuote(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-points:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { itemsSubtotalMinor } = await readJsonBody(request);
+  if (typeof itemsSubtotalMinor !== "number" || !Number.isSafeInteger(itemsSubtotalMinor) ||
+      itemsSubtotalMinor < 0 || itemsSubtotalMinor > 10_000_000) {
+    throw new HttpError(400, "راجع قيمة الأصناف.");
+  }
+  const token = await googleAccessToken(env);
+  const [config, balance] = await Promise.all([
+    getDocument(env, "app_info/referral_config", token),
+    getDocument(env, `referral_balances/${uid}`, token),
+  ]);
+  const policy = config ? parseReferralSettings(decodeFields(config.fields ?? {})).redemption : undefined;
+  return quoteReferralPoints(
+    policy, balance ? decodeFields(balance.fields ?? {}).points : undefined, itemsSubtotalMinor,
+  );
+}
+
 async function settleReferralCommission(request: Request, env: Env): Promise<JsonMap> {
   const adminUid = await verifyCustomer(request, env);
   const safeId = /^[A-Za-z0-9_-]{1,128}$/;
