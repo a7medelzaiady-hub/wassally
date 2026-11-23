@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
 
 
-import '../screens/admin_tools_page.dart';
-import '../screens/admin_couriers_board_page.dart';
-import '../screens/admin_operations_report_page.dart';
-import '../screens/admin_inbox_page.dart';
-import '../screens/admin_roles_page.dart';
-import '../screens/admin_store_owners_page.dart';
-import '../screens/admin_stores_page.dart';
 import '../screens/info_pages.dart' show openWasallyWhatsApp;
 import '../services/auth_service.dart';
 import '../screens/main_shell.dart';
+import '../screens/admin_navigation_page.dart';
 import '../theme/brand.dart';
 import 'app_header.dart';
 import 'dialogs.dart';
 import 'panel_switcher.dart';
-import '../services/admin_inbox_counts.dart';
 
 /// هيدر شاشات المدير والمندوب: العنوان + عرض كعميل + تسجيل خروج.
 class StaffHeader extends StatelessWidget {
@@ -79,98 +72,30 @@ class StaffHeader extends StatelessWidget {
     final buttons = <Widget>[
       if (isAdmin)
         _btn(
-          tooltip: 'المحلات والأصناف',
-          icon: Icons.store_mall_directory_outlined,
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const AdminStoresPage())),
-        ),
-      if (isAdmin)
-        _btn(
-          tooltip: 'المناديب',
-          icon: Icons.admin_panel_settings_outlined,
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const AdminRolesPage())),
-        ),
-      if (isAdmin)
-        _btn(
-          tooltip: 'أصحاب المحلات',
-          icon: Icons.manage_accounts_outlined,
+          tooltip: 'أدوات الإدارة',
+          icon: Icons.grid_view_rounded,
           onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminStoreOwnersPage()),
+            MaterialPageRoute<void>(builder: (_) => const AdminNavigationPage()),
           ),
-        ),
-      if (isAdmin)
-        _btn(
-          tooltip: 'إعدادات التشغيل',
-          icon: Icons.tune_rounded,
-          onPressed: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const AdminToolsPage())),
-        ),
-      if (isAdmin)
-        _btn(
-          tooltip: 'ترتيب المناديب',
-          icon: Icons.leaderboard_outlined,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminCouriersBoardPage()),
-          ),
-        ),
-      if (isAdmin)
-        _btn(
-          tooltip: 'تقرير التشغيل',
-          icon: Icons.assessment_outlined,
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminOperationsReportPage()),
-          ),
-        ),
-      if (isAdmin)
-        FutureBuilder<AdminInboxCounts>(
-          future: AdminInboxCounts.load(),
-          builder: (context, snap) {
-            final n = snap.data?.total ?? 0;
-            final button = _btn(
-              tooltip: n > 0
-                  ? 'طلبات الانضمام والمراجعات ($n محتاجين مراجعة)'
-                  : 'طلبات الانضمام والمراجعات',
-              icon: Icons.inbox_outlined,
-              onPressed: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
-            );
-            if (n == 0) return button;
-            return Badge(
-              label: Text(AdminInboxCounts.badgeText(n)),
-              backgroundColor: const Color(0xFFD32F2F),
-              child: button,
-            );
-          },
         ),
       if (!isAdmin)
         _btn(
-          tooltip: 'تواصل مع الإدارة على واتساب',
+          tooltip: 'تواصل مع الإدارة',
           icon: Icons.support_agent_outlined,
-          onPressed: () =>
-              openWasallyWhatsApp('السلام عليكم، عايز أتواصل مع إدارة وصّلي'),
+          onPressed: () => openWasallyWhatsApp('السلام عليكم، عايز أتواصل مع إدارة وصّلي'),
         ),
-      // الأدمن: تبديل بين اللوحات. غيره: زر للرئيسية (شاشة العميل).
       _btn(
         tooltip: 'الصفحة الرئيسية',
-        icon: Icons.home_rounded,
+        icon: Icons.home_filled,
         onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const MainShell()),
+          MaterialPageRoute<void>(builder: (_) => const MainShell()),
         ),
-      ),
-      // كان فيه زرار رئيسية تاني مكرر لغير الأدمن (نفس الوجهة)، اتشال.
       if (isAdmin)
         _btn(
-          tooltip: 'تبديل اللوحة',
+          tooltip: 'تبديل الأدوار',
           icon: Icons.swap_horiz_rounded,
           onPressed: () => showPanelSwitcher(context),
         ),
-      _btn(
-        tooltip: 'تسجيل خروج',
-        icon: Icons.logout,
-        color: const Color(0xFFD32F2F),
-        onPressed: () => _logout(context),
-      ),
     ];
     return Stack(
       children: [
