@@ -61,10 +61,10 @@ export async function verifyStoreReferral(
     invitedUid: attribution.invitedUid,
     invitedStoreId: evidence.invitedStoreId,
     channel: "store_owner",
-    attributedAt: attribution.claimedAtMs,
-    firstCompletedOrderAt: order.deliveredAt,
-    storeApprovedAt: store.approvedAtMs,
-    storeActivatedAt: store.activatedAtMs,
+    attributedAt: attribution.claimedAtMs as number,
+    firstCompletedOrderAt: order.deliveredAt as number,
+    storeApprovedAt: store.approvedAtMs as number,
+    storeActivatedAt: store.activatedAtMs as number,
     previousAwards,
   });
   if (!decision.eligible) return null;
