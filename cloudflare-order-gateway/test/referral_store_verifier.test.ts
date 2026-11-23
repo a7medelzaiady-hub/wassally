@@ -63,7 +63,7 @@ describe("store referral verification", () => {
       docs["storeOwners/owner2"] = { storeId: sv("store1"), active: bv(false) };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
       docs["storeOwners/owner2"] = { storeId: sv("store1") };
-      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      await expect(verifyStoreReferral(read, evidence)).resolves.toMatchObject({ grantId: "store_owner_store1" });
       delete docs["storeOwners/owner2"];
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs["storeOwners/owner2"] = original; }
@@ -76,7 +76,7 @@ describe("store referral verification", () => {
       docs["storeOwners/owner1"] = { storeId: sv("store1"), active: bv(true) };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
       docs["storeOwners/owner1"] = { storeId: sv("originalStore") };
-      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      await expect(verifyStoreReferral(read, evidence)).resolves.toMatchObject({ grantId: "store_owner_store1" });
       delete docs["storeOwners/owner1"];
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
     } finally { docs["storeOwners/owner1"] = original; }
