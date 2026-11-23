@@ -25,8 +25,16 @@ describe("referral grant atomic write plan", () => {
     ["cash_minor", "cashMinor"],
     ["commission_discount_minor", "commissionDiscountMinor"],
   ] as const)("maps %s into server-owned balance field", (unit, field) => {
-    expect(buildReferralGrantWrites(root, { ...grant, unit })[1]
+    const channel = unit === "cash_minor" ? "marketer" : "store_owner";
+    expect(buildReferralGrantWrites(root, { ...grant, grantId: `${channel}_invited`, unit })[1]
       .transform?.fieldTransforms[0].fieldPath).toBe(field);
+  });
+
+  it("rejects mismatched grant identity and channel reward units", () => {
+    expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "customer_other" })).toThrow();
+    expect(() => buildReferralGrantWrites(root, { ...grant, unit: "cash_minor" })).toThrow();
+    expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "marketer_invited", unit: "points" })).toThrow();
+    expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "store_owner_store1", unit: "points" })).toThrow();
   });
 
   it("rejects unsafe IDs, invalid amounts, self referrals and invalid roots", () => {
