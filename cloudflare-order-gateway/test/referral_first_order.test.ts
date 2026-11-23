@@ -33,6 +33,19 @@ describe("canonical first-order referral verifier", () => {
       sourceOrderId: "order1", amount: 20, unit: "points", policyVersion: 2,
     });
   });
+  it("refuses capped rewards until a trusted award counter is available", async () => {
+    const original = records["app_info/referral_config"]!;
+    const policies = (original.policies as { mapValue: { fields: Record<string, unknown> } }).mapValue.fields;
+    const customer = policies.customer as { mapValue: { fields: Record<string, unknown> } };
+    const previous = customer.mapValue.fields.maxPerInviter;
+    customer.mapValue.fields.maxPerInviter = iv(1);
+    try {
+      await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+    } finally {
+      if (previous === undefined) delete customer.mapValue.fields.maxPerInviter;
+      else customer.mapValue.fields.maxPerInviter = previous;
+    }
+  });
   it("rejects missing or mismatched server-owned first order index", async () => {
     const original = records["referral_first_orders/invited"]!;
     delete records["referral_first_orders/invited"];
