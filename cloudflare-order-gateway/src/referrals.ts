@@ -57,11 +57,21 @@ export function decideReferralReward(
   facts: ReferralFacts,
 ): ReferralDecision {
   if (!policy.enabled) return { eligible: false, reason: "disabled" };
+  const allowedUnits: Record<ReferralChannel, readonly RewardUnit[]> = {
+    customer: ["points"],
+    marketer: ["cash_minor"],
+    store_owner: ["cash_minor", "commission_discount_minor"],
+  };
+  if (!allowedUnits[policy.channel]?.includes(policy.unit)) {
+    return { eligible: false, reason: "invalid_reward_unit" };
+  }
   if (policy.channel !== facts.channel) return { eligible: false, reason: "channel_mismatch" };
   if (!Number.isSafeInteger(policy.amount) || policy.amount <= 0) {
     return { eligible: false, reason: "invalid_amount" };
   }
-  if (!facts.inviterUid || !facts.invitedUid || facts.inviterUid === facts.invitedUid) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(facts.inviterUid) ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(facts.invitedUid) ||
+      facts.inviterUid === facts.invitedUid) {
     return { eligible: false, reason: "self_or_missing" };
   }
   if (!Number.isSafeInteger(facts.attributedAt) || facts.attributedAt <= 0) {
@@ -86,7 +96,8 @@ export function decideReferralReward(
     if (!Number.isSafeInteger(facts.storeApprovedAt) ||
         !Number.isSafeInteger(facts.storeActivatedAt) ||
         (facts.storeApprovedAt ?? 0) <= 0 || (facts.storeActivatedAt ?? 0) <= 0 ||
-        (facts.firstCompletedOrderAt ?? 0) < (facts.storeActivatedAt ?? 0)) {
+        (facts.firstCompletedOrderAt ?? 0) < (facts.storeActivatedAt ?? 0) ||
+        (facts.firstCompletedOrderAt ?? 0) < (facts.storeApprovedAt ?? 0)) {
       return { eligible: false, reason: "store_not_qualified" };
     }
   }
