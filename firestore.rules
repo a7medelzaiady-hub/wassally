@@ -1107,7 +1107,9 @@ service cloud.firestore {
     // (كانت قاعدتين match مكررتين لنفس المسار، اتدمجوا في واحدة بنفس الصلاحيات بالظبط.)
     match /app_info/{doc} {
       allow read: if signedIn();
-      allow write: if isAdmin() ||
+      // Referral policy version and payouts must be updated by the trusted Worker,
+      // never by direct client writes (including admin clients).
+      allow write: if doc != 'referral_config' && (isAdmin() ||
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
           request.resource.data.keys().hasAll(['version', 'updatedAt']) &&
@@ -1119,7 +1121,7 @@ service cloud.firestore {
                request.resource.data.version == resource.data.get('version', 0) + 1 &&
                // حد سرعة: زيادة واحدة كل 60 ثانية من أصحاب المحلات (المدير بلا حد)،
                // عشان صاحب محل ما يستهلكش حصة الكتابة اليومية على Spark بزيادات متكررة.
-               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's'))));
+               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's')))));
       allow create: if doc == 'catalog_versions' &&
         catalogVersionsWriteOk({}, request.resource.data);
       allow update: if doc == 'catalog_versions' &&
