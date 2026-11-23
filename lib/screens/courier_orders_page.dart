@@ -409,6 +409,20 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
   }
 }
 
+// رقم العرض ثابت للطلب حتى بعد التعيين. العمليات تستخدم معرّف المستند.
+String _courierOrderNumber(String id) {
+  var number = 0;
+  for (final unit in id.codeUnits) {
+    number = (number * 131 + unit) % 900000;
+  }
+  return (100000 + number).toString();
+}
+
+String _courierArea(AppOrder order) {
+  final area = order.area.trim();
+  return area.isEmpty ? 'المنطقة غير محددة' : area;
+}
+
 /// كارت طلب متاح: بسيط، اسم المحل والمنطقة والعمولة وزر "استلم الطلب".
 class _AvailableOrderCard extends StatefulWidget {
   final AppOrder order;
@@ -476,7 +490,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     // وجهة مختصرة فقط قبل الاستلام؛ لا نعرض عنوان العميل أو هاتفه.
                     const SizedBox(height: 5),
                     Text(
-                      'رايح: ${o.area.trim().isEmpty ? 'المنطقة غير محددة' : o.area.trim()}',
+                      _courierArea(o),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -487,7 +501,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'طلب #${o.id.length > 8 ? o.id.substring(0, 8) : o.id}',
+                      'طلب ${_courierOrderNumber(o.id)}',
                       style: TextStyle(fontSize: 11, color: kMuted),
                     ),
                   ],
@@ -511,11 +525,14 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
           ),
           const SizedBox(height: 8),
           Text(
-            'محتوى الطلب: ${o.items.length} صنف • الحالة: ${o.status.label}',
+            '${o.items.length} صنف • ${o.status.label}',
             style: TextStyle(fontSize: 12, color: Brand.ink),
           ),
           const SizedBox(height: 6),
-          const Text('العنوان التفصيلي ورقم العميل يظهران في «طلباتي» بعد استلام الطلب وتعيينه لك.'),
+          Text(
+            'العنوان ورقم العميل بعد الاستلام',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -1091,6 +1108,18 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
           ),
+          const SizedBox(height: 8),
+          Text(
+            'طلب ${_courierOrderNumber(o.id)} • ${o.status.label}',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
+          if (o.area.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              _courierArea(o),
+              style: TextStyle(fontWeight: FontWeight.w700, color: Brand.green),
+            ),
+          ],
           const SizedBox(height: 12),
           if (_canSeeContact && _contactFailed)
             Padding(
@@ -1168,14 +1197,8 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             childrenPadding: const EdgeInsets.only(bottom: 8),
             expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
             title: const Text('تفاصيل الطلب'),
-            subtitle: Text('${o.status.label} • ${o.items.length} صنف'),
+            subtitle: Text('${o.items.length} صنف'),
             children: [
-              Text('رقم الطلب: ${o.id}'),
-              const SizedBox(height: 6),
-              Text('حالة الطلب: ${o.status.label}'),
-              const SizedBox(height: 6),
-              Text('المطلوب تحصيله: ${formatPrice(o.payable)}'),
-              const Divider(height: 20),
               if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
               for (final item in o.items)
                 ListTile(
