@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -32,6 +33,21 @@ def post_comment(body):
     )
     if p.returncode:
         raise RuntimeError("Could not post GitHub comment: " + p.stderr[:250])
+
+
+def generate_with_retry(request, *, opener=None, sleeper=None):
+    """Retry transient Gemini throttling once; never rotate models to evade quota."""
+    opener = opener or urllib.request.urlopen
+    sleeper = sleeper or time.sleep
+    for attempt in range(2):
+        try:
+            with opener(request, timeout=90) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 503) or attempt:
+                raise
+            # Bounded wait; no exponential storm and no secrets in logs.
+            sleeper(2)
 
 
 def main():
@@ -120,8 +136,7 @@ def main():
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=90) as response:
-                result = json.load(response)
+            result = generate_with_retry(request)
             answer = "\n".join(
                 part.get("text", "")
                 for candidate in result.get("candidates", [])
