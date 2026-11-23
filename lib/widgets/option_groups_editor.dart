@@ -54,7 +54,7 @@ class _Draft {
 
   /// A malformed price must not silently turn a paid extra into a free one.
   String? get invalidPriceLine {
-    for (final raw in options.text.split('\\n')) {
+    for (final raw in options.text.split('\n')) {
       final line = raw.trim();
       if (line.isEmpty) continue;
       final separator = line.lastIndexOf('=');
