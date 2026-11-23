@@ -45,17 +45,22 @@ export async function verifyFirstOrderReferral(
   if (channel !== "customer" && channel !== "marketer") return null;
   if (typeof attribution.inviterUid !== "string" ||
       typeof attribution.claimedAtMs !== "number") return null;
-  // A hard cap cannot be enforced from a fabricated zero. Until a trusted
-  // transaction-scoped award counter is wired, reject capped policies.
   const policy = settings.policies[channel as ReferralChannel];
-  if (policy.maxPerInviter !== undefined) return null;
+  const balanceRaw = await read("referral_balances", attribution.inviterUid as string);
+  let previousAwards = 0;
+  if (balanceRaw !== null) {
+    const balance = decodeFirestoreReferralFields(balanceRaw);
+    if (typeof balance.awardsCount !== "number" ||
+        !Number.isSafeInteger(balance.awardsCount) || balance.awardsCount < 0) return null;
+    previousAwards = balance.awardsCount;
+  }
   const decision = decideReferralReward(policy, {
     inviterUid: attribution.inviterUid,
     invitedUid: evidence.invitedUid,
     channel,
     attributedAt: attribution.claimedAtMs,
     firstCompletedOrderAt: order.deliveredAtMs,
-    previousAwards: 0,
+    previousAwards,
   });
   if (!decision.eligible) return null;
   return {
