@@ -26,6 +26,8 @@ describe("server-verified first registration referral claims", () => {
     ["invalid code", "ABC-123", record, evidence, "invalid_code"],
     ["missing code", "ABC12345", null, evidence, "inactive_or_missing_code"],
     ["inactive code", "ABC12345", { ...record, active: false }, evidence, "inactive_or_missing_code"],
+    ["missing active flag", "ABC12345", { ...record, active: undefined as unknown as boolean }, evidence, "inactive_or_missing_code"],
+    ["string active flag", "ABC12345", { ...record, active: "true" as unknown as boolean }, evidence, "inactive_or_missing_code"],
     ["wrong code", "ABC12345", { ...record, code: "ZZZ12345" }, evidence, "inactive_or_missing_code"],
     ["self referral", "ABC12345", record, { ...evidence, invitedUid: "owner-1" }, "invalid_actors"],
     ["existing attribution", "ABC12345", record, { ...evidence, alreadyAttributed: true }, "already_attributed"],
