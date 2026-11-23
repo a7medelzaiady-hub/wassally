@@ -136,11 +136,10 @@ describe("Worker order gateway route hardening", () => {
 
 describe("Courier available-order push privacy", () => {
   it("targets the topic and carries only the order id, not customer PII", () => {
-    const message = courierTopicMessage("order_12345", "محل الاختبار").message;
+    const message = courierTopicMessage("محل الاختبار").message;
     expect(message.topic).toBe("couriers");
     expect(message.data).toEqual({
       type: "available_order",
-      orderId: "order_12345",
     });
     expect(message.android.priority).toBe("HIGH");
     const serialized = JSON.stringify(message);
@@ -150,7 +149,7 @@ describe("Courier available-order push privacy", () => {
   });
 
   it("limits untrusted store names in the notification body", () => {
-    const message = courierTopicMessage("abcde", "X".repeat(500)).message;
+    const message = courierTopicMessage("X".repeat(500)).message;
     expect(message.notification.body.startsWith("X".repeat(80))).toBe(true);
     expect(message.notification.body).not.toContain("X".repeat(81));
   });
