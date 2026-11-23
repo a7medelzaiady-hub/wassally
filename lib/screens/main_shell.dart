@@ -73,20 +73,15 @@ class MainShell extends StatelessWidget {
           bottomNavigationBar: ListenableBuilder(
             listenable: Listenable.merge([cart, carts]),
             builder: (context, _) {
-              // من اليمين لليسار: الرئيسية، السلة، طلباتي، حسابي.
-              // السلة بجوار الرئيسية في مكانها الجديد، بدون إضافة تبويب أقسام.
-              const map = [0, 1, 2, 3];
+              // تبديل موضعي الرئيسية والسلة مع الحفاظ على طلباتي وحسابي.
+              // من اليمين لليسار: السلة، طلباتي، الرئيسية، حسابي.
+              const map = [1, 2, 0, 3];
               return CurvedNavBar(
                 index: map.indexOf(index),
                 onTap: (i) {
                   shellTab.value = map[i];
                 },
                 items: [
-                  const AppNavItem(
-                    icon: Icons.home_outlined,
-                    selectedIcon: Icons.home_rounded,
-                    label: 'الرئيسية',
-                  ),
                   AppNavItem(
                     icon: Icons.shopping_cart_outlined,
                     selectedIcon: Icons.shopping_cart,
@@ -97,6 +92,11 @@ class MainShell extends StatelessWidget {
                     icon: Icons.receipt_long_outlined,
                     selectedIcon: Icons.receipt_long,
                     label: 'طلباتي',
+                  ),
+                  const AppNavItem(
+                    icon: Icons.home_outlined,
+                    selectedIcon: Icons.home_rounded,
+                    label: 'الرئيسية',
                   ),
                   const AppNavItem(
                     icon: Icons.person_outline,
