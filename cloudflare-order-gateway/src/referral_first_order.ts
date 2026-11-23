@@ -23,17 +23,20 @@ export async function verifyFirstOrderReferral(
   if (!validId(evidence.invitedUid) || !validId(evidence.firstOrderId)) {
     throw new Error("invalid referral order identity");
   }
-  const [attributionRaw, orderRaw, settingsRaw, firstOrderRaw] = await Promise.all([
+  const [attributionRaw, settingsRaw, firstOrderRaw] = await Promise.all([
     read("referral_attributions", evidence.invitedUid),
-    read("orders", evidence.firstOrderId),
     read("app_info", "referral_config"),
     read("referral_first_orders", evidence.invitedUid),
   ]);
-  if (!attributionRaw || !orderRaw || !settingsRaw || !firstOrderRaw) return null;
+  if (!attributionRaw || !settingsRaw || !firstOrderRaw) return null;
+  const firstOrder = decodeFirestoreReferralFields(firstOrderRaw);
+  const collection = firstOrder.orderCollection ?? "orders";
+  if (collection !== "orders" && collection !== "quick_orders") return null;
+  const orderRaw = await read(collection, evidence.firstOrderId);
+  if (!orderRaw) return null;
   const attribution = decodeFirestoreReferralFields(attributionRaw);
   const order = decodeFirestoreReferralFields(orderRaw);
   const settings = parseReferralSettings(decodeFirestoreReferralFields(settingsRaw));
-  const firstOrder = decodeFirestoreReferralFields(firstOrderRaw);
   if (firstOrder.invitedUid !== evidence.invitedUid ||
       firstOrder.firstCompletedOrderId !== evidence.firstOrderId ||
       !Number.isSafeInteger(firstOrder.completedAtMs) ||

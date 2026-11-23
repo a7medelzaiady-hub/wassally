@@ -43,7 +43,11 @@ export async function settleCustomerDelivery(
       if (typeof firstCompletedOrderId !== "string" || !validId.test(firstCompletedOrderId)) return;
       firstOrderId = firstCompletedOrderId;
     } else {
-      const order = await firstDeliveredOrder(root, post, transaction, "userId", uid);
+      const [regular, quick] = await Promise.all([
+        firstDeliveredOrder(root, post, transaction, "userId", uid, "orders"),
+        firstDeliveredOrder(root, post, transaction, "userId", uid, "quick_orders"),
+      ]);
+      const order = regular && (!quick || regular.completedAtMs <= quick.completedAtMs) ? regular : quick;
       if (!order) return;
       firstOrderId = order.orderId;
       const write = buildFirstCompletedOrderWrite(root, { invitedUid: uid, ...order });
@@ -63,13 +67,14 @@ async function firstDeliveredOrder(
   transaction: string,
   ownerField: "userId" | "storeId",
   ownerId: string,
-): Promise<{ orderId: string; completedAtMs: number } | null> {
+  collection: "orders" | "quick_orders" = "orders",
+): Promise<{ orderId: string; completedAtMs: number; collection: "orders" | "quick_orders" } | null> {
   const equal = (fieldPath: string, value: string) => ({
     fieldFilter: { field: { fieldPath }, op: "EQUAL", value: { stringValue: value } },
   });
   const result = await post("runQuery", { transaction, structuredQuery: {
     select: { fields: [ownerField, "status", "deliveredAt"].map((fieldPath) => ({ fieldPath })) },
-    from: [{ collectionId: "orders" }],
+    from: [{ collectionId: collection }],
     where: { compositeFilter: { op: "AND", filters: [equal(ownerField, ownerId), equal("status", "delivered")] } },
     orderBy: [
       { field: { fieldPath: "deliveredAt" }, direction: "ASCENDING" },
@@ -81,14 +86,14 @@ async function firstDeliveredOrder(
   const rows = JSON.parse(await result.text()) as Array<{ document?: { name: string; fields: Record<string, unknown> } }>;
   const doc = rows.find((row) => row.document)?.document;
   if (!doc) return null;
-  const prefix = `${root}/orders/`;
+  const prefix = `${root}/${collection}/`;
   if (!doc.name.startsWith(prefix)) return null;
   const orderId = doc.name.slice(prefix.length);
   const order = decodeFirestoreReferralFields(doc.fields);
   if (!validId.test(orderId) || order[ownerField] !== ownerId || order.status !== "delivered" ||
       typeof order.deliveredAt !== "number" || !Number.isSafeInteger(order.deliveredAt) ||
       order.deliveredAt <= 0) return null;
-  return { orderId, completedAtMs: order.deliveredAt };
+  return { orderId, completedAtMs: order.deliveredAt, collection };
 }
 
 export async function settleStoreDelivery(

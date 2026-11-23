@@ -2092,7 +2092,7 @@ export default {
         return response({ error: "حملة الإحالات غير متاحة حاليًا." }, 404, headers);
       }
       try {
-        return response(await referralCampaign(request, env), 200, headers);
+        return response(await referralCampaign(request, env, ctx), 200, headers);
       } catch (error) {
         const e = error instanceof HttpError ? error : new HttpError(503, "تعذر فتح حملة الإحالات.");
         return response({ error: e.message }, e.status, headers);
@@ -2205,7 +2205,7 @@ export default {
     }
     if (url.pathname === "/v1/quick" || url.pathname.startsWith("/v1/quick/")) {
       try {
-        const result = await routeQuick(request, env, url.pathname) ?? response({ error: "Not found." }, 404);
+        const result = await routeQuick(request, env, url.pathname, ctx) ?? response({ error: "Not found." }, 404);
         const mergedHeaders = new Headers(result.headers);
         headers.forEach((value, key) => mergedHeaders.set(key, value));
         return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
@@ -2373,7 +2373,10 @@ async function referralPayout(request: Request, env: Env): Promise<JsonMap> {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ structuredQuery: {
         from: [{ collectionId: "referral_payouts" }],
-        where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "pending" } } },
+        where: { fieldFilter: {
+          field: { fieldPath: "status" }, op: "IN",
+          value: { arrayValue: { values: [{ stringValue: "pending" }, { stringValue: "processing" }] } },
+        } },
         limit: 50,
       } }),
     });
@@ -2382,10 +2385,18 @@ async function referralPayout(request: Request, env: Env): Promise<JsonMap> {
     return { pending: rows.flatMap(({ document }) => document ? [{
       id: document.name.split("/").at(-1),
       ...decodeFields(document.fields ?? {}),
+      canResolve: decodeFields(document.fields ?? {}).processingBy === uid,
     }] : []) };
   }
+  if (typeof payoutId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(payoutId)) {
+    throw new HttpError(400, "طلب الصرف غير صالح.");
+  }
+  if (action === "claim") {
+    return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+      kind: "claim", payoutId, adminUid: uid,
+    }, fetch);
+  }
   if ((action !== "paid" && action !== "rejected") ||
-      typeof payoutId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(payoutId) ||
       typeof reference !== "string" || reference.trim().length < 5 || reference.length > 120) {
     throw new HttpError(400, "اكتب رقم مرجع التحويل أو سبب الرفض.");
   }
@@ -2429,7 +2440,7 @@ async function referralSettings(request: Request, env: Env): Promise<JsonMap> {
   return { settings: parsed };
 }
 
-async function referralCampaign(request: Request, env: Env): Promise<JsonMap> {
+async function referralCampaign(request: Request, env: Env, ctx?: ExecutionContext): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   const safeId = /^[A-Za-z0-9_-]{1,128}$/;
   if (!safeId.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
@@ -2441,6 +2452,7 @@ async function referralCampaign(request: Request, env: Env): Promise<JsonMap> {
   }
   const token = await googleAccessToken(env);
   let codeOwnerUid = uid;
+  let storeId: string | undefined;
   if (channel === "marketer") {
     if (typeof marketerUid !== "string" || !safeId.test(marketerUid)) {
       throw new HttpError(400, "اكتب معرّف حساب المسوّق.");
@@ -2458,7 +2470,8 @@ async function referralCampaign(request: Request, env: Env): Promise<JsonMap> {
     if (owner?.active === false || typeof owner?.storeId !== "string" || !safeId.test(owner.storeId)) {
       throw new HttpError(403, "الكود متاح لأصحاب المحلات المعتمدة.");
     }
-    const storeDoc = await getDocument(env, `stores/${owner.storeId}`, token);
+    storeId = owner.storeId;
+    const storeDoc = await getDocument(env, `stores/${storeId}`, token);
     const store = storeDoc && decodeFields(storeDoc.fields ?? {});
     if (store?.approved !== true || store.active !== true) {
       throw new HttpError(403, "الكود متاح بعد اعتماد المحل وتفعيله.");
@@ -2468,6 +2481,8 @@ async function referralCampaign(request: Request, env: Env): Promise<JsonMap> {
     uid: codeOwnerUid, issuerUid: uid, channel,
   }, fetch);
   if (channel === "marketer") return { code };
+  // An invited user or owner can recover from a missed or interrupted delivery callback.
+  scheduleReferralDelivery(env, ctx, token, { userId: uid, storeId });
   const [balance, marketerCode] = await Promise.all([
     getDocument(env, `referral_balances/${uid}`, token),
     getDocument(env, `referral_marketer_codes/${uid}`, token),
@@ -3149,7 +3164,7 @@ async function getQuickDeliveryPin(request: Request, env: Env, orderId: string):
 }
 
 /** POST /v1/quick/{orderId}/deliver — المندوب يأكد التسليم برمز العميل. 5 محاولات غلط = قفل. */
-async function deliverQuickWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+async function deliverQuickWithPin(request: Request, env: Env, orderId: string, ctx?: ExecutionContext): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
   if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -3211,6 +3226,7 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
   }];
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  scheduleReferralDelivery(env, ctx, token, { userId: order.userId });
   await notifyOrderParticipant(
     env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
   );
@@ -3218,7 +3234,7 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
 }
 
 /** توجيه مسارات /v1/quick. بيرجع null لو المسار مش تبع الخدمة. */
-async function routeQuick(request: Request, env: Env, pathname: string): Promise<Response | null> {
+async function routeQuick(request: Request, env: Env, pathname: string, ctx?: ExecutionContext): Promise<Response | null> {
   if (pathname === "/v1/quick") {
     return request.method === "POST" ? await createQuickOrder(request, env) : response({ error: "Not found." }, 404);
   }
@@ -3230,6 +3246,6 @@ async function routeQuick(request: Request, env: Env, pathname: string): Promise
     return request.method === "GET" ? await getQuickDeliveryPin(request, env, orderId) : response({ error: "Not found." }, 404);
   }
   if (request.method !== "POST") return response({ error: "Not found." }, 404);
-  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId);
+  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId, ctx);
   return await quickOrderAction(request, env, orderId, action);
 }

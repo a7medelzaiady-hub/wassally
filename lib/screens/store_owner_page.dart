@@ -1,5 +1,3 @@
-import 'referral_campaign_page.dart';
-import '../services/order_gateway.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -8,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/order_gateway.dart';
+import 'referral_campaign_page.dart';
 import '../models/order.dart';
 import '../models/product_offer.dart';
 import '../services/catalog_service.dart';

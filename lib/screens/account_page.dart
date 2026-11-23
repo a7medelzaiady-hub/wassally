@@ -1,11 +1,11 @@
-import 'referral_campaign_page.dart';
-import '../services/order_gateway.dart';
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/order_gateway.dart';
+import 'referral_campaign_page.dart';
 import '../data/seed_stores.dart';
 import '../legal/legal_content.dart';
 import '../models/app_role.dart';

@@ -24,18 +24,31 @@ export async function awardVerifiedReferral(
   const transaction = await beginReferralTransaction(projectId, oauthToken, transport);
   const read = (collection: string, id: string) =>
     readReferralDocument(projectId, collection, id, transaction, oauthToken, transport);
-  const existing = await read("referral_grants", grantId);
-  if (existing !== null) return "already_granted";
-  let canonicalReads = 0;
-  const verifiedRead = async (collection: string, id: string) => {
-    const document = await read(collection, id);
-    canonicalReads++;
-    return document;
-  };
-  const grant = await verifyEligibility(verifiedRead);
-  if (!grant) return "ineligible";
-  if (canonicalReads === 0) throw new Error("referral eligibility requires canonical Firestore reads");
-  if (grant.grantId !== grantId) throw new Error("verified grant ID mismatch");
-  await commitVerifiedReferralGrant({ projectId, transaction, grant }, oauthToken, transport);
-  return "granted";
+  let committed = false;
+  try {
+    const existing = await read("referral_grants", grantId);
+    if (existing !== null) return "already_granted";
+    let canonicalReads = 0;
+    const verifiedRead = async (collection: string, id: string) => {
+      const document = await read(collection, id);
+      canonicalReads++;
+      return document;
+    };
+    const grant = await verifyEligibility(verifiedRead);
+    if (!grant) return "ineligible";
+    if (canonicalReads === 0) throw new Error("referral eligibility requires canonical Firestore reads");
+    if (grant.grantId !== grantId) throw new Error("verified grant ID mismatch");
+    await commitVerifiedReferralGrant({ projectId, transaction, grant }, oauthToken, transport);
+    committed = true;
+    return "granted";
+  } finally {
+    if (!committed) {
+      const root = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
+      await transport(`${root}:rollback`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${oauthToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ transaction }),
+      }).catch(() => undefined);
+    }
+  }
 }

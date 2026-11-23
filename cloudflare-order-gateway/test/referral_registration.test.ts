@@ -145,7 +145,7 @@ it("credits the inviter once from the earliest canonical delivered order", async
         field: { fieldPath: "deliveredAt" }, direction: "ASCENDING",
       });
       queries++;
-      return Response.json([{ document: order }]);
+      return Response.json(structuredQuery.from[0].collectionId === "orders" ? [{ document: order }] : []);
     }
     if (endpoint.endsWith(":commit")) {
       const { transaction, writes } = JSON.parse(String(init?.body));
@@ -171,7 +171,7 @@ it("credits the inviter once from the earliest canonical delivered order", async
   const { settleCustomerDelivery } = await import("../src/referral_delivery");
   await settleCustomerDelivery("referral-test", "mock-token", uid, fetch);
   await settleCustomerDelivery("referral-test", "mock-token", uid, fetch);
-  expect(queries).toBe(1);
+  expect(queries).toBe(2);
   expect(grants).toBe(1);
   expect(saves).toHaveLength(1);
 });

@@ -416,6 +416,23 @@ class _ReferralPayoutsPageState extends State<_ReferralPayoutsPage> {
     return result['pending'] as List<dynamic>;
   }
 
+  Future<void> _claim(String id) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await OrderGateway.referralPayout(action: 'claim', payoutId: id);
+      if (mounted) setState(() => _pending = _load());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_failureMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _resolve(String id, {required bool paid}) async {
     var reference = '';
     final form = GlobalKey<FormState>();
@@ -496,18 +513,26 @@ class _ReferralPayoutsPageState extends State<_ReferralPayoutsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SelectableText(row['uid'] as String),
-                        Wrap(
-                          children: [
-                            TextButton(
-                              onPressed: () => _resolve(row['id'] as String, paid: true),
-                              child: const Text('سجّل التحويل'),
-                            ),
-                            TextButton(
-                              onPressed: () => _resolve(row['id'] as String, paid: false),
-                              child: const Text('ارفض وأرجع الرصيد'),
-                            ),
-                          ],
-                        ),
+                        if (row['status'] == 'pending')
+                          TextButton(
+                            onPressed: () => _claim(row['id'] as String),
+                            child: const Text('استلم الطلب للمعالجة'),
+                          )
+                        else if (row['canResolve'] == true)
+                          Wrap(
+                            children: [
+                              TextButton(
+                                onPressed: () => _resolve(row['id'] as String, paid: true),
+                                child: const Text('سجّل التحويل'),
+                              ),
+                              TextButton(
+                                onPressed: () => _resolve(row['id'] as String, paid: false),
+                                child: const Text('ارفض وأرجع الرصيد'),
+                              ),
+                            ],
+                          )
+                        else
+                          const Text('الطلب مع مسؤول آخر.'),
                       ],
                     ),
                   ),

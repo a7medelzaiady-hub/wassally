@@ -5,7 +5,7 @@
  */
 export function buildFirstCompletedOrderWrite(
   root: string,
-  evidence: { invitedUid: string; orderId: string; completedAtMs: number },
+  evidence: { invitedUid: string; orderId: string; completedAtMs: number; collection?: "orders" | "quick_orders" },
 ) {
   const validId = (v: string) => /^[A-Za-z0-9_-]{1,128}$/.test(v);
   if (!/^projects\/[A-Za-z0-9_-]+\/databases\/\(default\)\/documents$/.test(root)) {
@@ -24,6 +24,7 @@ export function buildFirstCompletedOrderWrite(
         invitedUid: { stringValue: evidence.invitedUid },
         firstCompletedOrderId: { stringValue: evidence.orderId },
         completedAtMs: { integerValue: String(evidence.completedAtMs) },
+        ...(evidence.collection === "quick_orders" ? { orderCollection: { stringValue: evidence.collection } } : {}),
       },
     },
     currentDocument: { exists: false },

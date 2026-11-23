@@ -25,7 +25,7 @@ Cloud Functions or new Firestore snapshot listeners.
   external delivery closes after the store confirms cash receipt.
 - The Worker schedules referral settlement after the existing delivery write.
   A bounded indexed query selects the earliest delivered regular order from
-  history. The first-order record is immutable. Grant creation, the credit,
+  history, including the quick-order service for customer-based rewards. The first-order record is immutable. Grant creation, the credit,
   and the per-channel count update commit together.
 - The store approval batch records the approved draft's applicant in a
   private collection and records initial activation time when the store is
@@ -36,8 +36,8 @@ Cloud Functions or new Firestore snapshot listeners.
 ## Cash payout
 
 Cash is available for a full-balance withdrawal request. A transaction reserves
-the cash and creates one pending request per account. Administrators can record
-a completed manual transfer by its reference or reject the request and return
+the cash and creates one pending request per account. One administrator claims the request before processing. That administrator
+can record a completed manual transfer by its reference or reject the request and return
 the reserved balance. A repeated resolution cannot decrement or return the same
 cash twice.
 
@@ -51,5 +51,4 @@ cash twice.
   test of the team's chosen payout channel and a reconciliation with its transfer
   reference. The Worker records the confirmation and does not send money.
 - Verify deployment of the Firestore indexes and test both courier modes against
-  the staging Worker before enabling delivery settlement. The delivery hook and
-  indexes currently cover ordinary store orders.
+  the staging Worker before enabling delivery settlement.

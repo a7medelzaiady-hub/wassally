@@ -39,21 +39,25 @@ function setup() {
     return Response.json({});
   };
   const request = () => updateReferralPayout("demo", "token", { kind: "request", uid: client, requestId }, transport);
+  const claim = (adminUid = "admin") => updateReferralPayout("demo", "token", { kind: "claim", payoutId, adminUid }, transport);
   const resolve = (kind: "paid" | "rejected") => updateReferralPayout("demo", "token", {
     kind, payoutId, adminUid: "admin", reference: "verified reference",
   }, transport);
   const balance = () => docs.get(root + "referral_balances/marketer")?.cashMinor;
-  return { request, resolve, balance, transport };
+  return { request, claim, resolve, balance, transport };
 }
 
 it("reserves cash once, records a manual transfer and makes the same request safe to retry", async () => {
-  const { request, resolve, balance, transport } = setup();
+  const { request, claim, resolve, balance, transport } = setup();
   expect(await request()).toEqual({ payoutId, status: "pending", amountMinor: 1200 });
   expect(await request()).toMatchObject({ status: "pending" });
   expect(balance()).toEqual(integer(0));
   await expect(updateReferralPayout("demo", "token", {
     kind: "request", uid: client, requestId: "000000000000000000000000",
   }, transport)).rejects.toBeInstanceOf(ReferralPayoutConflict);
+  await expect(resolve("paid")).rejects.toBeInstanceOf(ReferralPayoutConflict);
+  expect(await claim()).toMatchObject({ status: "processing" });
+  await expect(claim("other-admin")).rejects.toBeInstanceOf(ReferralPayoutConflict);
   expect(await resolve("paid")).toMatchObject({ status: "paid" });
   expect(await resolve("paid")).toMatchObject({ status: "paid" });
   expect(await request()).toMatchObject({ status: "paid" });
@@ -62,8 +66,9 @@ it("reserves cash once, records a manual transfer and makes the same request saf
 });
 
 it("returns the reserved cash exactly once when a payout is rejected", async () => {
-  const { request, resolve, balance } = setup();
+  const { request, claim, resolve, balance } = setup();
   await request();
+  await claim();
   await resolve("rejected");
   await resolve("rejected");
   expect(balance()).toEqual(integer(1200));

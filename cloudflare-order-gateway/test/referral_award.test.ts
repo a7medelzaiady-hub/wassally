@@ -49,7 +49,7 @@ describe("referral award transaction coordinator", () => {
     await expect(awardVerifiedReferral("demo", "token", grant.grantId, verify, transport))
       .resolves.toBe("already_granted");
     expect(verify).not.toHaveBeenCalled();
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 
   it("does not retry a rejected commit or grant twice on a transaction conflict", async () => {

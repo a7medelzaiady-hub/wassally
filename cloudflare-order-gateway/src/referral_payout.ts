@@ -7,6 +7,7 @@ export class ReferralPayoutConflict extends Error {}
 
 type PayoutAction =
   | { kind: "request"; uid: string; requestId: string }
+  | { kind: "claim"; payoutId: string; adminUid: string }
   | { kind: "paid" | "rejected"; payoutId: string; adminUid: string; reference: string };
 
 export async function updateReferralPayout(
@@ -79,22 +80,34 @@ export async function updateReferralPayout(
           typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
         throw new Error("Invalid payout record");
       }
-      outcome = { payoutId, status: action.kind, amountMinor };
-      if (status === action.kind && existing.reference === action.reference) return outcome;
-      if (status !== "pending") throw new ReferralPayoutConflict();
       const pending = await read("referral_payout_pending", uid);
-      if (pending?.payoutId !== payoutId) throw new ReferralPayoutConflict();
-      writes = [
-        {
-          update: { name: book, fields: {
-            status: value(action.kind), resolvedBy: value(action.adminUid), reference: value(action.reference),
-          } },
-          updateMask: { fieldPaths: ["status", "resolvedBy", "reference"] },
-          updateTransforms: [{ fieldPath: "resolvedAt", setToServerValue: "REQUEST_TIME" }],
-        },
-        { delete: `${root}/referral_payout_pending/${uid}` },
-        ...(action.kind === "rejected" ? [balanceChange(uid, amountMinor)] : []),
-      ];
+      if (action.kind === "claim") {
+        outcome = { payoutId, status: "processing", amountMinor };
+        if (status === "processing" && existing.processingBy === action.adminUid) return outcome;
+        if (status !== "pending" || pending?.payoutId !== payoutId) throw new ReferralPayoutConflict();
+        writes = [{
+          update: { name: book, fields: { status: value("processing"), processingBy: value(action.adminUid) } },
+          updateMask: { fieldPaths: ["status", "processingBy"] },
+          updateTransforms: [{ fieldPath: "processingAt", setToServerValue: "REQUEST_TIME" }],
+        }];
+      } else {
+        outcome = { payoutId, status: action.kind, amountMinor };
+        if (status === action.kind && existing.reference === action.reference &&
+            existing.resolvedBy === action.adminUid) return outcome;
+        if (status !== "processing" || existing.processingBy !== action.adminUid ||
+            pending?.payoutId !== payoutId) throw new ReferralPayoutConflict();
+        writes = [
+          {
+            update: { name: book, fields: {
+              status: value(action.kind), resolvedBy: value(action.adminUid), reference: value(action.reference),
+            } },
+            updateMask: { fieldPaths: ["status", "resolvedBy", "reference"] },
+            updateTransforms: [{ fieldPath: "resolvedAt", setToServerValue: "REQUEST_TIME" }],
+          },
+          { delete: `${root}/referral_payout_pending/${uid}` },
+          ...(action.kind === "rejected" ? [balanceChange(uid, amountMinor)] : []),
+        ];
+      }
     }
     const commit = await post("commit", { transaction, writes });
     if (commit.status === 409 || commit.status === 412) throw new ReferralPayoutConflict();

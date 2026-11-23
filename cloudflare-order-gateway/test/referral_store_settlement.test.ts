@@ -43,6 +43,6 @@ describe("store referral settlement coordinator", () => {
     await expect(settleStoreReferral("demo", "token", {
       invitedStoreId: "store1", firstOrderId: "order1",
     }, transport)).resolves.toBe("already_granted");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(3);
   });
 });
