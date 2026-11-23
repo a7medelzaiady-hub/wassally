@@ -272,7 +272,11 @@ class NotificationService {
       ));
       return;
     }
-    if (type == 'available_order') {
+    if (type == 'store_order_update') {
+      activePanel.value = AppRole.storeOwner;
+      return;
+    }
+    if (type == 'available_order' || type == 'courier_order_update') {
       // This is an unassigned order. Couriers may view the available-order
       // queue, but not the private order details until assigned.
       // RoleGate only activates panels held by the signed-in user.
@@ -315,6 +319,7 @@ class NotificationService {
     final orderId = (message.data['orderId'] ?? '').toString().trim();
     final actionLabel = switch (type) {
       'available_order' || 'quick_order' => 'عرض الطلبات المتاحة',
+      'store_order_update' || 'courier_order_update' => 'عرض الطلبات',
       'app_update' => 'تحديث الآن',
       'admin_inbox' => 'فتح صندوق الإدارة',
       'support_chat' => null,

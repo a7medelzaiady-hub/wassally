@@ -28,6 +28,7 @@ const env = {
 } as never;
 
 function enc(v: unknown): unknown {
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(enc) } };
   if (v instanceof Date) return { timestampValue: v.toISOString() };
   if (typeof v === "string") return { stringValue: v };
   if (typeof v === "boolean") return { booleanValue: v };
@@ -115,10 +116,22 @@ describe("POST /v1/notify-admins", () => {
   });
 
   it("delivery issue: only the courier who created it", async () => {
-    firebase({ "delivery_issues/i1": { createdBy: "c1", status: "return_to_store", createdAt: fresh() } });
+    firebase({
+      "delivery_issues/i1": {
+        createdBy: "c1", status: "return_to_store", createdAt: fresh(),
+        orderId: "o1", customerId: "u1", note: "private return details",
+      },
+      "users/u1": { fcmTokens: ["customer-device"] },
+    });
     expect((await notify("c2", "delivery_issue", "i1")).status).toBe(403);
     expect((await notify("c1", "delivery_issue", "i1")).status).toBe(200);
-    expect(fcm).toHaveLength(1);
+    expect(fcm).toHaveLength(2);
+    expect(fcm).toContainEqual({
+      message: expect.objectContaining({
+        token: "customer-device", data: { type: "order_update", orderId: "o1" },
+      }),
+    });
+    expect(JSON.stringify(fcm)).not.toContain("private return details");
   });
 });
 

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/order.dart';
+import 'order_gateway.dart';
 import 'performance_monitor.dart';
 
 /// يغيّر حالة الطلب ويسجّل الحدث في نفس الـ batch.
@@ -162,5 +165,6 @@ class OrderStatusWriter {
       'firestore_status_write',
       batch.commit,
     );
+    unawaited(OrderGateway.notifyEvent(normalizedOrderId, 'status', status: to.key));
   }
 }
