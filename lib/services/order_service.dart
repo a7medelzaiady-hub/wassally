@@ -516,7 +516,26 @@ class OrderService {
     final total = subtotal + order.deliveryFee - discount + serviceFee;
     final updatedItems = lines.map((l) => l.toMap()).toList();
 
-    if (OrderGateway.serverOrdersEnabled) {
+    // Match the live Firestore gate before editing, just like order creation.
+    // An older APK must not attempt a legacy batch after serverOrders is enabled.
+    var serverOrders = OrderGateway.serverOrdersEnabled;
+    if (!serverOrders) {
+      try {
+        final security = await FirebaseFirestore.instance
+            .collection('app_info').doc('security').get();
+        serverOrders = security.data()?['serverOrders'] == true;
+      } on FirebaseException {
+        // Fail closed if the security setting cannot be checked.
+        serverOrders = true;
+      }
+    }
+    if (serverOrders && !OrderGateway.serverOrdersEnabled) {
+      throw StateError(
+        'تم تحديث نظام تعديل الطلبات. حدّث تطبيق وصّلي من Google Play '
+        'علشان تعدّل طلبك بأمان.',
+      );
+    }
+    if (serverOrders) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
       }
