@@ -57,6 +57,12 @@ describe("referral eligibility (no payout side effects)", () => {
       ...f, storeApprovedAt: 120, storeActivatedAt: 150,
     })).toEqual({ eligible: true, grantId: "store_owner_store-001", amount: 100, unit: "commission_discount_minor" });
     expect(decideReferralReward(p, {
+      ...f, attributedAt: 130, storeApprovedAt: 120, storeActivatedAt: 150,
+    })).toEqual({ eligible: false, reason: "store_not_qualified" });
+    expect(decideReferralReward(p, {
+      ...f, attributedAt: 160, storeApprovedAt: 120, storeActivatedAt: 150,
+    })).toEqual({ eligible: false, reason: "store_not_qualified" });
+    expect(decideReferralReward(p, {
       ...f, storeApprovedAt: 120, storeActivatedAt: 210,
     }).eligible).toBe(false);
     expect(decideReferralReward(p, {
