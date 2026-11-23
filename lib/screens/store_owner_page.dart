@@ -924,6 +924,23 @@ class ClosedOrderCompactCard extends StatelessWidget {
               Text(formatPrice(o.subtotal), style: const TextStyle(fontWeight: FontWeight.w800)),
             ],
           ),
+          if (o.status == OrderStatus.delivered) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Expanded(child: Text('رسوم التوصيل')),
+                Text(formatPrice(o.courierFee)),
+              ],
+            ),
+            Row(
+              children: [
+                const Expanded(child: Text('رسوم وصّلي المسجّلة')),
+                Text(o.serviceFee == null
+                    ? 'غير مسجّلة'
+                    : formatPrice(o.serviceFee!)),
+              ],
+            ),
+          ],
         ],
       ),
     );
