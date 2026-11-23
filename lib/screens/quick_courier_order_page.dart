@@ -306,8 +306,12 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           onPressed: _busy
               ? null
               : () async {
-                  final opened = await openInMaps(c.address);
-                  if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                  try {
+                    final opened = await openInMaps(c.address);
+                    if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                  } catch (_) {
+                    if (mounted) _toast('تعذر فتح الخريطة.');
+                  }
                 },
           icon: const Icon(Icons.map_outlined),
           label: const Text('افتح الخريطة'),
