@@ -111,7 +111,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (order == null) const Text('جارٍ تحميل الطلب...') else ...[
+        if (order == null)
+          Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
+        else ...[
           Text('الحالة: ${statusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
