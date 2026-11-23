@@ -45,13 +45,14 @@ describe("referral eligibility (no payout side effects)", () => {
     const p: ReferralPolicy = {
       ...policy, channel: "store_owner", unit: "commission_discount_minor",
     };
-    const f: ReferralFacts = { ...facts, channel: "store_owner" };
+    const f: ReferralFacts = { ...facts, channel: "store_owner", invitedStoreId: "store-001" };
+    expect(decideReferralReward(p, { ...f, invitedStoreId: undefined })).toEqual({ eligible: false, reason: "missing_store_identity" });
     expect(decideReferralReward(p, f)).toEqual({
       eligible: false, reason: "store_not_qualified",
     });
     expect(decideReferralReward(p, {
       ...f, storeApprovedAt: 120, storeActivatedAt: 150,
-    }).eligible).toBe(true);
+    })).toEqual({ eligible: true, grantId: "store_owner_store-001", amount: 100, unit: "commission_discount_minor" });
     expect(decideReferralReward(p, {
       ...f, storeApprovedAt: 120, storeActivatedAt: 210,
     }).eligible).toBe(false);
