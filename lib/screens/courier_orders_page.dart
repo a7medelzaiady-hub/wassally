@@ -631,7 +631,14 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
       ));
     } on DeliveryPinError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (error) {
+      debugPrint('Delivery PIN verification failed: $error');
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'),
+        ));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
