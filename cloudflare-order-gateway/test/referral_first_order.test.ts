@@ -33,17 +33,29 @@ describe("canonical first-order referral verifier", () => {
       sourceOrderId: "order1", amount: 20, unit: "points", policyVersion: 2,
     });
   });
-  it("refuses capped rewards until a trusted award counter is available", async () => {
+  it("enforces capped rewards using trusted award counter", async () => {
     const original = records["app_info/referral_config"]!;
     const policies = (original.policies as { mapValue: { fields: Record<string, unknown> } }).mapValue.fields;
     const customer = policies.customer as { mapValue: { fields: Record<string, unknown> } };
     const previous = customer.mapValue.fields.maxPerInviter;
     customer.mapValue.fields.maxPerInviter = iv(1);
     try {
+      records["referral_balances/inviter"] = { awardsCount: iv(1) };
       await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+      records["referral_balances/inviter"] = { awardsCount: iv(0) };
+      await expect(verifyFirstOrderReferral(read, evidence)).resolves.not.toBeNull();
     } finally {
+      delete records["referral_balances/inviter"];
       if (previous === undefined) delete customer.mapValue.fields.maxPerInviter;
       else customer.mapValue.fields.maxPerInviter = previous;
+    }
+  });
+  it("rejects an existing balance with no trusted award counter", async () => {
+    records["referral_balances/inviter"] = { points: iv(500) };
+    try {
+      await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
+    } finally {
+      delete records["referral_balances/inviter"];
     }
   });
   it("rejects missing or mismatched server-owned first order index", async () => {
