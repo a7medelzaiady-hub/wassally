@@ -40,9 +40,9 @@ describe("canonical first-order referral verifier", () => {
     const previous = customer.mapValue.fields.maxPerInviter;
     customer.mapValue.fields.maxPerInviter = iv(1);
     try {
-      records["referral_balances/inviter"] = { awardsCount: iv(1) };
+      records["referral_balances/inviter"] = { customerAwardsCount: iv(1) };
       await expect(verifyFirstOrderReferral(read, evidence)).resolves.toBeNull();
-      records["referral_balances/inviter"] = { awardsCount: iv(0) };
+      records["referral_balances/inviter"] = { customerAwardsCount: iv(0) };
       await expect(verifyFirstOrderReferral(read, evidence)).resolves.not.toBeNull();
     } finally {
       delete records["referral_balances/inviter"];
