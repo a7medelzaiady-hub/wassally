@@ -84,6 +84,43 @@ class GeminiTests(unittest.TestCase):
             self.assertIn("fallback worked", messages[0])
             self.assertEqual(len(attempts), 3)
 
+    def test_transient_429_retries_once_then_succeeds(self):
+        attempts = []
+        def opener(req, timeout=0):
+            attempts.append(timeout)
+            if len(attempts) == 1:
+                raise HTTPError(req.full_url, 429, "Rate limit", {}, None)
+            class Reply:
+                def __enter__(self): return self
+                def __exit__(self, *args): return False
+                def read(self): return b'{"candidates": []}'
+            return Reply()
+        request = module.urllib.request.Request("https://example.invalid")
+        sleeps = []
+        self.assertEqual(module.generate_with_retry(request, opener=opener, sleeper=sleeps.append), {"candidates": []})
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(sleeps, [2])
+
+    def test_persistent_429_stops_after_two_attempts(self):
+        attempts = []
+        def opener(req, timeout=0):
+            attempts.append(1)
+            raise HTTPError(req.full_url, 429, "Rate limit", {}, None)
+        request = module.urllib.request.Request("https://example.invalid")
+        with self.assertRaises(HTTPError):
+            module.generate_with_retry(request, opener=opener, sleeper=lambda _: None)
+        self.assertEqual(len(attempts), 2)
+
+    def test_401_never_retries(self):
+        attempts = []
+        def opener(req, timeout=0):
+            attempts.append(1)
+            raise HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+        request = module.urllib.request.Request("https://example.invalid")
+        with self.assertRaises(HTTPError):
+            module.generate_with_retry(request, opener=opener, sleeper=lambda _: None)
+        self.assertEqual(len(attempts), 1)
+
     def test_missing_key(self):
         self.assertIn("GEMINI_API_KEY", self.run_case(""))
 
