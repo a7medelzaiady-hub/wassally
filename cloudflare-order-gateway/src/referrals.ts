@@ -96,6 +96,8 @@ export function decideReferralReward(
     if (!Number.isSafeInteger(facts.storeApprovedAt) ||
         !Number.isSafeInteger(facts.storeActivatedAt) ||
         (facts.storeApprovedAt ?? 0) <= 0 || (facts.storeActivatedAt ?? 0) <= 0 ||
+        (facts.storeApprovedAt ?? 0) < facts.attributedAt ||
+        (facts.storeActivatedAt ?? 0) < facts.attributedAt ||
         (facts.firstCompletedOrderAt ?? 0) < (facts.storeActivatedAt ?? 0) ||
         (facts.firstCompletedOrderAt ?? 0) < (facts.storeApprovedAt ?? 0)) {
       return { eligible: false, reason: "store_not_qualified" };
