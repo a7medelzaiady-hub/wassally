@@ -492,8 +492,11 @@ class _Details extends StatelessWidget {
         if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
           const SizedBox(height: 12),
           _CustomerReturnReason(
-            key: ValueKey(order.activeDeliveryIssueId.isNotEmpty
-                ? order.activeDeliveryIssueId : order.lastDeliveryIssueId),
+            key: ValueKey((
+              order.activeDeliveryIssueId,
+              order.lastDeliveryIssueId,
+              order.status,
+            )),
             issueId: order.activeDeliveryIssueId.isNotEmpty
                 ? order.activeDeliveryIssueId : order.lastDeliveryIssueId,
           ),
@@ -1074,11 +1077,14 @@ class _CustomerReturnReasonState extends State<_CustomerReturnReason> {
         final data = snapshot.data?.data();
         if (data == null) return const SizedBox.shrink();
         final status = (data['status'] ?? '').toString();
-        final title = status == 'store_confirmed_return'
-            ? 'تم تأكيد رجوع الطلب للمحل'
-            : status == 'returned_to_store'
-                ? 'المندوب رجّع الطلب — بانتظار تأكيد المحل'
-                : 'تعذر التسليم — جارٍ إرجاع الطلب للمحل';
+        final title = switch (status) {
+          'store_confirmed_return' => 'تم تأكيد رجوع الطلب للمحل',
+          'returned_to_store' => 'المندوب رجّع الطلب — بانتظار تأكيد المحل',
+          'return_to_store' => 'تعذر التسليم — جارٍ إرجاع الطلب للمحل',
+          'retry' => 'هيتم إعادة محاولة تسليم الطلب',
+          'resolved' => 'تم استئناف التوصيل',
+          _ => 'تم تسجيل بلاغ تعذر التسليم',
+        };
         final reason = reasons[(data['reason'] ?? '').toString()] ?? 'تعذر التسليم';
         final note = (data['note'] ?? '').toString().trim();
         return Card(
