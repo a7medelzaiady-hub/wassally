@@ -118,3 +118,60 @@ it("keeps the disabled route away from Firebase", async () => {
   expect((await call("disabled-client", "ABC123", false)).status).toBe(404);
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it("credits the inviter once from the earliest canonical delivered order", async () => {
+  const uid = "first-delivery-client";
+  const { docs, fetchMock, saves } = setup(uid);
+  expect((await call(uid)).status).toBe(200);
+  const order = {
+    name: root + "orders/earliest",
+    fields: {
+      userId: { stringValue: uid },
+      status: { stringValue: "delivered" },
+      deliveredAt: { timestampValue: new Date(Date.now() + 1000).toISOString() },
+    },
+  };
+  docs["orders/earliest"] = order.fields;
+  const baseFetch = fetchMock.getMockImplementation()!;
+  let queries = 0;
+  let grants = 0;
+  fetchMock.mockImplementation(async (url, init) => {
+    const endpoint = String(url);
+    if (endpoint.endsWith(":runQuery")) {
+      const { transaction, structuredQuery } = JSON.parse(String(init?.body));
+      expect(transaction).toBe("abc");
+      expect(structuredQuery.limit).toBe(1);
+      expect(structuredQuery.orderBy[0]).toEqual({
+        field: { fieldPath: "deliveredAt" }, direction: "ASCENDING",
+      });
+      queries++;
+      return Response.json([{ document: order }]);
+    }
+    if (endpoint.endsWith(":commit")) {
+      const { transaction, writes } = JSON.parse(String(init?.body));
+      expect(transaction).toBe("abc");
+      const [{ update, currentDocument }] = writes;
+      const path = update.name.slice(root.length);
+      expect(currentDocument).toEqual({ exists: false });
+      if (path === `referral_grants/customer_${uid}`) {
+        expect(update.fields.sourceOrderId).toEqual({ stringValue: "earliest" });
+        expect(writes[1].transform.document).toBe(root + "referral_balances/inviter");
+        expect(writes[1].transform.fieldTransforms).toContainEqual({
+          fieldPath: "points", increment: { integerValue: "10" },
+        });
+        grants++;
+      } else {
+        expect(path).toBe(`referral_first_orders/${uid}`);
+      }
+      docs[path] = update.fields;
+      return Response.json({});
+    }
+    return baseFetch(url, init);
+  });
+  const { settleCustomerDelivery } = await import("../src/referral_delivery");
+  await settleCustomerDelivery("referral-test", "mock-token", uid, fetch);
+  await settleCustomerDelivery("referral-test", "mock-token", uid, fetch);
+  expect(queries).toBe(1);
+  expect(grants).toBe(1);
+  expect(saves).toHaveLength(1);
+});

@@ -34,12 +34,16 @@ export async function readReferralDocument(
     },
   );
   if (!response.ok) throw new Error("Firestore referral read failed");
-  const lines = (await response.text()).trim().split("\n").filter(Boolean);
-  if (lines.length !== 1) throw new Error("unexpected Firestore batchGet response");
   let value: unknown;
-  try { value = JSON.parse(lines[0]!); }
-  catch { throw new Error("invalid Firestore batchGet response"); }
-  if (!value || typeof value !== "object") throw new Error("invalid Firestore response");
+  try {
+    const parsed: unknown = JSON.parse(await response.text());
+    value = Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
+  } catch {
+    throw new Error("invalid Firestore batchGet response");
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("invalid Firestore response");
+  }
   const result = value as Record<string, unknown>;
   const expected = `${root}/${collection}/${documentId}`;
   if (result.missing === expected && !result.found) return null;

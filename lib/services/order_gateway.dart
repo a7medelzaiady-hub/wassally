@@ -71,13 +71,18 @@ class OrderGateway {
   static Future<void> claimRegistrationReferral({
     required String idToken,
     required String code,
-  }) => _send(
-        idToken: idToken,
-        method: 'POST',
-        path: '/v1/referrals/registration',
-        payload: {'code': code},
-        connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
-      );
+  }) async {
+    final body = await _request(
+      idToken: idToken,
+      method: 'POST',
+      path: '/v1/referrals/registration',
+      payload: {'code': code},
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+    if (body['accepted'] != true) {
+      throw StateError('لم يصل تأكيد حفظ كود الإحالة.');
+    }
+  }
 
   static Future<void> submit({
     required String idToken,
@@ -211,6 +216,23 @@ class OrderGateway {
     required String method,
     required String path,
     required Map<String, dynamic> payload,
+  }) async {
+    final body = await _request(
+      idToken: idToken,
+      method: method,
+      path: path,
+      payload: payload,
+    );
+    if ((body['orderId'] ?? '').toString().isEmpty) {
+      throw StateError('لم يصل تأكيد العملية من الخادم.');
+    }
+  }
+
+  static Future<Map<String, dynamic>> _request({
+    required String idToken,
+    required String method,
+    required String path,
+    required Map<String, dynamic> payload,
     String connectivityMessage = 'تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.',
   }) async {
     final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -270,9 +292,7 @@ class OrderGateway {
       }
       throw StateError(text);
     }
-    if ((body['orderId'] ?? '').toString().isEmpty) {
-      throw StateError('لم يصل تأكيد العملية من الخادم.');
-    }
+    return body;
   }
 }
 

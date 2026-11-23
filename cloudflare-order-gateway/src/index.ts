@@ -1,3 +1,4 @@
+import { settleCustomerDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
@@ -23,6 +24,7 @@ import {
 interface Env {
   FIREBASE_PROJECT_ID: string;
   REFERRAL_REGISTRATION_ENABLED?: string;
+  REFERRAL_DELIVERY_ENABLED?: string;
   FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   ALLOWED_ORIGINS?: string;
@@ -2068,7 +2070,7 @@ async function cleanupOrderAttachmentsFor(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let headers: Headers;
     try {
       headers = corsHeaders(request, env);
@@ -2144,7 +2146,7 @@ export default {
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
     if (request.method === "POST" && url.pathname === "/v1/order-events") {
       try {
-        const result = await notifyOrderEvent(request, env);
+        const result = await notifyOrderEvent(request, env, ctx);
         return response(result, 200, headers);
       } catch (error) {
         const e = error instanceof HttpError ? error : new HttpError(500, "تعذر إرسال إشعار الطلب.");
@@ -2184,7 +2186,7 @@ export default {
         const result = pinMatch[2] === "delivery-pin" && request.method === "GET"
           ? await getDeliveryPin(request, env, id)
           : pinMatch[2] === "deliver" && request.method === "POST"
-            ? await deliverWithPin(request, env, id)
+            ? await deliverWithPin(request, env, id, ctx)
             : response({ error: "Not found." }, 404);
         const mergedHeaders = new Headers(result.headers);
         headers.forEach((value, key) => mergedHeaders.set(key, value));
@@ -2310,7 +2312,14 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
-async function deliverWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+function scheduleReferralDelivery(env: Env, ctx: ExecutionContext | undefined, token: string, uid: unknown): void {
+  if (env.REFERRAL_DELIVERY_ENABLED !== "true" || !ctx || typeof uid !== "string") return;
+  ctx.waitUntil(settleCustomerDelivery(env.FIREBASE_PROJECT_ID, token, uid, fetch).catch(() => {
+    console.error("Referral settlement failed after delivery");
+  }));
+}
+
+async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?: ExecutionContext): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
   let body: any;
@@ -2399,6 +2408,7 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
   }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order.userId);
   // مرفقات الطلب الخاص كانت بتتمسح لما العميل يدوس تأكيد الاستلام؛ دلوقتي بعد الرمز الصحيح.
   // محاولة واحدة، وفشلها ما يأثرش على التسليم (العميل لما يفتح الطلب بيعيد المحاولة).
   if (hasPendingAttachments(order) && typeof order.userId === "string") {
@@ -2526,7 +2536,7 @@ function recentOrderEvent(date: unknown): date is Date {
     date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
 }
 
-async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
+async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionContext): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
   const { orderId, event, status } = await readJsonBody(request);
@@ -2566,7 +2576,10 @@ async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
     key = `status_${status}`;
     customerTitle = orderPushTitles[status as keyof typeof orderPushTitles];
     if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
-    if (status === "delivered") storeTitle = "تم تسليم طلب من المحل";
+    if (status === "delivered") {
+      storeTitle = "تم تسليم طلب من المحل";
+      scheduleReferralDelivery(env, ctx, token, order.userId);
+    }
     if (status === "cancelled") {
       storeTitle = "تم إلغاء طلب من المحل";
       courierTitle = "تم إلغاء طلب توصيل";

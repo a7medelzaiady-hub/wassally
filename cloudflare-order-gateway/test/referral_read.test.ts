@@ -11,9 +11,9 @@ const mock = (body: string, ok = true) =>
 
 describe("transaction-scoped referral reads", () => {
   it("reads the expected canonical document with transaction token", async () => {
-    const transport = mock(JSON.stringify({ found: {
+    const transport = mock(JSON.stringify([{ found: {
       name: path, fields: { status: { stringValue: "granted" } },
-    } }));
+    } }]));
     await expect(readReferralDocument("demo", "referral_grants", "grant1",
       "abc==", "oauth", transport)).resolves.toEqual({
       status: { stringValue: "granted" },
