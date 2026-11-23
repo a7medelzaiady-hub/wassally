@@ -510,7 +510,12 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('يظهر العنوان ورقم العميل بعد استلام الطلب وتعيينه لك.'),
+          Text(
+            'محتوى الطلب: ${o.items.length} صنف • الحالة: ${o.status.label}',
+            style: TextStyle(fontSize: 12, color: Brand.ink),
+          ),
+          const SizedBox(height: 6),
+          const Text('العنوان التفصيلي ورقم العميل يظهران في «طلباتي» بعد استلام الطلب وتعيينه لك.'),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -1131,7 +1136,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                'ملاحظات العميل للمندوب: ${o.courierNotes}',
+                'ملاحظات العميل للمندوب: ${_contact!.courierNotes}',
                 style: TextStyle(fontSize: 12.5, color: kMuted),
               ),
             ),
