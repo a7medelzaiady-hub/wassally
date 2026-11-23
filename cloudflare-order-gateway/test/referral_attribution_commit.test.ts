@@ -25,7 +25,9 @@ describe("first-registration attribution commit", () => {
     const transport = vi.fn(async () => ({ ok: true, status: 200, text: async () => "{}" }));
     await commitVerifiedAttribution("test-project", transaction,
       { ...claim, channel: "store_owner" }, "token", transport, "store-1");
-    const body = JSON.parse(transport.mock.calls[0][1].body);
+    const call = transport.mock.calls[0] as unknown as Parameters<FirestoreTransport> | undefined;
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body);
     expect(body.writes[0].update.name).toContain("/referral_store_attributions/store-1");
   });
 
