@@ -179,6 +179,42 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String _money(Object? piastres) =>
       '${(((piastres as num?)?.toInt() ?? 0) / 100).toStringAsFixed(2)} جنيه';
 
+  Widget _section(String title, List<Widget> children) => Card(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
+  Widget _amount(String label, Object? value, {bool emphasis = false}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(child: Text(label)),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                _money(value),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  fontWeight: emphasis ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: emphasis ? 18 : null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
@@ -189,6 +225,10 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     final receipts = order?['receipts'] is List ? order!['receipts'] as List : const [];
     final stores = order?['stores'] is List ? order!['stores'] as List : const [];
     final notes = (order?['notes'] ?? '').toString().trim();
+    final delivered = status == 'delivered';
+    final hasFinalBill =
+        delivered || status == 'summary_pending' || status == 'summary_approved';
+    final due = (totals['due'] as num?) ?? 0;
     final area = (order?['area'] ?? '').toString().trim();
     return Scaffold(
       appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
@@ -200,46 +240,74 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (order == null)
           Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
         else ...[
-          Text('الحالة: ${quickOrderStatusLabel(status)}', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          if (area.isNotEmpty) Text('المنطقة: $area'),
-          const Text('محتويات الطلب', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
-          for (final raw in stores)
-            if (raw is Map) ...[
-              const SizedBox(height: 8),
-              Text((raw['name'] ?? '').toString().trim().isEmpty
-                  ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-              if ((raw['items'] ?? '').toString().trim().isNotEmpty)
-                Text((raw['items'] ?? '').toString()),
-              if (raw['pricedItems'] is List)
-                for (final line in raw['pricedItems'] as List)
-                  if (line is Map)
-                    Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
-            ],
-          if (notes.isNotEmpty) Text('ملاحظات: $notes'),
-          const SizedBox(height: 12),
-          if ((order['approxTotalPiastres'] as num? ?? 0) > 0)
-            Text('التقدير الاسترشادي: ${_money(order['approxTotalPiastres'])}'),
-          const Text('الأسعار تقريبية وقد تزيد أو تقل حسب المحل'),
-          if (status == 'summary_pending' || status == 'summary_approved' || status == 'delivered') ...[
-            const Divider(),
-            Text('إجمالي الفواتير: ${_money(totals['purchases'])}'),
-            Text('أجرة التوصيل: ${_money(totals['delivery'])}'),
-            Text('رسوم وصّلي: ${_money(totals['serviceFee'])}'),
-            Text('المقدم: ${_money(totals['prepaid'])}'),
-            Text('المتبقي: ${_money(totals['due'])}',
-              style: Theme.of(context).textTheme.titleLarge),
-            for (final raw in receipts)
-              if (raw is Map && raw['imageUrl'] is String)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('فاتورة: ${_money(raw['amountPiastres'])}'),
-                    Image.network(raw['imageUrl'] as String, height: 180,
-                      errorBuilder: (_, _, _) => const Text('تعذر تحميل صورة الفاتورة')),
-                  ])),
+          _section(quickOrderStatusLabel(status), [
+            if (area.isNotEmpty)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: const Icon(Icons.location_on_outlined),
+                title: Text(area),
+              ),
+          ]),
+          if (hasFinalBill) ...[
+            _section('الحساب النهائي', [
+              _amount('الفواتير', totals['purchases']),
+              _amount('أجرة التوصيل', totals['delivery']),
+              _amount('رسوم وصّلي', totals['serviceFee']),
+              if (((totals['prepaid'] as num?) ?? 0) > 0)
+                _amount('المقدم', totals['prepaid']),
+              const Divider(height: 20),
+              _amount(
+                delivered
+                    ? (due < 0 ? 'الرد عند التسليم' : 'المبلغ عند التسليم')
+                    : (due < 0 ? 'يُردّ لك' : 'المتبقي عند التسليم'),
+                due.abs(),
+                emphasis: true,
+              ),
+            ]),
+            if (receipts.isNotEmpty)
+              _section('الفواتير', [
+                for (final raw in receipts)
+                  if (raw is Map && raw['imageUrl'] is String) ...[
+                    _amount('فاتورة', raw['amountPiastres']),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        raw['imageUrl'] as String,
+                        height: 180,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) =>
+                            const Text('تعذر تحميل صورة الفاتورة'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+              ]),
           ],
+          _section('محتويات الطلب', [
+            if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
+            for (final raw in stores)
+              if (raw is Map) ...[
+                const SizedBox(height: 8),
+                Text((raw['name'] ?? '').toString().trim().isEmpty
+                    ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                if ((raw['items'] ?? '').toString().trim().isNotEmpty)
+                  Text((raw['items'] ?? '').toString()),
+                if (raw['pricedItems'] is List)
+                  for (final line in raw['pricedItems'] as List)
+                    if (line is Map)
+                      Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+              ],
+            if (notes.isNotEmpty) Text('ملاحظات: $notes'),
+            if (!hasFinalBill) ...[
+              const SizedBox(height: 8),
+              if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
+                _amount('التقدير', order['approxTotalPiastres']),
+              const Text('الأسعار تقريبية لحد صدور الحساب النهائي.'),
+            ],
+          ]),
           if (status == 'open')
             OutlinedButton(
               onPressed: _busy ? null : _edit,
