@@ -1143,9 +1143,14 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
             childrenPadding: const EdgeInsets.only(bottom: 8),
             expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
             title: const Text('تفاصيل الطلب'),
-            subtitle: Text(o.status.label),
+            subtitle: Text('${o.status.label} • ${o.items.length} صنف'),
             children: [
               Text('رقم الطلب: ${o.id}'),
+              const SizedBox(height: 6),
+              Text('حالة الطلب: ${o.status.label}'),
+              const SizedBox(height: 6),
+              Text('المطلوب تحصيله: ${formatPrice(o.payable)}'),
+              const Divider(height: 20),
               if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
               for (final item in o.items)
                 ListTile(
