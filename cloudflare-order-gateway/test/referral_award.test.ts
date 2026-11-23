@@ -52,6 +52,36 @@ describe("referral award transaction coordinator", () => {
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
+  it("does not retry a rejected commit or grant twice on a transaction conflict", async () => {
+    let commitCalls = 0;
+    const transport = vi.fn<FirestoreTransport>(async (url) => {
+      if (url.endsWith(":commit")) {
+        commitCalls++;
+        return { ok: false, status: 409, text: async () => "conflict" };
+      }
+      const result = url.endsWith(":beginTransaction")
+        ? { transaction: "tx==" }
+        : { missing: `${root}/referral_grants/customer_invited` };
+      return { ok: true, status: 200, text: async () => JSON.stringify(result) };
+    });
+    await expect(awardVerifiedReferral("demo", "token", grant.grantId,
+      async () => grant, transport)).rejects.toThrow("referral commit rejected");
+    expect(commitCalls).toBe(1);
+  });
+
+  it("does not commit when canonical eligibility verification throws", async () => {
+    const transport = vi.fn<FirestoreTransport>(async (url) => ({
+      ok: true, status: 200,
+      text: async () => JSON.stringify(url.endsWith(":beginTransaction")
+        ? { transaction: "tx==" }
+        : { missing: `${root}/referral_grants/customer_invited` }),
+    }));
+    await expect(awardVerifiedReferral("demo", "token", grant.grantId,
+      async () => { throw new Error("invalid canonical order"); }, transport))
+      .rejects.toThrow("invalid canonical order");
+    expect(transport.mock.calls.some(([url]) => url.endsWith(":commit"))).toBe(false);
+  });
+
   it("fails closed when eligibility is absent or mismatched", async () => {
     const transport = vi.fn<FirestoreTransport>(async (url) => ({
       ok: true, status: 200,
