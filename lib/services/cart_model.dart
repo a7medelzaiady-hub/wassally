@@ -231,6 +231,8 @@ class CartModel extends ChangeNotifier {
 
   /// يرجّع سلة محفوظة كسلة حالية (بيستبدل اللي في السلة دلوقتي).
   void restore(CartSnapshot s) {
+    _loadedProducts = const [];
+    _loadedProductsStoreId = null;
     _items
       ..clear()
       ..addAll(s.items);
