@@ -167,7 +167,17 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
                             const SizedBox(height: 80),
                             Padding(
                               padding: const EdgeInsets.all(24),
-                              child: Text(_error!, textAlign: TextAlign.center),
+                              child: Column(
+                                children: [
+                                  Text(_error!, textAlign: TextAlign.center),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: _load,
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('إعادة المحاولة'),
+                                  ),
+                                ],
+                              ),
                             ),
                           ])
                         : shown.isEmpty
