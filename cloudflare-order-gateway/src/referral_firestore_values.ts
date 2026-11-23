@@ -13,6 +13,12 @@ export function decodeFirestoreReferralFields(
     const keys = Object.keys(v);
     if (keys.length !== 1) throw new Error("ambiguous Firestore value");
     if ("stringValue" in v && typeof v.stringValue === "string") return v.stringValue;
+    if ("timestampValue" in v && typeof v.timestampValue === "string") {
+      const ms = Date.parse(v.timestampValue);
+      if (!Number.isSafeInteger(ms) || new Date(ms).toISOString() !==
+          new Date(v.timestampValue).toISOString()) throw new Error("invalid Firestore timestamp");
+      return ms;
+    }
     if ("booleanValue" in v && typeof v.booleanValue === "boolean") return v.booleanValue;
     if ("integerValue" in v && typeof v.integerValue === "string" &&
         /^-?(0|[1-9][0-9]*)$/.test(v.integerValue)) {
