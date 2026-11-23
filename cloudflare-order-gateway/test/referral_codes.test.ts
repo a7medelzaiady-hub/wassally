@@ -4,7 +4,7 @@ import { buildReferralCodeReservation } from "../src/referral_codes";
 const root = "projects/wasally-test/databases/(default)/documents";
 const issuer = {
   code: " abcd1234 ", inviterUid: "inviter", issuedByUid: "admin",
-  channel: "marketer" as const, issuedAtMs: 1700000000000,
+  channel: "marketer" as const, issuerIsAdmin: true, issuedAtMs: 1700000000000,
 };
 
 describe("server-owned unique referral code reservation", () => {
@@ -22,6 +22,13 @@ describe("server-owned unique referral code reservation", () => {
     expect(() => buildReferralCodeReservation(root, { ...issuer, inviterUid: "a/b" })).toThrow();
     expect(() => buildReferralCodeReservation(root, { ...issuer, issuedByUid: "" })).toThrow();
     expect(() => buildReferralCodeReservation(root, { ...issuer, issuedAtMs: 0 })).toThrow();
+    expect(() => buildReferralCodeReservation(root, { ...issuer, issuerIsAdmin: false })).toThrow();
+    expect(() => buildReferralCodeReservation(root, {
+      ...issuer, channel: "customer", issuerIsAdmin: false,
+    })).toThrow();
+    expect(buildReferralCodeReservation(root, {
+      ...issuer, channel: "customer", issuedByUid: "inviter", issuerIsAdmin: false,
+    }).currentDocument).toEqual({ exists: false });
     expect(() => buildReferralCodeReservation("bad/root", issuer)).toThrow();
   });
 });
