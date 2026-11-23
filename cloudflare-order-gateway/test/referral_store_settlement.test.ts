@@ -11,8 +11,9 @@ describe("store referral settlement coordinator", () => {
     expect(transport).not.toHaveBeenCalled();
   });
   it("does not write rewards when trusted attribution is missing", async () => {
-    const root = "projects/demo/databases/(default)/documents";
+    const calls: string[] = [];
     const transport = vi.fn(async (url: string, init: { body: string }) => {
+      calls.push(url);
       if (url.endsWith(":beginTransaction")) return new Response(
         JSON.stringify({ transaction: "YWJj" }), { status: 200 },
       );
@@ -25,8 +26,7 @@ describe("store referral settlement coordinator", () => {
     await expect(settleStoreReferral("demo", "token", {
       invitedStoreId: "store1", firstOrderId: "order1",
     }, transport)).resolves.toBe("ineligible");
-    expect(transport.mock.calls.some(([url]: [string]) => url.endsWith(":commit"))).toBe(false);
-    expect(root).toContain("projects/demo");
+    expect(calls.some((url) => url.endsWith(":commit"))).toBe(false);
   });
   it("returns already_granted for a previously committed store reward", async () => {
     const root = "projects/demo/databases/(default)/documents";
