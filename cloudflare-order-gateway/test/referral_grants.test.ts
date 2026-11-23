@@ -17,7 +17,7 @@ describe("referral grant atomic write plan", () => {
     expect(writes[1].transform?.fieldTransforms).toEqual([{
       fieldPath: "points", increment: { integerValue: "100" },
     }, {
-      fieldPath: "awardsCount", increment: { integerValue: "1" },
+      fieldPath: "customerAwardsCount", increment: { integerValue: "1" },
     }]);
   });
 
