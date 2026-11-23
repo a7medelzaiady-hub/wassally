@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
+import 'services/e2e_support.dart';
 import 'services/error_guard.dart';
 import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
@@ -26,11 +27,12 @@ Future<void> _bootstrap() async {
   await Firebase.initializeApp(
     options: isAndroid ? null : DefaultFirebaseOptions.currentPlatform,
   );
+  await E2eSupport.connectEmulators();
   // الخطوات دي مستقلة عن بعض، فبتشتغل مع بعض بدل ورا بعض (كلها لازم تخلص قبل runApp).
   await Future.wait([
     _configureCrashlytics(),
     PerformanceMonitor.configure(),
-    _activateAppCheck(),
+    if (!E2eSupport.enabled) _activateAppCheck(),
     carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
   ]);
   final bootstrap = startup.elapsed;
