@@ -17,7 +17,7 @@ export function buildAdminReferralSettingsWrite(
   }
   if (!Number.isSafeInteger(currentVersion) || currentVersion < 1 ||
       typeof currentUpdateTime !== "string" ||
-      !/^\d{4}-\d{2}-\d{2}T/.test(currentUpdateTime) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(currentUpdateTime) ||
       !Number.isFinite(Date.parse(currentUpdateTime))) {
     throw new Error("missing trusted current settings");
   }
