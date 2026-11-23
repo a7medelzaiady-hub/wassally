@@ -31,6 +31,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   QuickCourierOrder? _order;
   QuickContact? _contact;
   bool _busy = false;
+  int _loadGeneration = 0;
   String? _error;
   final _estimateCtrl = TextEditingController();
   final _deliveryCtrl = TextEditingController();
@@ -55,6 +56,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   Future<void> _refresh() async {
     if (!mounted || _busy) return;
+    final generation = ++_loadGeneration;
     setState(() {
       _busy = true;
       _contact = null;
@@ -64,27 +66,28 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       final contact = order?.canSeeContact == true
           ? await widget.backend.loadContact(widget.orderId).catchError((_) => null)
           : null;
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _order = order;
         _contact = contact;
         _error = order == null ? 'الطلب مش موجود أو مش متاح ليك.' : null;
       });
     } catch (_) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _order = null;
           _error = 'تعذر تحميل الطلب. اسحب للتحديث.';
         });
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && generation == _loadGeneration) setState(() => _busy = false);
     }
   }
 
   /// ينفّذ عملية على الـWorker ويحدّث الشاشة من رده.
   Future<void> _act(String action, [Map<String, dynamic> body = const {}, String? done]) async {
     if (_busy) return;
+    ++_loadGeneration;
     setState(() => _busy = true);
     try {
       final updated = await widget.backend.act(widget.orderId, action, body);
