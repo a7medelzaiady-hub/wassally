@@ -26,8 +26,15 @@ export async function awardVerifiedReferral(
     readReferralDocument(projectId, collection, id, transaction, oauthToken, transport);
   const existing = await read("referral_grants", grantId);
   if (existing !== null) return "already_granted";
-  const grant = await verifyEligibility(read);
+  let canonicalReads = 0;
+  const verifiedRead = async (collection: string, id: string) => {
+    const document = await read(collection, id);
+    canonicalReads++;
+    return document;
+  };
+  const grant = await verifyEligibility(verifiedRead);
   if (!grant) return "ineligible";
+  if (canonicalReads === 0) throw new Error("referral eligibility requires canonical Firestore reads");
   if (grant.grantId !== grantId) throw new Error("verified grant ID mismatch");
   await commitVerifiedReferralGrant({ projectId, transaction, grant }, oauthToken, transport);
   return "granted";
