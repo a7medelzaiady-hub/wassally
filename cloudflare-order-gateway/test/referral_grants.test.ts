@@ -35,6 +35,7 @@ describe("referral grant atomic write plan", () => {
     expect(() => buildReferralGrantWrites(root, { ...grant, unit: "cash_minor" })).toThrow();
     expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "marketer_invited", unit: "points" })).toThrow();
     expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "store_owner_store1", unit: "points" })).toThrow();
+    expect(() => buildReferralGrantWrites(root, { ...grant, grantId: "store_owner_", unit: "cash_minor" })).toThrow("referral grant identity mismatch");
   });
 
   it("rejects unsafe IDs, invalid amounts, self referrals and invalid roots", () => {
