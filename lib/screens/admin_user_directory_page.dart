@@ -15,15 +15,26 @@ class AdminUserDirectoryPage extends StatefulWidget {
 
 class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
   final _search = TextEditingController();
-  late final Future<_DirectoryData> _data = _load();
+  late Future<_DirectoryData> _data = _load();
 
   Future<_DirectoryData> _load() async {
     final db = FirebaseFirestore.instance;
+    Future<QuerySnapshot<Map<String, dynamic>>> readCollection(
+      String collection,
+      String label,
+    ) async {
+      try {
+        return await db.collection(collection).limit(200).get();
+      } on FirebaseException catch (error) {
+        throw _DirectoryLoadFailure(label, error.code);
+      }
+    }
+
     final results = await Future.wait([
-      db.collection('users').limit(200).get(),
-      db.collection('couriers').limit(200).get(),
-      db.collection('storeOwners').limit(200).get(),
-      db.collection('admins').limit(200).get(),
+      readCollection('users', 'المستخدمين'),
+      readCollection('couriers', 'المناديب'),
+      readCollection('storeOwners', 'أصحاب المحلات'),
+      readCollection('admins', 'المديرين'),
     ]);
     final couriers = results[1].docs.map((d) => d.id).toSet();
     final owners = results[2].docs.map((d) => d.id).toSet();
@@ -75,7 +86,27 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
         future: _data,
         builder: (context, snap) {
           if (snap.hasError) {
-            return const Center(child: Text('تعذر تحميل المستخدمين. تأكد من صلاحية الإدارة ونشر القواعد.'));
+            final error = snap.error;
+            final message = error is _DirectoryLoadFailure
+                ? 'تعذر تحميل قائمة ${error.label} (${error.code}).'
+                : 'تعذر تحميل دليل المستخدمين.';
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(message, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _data = _load()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('إعادة المحاولة'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           return Column(
@@ -169,4 +200,11 @@ class _DirectoryData {
   final List<_UserEntry> users;
   final bool limited;
   _DirectoryData(this.users, this.limited);
+}
+
+class _DirectoryLoadFailure implements Exception {
+  const _DirectoryLoadFailure(this.label, this.code);
+
+  final String label;
+  final String code;
 }
