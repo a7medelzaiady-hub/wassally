@@ -16,6 +16,12 @@ describe("server-verified first registration referral claims", () => {
     });
   });
 
+  it("accepts a claim exactly at the registration window boundary", () => {
+    expect(decideReferralClaim("ABC12345", record, {
+      ...evidence, claimAtMs: evidence.accountCreatedAtMs + evidence.registrationWindowMs,
+    }).allowed).toBe(true);
+  });
+
   it.each([
     ["invalid code", "ABC-123", record, evidence, "invalid_code"],
     ["missing code", "ABC12345", null, evidence, "inactive_or_missing_code"],
@@ -26,6 +32,10 @@ describe("server-verified first registration referral claims", () => {
     ["old account", "ABC12345", record, { ...evidence, claimAtMs: 1100000 }, "not_first_registration"],
     ["future creation", "ABC12345", record, { ...evidence, claimAtMs: 999999 }, "not_first_registration"],
     ["excessive window", "ABC12345", record, { ...evidence, registrationWindowMs: 3600001 }, "not_first_registration"],
+    ["zero creation timestamp", "ABC12345", record, { ...evidence, accountCreatedAtMs: 0 }, "not_first_registration"],
+    ["fractional claim timestamp", "ABC12345", record, { ...evidence, claimAtMs: 1000000.5 }, "not_first_registration"],
+    ["negative registration window", "ABC12345", record, { ...evidence, registrationWindowMs: -1 }, "not_first_registration"],
+    ["same inviter", "ABC12345", record, { ...evidence, invitedUid: "owner-1" }, "invalid_actors"],
   ] as const)("%s is rejected", (_name, code, owner, registration, reason) => {
     expect(decideReferralClaim(code, owner, registration))
       .toEqual({ allowed: false, reason });
