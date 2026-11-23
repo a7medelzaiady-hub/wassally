@@ -43,6 +43,8 @@ jobs:
       with:
         flutter-version: '3.50.0' # مثبت على إصدار Stable محدد لتكرارية البناء
         channel: 'stable'
+        cache: true
+        pub-cache: true
 
     # 4. تحميل المكتبات والمخازن (pub get)
     - name: Install dependencies
