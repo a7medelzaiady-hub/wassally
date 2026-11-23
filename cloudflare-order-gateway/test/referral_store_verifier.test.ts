@@ -11,6 +11,7 @@ const docs: Record<string, Record<string, unknown>> = {
     invitedStoreId: sv("store1"), invitedUid: sv("owner2"), inviterUid: sv("owner1"),
     channel: sv("store_owner"), claimedAtMs: iv(100),
   },
+  "storeOwners/owner2": { storeId: sv("store1"), active: bv(true) },
   "stores/store1": { active: bv(true), approved: bv(true), approvedAtMs: iv(110), activatedAtMs: iv(120) },
   "orders/order1": { storeId: sv("store1"), status: sv("delivered"), deliveredAt: { timestampValue: "1970-01-01T00:00:00.200Z" } },
   "referral_store_first_orders/store1": {
@@ -52,6 +53,15 @@ describe("store referral verification", () => {
       docs["app_info/referral_config"] = originalPolicy;
       if (originalBalance) docs[key] = originalBalance; else delete docs[key];
     }
+  });
+  it("rejects store referral when invited account does not own the store", async () => {
+    const original = docs["storeOwners/owner2"]!;
+    try {
+      docs["storeOwners/owner2"] = { storeId: sv("differentStore"), active: bv(true) };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      delete docs["storeOwners/owner2"];
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+    } finally { docs["storeOwners/owner2"] = original; }
   });
   it("rejects unapproved or inactive stores", async () => {
     const original = docs["stores/store1"]!;
