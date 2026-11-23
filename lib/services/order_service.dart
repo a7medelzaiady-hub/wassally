@@ -63,6 +63,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) {
     final active = _activePlaceOrder;
     if (active != null) return active;
@@ -76,6 +78,8 @@ class OrderService {
         address: address,
         notes: notes,
         courierNotes: courierNotes,
+        referralPoints: referralPoints,
+        referralDiscountMinor: referralDiscountMinor,
       ),
     );
     _activePlaceOrder = pending;
@@ -130,6 +134,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) async {
     final wait = await cooldownRemaining();
     if (wait > Duration.zero) {
@@ -144,6 +150,8 @@ class OrderService {
       address: address,
       notes: notes,
       courierNotes: courierNotes,
+      referralPoints: referralPoints,
+      referralDiscountMinor: referralDiscountMinor,
     );
     await _markOrderPlaced();
     return id;
@@ -209,6 +217,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
@@ -357,7 +367,12 @@ class OrderService {
     };
     final orderId = await _pendingOrderId(
       uid: user.uid,
-      orderData: data,
+      // A retry must keep the same ID even if the first response was lost.
+      orderData: {
+        ...data,
+        if (referralPoints > 0) 'referralPoints': referralPoints,
+        if (referralPoints > 0) 'referralDiscountMinor': referralDiscountMinor,
+      },
       contactData: contactData,
     );
     if (kDebugMode) {
@@ -369,6 +384,9 @@ class OrderService {
     final ref = _orders.doc(orderId);
     // تجميع اختياري اختاره العميل من «سلّاتي» (بوابة الطلبات بس).
     final groupId = serverOrders ? carts.groupIdFor(storeId) : null;
+    if (referralPoints > 0 && !serverOrders) {
+      throw StateError('خصم النقاط يحتاج بوابة الطلبات.');
+    }
     if (serverOrders) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
@@ -387,7 +405,9 @@ class OrderService {
             'notes': notes,
             'area': cart.area,
             'expectedDeliveryFee': cart.effectiveFee,
-            'expectedTotal': cart.total,
+            'expectedTotal': cart.total - referralDiscountMinor / 100,
+            if (referralPoints > 0) 'referralPoints': referralPoints,
+            if (referralPoints > 0) 'expectedReferralDiscountMinor': referralDiscountMinor,
             if (cart.discount > 0) 'promoCode': cart.promoCode,
             'items': cart.items.entries
                 .map((e) => {
@@ -517,7 +537,11 @@ class OrderService {
     final serviceFee = order.serviceFee == null
         ? 0.0
         : WasallyServiceFee.forItems(subtotal - discount);
-    final total = subtotal + order.deliveryFee - discount + serviceFee;
+    final referralDiscount = order.referralDiscountMinor / 100;
+    if ((subtotal * 100).round() < order.referralDiscountMinor) {
+      throw StateError('قيمة الأصناف بعد التعديل أقل من خصم النقاط المحجوز.');
+    }
+    final total = subtotal + order.deliveryFee - discount + serviceFee - referralDiscount;
     final updatedItems = lines.map((l) => l.toMap()).toList();
 
     // Match the live Firestore gate before editing, just like order creation.

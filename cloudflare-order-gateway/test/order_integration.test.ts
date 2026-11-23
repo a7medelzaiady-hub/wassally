@@ -47,7 +47,20 @@ const input = {
 };
 
 describe("full order creation against simulated Firebase", () => {
-  it("atomically saves catalog-priced order and private contact, then reuses the order ID", async () => {
+  it.each([false, true])("atomically saves and reuses an order (with points: %s)", async (withPoints) => {
+    const enabledEnv = Object.assign({}, env as object, {
+      REFERRAL_REGISTRATION_ENABLED: "true", REFERRAL_DELIVERY_ENABLED: "true",
+    }) as never;
+    const pointInput = withPoints ? {
+      referralPoints: 20, expectedReferralDiscountMinor: 500, expectedTotal: 70,
+    } : {};
+    const int = (n: number) => ({ integerValue: String(n) });
+    const map = (fields: object) => ({ mapValue: { fields } });
+    const policy = (channel: string, unit: string) => map({
+      channel: { stringValue: channel }, unit: { stringValue: unit },
+      amount: int(0), enabled: { booleanValue: false },
+    });
+    const updateTime = "2026-01-01T00:00:00Z";
     let saved = false;
     const commits: Array<{ writes: Array<{ update: { name: string; fields: Record<string, unknown> } }> }> = [];
     const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async (resource, init) => {
@@ -74,6 +87,19 @@ describe("full order creation against simulated Firebase", () => {
           return Response.json(doc(path, { userId: uid, storeId: input.storeId }));
         if (path === "stores/store_test")
           return Response.json(doc(path, { name: "Test store", active: true }));
+        if (path === "referral_balances/" + uid)
+          return Response.json({ name: prefix + path, updateTime, fields: { points: int(40) } });
+        if (path === "app_info/referral_config") {
+          return Response.json({ name: prefix + path, updateTime, fields: {
+            version: int(1),
+            policies: map({
+              customer: policy("customer", "points"),
+              marketer: policy("marketer", "cash_minor"),
+              store_owner: policy("store_owner", "cash_minor"),
+            }),
+            redemption: map({ pointValueMinor: int(25), maxDiscountMinor: int(500) }),
+          } });
+        }
         return new Response("not found", { status: 404 });
       }
       throw Error("Unexpected upstream request: " + url);
@@ -82,21 +108,43 @@ describe("full order creation against simulated Firebase", () => {
       const request = () => new Request("https://worker.test/v1/orders", {
         method: "POST",
         headers: { Authorization: "Bearer mocked-firebase-token", "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, ...pointInput }),
       });
-      const first = await worker.fetch(request(), env);
+      const first = await worker.fetch(request(), withPoints ? enabledEnv : env);
       expect(first.status).toBe(200);
       const result = await first.json() as Record<string, unknown>;
-      expect(result).toMatchObject({ orderId, subtotal: 50, deliveryFee: 20, total: 75 });
-      expect(commits[0].writes[0].update.fields.serviceFee).toEqual({ integerValue: "5" });
+      expect(result).toMatchObject({ orderId, subtotal: 50, deliveryFee: 20, total: withPoints ? 70 : 75 });
       expect(commits).toHaveLength(1);
-      expect(commits[0].writes).toHaveLength(3);
-      expect(commits[0].writes[0].update.name).toBe(prefix + "orders/" + orderId);
-      expect(commits[0].writes[1].update.name).toBe(prefix + "orders/" + orderId + "/private/contact");
-      expect(commits[0].writes[2].update.name).toBe(prefix + "orderLimits/" + uid);
-      expect(JSON.stringify(commits[0].writes[0])).not.toContain("01012345678");
-      expect(JSON.stringify(commits[0].writes[1])).toContain("01012345678");
-      const second = await worker.fetch(request(), env);
+      const writes = commits[0].writes;
+      const start = withPoints ? 3 : 0;
+      expect(writes).toHaveLength(start + 3);
+      if (withPoints) {
+        expect(writes[0]).toMatchObject({
+          verify: prefix + "app_info/referral_config", currentDocument: { updateTime },
+        });
+        expect(writes[1]).toMatchObject({
+          transform: {
+            document: prefix + "referral_balances/" + uid,
+            fieldTransforms: [{ fieldPath: "points", increment: int(-20) }],
+          },
+          currentDocument: { updateTime },
+        });
+        expect(writes[2]).toMatchObject({
+          update: {
+            name: prefix + "referral_redemptions/" + orderId,
+            fields: { points: int(20), discountMinor: int(500), status: { stringValue: "reserved" } },
+          },
+          currentDocument: { exists: false },
+        });
+        expect(writes[start].update.fields.referralDiscountMinor).toEqual(int(500));
+      }
+      expect(writes[start].update.fields.serviceFee).toEqual(int(5));
+      expect(writes[start].update.name).toBe(prefix + "orders/" + orderId);
+      expect(writes[start + 1].update.name).toBe(prefix + "orders/" + orderId + "/private/contact");
+      expect(writes[start + 2].update.name).toBe(prefix + "orderLimits/" + uid);
+      expect(JSON.stringify(writes[start])).not.toContain("01012345678");
+      expect(JSON.stringify(writes[start + 1])).toContain("01012345678");
+      const second = await worker.fetch(request(), withPoints ? enabledEnv : env);
       expect(second.status).toBe(200);
       expect(await second.json()).toMatchObject({ orderId, reused: true });
       expect(commits).toHaveLength(1);

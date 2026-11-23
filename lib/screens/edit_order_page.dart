@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../services/wasally_service_fee.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
@@ -62,7 +63,14 @@ class _EditOrderPageState extends State<EditOrderPage> {
     return d >= _subtotal ? 0 : d;
   }
 
-  double get _total => _subtotal + widget.order.deliveryFee - _discount;
+  double get _total {
+    final order = widget.order;
+    final fee = order.serviceFee == null
+        ? 0.0
+        : WasallyServiceFee.forItems(_subtotal - _discount);
+    return _subtotal + order.deliveryFee - _discount + fee -
+        order.referralDiscountMinor / 100;
+  }
 
   void _setQty(int index, int qty) {
     if (qty < 0 || qty > kMaxLineQty) return;

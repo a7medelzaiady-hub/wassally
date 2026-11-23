@@ -104,3 +104,70 @@ it("authorizes admin settlement and debits the credit only once for the same ref
   expect((await settle("admin", { dueMinor: 5000 })).status).toBe(409);
   expect(commits()).toBe(1);
 });
+
+it.each(["cancelled", "delivered"])("reconciles a %s points order once", async (status) => {
+  const orderPath = "orders/points-order";
+  const redemptionPath = "referral_redemptions/points-order";
+  const source = {
+    storeId: str("store"), discountMinor: int(500),
+    points: int(20), status: str("reserved"),
+  };
+  const docs: Record<string, Record<string, unknown>> = {
+    "admins/admin": {}, "admins/other-admin": {},
+    [orderPath]: { userId: str("customer"), storeId: str("store"),
+      referralDiscountMinor: int(500), status: str(status) },
+    [redemptionPath]: source,
+  };
+  const commits: unknown[][] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (resource, init) => {
+    const url = String(resource);
+    if (url.includes("oauth2.googleapis.com/token"))
+      return Response.json({ access_token: "t", expires_in: 3600 });
+    if (url.includes("accounts:lookup")) {
+      const uid = JSON.parse(String(init?.body)).localId[0];
+      return Response.json({ users: [{ localId: uid, validSince: "1", disabled: false }] });
+    }
+    if (url.endsWith(":commit")) {
+      const writes = JSON.parse(String(init?.body)).writes;
+      expect(writes[0]).toEqual({ verify: root + orderPath, currentDocument: { updateTime } });
+      const last = writes.at(-1);
+      expect(last.update.name).toBe(root + redemptionPath);
+      expect(last.currentDocument).toEqual({ updateTime });
+      Object.assign(source, last.update.fields);
+      commits.push(writes);
+      return Response.json({ writeResults: [] });
+    }
+    const path = url.split("/documents/")[1];
+    return docs[path]
+      ? Response.json({ name: root + path, fields: docs[path], updateTime })
+      : new Response(null, { status: 404 });
+  });
+  const redeem = (uid: string, action: string, reference?: string) => worker.fetch(
+    new Request("https://worker.test/v1/referrals/redemption", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${uid}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: "points-order", action, reference }),
+    }), env,
+  );
+  if (status === "cancelled") {
+    expect((await redeem("stranger", "refund")).status).toBe(403);
+    expect((await redeem("customer", "refund")).status).toBe(200);
+    expect((await redeem("customer", "refund")).status).toBe(200);
+    expect(commits).toHaveLength(1);
+    expect(commits[0][1]).toMatchObject({
+      transform: { document: root + "referral_balances/customer",
+        fieldTransforms: [{ fieldPath: "points", increment: int(20) }] },
+    });
+  } else {
+    expect((await redeem("customer", "refund")).status).toBe(409);
+    expect((await redeem("customer", "claim")).status).toBe(403);
+    expect((await redeem("admin", "paid", "transfer-1")).status).toBe(409);
+    expect(await (await redeem("admin", "claim")).json()).toMatchObject({
+      storeId: "store", discountMinor: 500, status: "processing",
+    });
+    expect((await redeem("other-admin", "claim")).status).toBe(409);
+    expect((await redeem("admin", "paid", "transfer-1")).status).toBe(200);
+    expect((await redeem("admin", "paid", "transfer-1")).status).toBe(200);
+    expect(commits).toHaveLength(2);
+  }
+});

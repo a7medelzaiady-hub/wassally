@@ -227,6 +227,12 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
             )),
             child: const Text('تسوية عمولة محل'),
           ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const ReferralReimbursementPage(),
+            )),
+            child: const Text('تسديد خصم النقاط للمحل'),
+          ),
         ],
       ),
     );
@@ -442,6 +448,107 @@ class _PolicyEditorState extends State<_PolicyEditor> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class ReferralReimbursementPage extends StatefulWidget {
+  const ReferralReimbursementPage({super.key, this.initialOrderId = ''});
+
+  final String initialOrderId;
+
+  @override
+  State<ReferralReimbursementPage> createState() =>
+      _ReferralReimbursementPageState();
+}
+
+class _ReferralReimbursementPageState extends State<ReferralReimbursementPage> {
+  late final _order = TextEditingController(text: widget.initialOrderId);
+  final _reference = TextEditingController();
+  bool _busy = false;
+  Map<String, dynamic>? _claim;
+  String? _message;
+
+  @override
+  void dispose() {
+    _order.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
+
+  Future<void> _act(String action) async {
+    if (_busy) return;
+    final orderId = _order.text.trim();
+    final reference = _reference.text.trim();
+    if (orderId.isEmpty || (action == 'paid' && reference.length < 5)) {
+      setState(() => _message = 'اكتب رقم الطلب، ومرجع التحويل عند تسجيل السداد.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      final result = await OrderGateway.referralRedemption(
+        orderId,
+        action,
+        reference: action == 'paid' ? reference : null,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (action == 'claim') {
+          _claim = result;
+        } else {
+          _claim = null;
+          _reference.clear();
+          _message = action == 'paid'
+              ? 'تم تسجيل سداد فرق الخصم للمحل.'
+              : 'تمت مراجعة استرجاع نقاط الطلب الملغي.';
+        }
+      });
+    } catch (error) {
+      if (mounted) setState(() => _message = _failureMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final claim = _claim;
+    return Scaffold(
+      appBar: AppBar(title: const Text('تسديد خصم النقاط للمحل')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: _order,
+            enabled: !_busy && claim == null,
+            decoration: const InputDecoration(labelText: 'رقم الطلب'),
+          ),
+          if (claim == null) ...[
+            FilledButton(
+              onPressed: _busy ? null : () => _act('claim'),
+              child: const Text('استلام تسوية الطلب')),
+            TextButton(
+              onPressed: _busy ? null : () => _act('refund'),
+              child: const Text('استرجاع نقاط طلب ملغي')),
+          ] else ...[
+            Text('المحل: ${claim['storeId']}'),
+            Text('المستحق: ${((claim['discountMinor'] as num) / 100).toStringAsFixed(2)} ج.م.'),
+            TextField(
+              controller: _reference,
+              enabled: !_busy,
+              decoration: const InputDecoration(labelText: 'مرجع التحويل اليدوي'),
+            ),
+            FilledButton(
+              onPressed: _busy ? null : () => _act('paid'),
+              child: const Text('تسجيل السداد')),
+          ],
+          if (_busy) const LinearProgressIndicator(),
+          if (_message != null) Text(_message!),
+        ],
       ),
     );
   }

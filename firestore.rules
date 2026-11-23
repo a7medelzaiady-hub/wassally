@@ -992,7 +992,13 @@ service cloud.firestore {
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
       allow create: if !securityFlag('serverOrders') && signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
 
-      allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);
+      allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data) &&
+        (resource.data.get('referralDiscountMinor', 0) == 0 ||
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verifiedTotal']) ||
+         request.resource.data.get('verifiedTotal', -1) ==
+           resource.data.get('total', -1) +
+             (request.resource.data.get('finalDeliveryFee', resource.data.get('deliveryFee', 0)) -
+              resource.data.get('deliveryFee', 0)));
 
       // مفيش حذف فعلي للطلبات من التطبيق: الطلب بيكون وصل للمحل، ومسحه بيضيّع السجل.
       // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).

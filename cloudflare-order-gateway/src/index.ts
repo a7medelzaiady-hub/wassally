@@ -1413,7 +1413,48 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const discount = 0;
   const normalizedPromo = "";
   const serviceFee = serviceFeeFor(subtotal - discount);
-  const total = money(subtotal + deliveryFee - discount + serviceFee);
+  const requestedPoints = input.referralPoints ?? 0;
+  if (!Number.isSafeInteger(requestedPoints) || requestedPoints < 0) {
+    throw new HttpError(400, "عدد نقاط الإحالة غير صالح.");
+  }
+  let referralDiscountMinor = 0;
+  let pointWrites: unknown[] = [];
+  if (requestedPoints > 0) {
+    if (env.REFERRAL_REGISTRATION_ENABLED !== "true" ||
+        env.REFERRAL_DELIVERY_ENABLED !== "true") {
+      throw new HttpError(409, "استخدام نقاط الإحالة غير متاح حاليًا.");
+    }
+    const [settings, balance] = await Promise.all([
+      getDocument(env, "app_info/referral_config", token),
+      getDocument(env, `referral_balances/${uid}`, token),
+    ]);
+    const policy = settings && parseReferralSettings(decodeFields(settings.fields ?? {})).redemption;
+    const quote = quoteReferralPoints(
+      policy || undefined,
+      balance ? decodeFields(balance.fields ?? {}).points : undefined,
+      Math.round(subtotal * 100),
+    );
+    if (requestedPoints !== quote.points || !settings?.updateTime || !balance?.updateTime ||
+        input.expectedReferralDiscountMinor !== quote.discountMinor) {
+      throw new HttpError(409, "خصم النقاط اتغير. احسبه من جديد قبل تأكيد الطلب.");
+    }
+    referralDiscountMinor = quote.discountMinor;
+    pointWrites = [
+      { verify: settings.name, currentDocument: { updateTime: settings.updateTime } },
+      referralPointsBalanceWrite(env, uid, -requestedPoints, balance.updateTime),
+      {
+        update: {
+          name: firestoreDocumentName(env, `referral_redemptions/${orderId}`),
+          fields: encodeFields({
+            storeId, points: requestedPoints, discountMinor: referralDiscountMinor,
+            status: "reserved",
+          }),
+        },
+        currentDocument: { exists: false },
+      },
+    ];
+  }
+  const total = money(subtotal + deliveryFee - discount + serviceFee - referralDiscountMinor / 100);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1447,6 +1488,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     serviceFee,
     total,
     paymentMethod: "cash",
+    ...(referralDiscountMinor > 0 ? { referralDiscountMinor } : {}),
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
@@ -1457,6 +1499,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   }
 
   const writes = [
+    ...pointWrites,
     {
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}`,
@@ -1584,7 +1627,11 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   }
   // الطلبات القديمة (قبل رسوم الخدمة) بتفضل من غير رسوم حتى بعد التعديل.
   const serviceFee = typeof order.serviceFee === "number" ? serviceFeeFor(subtotal - discount) : 0;
-  const total = money(subtotal + deliveryFee - discount + serviceFee);
+  const referralDiscountMinor = Number(order.referralDiscountMinor ?? 0);
+  if (Math.round(subtotal * 100) < referralDiscountMinor) {
+    throw new HttpError(409, "قيمة الأصناف بعد التعديل أقل من خصم النقاط المحجوز.");
+  }
+  const total = money(subtotal + deliveryFee - discount + serviceFee - referralDiscountMinor / 100);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -2123,6 +2170,14 @@ export default {
         return response({ error: e.message }, e.status, headers);
       }
     }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/redemption") {
+      try {
+        return response(await referralRedemption(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تحديث تسوية خصم النقاط.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/referrals/commissions") {
       if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
         return response({ error: "تسوية خصم الإحالة غير متاحة حاليًا." }, 404, headers);
@@ -2376,6 +2431,108 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
+function referralPointsBalanceWrite(env: Env, uid: string, points: number, updateTime?: string) {
+  return {
+    transform: {
+      document: firestoreDocumentName(env, `referral_balances/${uid}`),
+      fieldTransforms: [{ fieldPath: "points", increment: { integerValue: String(points) } }],
+    },
+    ...(updateTime ? { currentDocument: { updateTime } } : {}),
+  };
+}
+
+async function refundReferralOrder(
+  env: Env, token: string, orderId: string, orderDoc: FirestoreDoc,
+) {
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (order.status !== "cancelled" || !orderDoc.updateTime ||
+      !order.referralDiscountMinor || order.userDeleted === true) return;
+  const doc = await getDocument(env, `referral_redemptions/${orderId}`, token);
+  if (!doc?.updateTime) return;
+  const data = decodeFields(doc.fields ?? {});
+  if (data.status !== "reserved") return;
+  if (typeof order.userId !== "string" || data.discountMinor !== order.referralDiscountMinor ||
+      typeof data.points !== "number" || !Number.isSafeInteger(data.points) || data.points < 1) {
+    throw new Error("invalid points reservation");
+  }
+  await commitOrConflict(env, token, [
+    { verify: orderDoc.name, currentDocument: { updateTime: orderDoc.updateTime } },
+    referralPointsBalanceWrite(env, order.userId, data.points),
+    {
+      update: { name: doc.name, fields: encodeFields({ status: "refunded" }) },
+      updateMask: { fieldPaths: ["status"] },
+      currentDocument: { updateTime: doc.updateTime },
+    },
+  ]);
+}
+
+async function referralRedemption(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-redemption:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { orderId, action, reference } = await readJsonBody(request);
+  if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
+      !["refund", "claim", "paid"].includes(String(action))) {
+    throw new HttpError(400, "راجع رقم الطلب والإجراء.");
+  }
+  const token = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${orderId}`, token);
+  if (!orderDoc?.updateTime) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (action === "refund") {
+    if (order.userId !== uid && !await getDocument(env, `admins/${uid}`, token)) {
+      throw new HttpError(403, "الطلب لا يخص حسابك.");
+    }
+    if (order.status !== "cancelled") throw new HttpError(409, "الطلب غير ملغي.");
+    await refundReferralOrder(env, token, orderId, orderDoc);
+    return { processed: true };
+  }
+  if (!await getDocument(env, `admins/${uid}`, token)) {
+    throw new HttpError(403, "تسوية خصم النقاط من صلاحيات الإدارة.");
+  }
+  if (order.status !== "delivered" || !order.referralDiscountMinor) {
+    throw new HttpError(409, "التسوية متاحة لطلب بنقاط تم تسليمه.");
+  }
+  const doc = await getDocument(env, `referral_redemptions/${orderId}`, token);
+  if (!doc?.updateTime) throw new HttpError(404, "سجل الخصم غير موجود.");
+  const data = decodeFields(doc.fields ?? {});
+  if (data.storeId !== order.storeId || data.discountMinor !== order.referralDiscountMinor) {
+    throw new HttpError(409, "بيانات التسوية غير متطابقة.");
+  }
+  const result = { storeId: data.storeId, discountMinor: data.discountMinor };
+  if (action === "paid" && (typeof reference !== "string" ||
+      reference.trim().length < 5 || reference.length > 120)) {
+    throw new HttpError(400, "اكتب مرجع التحويل اليدوي.");
+  }
+  if (data.status === "paid") {
+    if (action === "paid" && data.processingBy === uid && data.reference === String(reference).trim()) {
+      return { ...result, status: "paid" };
+    }
+    throw new HttpError(409, "التسوية مسددة بالفعل.");
+  }
+  if (data.status === "processing" && data.processingBy !== uid) {
+    throw new HttpError(409, "مسؤول آخر بيتابع التسوية.");
+  }
+  if (action === "claim" && data.status === "processing") return { ...result, status: "processing" };
+  if ((action === "claim" && data.status !== "reserved") ||
+      (action === "paid" && data.status !== "processing")) {
+    throw new HttpError(409, "حالة التسوية لا تسمح بالإجراء.");
+  }
+
+  const changes = action === "claim"
+    ? { status: "processing", processingBy: uid }
+    : { status: "paid", reference: String(reference).trim(), paidAt: new Date() };
+  await commitOrConflict(env, token, [
+    { verify: orderDoc.name, currentDocument: { updateTime: orderDoc.updateTime } },
+    {
+      update: { name: doc.name, fields: encodeFields(changes) },
+      updateMask: { fieldPaths: Object.keys(changes) },
+      currentDocument: { updateTime: doc.updateTime },
+    },
+  ]);
+  return { ...result, status: changes.status };
+}
+
 async function referralPointsQuote(request: Request, env: Env): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
@@ -2888,6 +3045,11 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
       scheduleReferralDelivery(env, ctx, token, order);
     }
     if (status === "cancelled") {
+      try {
+        await refundReferralOrder(env, token, orderId, orderDoc);
+      } catch {
+        console.error("Referral refund requires retry");
+      }
       storeTitle = "تم إلغاء طلب من المحل";
       courierTitle = "تم إلغاء طلب توصيل";
     }

@@ -44,8 +44,16 @@ cash twice.
 ## Remaining release decisions
 
 - The administration sets the value of a point and the maximum discount per
-  order in minor units. Points remain in the referral ledger until checkout and
-  cancellation accounting is integrated.
+  order in minor units. In regular Worker checkout, the discount applies only
+  to merchandise. The Worker reserves points atomically with order creation.
+  The customer pays the reduced amount. Delivery and service fees are calculated
+  independently of points.
+- Cancellation releases the reservation once. The customer or an administrator
+  can retry the release if the status callback was interrupted.
+- For delivered orders, an administrator claims the reimbursement from the
+  order details, manually pays the store the discount amount, and records the
+  transfer reference. The claim is exclusive and recording the same reference
+  on the same order is idempotent.
 - To settle recorded store commission, an administrator supplies the store ID,
   the mapped owner UID, the commission reference, and the amount due. Firestore
   records the due amount, applied referral credit, and remaining amount in the

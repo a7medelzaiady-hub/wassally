@@ -105,6 +105,38 @@ class OrderGateway {
     return response['settings'] as Map<String, dynamic>?;
   }
 
+  static Future<Map<String, dynamic>> quoteReferralPoints(int itemsSubtotalMinor) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/points/quote',
+      payload: {'itemsSubtotalMinor': itemsSubtotalMinor},
+      connectivityMessage: 'تعذر حساب خصم النقاط.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> referralRedemption(
+    String orderId,
+    String action, {
+    String? reference,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/redemption',
+      payload: {
+        'orderId': orderId,
+        'action': action,
+        if (reference != null) 'reference': reference,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة تسوية خصم النقاط.',
+    );
+  }
+
   static Future<Map<String, dynamic>> settleReferralCommission({
     required String ownerUid,
     required String storeId,
