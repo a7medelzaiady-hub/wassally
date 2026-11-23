@@ -98,6 +98,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         contact = await widget.backend.loadContact(widget.orderId).catchError((_) => null);
       }
       if (!mounted) return;
+      if (action == 'deliver' && updated.step == QuickCourierStep.delivered) {
+        // Do not retain the customer's delivery PIN after successful verification.
+        _pinCtrl.clear();
+      }
       setState(() {
         _order = updated;
         _contact = contact;
