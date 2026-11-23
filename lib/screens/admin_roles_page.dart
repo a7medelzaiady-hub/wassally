@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
+import 'admin_user_directory_page.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
@@ -85,6 +86,17 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
     }
   }
 
+  Future<void> _toggleQuick(String id, bool enabled) async {
+    try {
+      await _col.doc(id).update({'quickEnabled': enabled});
+      _toast(enabled ? 'تم تفعيل صلاحية الطلبات السريعة.' : 'تم إيقاف صلاحية الطلبات السريعة.');
+    } on FirebaseException catch (e) {
+      _toast(e.code == 'permission-denied'
+          ? 'مفيش صلاحية لتعديل المندوب. تأكد إنك مدير.'
+          : 'تعذر تعديل صلاحية الطلبات السريعة. جرّب تاني.');
+    }
+  }
+
   Future<void> _delete(String id, String name) async {
     final ok = await confirmDialog(
       context,
@@ -108,6 +120,18 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.people_alt_outlined),
+              title: const Text('دليل المستخدمين والصلاحيات'),
+              subtitle: const Text('عرض الأسماء ونسخ UID بضغطة واحدة'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AdminUserDirectoryPage()),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const Text(
             'خد الـ UID بتاع المندوب من Firebase Console ثم Authentication ثم Users '
             '(عمود User UID). المندوب لازم يكون سجّل دخول التطبيق مرة.',
@@ -182,28 +206,99 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
               return Column(
                 children: [
                   for (final d in docs)
-                    Card(
-                      child: ListTile(
-                        title: Text((d.data()['name'] ?? 'مندوب').toString()),
-                        subtitle: Text(
-                          [
-                            if ((d.data()['phone'] ?? '').toString().isNotEmpty)
-                              d.data()['phone'].toString(),
-                            (d.data()['storeId'] ?? '').toString().isEmpty
-                                ? 'مندوب خارجي'
-                                : 'تابع للمحل: ${d.data()['storeId']}',
-                            d.id,
-                          ].join(' • '),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Card(
+                        clipBehavior: Clip.antiAlias,
+                        margin: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        leading: Switch(
-                          value: (d.data()['active'] as bool?) ?? true,
-                          onChanged: (v) => _toggle(d.id, v),
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _delete(
-                            d.id,
-                            (d.data()['name'] ?? 'مندوب').toString(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 23,
+                                    backgroundColor: kPrimary.withValues(alpha: 0.10),
+                                    child: Icon(Icons.delivery_dining, color: kPrimary),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          (d.data()['name'] ?? 'مندوب').toString(),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context).textTheme.titleMedium
+                                              ?.copyWith(fontWeight: FontWeight.w800),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          (d.data()['storeId'] ?? '').toString().isEmpty
+                                              ? 'مندوب خارجي'
+                                              : 'مندوب تابع لمحل',
+                                          style: Theme.of(context).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'حذف المندوب',
+                                    icon: const Icon(Icons.delete_outline),
+                                    onPressed: () => _delete(
+                                      d.id,
+                                      (d.data()['name'] ?? 'مندوب').toString(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if ((d.data()['phone'] ?? '').toString().trim().isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.phone_outlined, size: 17),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        d.data()['phone'].toString(),
+                                        textDirection: TextDirection.ltr,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const Divider(height: 24),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text('حساب المندوب', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  ),
+                                  Switch(
+                                    value: (d.data()['active'] as bool?) ?? true,
+                                    onChanged: (v) => _toggle(d.id, v),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text('صلاحية الطلبات السريعة', style: TextStyle(fontWeight: FontWeight.w600)),
+                                  ),
+                                  Switch(
+                                    value: d.data()['quickEnabled'] == true,
+                                    onChanged: ((d.data()['active'] as bool?) ?? true)
+                                        ? (v) => _toggleQuick(d.id, v)
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                       ),

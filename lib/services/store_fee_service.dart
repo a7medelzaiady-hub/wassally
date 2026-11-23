@@ -11,7 +11,14 @@ class StoreFeeSummary {
   /// اللي المحل دفعه لوصّلي وسجّلته الإدارة (بالقروش).
   final int paidMinor;
 
-  const StoreFeeSummary({required this.dueMinor, required this.paidMinor});
+  /// وقت آخر «تقفيل حساب» من الإدارة (null = لسه ما اتقفلش). الطلبات اللي قبله بتختفي من صفحة المحل.
+  final DateTime? settledAt;
+
+  const StoreFeeSummary({
+    required this.dueMinor,
+    required this.paidMinor,
+    this.settledAt,
+  });
 
   int get outstandingMinor => dueMinor - paidMinor;
   double get due => dueMinor / 100;
@@ -42,6 +49,9 @@ class StoreFeeService {
     return StoreFeeSummary(
       dueMinor: (due * 100).round(),
       paidMinor: (bal.data()?['paidAmountMinor'] as num?)?.toInt() ?? 0,
+      settledAt: bal.data()?['settledAt'] is Timestamp
+          ? (bal.data()!['settledAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -74,6 +84,7 @@ class StoreFeeService {
     await _db.runTransaction((tx) async {
       final snap = await tx.get(balanceRef);
       final paid = (snap.data()?['paidAmountMinor'] as num?)?.toInt() ?? 0;
+      final settled = snap.data()?['settledAt'];
       if (paid + amountMinor > summary.dueMinor) {
         throw StateError('الرصيد اتغير. حدّث البيانات وحاول تاني.');
       }
@@ -90,6 +101,31 @@ class StoreFeeService {
         'paidAmountMinor': paid + amountMinor,
         'lastPaymentId': paymentRef.id,
         'updatedAt': FieldValue.serverTimestamp(),
+        // الدفعة ما تمسحش وقت آخر تقفيل حساب.
+        if (settled is Timestamp) 'settledAt': settled,
+      });
+    });
+  }
+
+  /// «تقفيل الحساب»: الطلبات المنتهية قبل اللحظة دي بتختفي من صفحة المحل.
+  /// مسموح بس لما المتبقي صفر (والقواعد بتمنع لمس المدفوع).
+  static Future<void> settleAccount(String storeId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('سجّل دخول الأول.');
+    final summary = await load(storeId);
+    if (summary.outstandingMinor > 0) {
+      throw StateError('لسه على المحل مبلغ متبقي. سجّل دفعته الأول وبعدين اقفل الحساب.');
+    }
+    final ref = _db.collection('store_fee_balances').doc(storeId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final d = snap.data();
+      tx.set(ref, {
+        'storeId': storeId,
+        'paidAmountMinor': (d?['paidAmountMinor'] as num?)?.toInt() ?? 0,
+        'lastPaymentId': (d?['lastPaymentId'] as String?) ?? '',
+        'updatedAt': FieldValue.serverTimestamp(),
+        'settledAt': FieldValue.serverTimestamp(),
       });
     });
   }

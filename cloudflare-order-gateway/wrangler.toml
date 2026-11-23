@@ -16,6 +16,15 @@ namespace_id = "122591726"
 limit = 10
 period = 60
 
+# Approximate per-user protection for order create/edit (before any Firestore read).
+[[ratelimits]]
+name = "ORDER_RATE_LIMITER"
+namespace_id = "122591728"
+
+[ratelimits.simple]
+limit = 15
+period = 60
+
 [vars]
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"
@@ -57,4 +66,12 @@ namespace_id = "122591727"
 
 [env.staging.ratelimits.simple]
 limit = 10
+period = 60
+
+[[env.staging.ratelimits]]
+name = "ORDER_RATE_LIMITER"
+namespace_id = "122591729"
+
+[env.staging.ratelimits.simple]
+limit = 15
 period = 60

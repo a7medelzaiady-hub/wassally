@@ -417,7 +417,10 @@ service cloud.firestore {
         math.abs(n.total - (n.subtotal + o.deliveryFee - n.get('discount', 0))) < 0.01 &&
         n.notes is string && n.notes.size() <= 500 &&
         n.customerName is string && n.customerName.size() >= 1 && n.customerName.size() <= 30 &&
-        promoOk(n) &&
+        // Preserve existing coupons on legacy orders without allowing a new coupon.
+        (n.get('discount', 0) == 0 ||
+          (o.get('discount', 0) > 0 && n.get('promoCode', '') == o.get('promoCode', '') &&
+           o.subtotal > 0 && n.discount * o.subtotal <= o.discount * n.subtotal && promoOk(n))) &&
         n.get('editedAt', null) == request.time;
     }
 
@@ -440,7 +443,8 @@ service cloud.firestore {
     function feedDataMatchesOrder(f, orderData) {
       return f.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
           'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt',
-          'editedAt']) &&
+          'editedAt', 'groupCode']) &&
+        f.get('groupCode', '') == orderData.get('groupCode', '') &&
         f.get('storeId', '') == orderData.get('storeId', '') &&
         f.get('storeName', '') == orderData.get('storeName', '') &&
         f.get('area', '') == orderData.get('area', '') &&
@@ -678,6 +682,12 @@ service cloud.firestore {
 
     // قائمة الطلبات المتاحة للمندوبين (من غير بيانات العميل). بتتكتب من التطبيق (بدون Cloud Functions):
     // المدير أو صاحب المحل بتاع الطلب، لما الطلب يبقى preparing وبدون مندوب.
+    // تجميع طلبات العميل (رقم مشترك لطلبات من محلات مختلفة): الـWorker بس بيكتب ويقرا.
+    // groupId نفسه مش بيظهر للمناديب؛ اللي بيظهر groupCode على الطلب ونسخة القايمة.
+    match /order_groups/{groupId} {
+      allow read, write: if false;
+    }
+
     match /courier_available_orders/{orderId} {
       allow get, list: if isCourier();
 
@@ -688,8 +698,11 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == '' &&
         request.resource.data.storeId ==
           getAfter(/databases/$(database)/documents/orders/$(orderId)).data.storeId &&
+        // كود التجميع (لو موجود) لازم يطابق الطلب نفسه: المحل ما يقدرش يخترع أو يغيّر مجموعة.
+        request.resource.data.get('groupCode', '') ==
+          getAfter(/databases/$(database)/documents/orders/$(orderId)).data.get('groupCode', '') &&
         request.resource.data.keys().hasOnly(['storeId', 'storeName', 'area', 'items', 'subtotal',
-          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt']);
+          'deliveryFee', 'finalDeliveryFee', 'discount', 'total', 'status', 'createdAt', 'groupCode']);
 
       // العميل صاحب الطلب يحدّث نسخة القائمة في نفس Batch تعديل الطلب فقط.
       // getAfter يربط المستندين بالقيم النهائية ويمنع إدخال أي PII.
@@ -714,13 +727,15 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let dm = od.get('deliveryMode', '');
         let editKeys = ['items', 'subtotal', 'total', 'notes', 'discount',
-          'promoCode', 'customerName', 'editedAt', 'unavailableItems'];
+          'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'verifiedTotal', 'verifiedAt'];
         return k.hasOnly(editKeys) ? (
           !securityFlag('serverOrders') &&
+          !('serviceFee' in od) &&
           st in ['new', 'preparing'] &&
           cid == '' &&
           'editedAt' in k &&
           !('unavailableItems' in nd) &&
+          !('verifiedTotal' in nd) && !('verifiedAt' in nd) &&
           validCustomerEdit(nd, od) &&
           (st != 'preparing' || feedUpdatedForCustomerEdit(orderId))
         ) : k.hasOnly(['status']) ? (
@@ -779,6 +794,7 @@ service cloud.firestore {
         ) : k.hasOnly(['activeDeliveryIssueId']) ? (
           st == 'on_the_way' &&
           cid == request.auth.uid &&
+          od.get('customerConfirmedAt', null) == null &&
           ( !('activeDeliveryIssueId' in od)
             ? (nai is string && nai.size() > 0 &&
                existsAfter(/databases/$(database)/documents/delivery_issues/$(nai)) &&
@@ -982,6 +998,15 @@ service cloud.firestore {
       // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).
       allow delete: if false;
 
+      function canReadOrderContact() {
+        let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
+        return order.get('userId', '') == request.auth.uid ||
+          isAdmin() ||
+          (order.get('courierId', '') == request.auth.uid &&
+            order.get('status', '') in ['preparing', 'on_the_way'] &&
+            order.get('customerConfirmedAt', null) == null && isCourier());
+      }
+
       function customerContactUpdateAllowed(orderId) {
         let orderData = get(/databases/$(database)/documents/orders/$(orderId)).data;
         return signedIn() &&
@@ -997,12 +1022,7 @@ service cloud.firestore {
       //    (preparing / on_the_way). صاحب المحل والمناديب التانيين مفيش لهم وصول.
       //  • الإنشاء: العميل مع طلبه في نفس الـ batch فقط. مفيش تعديل ولا حذف من التطبيق.
       match /private/{doc} {
-        allow read: if signedIn() && doc == 'contact' && (
-          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid ||
-          isAdmin() ||
-          (isCourier() &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
-            get(/databases/$(database)/documents/orders/$(orderId)).data.status in ['preparing', 'on_the_way']));
+        allow read: if signedIn() && doc == 'contact' && canReadOrderContact();
         allow create: if signedIn() && doc == 'contact' &&
           !exists(/databases/$(database)/documents/orders/$(orderId)) &&
           existsAfter(/databases/$(database)/documents/orders/$(orderId)) &&
@@ -1068,7 +1088,8 @@ service cloud.firestore {
 
     // بيانات المستخدم: صاحبها بس.
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      // دليل المستخدمين للإدارة فقط؛ لا يتيح القراءة لأي مستخدم آخر.
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       // ممنوع المستخدم يكتب حقل role (أو أي حقل صلاحيات) في مستنده.
       // الحقول المسموحة بس (whitelist). أي حقل جديد (محفظة، صلاحيات...) لازم يتضاف هنا صراحةً.
       allow create: if signedIn() && request.auth.uid == uid &&
@@ -1130,7 +1151,7 @@ service cloud.firestore {
 
     // المديرين: كل مستخدم يقرأ مستنده هو بس، والكتابة من الـ Console فقط.
     match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
       allow write: if false;
     }
 
@@ -1288,6 +1309,8 @@ service cloud.firestore {
         (order.get('pickedUpAt', null) is timestamp ||
          order.get('courierAt', null) is timestamp) &&
         order.get('courierArrivedAt', null) is timestamp &&
+        order.get('customerConfirmedAt', null) == null &&
+        getAfter(/databases/$(database)/documents/orders/$(d.orderId)).data.get('activeDeliveryIssueId', '') == issueId &&
         order.get('userId', '') == d.customerId &&
         order.get('storeId', '') == d.storeId;
     }
@@ -1345,6 +1368,8 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))) &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'on_the_way' &&
         get(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('activeDeliveryIssueId', '') == issueId &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('status', '') == 'cancelled' &&
+        getAfter(/databases/$(database)/documents/orders/$(resource.data.get('orderId', ''))).data.get('lastDeliveryIssueId', '') == issueId &&
         request.resource.data.get('status', '') == 'store_confirmed_return' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'storeReceivedAt', 'storeReceivedBy'
@@ -1557,6 +1582,40 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ───────────── «طلباتك على السريع» (quick_orders) ─────────────
+    // الـWorker هو الكاتب الوحيد (حساب الخدمة بيتخطى القواعد)، فكل الكتابة من التطبيق ممنوعة.
+    // القراءة: صاحب الطلب، والمندوب المعيّن، والإدارة، والمناديب المعتمدين للخدمة للطلبات المفتوحة بس.
+    // مستند الطلب العام مفيهوش رقم ولا عنوان؛ دول في private/contact.
+    function isQuickCourier() {
+      return isCourier() &&
+        get(/databases/$(database)/documents/couriers/$(request.auth.uid)).data.get('quickEnabled', false) == true;
+    }
+
+    match /quick_orders/{orderId} {
+      allow get, list: if signedIn() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('courierId', '') == request.auth.uid ||
+        isAdmin() ||
+        (resource.data.status == 'open' && isQuickCourier()));
+      allow create, update, delete: if false;
+
+      match /private/{doc} {
+        allow get: if signedIn() && doc == 'contact' && (
+          get(/databases/$(database)/documents/quick_orders/$(orderId)).data.userId == request.auth.uid ||
+          isAdmin() ||
+          (isCourier() &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('courierId', '') == request.auth.uid &&
+            get(/databases/$(database)/documents/quick_orders/$(orderId)).data.get('status', '') in
+              ['accepted', 'awaiting_advance', 'purchasing', 'summary_pending', 'summary_approved']));
+        allow list, create, update, delete: if false;
+      }
+    }
+
+    // حد الطلبات السريعة لكل عميل: الـWorker بس.
+    match /quickLimits/{uid} {
+      allow read, write: if false;
+    }
+
     // المناديب: المدير يقرأ الكل (عشان التعيين)، والمندوب يقرأ مستنده هو.
     // الإضافة والتعديل من الـ Console فقط.
     match /couriers/{uid} {
@@ -1698,9 +1757,11 @@ service cloud.firestore {
     match /store_fee_balances/{storeId} {
       allow get: if isAdmin() || isStoreOwner(storeId);
       allow list: if false;
+      // settledAt (اختياري) = وقت آخر «تقفيل حساب»؛ الدفعة العادية بتحافظ عليه زي ما هو.
       allow create, update: if isAdmin() &&
-        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
         request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt']) &&
+        request.resource.data.get('settledAt', null) == (resource == null ? null : resource.data.get('settledAt', null)) &&
         request.resource.data.storeId == storeId &&
         request.resource.data.paidAmountMinor is int &&
         request.resource.data.lastPaymentId is string &&
@@ -1712,6 +1773,20 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('createdAt', null) == request.time &&
         request.resource.data.paidAmountMinor - (resource == null ? 0 : resource.data.get('paidAmountMinor', 0)) ==
           getAfter(/databases/$(database)/documents/store_fee_payments/$(request.resource.data.lastPaymentId)).data.get('amountMinor', 0);
+      // «تقفيل الحساب»: الأدمن بيختم وقت التقفيل من غير ما يلمس المبلغ المدفوع ولا آخر دفعة.
+      // (إن المتبقي صفر بيتحقق منه التطبيق؛ القواعد مش بتقدر تجمّع الطلبات.)
+      allow create, update: if isAdmin() &&
+        request.resource.data.keys().hasOnly(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.keys().hasAll(['storeId', 'paidAmountMinor', 'lastPaymentId', 'updatedAt', 'settledAt']) &&
+        request.resource.data.storeId == storeId &&
+        request.resource.data.settledAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.paidAmountMinor is int &&
+        request.resource.data.lastPaymentId is string &&
+        (resource == null
+          ? (request.resource.data.paidAmountMinor == 0 && request.resource.data.lastPaymentId == '')
+          : (request.resource.data.paidAmountMinor == resource.data.get('paidAmountMinor', 0) &&
+             request.resource.data.lastPaymentId == resource.data.get('lastPaymentId', '')));
       allow delete: if false;
     }
 

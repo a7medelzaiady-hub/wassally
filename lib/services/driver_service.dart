@@ -41,9 +41,24 @@ class DriverService {
       await batch.commit();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw StateError('الطلب ده اتقيّم قبل كده أو لسه ما اتسلّمش.');
+        if (await ReviewLookup.exists(reviewId)) {
+          throw StateError('المندوب ده اتقيّم قبل كده على الطلب ده.');
+        }
+        throw StateError('مقدرناش نسجّل تقييم المندوب دلوقتي. حاول تاني بعد شوية.');
       }
       throw StateError('مقدرناش نسجّل التقييم، حاول تاني.');
+    }
+  }
+}
+
+/// هل التقييم ده اتسجّل فعلًا؟ (قراءة واحدة وقت الحاجة بس، من غير مستمعات).
+class ReviewLookup {
+  static Future<bool> exists(String reviewId) async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('reviews').doc(reviewId).get();
+      return snap.exists;
+    } catch (_) {
+      return false;
     }
   }
 }
@@ -124,7 +139,10 @@ class RatingService {
       await batch.commit();
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
-        throw StateError('المحل ده اتقيّم قبل كده أو الطلب لسه ما اتسلّمش.');
+        if (await ReviewLookup.exists(reviewId)) {
+          throw StateError('المحل ده اتقيّم قبل كده على الطلب ده.');
+        }
+        throw StateError('مقدرناش نسجّل تقييم المحل دلوقتي. حاول تاني بعد شوية.');
       }
       throw StateError('مقدرناش نسجّل تقييم المحل، حاول تاني.');
     }

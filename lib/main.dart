@@ -13,6 +13,7 @@ import 'services/navigation.dart' show rootNavigatorKey;
 import 'services/notification_service.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
+import 'services/cart_book.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -30,6 +31,7 @@ Future<void> _bootstrap() async {
     _configureCrashlytics(),
     PerformanceMonitor.configure(),
     _activateAppCheck(),
+    carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
   ]);
   final bootstrap = startup.elapsed;
   runApp(const WasallyApp());

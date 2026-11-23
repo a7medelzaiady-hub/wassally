@@ -19,6 +19,7 @@ class RoleInfo {
 
   /// صاحب محل مسجل ومسودته ما زالت في انتظار مراجعة الإدارة.
   final bool pendingStoreOwner;
+  final bool quickCourier;
 
   const RoleInfo(
     this.role, [
@@ -26,6 +27,7 @@ class RoleInfo {
     this.storeId = '',
     this.roles = const {},
     this.pendingStoreOwner = false,
+    this.quickCourier = false,
   ]);
 
   Set<AppRole> get held => roles.isEmpty ? {role} : roles;
@@ -230,6 +232,7 @@ class RoleService {
       isOwner ? storeId : (isPendingStoreOwner ? pendingStoreId : ''),
       roles,
       isPendingStoreOwner,
+      isCourier && cData?['quickEnabled'] == true,
     );
 
     // نتيجة «عميل» غير مؤكدة (فشل تحقق الأدمن أو قراءة دور): نرجّع آخر دور محفوظ

@@ -81,9 +81,16 @@ class _LoginScreenState extends State<LoginScreen> {
               ).createShader(r),
               blendMode: BlendMode.dstIn,
               child: Image.network(
+                // الصورة الأصلية لصفحة الدخول (كانت قبل commit 2c223a8)، زي ما كانت بالظبط.
                 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1000',
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                // لو الإنترنت ضعيف أو الصورة ما نزلتش، بنعرض الخلفية المحلية بدل فراغ.
+                errorBuilder: (_, _, _) => Image.asset(
+                  'assets/images/login_bg.webp',
+                  fit: BoxFit.cover,
+                  cacheWidth: 800,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

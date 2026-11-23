@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/promo_banners.dart';
 import '../widgets/app_header.dart';
 
 import '../models/store.dart';
@@ -9,6 +10,7 @@ import '../theme/brand.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
 import '../widgets/closed_badge.dart';
+import '../widgets/cached_net_image.dart';
 
 /// دليل المحلات: قائمة رأسية مريحة، مع الاحتفاظ بنفس بيانات كتالوج المحلات.
 class StoreDirectoryPage extends StatefulWidget {
@@ -50,7 +52,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F5F7),
+        backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
@@ -98,6 +100,11 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
 
             final categories = stores.map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category).where((e) => e.trim().isNotEmpty).toSet().toList()..sort();
             return Column(children: [
+              // صورة (بوستر) في الهيدر؛ من نفس كاش بوسترات الرئيسية.
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: PromoBanners(),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: TextField(
@@ -159,8 +166,8 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                                                 color: Brand.softGradient.colors.first,
                                                 child: Icon(store.icon, size: 42, color: Brand.green),
                                               )
-                                            : Image.network(thumb(store.imageUrl, w: 260), fit: BoxFit.cover,
-                                                errorBuilder: (_, _, _) => Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
+                                            : CachedNetImage(url: thumb(store.imageUrl, w: 260), memCacheWidth: 260,
+                                                errorWidget: Container(color: Brand.green.withValues(alpha: .08), child: Icon(store.icon, size: 40, color: Brand.green))),
                                       ),
                                     ),
                                     const SizedBox(width: 14),

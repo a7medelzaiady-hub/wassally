@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/order.dart';
+import 'order_gateway.dart';
 import 'performance_monitor.dart';
 
 /// يغيّر حالة الطلب ويسجّل الحدث في نفس الـ batch.
@@ -29,6 +32,8 @@ class OrderStatusWriter {
       'total': o['total'],
       'status': 'preparing',
       'createdAt': o['createdAt'],
+      // كود التجميع بس (القواعد بتتأكد إنه نفس كود الطلب)، من غير groupId ولا بيانات العميل.
+      if ((o['groupCode'] ?? '').toString().isNotEmpty) 'groupCode': o['groupCode'],
     };
     m.removeWhere((_, v) => v == null);
     return m;
@@ -160,5 +165,6 @@ class OrderStatusWriter {
       'firestore_status_write',
       batch.commit,
     );
+    unawaited(OrderGateway.notifyEvent(normalizedOrderId, 'status', status: to.key));
   }
 }

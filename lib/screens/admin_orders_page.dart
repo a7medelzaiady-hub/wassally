@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
+import 'admin_navigation_page.dart';
 import '../services/price_check.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
@@ -295,6 +296,23 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                     : 'المدير: ${widget.name}',
               ),
             ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    leading: const Icon(Icons.grid_view_rounded, color: Color(0xFF087653)),
+                    title: const Text('أدوات الإدارة', style: TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: const Text('المحلات، المناديب، الصلاحيات والتقارير'),
+                    trailing: const Icon(Icons.chevron_left_rounded),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const AdminNavigationPage()),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             SliverToBoxAdapter(child: _bannersShortcut()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
           ];
@@ -583,8 +601,18 @@ class _AdminOrderCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     _info('العميل', customer),
-                    if (order.area.isNotEmpty) _info('المنطقة', order.area),
-                    const SizedBox(height: 12),
+                    _info('عنوان العميل', order.address.isNotEmpty ? order.address : (order.area.isNotEmpty ? '${order.area} — العنوان الكامل داخل التفاصيل' : 'العنوان الكامل داخل التفاصيل')),
+                    _info('عنوان المحل', 'اضغط تفاصيل الطلب لعرض العنوان'),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton.icon(
+                        onPressed: onTap,
+                        icon: const Icon(Icons.receipt_long_outlined),
+                        label: const Text('عرض تفاصيل الطلب والعناوين'),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
@@ -651,6 +679,7 @@ class _ManageSheetState extends State<_ManageSheet> {
   // نسخة حيّة من الطلب: الشيت يفضل مفتوح ويتحدّث بعد كل خطوة.
   late AppOrder _o = widget.order;
   OrderContact? _contact;
+  String? _storeAddress;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _orderSub;
   bool _acted = false;
   bool _finished = false;
@@ -660,6 +689,12 @@ class _ManageSheetState extends State<_ManageSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.order.storeId.isNotEmpty) {
+      FirebaseFirestore.instance.collection('stores').doc(widget.order.storeId).get().then((doc) {
+        final data = doc.data();
+        if (mounted) setState(() => _storeAddress = (data?['address'] ?? data?['locationAddress'] ?? '').toString());
+      }).catchError((Object _) {});
+    }
     OrderContactService.load(widget.order.id).then((c) {
       if (mounted) setState(() => _contact = c);
     });
@@ -683,7 +718,7 @@ class _ManageSheetState extends State<_ManageSheet> {
 
   /// الخطوات المتبقية لتجهيز الطلب: اعتماد السعر، تغيير الحالة، تعيين مندوب.
   List<String> get _remaining {
-    if (_o.status == OrderStatus.cancelled) return const [];
+    if (!adminPrepStepsApply(_o)) return const [];
     return [
       if (!_o.isVerified) 'اعتماد السعر',
       if (_o.status == OrderStatus.newOrder) 'تغيير الحالة',
@@ -694,6 +729,8 @@ class _ManageSheetState extends State<_ManageSheet> {
   /// الشيت ما يتقفلش إلا لما كل الخطوات تخلص.
   void _maybeFinish() {
     if (!_acted || _finished || _remaining.isNotEmpty || !mounted) return;
+    // بعد خروج الطلب للتوصيل مفيش «تجهيز»، فما نقفلش الشيت برسالة تجهيز مضلّلة.
+    if (!adminPrepStepsApply(_o)) return;
     _finished = true;
     final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
@@ -832,6 +869,10 @@ class _ManageSheetState extends State<_ManageSheet> {
       setState(() => _err = 'الطلب ${_o.status.label}، وحالته مش بتتغير.');
       return;
     }
+    if (!adminCanSetStatus(_o, s)) {
+      setState(() => _err = 'مش مسموح تغيّر الطلب لـ«${s.label}» من حالته الحالية.');
+      return;
+    }
     if (s == OrderStatus.cancelled) {
       final ok = await confirmDialog(
         context,
@@ -895,6 +936,15 @@ class _ManageSheetState extends State<_ManageSheet> {
         body: (o.verifiedTotal! - o.total).abs() >= 0.01
             ? 'الإجمالي الأصلي في الطلب كان ${formatPrice(o.total)}.'
             : null,
+      );
+    }
+    if (!adminCanApprovePrice(o)) {
+      if (o.status == OrderStatus.cancelled) return const SizedBox.shrink();
+      return _noteBox(
+        color: kMuted,
+        icon: Icons.lock_outline_rounded,
+        title: 'اعتماد السعر مقفول',
+        body: 'الطلب خرج للتوصيل أو العميل استلمه. التحصيل بالإجمالي ${formatPrice(o.payable)}.',
       );
     }
     return FutureBuilder<PriceCheck>(
@@ -1087,13 +1137,15 @@ class _ManageSheetState extends State<_ManageSheet> {
     );
   }
 
-  Widget _statusTile(OrderStatus s, bool selected) {
-    return Material(
+  Widget _statusTile(OrderStatus s, bool selected, {bool enabled = true}) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
       color: selected ? s.color.withValues(alpha: 0.14) : Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _busy ? null : () => _changeStatus(s),
+        onTap: (_busy || !enabled) ? null : () => _changeStatus(s),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1137,6 +1189,7 @@ class _ManageSheetState extends State<_ManageSheet> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -1166,6 +1219,10 @@ class _ManageSheetState extends State<_ManageSheet> {
   Widget _stepsCard() {
     final rem = _remaining;
     final cancelled = _o.status == OrderStatus.cancelled;
+    if (!cancelled && !adminPrepStepsApply(_o)) {
+      // بعد خروج الطلب للتوصيل: مفيش خطوات تجهيز، بنعرض بس رسالة آخر إجراء/الخطأ.
+      if (_err == null && _last == null) return const SizedBox.shrink();
+    }
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(top: 12),
@@ -1202,7 +1259,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                 ),
               ),
             ),
-          Text(
+          if (cancelled || adminPrepStepsApply(_o)) Text(
             'خطوات تجهيز الطلب',
             style: TextStyle(
               fontSize: 13,
@@ -1218,7 +1275,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
               ),
             )
-          else ...[
+          else if (adminPrepStepsApply(_o)) ...[
             _stepRow('اعتماد السعر', _o.isVerified),
             _stepRow('تغيير الحالة', _o.status != OrderStatus.newOrder),
             _stepRow('تعيين مندوب', _o.courierId.isNotEmpty),
@@ -1327,6 +1384,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                     color: Brand.ink,
                   ),
                 ),
+                Text('عنوان المحل: ${_storeAddress == null ? 'جاري التحميل...' : (_storeAddress!.isEmpty ? 'غير مسجل' : _storeAddress!)}'),
                 if (_contact != null && !_contact!.isEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -1395,11 +1453,28 @@ class _ManageSheetState extends State<_ManageSheet> {
                 runSpacing: 10,
                 children: [
                   for (final s in OrderStatus.values)
-                    SizedBox(width: w, child: _statusTile(s, s == o.status)),
+                    SizedBox(
+                      width: w,
+                      child: _statusTile(
+                        s,
+                        s == o.status,
+                        enabled: s == o.status || adminCanSetStatus(o, s),
+                      ),
+                    ),
                 ],
               );
             },
           ),
+          if (adminStatusLocked(o.status) || o.customerConfirmedAt != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                adminStatusLocked(o.status)
+                    ? 'الطلب ${o.status.label}، وحالته مقفولة.'
+                    : 'العميل أكد استلام الطلب، فالحالة اتقفلت. المتبقي تسوية النقدية وتأكيد المحل.',
+                style: TextStyle(color: kMuted, fontSize: 12, height: 1.4),
+              ),
+            ),
           if (o.status == OrderStatus.preparing && !o.ready) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -1649,6 +1724,42 @@ bool adminStatusLocked(OrderStatus status) =>
 
 
 /// طلب في الطريق رمزه اتقفل ولسه ما اتأكدش: محتاج قرار من الإدارة.
+/// خطوات التجهيز (اعتماد السعر/تغيير الحالة/تعيين مندوب) بتنطبق قبل خروج الطلب للتوصيل بس.
+bool adminPrepStepsApply(AppOrder o) =>
+    o.status == OrderStatus.newOrder || o.status == OrderStatus.preparing;
+
+/// اعتماد السعر مسموح في نافذة القواعد بس (pricingApprovalWindow): جديد/بيتجهز،
+/// قبل إبلاغ التسليم وقبل تأكيد العميل الاستلام.
+bool adminCanApprovePrice(AppOrder o) =>
+    adminPrepStepsApply(o) &&
+    o.customerDeliveryReportedAt == null &&
+    o.customerConfirmedAt == null;
+
+/// الإدارة تقدر تغيّر الحالة لـ[s]؟ بتطابق انتقالات الإدارة في firestore.rules (adminMoveOk):
+///  • جديد: تجهيز أو إلغاء. • تجهيز: إلغاء، أو في الطريق بعد جاهزية المحل وتعيين مندوب.
+///  • في الطريق: «تم التوصيل» بس بعد قفل الرمز ولمندوب المحل، أو إلغاء بعد توثيق رجوع الطلب
+///    للمحل (الخدمة بتتحقق منه). مفيش رجوع لخطوة سابقة.
+///  • بعد ما العميل يأكد الاستلام: مفيش أي تغيير (الإغلاق لصاحب المحل بعد تسوية النقدية).
+bool adminCanSetStatus(AppOrder o, OrderStatus s) {
+  if (adminStatusLocked(o.status)) return false;
+  switch (o.status) {
+    case OrderStatus.newOrder:
+      return s == OrderStatus.preparing || s == OrderStatus.cancelled;
+    case OrderStatus.preparing:
+      return s == OrderStatus.cancelled ||
+          (s == OrderStatus.onTheWay && o.ready && o.courierId.isNotEmpty);
+    case OrderStatus.onTheWay:
+      if (o.customerConfirmedAt != null) return false;
+      if (s == OrderStatus.cancelled) return true;
+      return s == OrderStatus.delivered &&
+          o.deliveryPinLockedAt != null &&
+          o.deliveryMode == 'store' &&
+          o.courierId.isNotEmpty;
+    default:
+      return false;
+  }
+}
+
 bool needsPinDecision(AppOrder o) =>
     o.deliveryPinLockedAt != null &&
     o.status == OrderStatus.onTheWay &&

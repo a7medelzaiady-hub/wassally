@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'quick_price_admin_page.dart';
 import '../services/catalog_service.dart';
 import '../services/catalog_sync.dart';
 import '../services/delivery_service.dart';
@@ -70,6 +71,12 @@ class AdminToolsPage extends StatelessWidget {
                   'المشرفين',
                   'مشرف يدير مجموعة مناديب',
                   const AdminSupervisorsPage(),
+                ),
+                tile(
+                  Icons.price_check_outlined,
+                  'أسعار الطلبات السريعة التقريبية',
+                  'إضافة وتعديل وحذف الأصناف والأسعار الإرشادية',
+                  const QuickPriceAdminPage(),
                 ),
                 const _CatalogIndexCard(),
                 const _HighlightsRefreshCard(),

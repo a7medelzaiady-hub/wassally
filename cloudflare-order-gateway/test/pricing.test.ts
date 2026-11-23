@@ -174,13 +174,12 @@ describe("trusted catalog pricing", () => {
 describe("courier notification payload", () => {
   it("sends only a minimal new-order notice to the server-controlled couriers topic", async () => {
     const { courierTopicMessage } = await import("../src/index");
-    const payload = courierTopicMessage("abcde_1234567890123456", "متجر تجريبي");
+    const payload = courierTopicMessage("متجر تجريبي");
     expect(payload.message.topic).toBe("couriers");
     expect(payload.message.data).toEqual({
       type: "available_order",
-      orderId: "abcde_1234567890123456",
     });
-    expect(payload.message.notification.title).toContain("#ABCDE");
+    expect(payload.message.notification.title).toBe("طلب توصيل جديد متاح");
     expect(payload.message.notification.body).toContain("متجر تجريبي");
     expect(payload.message.android.ttl).toBe("300s");
     expect(JSON.stringify(payload)).not.toContain("phone");

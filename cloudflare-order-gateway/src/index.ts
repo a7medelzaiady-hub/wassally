@@ -1,5 +1,23 @@
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import {
+  OrderGroupError,
+  orderGroupCode,
+  parseOrderGroupId,
+  planOrderGroup,
+} from "./order_groups";
 import { DELIVERY_PIN_MAX_ATTEMPTS, deriveDeliveryPin, equalPin, isDeliveryPin } from "./delivery_pin";
+import {
+  QUICK_PIN_STATUSES,
+  QuickRuleError,
+  applyQuickAction,
+  newQuickOrder,
+  quickDeliveredPatch,
+  quickDeliveryBlocker,
+  resolveQuickSettings,
+  validateQuickNotes,
+  validateQuickStores,
+  type QuickActor,
+} from "./quick_orders";
 
 interface Env {
   FIREBASE_PROJECT_ID: string;
@@ -15,6 +33,8 @@ interface Env {
   CLOUDINARY_API_KEY?: string;
   CLOUDINARY_API_SECRET?: string;
   UPLOAD_RATE_LIMITER: RateLimit;
+  // حد تقريبي لطلبات الإنشاء/التعديل لكل عميل (قبل أي قراءة Firestore). اختياري: لو مش مضبوط السلوك زي ما كان.
+  ORDER_RATE_LIMITER?: RateLimit;
   // App Check: off (الافتراضي، بدون أي تغيير) | monitor (تسجيل فقط) | enforce (رفض الطلب بدون رمز صالح).
   APP_CHECK_MODE?: string;
   // رقم مشروع Firebase (Project number) المطلوب للتحقق من رموز App Check.
@@ -165,7 +185,7 @@ export function shouldRequeueCourierOrder(data: JsonMap): boolean {
 
 export const COURIER_FEED_FIELDS = [
   "storeId", "storeName", "area", "items", "subtotal", "deliveryFee",
-  "finalDeliveryFee", "discount", "total", "status", "createdAt",
+  "finalDeliveryFee", "discount", "total", "status", "createdAt", "groupCode",
 ] as const;
 
 export function sanitizeCourierFeed(data: JsonMap): JsonMap {
@@ -189,6 +209,8 @@ export function courierAvailableFeedData(data: JsonMap): JsonMap {
     total: data.total,
     status: "preparing",
     createdAt: data.createdAt,
+    // كود التجميع بس (6 حروف) من غير groupId الكامل ولا أي بيانات للعميل.
+    ...(typeof data.groupCode === "string" && data.groupCode ? { groupCode: data.groupCode } : {}),
   };
   return sanitizeCourierFeed(feed);
 }
@@ -470,8 +492,9 @@ function documentPath(projectId: string, path: string): string {
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
 }
 
-async function getDocument(env: Env, path: string, token: string): Promise<FirestoreDoc | null> {
+async function getDocument(env: Env, path: string, token: string, signal?: AbortSignal): Promise<FirestoreDoc | null> {
   const result = await fetch(documentPath(env.FIREBASE_PROJECT_ID, path), {
+    signal,
     headers: { Authorization: `Bearer ${token}` },
   });
   if (result.status === 404) return null;
@@ -1081,18 +1104,16 @@ async function resolveItems(
   return { items, subtotal };
 }
 
-export function courierTopicMessage(orderId: string, storeName: string) {
-  const shortId = "#" + orderId.slice(0, 5).toUpperCase();
+export function courierTopicMessage(storeName: string) {
   return {
     message: {
       topic: "couriers",
       notification: {
-        title: "طلب توصيل جديد متاح " + shortId,
+        title: "طلب توصيل جديد متاح",
         body: String(storeName || "محل").slice(0, 80) + " • افتح التطبيق لمراجعة الطلب والتقديم عليه",
       },
       data: {
         type: "available_order",
-        orderId,
       },
       android: {
         priority: "HIGH",
@@ -1106,7 +1127,6 @@ export function courierTopicMessage(orderId: string, storeName: string) {
 async function notifyCouriersOfNewOrder(
   env: Env,
   accessToken: string,
-  orderId: string,
   storeName: string,
 ): Promise<void> {
   const sent = await fetch(
@@ -1117,7 +1137,7 @@ async function notifyCouriersOfNewOrder(
         Authorization: `Bearer ${accessToken}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(courierTopicMessage(orderId, storeName)),
+      body: JSON.stringify(courierTopicMessage(storeName)),
     },
   );
   if (!sent.ok) {
@@ -1139,6 +1159,29 @@ export function serviceFeeFor(itemsAfterDiscount: number): number {
 
 export const ORDERS_PAUSED_MESSAGE = "استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.";
 export const DEFAULT_MAX_ORDERS_PER_DAY = 50;
+/**
+ * حد طلبات لكل عميل على إنشاء/تعديل الطلب، قبل أي قراءة Firestore: طلب مرفوض بالفاصل (20 ثانية)
+ * أو بالحد اليومي كان بيكلّف قراءات كتير، وتعديل الطلب (PATCH) ماكانش عليه أي حد. من غير ده حساب
+ * واحد بتوكن صالح يقدر يستهلك حصة Spark اليومية. لو الـbinding مش مضبوط أو فشل، الطلب بيكمل
+ * (الحماية دي طبقة إضافية، وما تعطّلش العملاء لو Cloudflare نفسه فيه عطل).
+ */
+export async function assertOrderRateLimit(
+  limiter: { limit(options: { key: string }): Promise<{ success: boolean }> } | undefined,
+  uid: string,
+): Promise<void> {
+  if (!limiter) return;
+  let success = true;
+  try {
+    ({ success } = await limiter.limit({ key: `order:${uid}` }));
+  } catch (error) {
+    console.warn("order rate limiter unavailable", error instanceof Error ? error.name : typeof error);
+    return;
+  }
+  if (!success) {
+    throw new HttpError(429, "طلبات كتير في وقت قصير. استنى دقيقة وحاول تاني.", "rate_limited");
+  }
+}
+
 const DAILY_LIMIT_CODE = "daily_limit";
 
 /** مفتاح اليوم بتوقيت القاهرة (YYYY-MM-DD)، بيراعي التوقيت الصيفي تلقائيًا. */
@@ -1192,6 +1235,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
   }
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   let input: any;
   try {
     input = await request.json();
@@ -1242,6 +1286,14 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     };
   }
   const contact = validateContact(input.contact);
+  // تجميع اختياري يختاره العميل لطلبات نفس رحلة التسوق (محل مختلف لكل طلب).
+  let groupId = "";
+  try {
+    groupId = parseOrderGroupId(input.groupId);
+  } catch (error) {
+    if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+    throw error;
+  }
 
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -1266,11 +1318,12 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.");
   }
 
-  const [storeDoc, restrictionDoc, limitDoc, areasDoc] = await Promise.all([
+  const [storeDoc, restrictionDoc, limitDoc, areasDoc, groupDoc] = await Promise.all([
     getDocument(env, `stores/${encodeURIComponent(storeId)}`, token),
     getDocument(env, `customer_restrictions/${uid}`, token),
     getDocument(env, `orderLimits/${uid}`, token),
     getDocument(env, "app_info/delivery_areas", token),
+    groupId ? getDocument(env, `order_groups/${groupId}`, token) : Promise.resolve(null),
   ]);
   // مفتاح طوارئ من الإدارة: app_info/delivery_areas.ordersPaused = true يوقف الطلبات الجديدة
   // (المستند ده بيتقري أصلًا هنا، فمفيش قراءة زيادة).
@@ -1348,6 +1401,19 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(409, "إجمالي الطلب اتغير. راجع السلة قبل تأكيد الطلب.");
   }
 
+  // التجميع بيتراجع بعد كل فحوصات الطلب، والمستند بيتكتب في نفس الـcommit (بشرط).
+  let groupPlan: ReturnType<typeof planOrderGroup> | null = null;
+  if (groupId) {
+    try {
+      groupPlan = planOrderGroup(groupDoc ? decodeFields(groupDoc.fields ?? {}) : null, {
+        uid, orderId, storeId, now: new Date(),
+      });
+    } catch (error) {
+      if (error instanceof OrderGroupError) throw new HttpError(error.status, error.message, error.code);
+      throw error;
+    }
+  }
+
   const storeName = String(store.name ?? "").trim();
   const order: JsonMap = {
     userId: uid,
@@ -1365,6 +1431,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
+    ...(groupId ? { groupId, groupCode: orderGroupCode(groupId) } : {}),
   };
   if (!storeName || storeName.length > 100) {
     throw new HttpError(409, "بيانات المحل غير مكتملة.");
@@ -1396,6 +1463,15 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
         ? { updateTime: limitDoc.updateTime }
         : { exists: false },
     },
+    ...(groupPlan ? [{
+      update: {
+        name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/order_groups/${groupId}`,
+        fields: encodeFields(groupPlan.fields),
+      },
+      currentDocument: groupPlan.isNew || !groupDoc?.updateTime
+        ? { exists: false }
+        : { updateTime: groupDoc.updateTime },
+    }] : []),
   ];
   const committed = await fetch(
     `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
@@ -1405,21 +1481,25 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "تم تغيير الطلب بالتزامن. راجع طلباتك قبل إعادة المحاولة.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ الطلب؛ حاول مرة أخرى.");
   // الإشعار يُرسل من الخادم بعد نجاح حفظ الطلب فقط. فشل FCM لا يلغي الطلب.
   try {
-    await notifyCouriersOfNewOrder(env, token, orderId, String(order.storeName));
+    await notifyCouriersOfNewOrder(env, token, String(order.storeName));
   } catch (error) {
     console.error("Courier push notification failed", error);
   }
-  return response({ orderId, subtotal, deliveryFee, discount, total, items });
+  return response({
+    orderId, subtotal, deliveryFee, discount, total, items,
+    ...(groupId ? { groupCode: orderGroupCode(groupId) } : {}),
+  });
 }
 
 async function updateOrder(request: Request, env: Env, orderId: string): Promise<Response> {
   const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
   if (!/^[A-Za-z0-9_-]{1,180}$/.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
   let input: any;
   try {
@@ -1502,6 +1582,9 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     customerName,
   });
   delete updatedOrder.unavailableItems;
+  // An approval applies to the previous cart and must be renewed after editing.
+  delete updatedOrder.verifiedTotal;
+  delete updatedOrder.verifiedAt;
   if (discount > 0 && promoCode) {
     updatedOrder.discount = discount;
     updatedOrder.promoCode = promoCode;
@@ -1559,7 +1642,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
       body: JSON.stringify({ writes }),
     },
   );
-  if (committed.status === 409 || committed.status === 400) {
+  if ([400, 409, 412].includes(committed.status)) {
     throw new HttpError(409, "حالة الطلب اتغيرت أثناء التعديل. حدّث الصفحة وحاول مرة أخرى.");
   }
   if (!committed.ok) throw new HttpError(503, "تعذر حفظ تعديل الطلب.");
@@ -1750,7 +1833,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners", "special_requests"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests", "quick_receipts"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
@@ -1758,6 +1841,20 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   }
 
   const token = await googleAccessToken(env);
+  // فواتير «طلباتك على السريع»: المندوب المعيّن بس، والطلب «جاري الشراء».
+  if (folder === "quick_receipts") {
+    const quickOrderId = String(input.get("orderId") ?? "");
+    if (!/^[A-Za-z0-9_-]{16,200}$/.test(quickOrderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+    const quickDoc = await getDocument(env, `quick_orders/${encodeURIComponent(quickOrderId)}`, token);
+    const quick = quickDoc ? decodeFields(quickDoc.fields ?? {}) : null;
+    if (!quick || quick.courierId !== uid || quick.status !== "purchasing") {
+      throw new HttpError(403, "مش مسموح لك ترفع فاتورة للطلب ده.");
+    }
+    const receiptBytes = new Uint8Array(await file.arrayBuffer());
+    const receiptImage = detectImageContent(receiptBytes);
+    if (!receiptImage) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+    return await signedCloudinaryImageUpload(env, receiptBytes, receiptImage, `quick_receipts/${quickOrderId}`);
+  }
   const [adminDoc, ownerDoc, roleRequestDoc, specialRequestStoreDoc] = await Promise.all([
     getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
     getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
@@ -1887,11 +1984,17 @@ async function cleanupOrderAttachmentsFor(
   if (!special) return response({ cleaned: true, alreadyClean: true });
   if (special.cleanupStatus === "deleted") return response({ cleaned: true, alreadyClean: true });
 
+  const currentDocument = doc.updateTime
+    ? { updateTime: doc.updateTime }
+    : { exists: true };
   const markFailed = async () => {
-    special.cleanupStatus = "failed";
     await commitFirestoreWrites(env, token, [{
-      update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
-      updateMask: { fieldPaths: ["specialRequest"] },
+      update: {
+        name: doc.name,
+        fields: encodeFields({ specialRequest: { cleanupStatus: "failed" } }),
+      },
+      updateMask: { fieldPaths: ["specialRequest.cleanupStatus"] },
+      currentDocument,
     }]);
   };
   const assets: Array<{ url: string; resourceType: string }> = [];
@@ -1948,7 +2051,7 @@ async function cleanupOrderAttachmentsFor(
   await commitFirestoreWrites(env, token, [{
     update: { name: doc.name, fields: encodeFields({ specialRequest: special }) },
     updateMask: { fieldPaths: ["specialRequest"] },
-    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+    currentDocument,
   }]);
   return response({ cleaned: true, orderId });
 }
@@ -2000,6 +2103,15 @@ export default {
         ? url.pathname.slice(cleanupPrefix.length, -cleanupSuffix.length)
         : "";
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
+    if (request.method === "POST" && url.pathname === "/v1/order-events") {
+      try {
+        const result = await notifyOrderEvent(request, env);
+        return response(result, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(500, "تعذر إرسال إشعار الطلب.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/notify-admins") {
       try {
         const result = await notifyAdmins(request, env);
@@ -2009,6 +2121,21 @@ export default {
       } catch (error) {
         const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
         return response(e.code ? { error: e.message, code: e.code } : { error: e.message }, e.status, headers);
+      }
+    }
+    if (url.pathname === "/v1/quick" || url.pathname.startsWith("/v1/quick/")) {
+      try {
+        const result = await routeQuick(request, env, url.pathname) ?? response({ error: "Not found." }, 404);
+        const mergedHeaders = new Headers(result.headers);
+        headers.forEach((value, key) => mergedHeaders.set(key, value));
+        return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
+      } catch (error) {
+        if (!(error instanceof HttpError)) {
+          console.error("quick_order_unexpected_exception", error instanceof Error ? error.name : typeof error);
+        }
+        const e = error instanceof HttpError ? error : new HttpError(500, "حدث خطأ غير متوقع.");
+        const code = e.code ?? (e.status === 409 ? "rejected" : undefined);
+        return response(code ? { error: e.message, code } : { error: e.message }, e.status, headers);
       }
     }
     const pinMatch = url.pathname.match(/^\/v1\/orders\/([^/]+)\/(delivery-pin|deliver)$/);
@@ -2119,7 +2246,7 @@ async function commitOrConflict(env: Env, token: string, writes: unknown[]): Pro
       body: JSON.stringify({ writes }),
     },
   );
-  if (res.status === 409 || res.status === 400) {
+  if ([400, 409, 412].includes(res.status)) {
     throw new HttpError(409, "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.", "conflict");
   }
   if (!res.ok) throw new HttpError(503, "تعذر الحفظ؛ حاول مرة أخرى.");
@@ -2134,8 +2261,11 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
   if (!doc) throw new HttpError(404, "الطلب غير موجود.");
   const order = decodeFields(doc.fields ?? {});
   if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
-  if (order.status !== "on_the_way" || order.customerConfirmedAt instanceof Date) {
-    throw new HttpError(409, "الرمز بيظهر لما الطلب يكون في الطريق.", "pin_not_available");
+  // الرمز بيتحسب من رقم الطلب بس (ثابت حتى لو العميل عدّل الطلب)، فبيظهر من أول الطلب
+  // لحد التسليم أو الإلغاء.
+  if (!["new", "preparing", "on_the_way"].includes(String(order.status)) ||
+      order.customerConfirmedAt instanceof Date) {
+    throw new HttpError(409, "الرمز بيظهر طول ما الطلب لسه شغال، وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
   }
   return response({ pin: await deriveDeliveryPin(orderId, env.DELIVERY_PIN_SECRET) });
 }
@@ -2240,6 +2370,11 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
       console.error("Attachment cleanup after PIN delivery failed", error instanceof HttpError ? error.status : "error");
     }
   }
+  await Promise.allSettled([
+    notifyOrderParticipant(env, token, order.userId, orderId, "order_update", "تم تسليم طلبك"),
+    update.status === "delivered" && typeof order.storeId === "string" &&
+      notifyStoreOwners(env, token, order.storeId, orderId, "تم تسليم طلب من المحل", uid),
+  ]);
   return response({ delivered: update.status === "delivered", confirmed: true });
 }
 
@@ -2322,11 +2457,17 @@ async function notifyAdmins(request: Request, env: Env): Promise<Response> {
   if (!res.ok) throw new HttpError(503, "تعذر الإرسال حاليًا.");
 
   const detail = kind === "join_request" ? String(doc?.type ?? "") : "";
-  const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify(adminNoticeMessage(kind, detail)),
-  });
+  const [sent] = await Promise.all([
+    fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(adminNoticeMessage(kind, detail)),
+    }),
+    kind === "delivery_issue" && typeof doc?.orderId === "string" &&
+      notifyOrderParticipant(
+        env, token, doc.customerId, doc.orderId, "order_update", "تعذر تسليم طلبك",
+      ),
+  ]);
   if (!sent.ok) {
     console.error("Admin FCM send failed", sent.status);
     throw new HttpError(503, "تعذر إرسال الإشعار.");
@@ -2334,6 +2475,533 @@ async function notifyAdmins(request: Request, env: Env): Promise<Response> {
   return response({ sent: true });
 }
 
+const orderPushTitles = {
+  preparing: "المحل بدأ تجهيز طلبك",
+  on_the_way: "طلبك في الطريق",
+  delivered: "تم تسليم طلبك",
+  cancelled: "تم إلغاء طلبك",
+} as const;
+
+function recentOrderEvent(date: unknown): date is Date {
+  return date instanceof Date &&
+    date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
+}
+
+async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
+  const { orderId, event, status } = await readJsonBody(request);
+  if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
+    typeof event !== "string" || !["created", "assigned", "ready", "status"].includes(event)) {
+    throw new HttpError(400, "بيانات إشعار الطلب غير صالحة.");
+  }
+
+  const token = await googleAccessToken(env);
+  const path = `orders/${orderId}`;
+  const orderDoc = await getDocument(env, path, token);
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const storeId = typeof order.storeId === "string" ? order.storeId : "";
+  const courierId = typeof order.courierId === "string" ? order.courierId : "";
+  let key = event;
+  let customerTitle = "";
+  let courierTitle = "";
+  let storeTitle = "";
+  let notifyAvailableCouriers = false;
+
+  if (event === "created") {
+    if (order.userId !== uid) throw new HttpError(403, "الطلب لا يخص حسابك.");
+    if (order.status !== "new" || !recentOrderEvent(order.createdAt)) return { orderId, processed: false };
+    storeTitle = "طلب جديد للمحل";
+  } else if (event === "status") {
+    if (typeof status !== "string" || !Object.hasOwn(orderPushTitles, status)) {
+      throw new HttpError(400, "حالة الطلب غير صالحة.");
+    }
+    if (order.status !== status) return { orderId, processed: false };
+    const historyDoc = await getDocument(env, `${path}/statusHistory/${status}`, token);
+    const history = historyDoc ? decodeFields(historyDoc.fields ?? {}) : {};
+    if (history.actorUid !== uid) throw new HttpError(403, "التحديث لا يخص حسابك.");
+    if (history.to !== status || history.via === "pin" || !recentOrderEvent(history.at)) {
+      return { orderId, processed: false };
+    }
+    key = `status_${status}`;
+    customerTitle = orderPushTitles[status as keyof typeof orderPushTitles];
+    if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
+    if (status === "delivered") storeTitle = "تم تسليم طلب من المحل";
+    if (status === "cancelled") {
+      storeTitle = "تم إلغاء طلب من المحل";
+      courierTitle = "تم إلغاء طلب توصيل";
+    }
+  } else {
+    if (order.status !== "preparing") return { orderId, processed: false };
+    const assigned = event === "assigned";
+    if (assigned
+      ? !courierId || !recentOrderEvent(order.courierAt)
+      : order.ready !== true || !recentOrderEvent(order.readyAt)) {
+      return { orderId, processed: false };
+    }
+    if (assigned && courierId === uid) {
+      const courier = await getDocument(env, `couriers/${encodeURIComponent(uid)}`, token);
+      if (!courier || decodeFields(courier.fields ?? {}).active === false) {
+        throw new HttpError(403, "حساب المندوب غير نشط.");
+      }
+    } else {
+      const [ownerDoc, adminDoc] = await Promise.all([
+        getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token),
+        getDocument(env, `admins/${encodeURIComponent(uid)}`, token),
+      ]);
+      const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+      if (!adminDoc && (!storeId || owner.storeId !== storeId || owner.active === false)) {
+        throw new HttpError(403, "الطلب لا يخص حسابك.");
+      }
+    }
+    if (assigned) {
+      key = `assigned_${(order.courierAt as Date).getTime()}`;
+      customerTitle = "تم تعيين مندوب لطلبك";
+      if (courierId !== uid) courierTitle = "تم تعيين طلب توصيل لك";
+    } else {
+      customerTitle = "طلبك جاهز للاستلام من المحل";
+      courierTitle = "طلب التوصيل جاهز للاستلام";
+      notifyAvailableCouriers = !courierId;
+    }
+  }
+
+  const claim = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ writes: [{
+      update: {
+        name: firestoreDocumentName(env, `${path}/pushEvents/${key}`),
+        fields: encodeFields({ event }),
+      },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    }] }),
+  });
+  if (!claim.ok) {
+    const error = await claim.json().catch(() => null) as { error?: { status?: string } } | null;
+    if (["ALREADY_EXISTS", "FAILED_PRECONDITION"].includes(error?.error?.status ?? "")) {
+      return { orderId, processed: false };
+    }
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب.");
+  }
+
+  await Promise.allSettled([
+    customerTitle && order.userId !== uid && notifyOrderParticipant(
+      env, token, order.userId, orderId, "order_update", customerTitle,
+    ),
+    courierTitle && courierId !== uid && notifyOrderParticipant(
+      env, token, courierId, orderId, "courier_order_update", courierTitle,
+    ),
+    storeTitle && storeId && notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid),
+    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, String(order.storeName)),
+  ]);
+  return { orderId, processed: true };
+}
+
+async function notifyStoreOwners(
+  env: Env, token: string, storeId: string, orderId: string, title: string, actorUid: string,
+): Promise<void> {
+  const owners = await queryAccountDocuments(env, token, "storeOwners", "storeId", storeId);
+  await Promise.all(owners.map((doc) => {
+    const recipient = doc.name.split("/").pop();
+    if (recipient !== actorUid && decodeFields(doc.fields ?? {}).active !== false) {
+      return notifyOrderParticipant(env, token, recipient, orderId, "store_order_update", title);
+    }
+  }));
+}
+
 export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
   return existingUserId === userId && existingStoreId === storeId;
+}
+
+// ───────────── «طلباتك على السريع» (quick_orders) ─────────────
+// الـWorker هو الكاتب الوحيد للمجموعة؛ قواعد Firestore بتمنع أي كتابة من التطبيق.
+// كل كتابة بشرط updateTime، فعمليتين متزامنتين (مثلًا مندوبين بيقبلوا نفس الطلب) واحدة بس بتنجح.
+
+const QUICK_ID = /^[A-Za-z0-9_-]{16,180}$/;
+
+/** رفع صورة موقّع على Cloudinary في مجلد محدد (نفس إعدادات رفع صور المحلات). */
+async function signedCloudinaryImageUpload(
+  env: Env,
+  bytes: Uint8Array<ArrayBuffer>,
+  detected: { format: string; mime: string },
+  folder: string,
+): Promise<Response> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const publicId = crypto.randomUUID();
+  const signedParams = {
+    allowed_formats: "jpg,jpeg,png,webp",
+    folder,
+    overwrite: "false",
+    public_id: publicId,
+    timestamp: String(timestamp),
+    unique_filename: "true",
+    use_filename: "false",
+  };
+  const signature = await cloudinarySignature(signedParams, env.CLOUDINARY_API_SECRET!);
+  const upload = new FormData();
+  upload.append("file", new Blob([bytes], { type: detected.mime }), `${publicId}.${detected.format}`);
+  upload.append("api_key", env.CLOUDINARY_API_KEY!);
+  for (const [key, value] of Object.entries(signedParams)) upload.append(key, value);
+  upload.append("signature", signature);
+  const uploaded = await fetch(
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: "POST", body: upload },
+  );
+  if (!uploaded.ok) {
+    console.error("Cloudinary receipt upload failed", uploaded.status);
+    throw new HttpError(502, "تعذر رفع الصورة إلى خدمة الصور. حاول مرة أخرى.");
+  }
+  const result = await uploaded.json() as { secure_url?: string };
+  const secureUrl = typeof result.secure_url === "string" ? result.secure_url : "";
+  let parsedUrl: URL;
+  try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
+  if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "res.cloudinary.com" ||
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+    throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
+  }
+  return response({ url: secureUrl });
+}
+
+function quickError(error: unknown): never {
+  if (error instanceof QuickRuleError) throw new HttpError(error.status, error.message, error.code);
+  throw error;
+}
+
+async function readJsonBody(request: Request): Promise<JsonMap> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, "بيانات غير مفهومة.");
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "صيغة البيانات غير صحيحة.");
+  return body as JsonMap;
+}
+
+function quickTopicMessage() {
+  return {
+    message: {
+      topic: "quick_couriers",
+      notification: {
+        title: "طلب سريع جديد",
+        body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
+      },
+      data: { type: "quick_order" },
+      android: { priority: "HIGH", ttl: "300s", notification: { sound: "default" } },
+    },
+  };
+}
+
+async function notifyOrderParticipant(
+  env: Env,
+  token: string,
+  recipient: unknown,
+  orderId: string,
+  type: "quick_customer_update" | "quick_courier_update" | "order_update" | "store_order_update" | "courier_order_update",
+  title: string,
+): Promise<void> {
+  if (typeof recipient !== "string" || !recipient) return;
+  try {
+    const signal = AbortSignal.timeout(4_000);
+    const user = await getDocument(env, `users/${encodeURIComponent(recipient)}`, token, signal);
+    const tokens = user ? decodeFields(user.fields ?? {}).fcmTokens : null;
+    if (!Array.isArray(tokens)) return;
+    const devices = [...new Set(tokens.filter(
+      (value): value is string => typeof value === "string" && value.length > 0 && value.length <= 4096,
+    ))].slice(-10);
+    const sent = await Promise.allSettled(devices.map((device) =>
+      fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+        method: "POST",
+        signal,
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token: device,
+            notification: { title, body: "افتح وصّلي لمراجعة تفاصيل الطلب." },
+            data: { type, orderId },
+            android: { priority: "HIGH", notification: { sound: "default" } },
+          },
+        }),
+      }),
+    ));
+    if (sent.some((result) => result.status === "rejected" || !result.value.ok)) {
+      console.error("Order participant push failed");
+    }
+  } catch {
+    console.error("Order participant push failed");
+  }
+}
+
+const quickCustomerUpdates: Readonly<Record<string, string>> = {
+  accept: "مندوب قبل طلبك السريع",
+  release: "طلبك السريع بيدوّر على مندوب تاني",
+  "advance-received": "المندوب أكّد استلام المقدم",
+  "submit-summary": "كشف حساب طلبك السريع جاهز للمراجعة",
+};
+
+const quickCourierUpdates: Readonly<Record<string, string>> = {
+  "advance-sent": "العميل سجّل تحويل المقدم",
+  "approve-summary": "العميل وافق على كشف الحساب",
+  "reject-summary": "العميل طلب مراجعة كشف الحساب",
+  cancel: "تم إلغاء الطلب السريع",
+};
+
+/** POST /v1/quick — العميل ينشئ طلب سريع. نفس معرّف الطلب مرتين = نفس الطلب (مفيش تكرار). */
+async function createQuickOrder(request: Request, env: Env): Promise<Response> {
+  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
+      !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new HttpError(503, "بوابة الطلبات لم تكتمل تهيئتها بعد.");
+  }
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
+  const input = await readJsonBody(request);
+  const orderId = String(input.orderId ?? "");
+  if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
+    throw new HttpError(400, "معرّف الطلب غير صالح.");
+  }
+  const customerFirstName = firstName(input.customerName);
+  const area = typeof input.area === "string" ? input.area.trim() : "";
+  if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
+    throw new HttpError(400, "راجع الاسم والمنطقة.");
+  }
+  let stores, notes;
+  try {
+    stores = validateQuickStores(input.stores);
+    notes = validateQuickNotes(input.notes);
+  } catch (error) {
+    quickError(error);
+  }
+  const contact = validateContact(input.contact);
+
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${orderId}`;
+  const existing = await getDocument(env, orderPath, token);
+  if (existing) {
+    const old = decodeFields(existing.fields ?? {});
+    if (old.userId === uid) return response({ orderId, reused: true, order: old });
+    throw new HttpError(409, "معرّف الطلب مستخدم بالفعل.", "id_taken");
+  }
+  const [settingsDoc, restrictionDoc, limitDoc] = await Promise.all([
+    getDocument(env, "app_info/quick_settings", token),
+    getDocument(env, `customer_restrictions/${uid}`, token),
+    getDocument(env, `quickLimits/${uid}`, token),
+  ]);
+  const settings = resolveQuickSettings(settingsDoc ? decodeFields(settingsDoc.fields ?? {}) : null);
+  if (!settings.enabled) {
+    throw new HttpError(503, "خدمة «طلباتك على السريع» غير متاحة حاليًا.", "quick_disabled");
+  }
+  const restriction = restrictionDoc ? decodeFields(restrictionDoc.fields ?? {}) : null;
+  if (isCustomerRestricted(restriction)) {
+    throw new HttpError(403, "حسابك مقيّد مؤقتًا أو بيانات التقييد غير مكتملة. راجع الدعم.");
+  }
+  // حد مستقل عن الطلبات العادية (quickLimits) عشان الخدمة ما تأثرش على حد طلبات المحلات.
+  const previousLimit = limitDoc ? decodeFields(limitDoc.fields ?? {}) : {};
+  const lastAt = previousLimit.lastAt instanceof Date ? previousLimit.lastAt.getTime() : 0;
+  if (lastAt && Date.now() - lastAt < 20_000) {
+    throw new HttpError(429, "استنى شوية قبل إرسال طلب جديد.", "rate_limited");
+  }
+  const dayKey = cairoDayKey(new Date());
+  const todays = ordersCountedToday(previousLimit, dayKey);
+  if (todays >= settings.maxPerDay) {
+    throw new HttpError(429, `وصلت للحد اليومي للطلبات السريعة (${settings.maxPerDay}). جرّب بكرة.`, DAILY_LIMIT_CODE);
+  }
+
+  const order = newQuickOrder({ uid, customerFirstName, area, notes: notes!, stores: stores!, settings });
+  await commitOrConflict(env, token, [
+    {
+      update: { name: docName(env, orderPath), fields: encodeFields(order) },
+      updateTransforms: [{ fieldPath: "createdAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    },
+    {
+      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields(contact) },
+      currentDocument: { exists: false },
+    },
+    {
+      update: {
+        name: docName(env, `quickLimits/${uid}`),
+        fields: encodeFields({ lastAt: new Date(), day: dayKey, dailyCount: todays + 1 }),
+      },
+      updateTransforms: [{ fieldPath: "lastAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: limitDoc?.updateTime ? { updateTime: limitDoc.updateTime } : { exists: false },
+    },
+  ]);
+  try {
+    const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(quickTopicMessage()),
+    });
+    if (!sent.ok) console.error("Quick courier push failed", sent.status);
+  } catch (error) {
+    console.error("Quick courier push failed", error instanceof Error ? error.name : "error");
+  }
+  return response({ orderId, order });
+}
+
+/** مين اللي بيطلب العملية: صاحب الطلب، أو مندوب نشط، أو الإدارة. */
+async function resolveQuickActor(env: Env, token: string, uid: string, order: JsonMap): Promise<QuickActor> {
+  if (order.userId === uid) return { uid, role: "customer" };
+  const courierDoc = await getDocument(env, `couriers/${encodeURIComponent(uid)}`, token);
+  if (courierDoc) {
+    const courier = decodeFields(courierDoc.fields ?? {});
+    if (courier.active === undefined || courier.active === true) {
+      return {
+        uid,
+        role: "courier",
+        name: typeof courier.name === "string" ? courier.name : "",
+        quickEnabled: courier.quickEnabled === true,
+      };
+    }
+  }
+  const adminDoc = await getDocument(env, `admins/${encodeURIComponent(uid)}`, token);
+  if (adminDoc) return { uid, role: "admin" };
+  throw new HttpError(403, "مش مسموح لك بالعملية دي على الطلب ده.", "forbidden");
+}
+
+/** POST /v1/quick/{orderId}/{action} — كل عمليات الطلب بعد الإنشاء (ماعدا التسليم بالرمز). */
+async function quickOrderAction(request: Request, env: Env, orderId: string, action: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  await assertOrderRateLimit(env.ORDER_RATE_LIMITER, uid);
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const body = await readJsonBody(request);
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${encodeURIComponent(orderId)}`;
+  const doc = await getDocument(env, orderPath, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(doc.fields ?? {});
+  const actor = await resolveQuickActor(env, token, uid, order);
+  let patch: JsonMap;
+  try {
+    patch = applyQuickAction(order, action, actor, body, {
+      orderId,
+      now: new Date(),
+      cloudName: env.CLOUDINARY_CLOUD_NAME,
+    });
+  } catch (error) {
+    quickError(error);
+  }
+  await commitOrConflict(env, token, [{
+    update: { name: doc.name, fields: encodeFields(patch!) },
+    updateMask: { fieldPaths: Object.keys(patch!) },
+    currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
+  }]);
+  const customerTitle = quickCustomerUpdates[action] ??
+    (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
+  const courierTitle = quickCourierUpdates[action];
+  await Promise.all([
+    customerTitle && notifyOrderParticipant(
+      env, token, order.userId, orderId, "quick_customer_update", customerTitle,
+    ),
+    courierTitle && notifyOrderParticipant(
+      env, token, order.courierId, orderId, "quick_courier_update", courierTitle,
+    ),
+  ]);
+  return response({ orderId, order: { ...order, ...patch! } });
+}
+
+/** GET /v1/quick/{orderId}/delivery-pin — العميل بيجيب رمز التسليم من القبول لحد التسليم. */
+async function getQuickDeliveryPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const token = await googleAccessToken(env);
+  const doc = await getDocument(env, `quick_orders/${encodeURIComponent(orderId)}`, token);
+  if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(doc.fields ?? {});
+  if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
+  if (!QUICK_PIN_STATUSES.includes(String(order.status))) {
+    throw new HttpError(409, "الرمز بيظهر بعد قبول المندوب وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
+  }
+  return response({ pin: await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET) });
+}
+
+/** POST /v1/quick/{orderId}/deliver — المندوب يأكد التسليم برمز العميل. 5 محاولات غلط = قفل. */
+async function deliverQuickWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+  const uid = await verifyCustomer(request, env);
+  if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
+  if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
+  const body = await readJsonBody(request);
+  if (!isDeliveryPin(body.pin)) throw new HttpError(400, "اكتب رمز من 4 أرقام.", "pin_invalid");
+  const token = await googleAccessToken(env);
+  const orderPath = `quick_orders/${encodeURIComponent(orderId)}`;
+  const attemptsPath = `deliveryPinAttempts/${encodeURIComponent("quick_" + orderId)}`;
+  const [orderDoc, courierDoc, attemptsDoc] = await Promise.all([
+    getDocument(env, orderPath, token),
+    getDocument(env, `couriers/${encodeURIComponent(uid)}`, token),
+    getDocument(env, attemptsPath, token),
+  ]);
+  if (!courierDoc) throw new HttpError(403, "حساب المندوب غير معتمد.");
+  const courier = decodeFields(courierDoc.fields ?? {});
+  if (courier.active !== undefined && courier.active !== true) {
+    throw new HttpError(403, "حساب المندوب غير نشط. راجع الإدارة.");
+  }
+  if (!orderDoc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
+  const order = decodeFields(orderDoc.fields ?? {});
+  const blocker = quickDeliveryBlocker(order, uid);
+  if (blocker) throw new HttpError(409, blocker, "not_deliverable");
+
+  const prev = attemptsDoc ? decodeFields(attemptsDoc.fields ?? {}) : {};
+  const attempts = Number.isSafeInteger(prev.attempts) ? Number(prev.attempts) : 0;
+  if (prev.locked === true || attempts >= DELIVERY_PIN_MAX_ATTEMPTS) {
+    throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+  }
+  const attemptsPrecondition = attemptsDoc?.updateTime ? { updateTime: attemptsDoc.updateTime } : { exists: false };
+  const orderPrecondition = orderDoc.updateTime ? { updateTime: orderDoc.updateTime } : { exists: true };
+  const expected = await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET);
+
+  if (!equalPin(body.pin, expected)) {
+    const next = attempts + 1;
+    const locked = next >= DELIVERY_PIN_MAX_ATTEMPTS;
+    const writes: unknown[] = [{
+      update: { name: docName(env, attemptsPath), fields: encodeFields({ attempts: next, locked, orderId, kind: "quick" }) },
+      updateTransforms: [{ fieldPath: "updatedAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: attemptsPrecondition,
+    }];
+    if (locked) {
+      writes.push({
+        update: { name: docName(env, orderPath), fields: {} },
+        updateMask: { fieldPaths: [] },
+        updateTransforms: [{ fieldPath: "deliveryPinLockedAt", setToServerValue: "REQUEST_TIME" }],
+        currentDocument: orderPrecondition,
+      });
+    }
+    await commitOrConflict(env, token, writes);
+    if (locked) throw new HttpError(423, "الرمز اتقفل بعد محاولات غلط كتير. الإدارة هتراجع الطلب.", "pin_locked");
+    throw new HttpError(400, `الرمز غلط. فاضل ${DELIVERY_PIN_MAX_ATTEMPTS - next} محاولات.`, "pin_wrong");
+  }
+
+  const patch = quickDeliveredPatch(order, uid, new Date());
+  const writes: unknown[] = [{
+    update: { name: docName(env, orderPath), fields: encodeFields(patch) },
+    updateMask: { fieldPaths: Object.keys(patch) },
+    currentDocument: orderPrecondition,
+  }];
+  if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
+  await commitOrConflict(env, token, writes);
+  await notifyOrderParticipant(
+    env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
+  );
+  return response({ orderId, delivered: true, order: { ...order, ...patch } });
+}
+
+/** توجيه مسارات /v1/quick. بيرجع null لو المسار مش تبع الخدمة. */
+async function routeQuick(request: Request, env: Env, pathname: string): Promise<Response | null> {
+  if (pathname === "/v1/quick") {
+    return request.method === "POST" ? await createQuickOrder(request, env) : response({ error: "Not found." }, 404);
+  }
+  const match = pathname.match(/^\/v1\/quick\/([^/]+)\/([a-z-]+)$/);
+  if (!match) return null;
+  const orderId = decodeURIComponent(match[1]);
+  const action = match[2];
+  if (action === "delivery-pin") {
+    return request.method === "GET" ? await getQuickDeliveryPin(request, env, orderId) : response({ error: "Not found." }, 404);
+  }
+  if (request.method !== "POST") return response({ error: "Not found." }, 404);
+  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId);
+  return await quickOrderAction(request, env, orderId, action);
 }
