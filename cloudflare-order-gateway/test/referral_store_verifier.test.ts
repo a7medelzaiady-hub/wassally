@@ -73,6 +73,8 @@ describe("store referral verification", () => {
     try {
       docs["storeOwners/owner1"] = { storeId: sv("originalStore"), active: bv(false) };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
+      docs["storeOwners/owner1"] = { storeId: sv("store1"), active: bv(true) };
+      await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
       docs["storeOwners/owner1"] = { storeId: sv("originalStore") };
       await expect(verifyStoreReferral(read, evidence)).resolves.toBeNull();
       delete docs["storeOwners/owner1"];
