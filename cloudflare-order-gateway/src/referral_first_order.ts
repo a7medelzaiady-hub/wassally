@@ -50,12 +50,13 @@ export async function verifyFirstOrderReferral(
       typeof attribution.claimedAtMs !== "number") return null;
   const policy = settings.policies[channel as ReferralChannel];
   const balanceRaw = await read("referral_balances", attribution.inviterUid as string);
+  const counterField = channel === "customer" ? "customerAwardsCount" : "marketerAwardsCount";
   let previousAwards = 0;
   if (balanceRaw !== null) {
     const balance = decodeFirestoreReferralFields(balanceRaw);
-    if (typeof balance.awardsCount !== "number" ||
-        !Number.isSafeInteger(balance.awardsCount) || balance.awardsCount < 0) return null;
-    previousAwards = balance.awardsCount;
+    if (typeof balance[counterField] !== "number" ||
+        !Number.isSafeInteger(balance[counterField]) || balance[counterField] < 0) return null;
+    previousAwards = balance[counterField] as number;
   }
   const decision = decideReferralReward(policy, {
     inviterUid: attribution.inviterUid,
