@@ -27,6 +27,7 @@ jobs:
 
     # 2. تثبيت جافا (مطلوب لبناء تطبيقات أندرويد)
     - name: Set up Java
+      if: github.event_name == 'workflow_dispatch'
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
@@ -34,6 +35,7 @@ jobs:
 
     # 3. تثبيت الـ Flutter SDK في بيئة الـ GitHub
     - name: Set up Flutter
+      id: flutter
       uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.50.0' # مثبت على إصدار Stable محدد لتكرارية البناء
@@ -41,7 +43,13 @@ jobs:
 
     # 4. تحميل المكتبات والمخازن (pub get)
     - name: Install dependencies
-      run: flutter pub get
+      env:
+        FLUTTER_CACHE_HIT: ${{ steps.flutter.outputs.CACHE-HIT }}
+        PUB_CACHE_HIT: ${{ steps.flutter.outputs.PUB-CACHE-HIT }}
+      run: |
+        echo "Flutter SDK cache hit: ${FLUTTER_CACHE_HIT:-false}"
+        echo "Dart dependencies cache hit: ${PUB_CACHE_HIT:-false}"
+        time flutter pub get
 
     # 5. عمل فحص وتأكد من سلامة الكود (اختياري)
     - name: Export resolved dependency lockfile
@@ -52,11 +60,11 @@ jobs:
         retention-days: 3
 
     - name: Analyze project source
-      run: flutter analyze --no-fatal-infos
+      run: time flutter analyze --no-fatal-infos
 
     # 6. تشغيل الاختبارات الآلية
     - name: Run tests
-      run: flutter test
+      run: time flutter test
 
     # Compile-time canary only: verify the app recognizes the secure Worker order mode.
     - name: Test serverOrders-enabled gateway configuration
