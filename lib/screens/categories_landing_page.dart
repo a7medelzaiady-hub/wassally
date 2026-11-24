@@ -271,7 +271,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
             const SizedBox(height: 16),
             _serviceCard(
               title: 'خدمة وصّلي ع السريع',
-              subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
+              subtitle: 'سجل اللى عاوزه ونوصلهولك بسرعة',
               action: 'اطلب الآن',
               icon: Icons.bolt_rounded,
               art: const Rect.fromLTWH(20, 541, 303, 195),
