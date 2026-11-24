@@ -137,6 +137,11 @@ class OrderService {
     int referralPoints = 0,
     int referralDiscountMinor = 0,
   }) async {
+    // السلة المرسلة تظل ظاهرة، لكن لا يُنشأ طلب ثانٍ بنفس المحتوى
+    // إلا إذا غيّر العميل السلة أو اختار صراحة بدء طلب جديد.
+    if (cart.submittedOrderId != null) {
+      throw StateError('الطلب ده اتبعت بالفعل. لو عايز تطلب نفس الأصناف تاني، افتح السلة واختار «طلب جديد بنفس الأصناف».');
+    }
     final wait = await cooldownRemaining();
     if (wait > Duration.zero) {
       throw OrderLimitException(
@@ -209,7 +214,7 @@ class OrderService {
     await prefs.remove('wasally_pending_order_fingerprint_$uid');
   }
 
-  /// بتبعت الطلب وتفرّغ السلة. بترجع رقم مستند الطلب.
+  /// تبعت الطلب وتحتفظ بالسلة مع علامة نجاح تمنع الطلب المكرر.
   static Future<String> _placeOrder({
     required CartModel cart,
     required String name,
@@ -496,7 +501,9 @@ class OrderService {
     } catch (_) {}
 
     if (groupId != null) carts.markGroupedOrder(storeId);
-    cart.clear();
+    cart.markSubmitted(ref.id);
+    // لا تمسح المنتجات. احفظ علامة الإرسال فورًا حتى بعد إعادة تشغيل التطبيق.
+    await carts.flush();
     return ref.id;
   }
 
