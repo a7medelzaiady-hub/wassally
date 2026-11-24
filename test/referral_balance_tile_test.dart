@@ -7,8 +7,12 @@ void main() {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(
-      home: Scaffold(body: SingleChildScrollView(child: Column(children: [
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
         ReferralBalanceTile(
           icon: Icons.stars_rounded,
           title: 'رصيد النقاط',
@@ -27,8 +31,12 @@ void main() {
           value: '80.00 ج.م',
           explanation: 'ليس رصيدًا نقديًا',
         ),
-      ])))),
-    ));
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     expect(find.text('رصيد النقاط'), findsOneWidget);
     expect(find.text('رصيد المكافآت النقدية'), findsOneWidget);
