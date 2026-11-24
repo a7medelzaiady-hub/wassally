@@ -132,6 +132,52 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+              colors: [Brand.palette.accent, Brand.palette.accentDeep],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Brand.ink.withValues(alpha: 0.14),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Brand.green,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(Icons.shopping_basket_rounded,
+                  size: 32, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('طلباتك على السريع',
+                      style: TextStyle(color: Colors.white,
+                        fontSize: 22, fontWeight: FontWeight.w900)),
+                    SizedBox(height: 4),
+                    Text('اكتب مشترياتك أو امليها بصوتك، واختار المحلات',
+                      style: TextStyle(color: Colors.white, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         for (final store in _stores)
           _storeFields(store),
         if (_stores.length < 10)
@@ -191,18 +237,26 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     required List<Widget> children,
   }) => Card(
     key: key,
-    margin: const EdgeInsets.only(bottom: 12),
+    margin: const EdgeInsets.only(bottom: 14),
+    elevation: 3,
+    shadowColor: Brand.ink.withValues(alpha: 0.12),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(24),
+      side: BorderSide(color: Brand.palette.line),
+    ),
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(icon, color: Theme.of(context).colorScheme.primary),
+              Icon(icon, color: Brand.green, size: 27),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                child: Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900, color: Brand.ink,
+                )),
               ),
             ],
           ),
@@ -230,6 +284,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         decoration: const InputDecoration(
           labelText: 'اسم المحل (اختياري)',
           hintText: 'سيبه فاضي لو المندوب هيختار',
+          prefixIcon: Icon(Icons.storefront_outlined),
           counterText: '',
         ),
       ),
