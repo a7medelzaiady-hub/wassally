@@ -216,9 +216,13 @@ class _CustomerEntryState extends State<CustomerEntry> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(action, style: const TextStyle(
-                                color: Colors.white, fontSize: 13,
-                                fontWeight: FontWeight.w900)),
+                              Flexible(
+                                child: Text(action, maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white, fontSize: 13,
+                                    fontWeight: FontWeight.w900)),
+                              ),
                               const SizedBox(width: 2),
                               const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 19),
                             ],
