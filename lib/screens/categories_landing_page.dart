@@ -26,15 +26,13 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
+    shellTab.value = tab;
+    setState(() => _entered = true);
     if (destination != null) {
-      // Back returns to the welcome choices rather than jumping to dashboard.
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
       );
-      return;
     }
-    shellTab.value = tab;
-    setState(() => _entered = true);
   }
 
   Widget get _dashboard => widget.dashboard ?? const MainShell();
