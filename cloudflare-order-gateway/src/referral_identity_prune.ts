@@ -14,7 +14,12 @@ export async function pruneExpiredDeletedReferralIdentities(
   transport: HttpTransport,
   now = new Date(),
   maxBatches = 10,
+  collection = REFERRAL_IDENTITY_COLLECTION,
 ): Promise<number> {
+  // Only these two server-only HMAC collections can be cleaned by this job.
+  if (![REFERRAL_IDENTITY_COLLECTION, "referral_device_bindings"].includes(collection)) {
+    throw new Error("unsupported referral retention collection");
+  }
   if (!/^[a-zA-Z0-9_-]+$/.test(projectId)) throw new Error("invalid Firebase project");
   const root = `projects/${projectId}/databases/(default)/documents`;
   const base = `https://firestore.googleapis.com/v1/${root}`;
@@ -25,7 +30,7 @@ export async function pruneExpiredDeletedReferralIdentities(
       headers: { Authorization: `Bearer ${bearerToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         structuredQuery: {
-          from: [{ collectionId: REFERRAL_IDENTITY_COLLECTION }],
+          from: [{ collectionId: collection }],
           where: { fieldFilter: {
             field: { fieldPath: "expiresAt" },
             op: "LESS_THAN_OR_EQUAL",
@@ -38,7 +43,7 @@ export async function pruneExpiredDeletedReferralIdentities(
     if (!query.ok) throw new Error("referral marker retention query failed");
     const rows = await query.json() as Array<{ document?: { name?: string } }>;
     if (!Array.isArray(rows)) throw new Error("bad referral marker query response");
-    const prefix = `${root}/${REFERRAL_IDENTITY_COLLECTION}/`;
+    const prefix = `${root}/${collection}/`;
     const paths = rows.flatMap(row => {
       const name = row.document?.name;
       return typeof name === "string" && name.startsWith(prefix) &&
