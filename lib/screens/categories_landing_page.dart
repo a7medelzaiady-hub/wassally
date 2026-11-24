@@ -93,14 +93,14 @@ class _CustomerEntryState extends State<CustomerEntry> {
           top: 7,
           left: 105,
           right: 105,
-          height: 100,
+          height: height < 190 ? 80 : 100,
           // Use the authentic bag-and-speed logo from the approved artwork.
           child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
         ),
         Positioned(
-          top: 111,
+          top: height < 190 ? 88 : 111,
           right: 18,
-          left: 160,
+          left: height < 190 ? 132 : 160,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
