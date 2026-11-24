@@ -97,7 +97,7 @@ jobs:
         run: |
           flutter build apk --debug \
             --dart-define=WASALLY_REFERRAL_REGISTRATION=true \
-            --dart-define=WASALLY_SERVER_ORDERS=false \
+            --dart-define=WASALLY_SERVER_ORDERS=true \
             --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
 
       - name: Verify signed APK
