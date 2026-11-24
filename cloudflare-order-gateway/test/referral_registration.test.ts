@@ -81,8 +81,8 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
       return fields ? Response.json({ name: root + path, fields }) : new Response("", { status: 404 });
     }
     if (url.endsWith(":beginTransaction")) return Response.json({ transaction: "abc" });
-    expect(body.transaction).toBe("abc");
     if (url.endsWith(":batchGet")) {
+      expect(body.transaction).toBe("abc");
       const [name] = body.documents;
       const fields = docs[name.slice(root.length)];
       return Response.json(fields ? { found: { name, fields } } : { missing: name });
@@ -98,6 +98,7 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
         docs[name.slice(root.length)] = fields;
         return Response.json({});
       }
+      expect(body.transaction).toBe("abc");
       expect(currentDocument).toEqual({ exists: false });
       expect(name).toBe(root + `referral_attributions/${uid}`);
       expect(fields.inviterUid).toEqual(str("inviter"));
