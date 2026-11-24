@@ -112,7 +112,7 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
             const Padding(
               padding: EdgeInsets.all(12),
               child: Text(
-                'إدخال كود الدعوة متاح للحساب الجديد فقط خلال أول ٥ دقايق من التسجيل. تقدر تشارك كودك مع أصحابك في أي وقت.',
+                'إدخال كود الدعوة متاح للحساب الجديد خلال أول ٢٤ ساعة من التسجيل فقط، ومرة واحدة. تقدر تشارك كودك مع أصحابك في أي وقت.',
                 textAlign: TextAlign.center,
               ),
             ),
