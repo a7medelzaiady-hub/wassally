@@ -88,18 +88,12 @@ class _CustomerEntryState extends State<CustomerEntry> {
           child: _topButton(Icons.person_outline_rounded, 'حسابي', const AccountPage()),
         ),
         const Positioned(
-          top: 19,
-          left: 70,
-          right: 70,
-          child: Column(
-            children: [
-              Text('وصّلي', textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white, fontSize: 41,
-                  height: 1.0, fontWeight: FontWeight.w900)),
-              Text('Wasally', style: TextStyle(color: Colors.white,
-                  fontSize: 15, fontWeight: FontWeight.w700)),
-            ],
-          ),
+          top: 7,
+          left: 105,
+          right: 105,
+          height: 100,
+          // Use the authentic bag-and-speed logo from the approved artwork.
+          child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
         ),
         Positioned(
           top: 111,
