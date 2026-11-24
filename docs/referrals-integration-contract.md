@@ -23,6 +23,38 @@ Cloud Functions or new Firestore snapshot listeners.
   Store policies support cash or commission credit. Policy updates use Firestore
   version and document preconditions.
 
+## Account deletion and repeated signup protection
+
+- Firebase Auth assigns a new UID if a person deletes and recreates an account.
+  Do not treat a new UID as proof of a new Google identity.
+- The Worker obtains the stable Google provider subject from the verified
+  Firebase Auth `accounts:lookup.providerUserInfo` response, never from the
+  client or a client-editable Firestore document. During account deletion the
+  Worker stores ONLY an HMAC-SHA256 digest (purpose-separated; a dedicated
+  `REFERRAL_IDENTITY_HMAC_KEY` Cloudflare Secret) in
+  `referral_deleted_identities/{digest}`. Neither email, name, old Firebase UID
+  nor raw Google subject is stored in the marker.
+- On first-registration claims the Worker calculates the digest for the new
+  account's verified Google identity and refuses the referral if an unexpired
+  deletion marker exists. It still permits normal use of the newly created
+  account; the restriction only applies to claiming a new-user referral.
+- There is an explicit **365-day retention** period. The Worker runs a
+  bounded daily scheduled cleanup of expired records (no Firebase paid TTL,
+  no Blaze, no Cloud Functions); expired records do not block a claim even
+  if removal is scheduled but not completed. The digest is pseudonymous
+  personal data, not anonymized data, and this retention is disclosed in both
+  the app and the public privacy/deletion pages.
+- Deployment is **blocked for referral rewards** until the 32+ byte
+  `REFERRAL_IDENTITY_HMAC_KEY` is set in Cloudflare Secrets and verified.
+  Missing secret or missing verified Google identity fails closed on the
+  *claim* endpoint. Account deletion remains available even if this secret
+  is missing. Keep the secret stable for the full retention period; rotating
+  it requires a dual-key migration, otherwise old records no longer match.
+- This only protects deletions performed after the updated Worker and secret
+  have been deployed; preexisting deletions cannot be reconstructed from
+  completely erased account data. Test deletion->rejoin and two different
+  Google accounts against staging before production activation.
+
 ## Delivery and rewards
 
 - A successful regular order has status `delivered` and a canonical
