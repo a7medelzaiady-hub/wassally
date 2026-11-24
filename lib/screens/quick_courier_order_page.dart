@@ -204,14 +204,14 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   // ───────────── واجهة ─────────────
 
-  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Color? color, Key? key}) {
+  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Key? key}) {
     return SizedBox(
       width: double.infinity,
       height: 60,
       child: FilledButton.icon(
         key: key,
         style: FilledButton.styleFrom(
-          backgroundColor: color ?? Brand.green,
+          backgroundColor: Brand.green,
           textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
@@ -477,7 +477,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                 final amount = await _askAmount('المبلغ اللي وصلك فعلًا كام جنيه؟', initial: o.advanceAmountPiastres);
                 if (amount == null) return;
                 await _act('advance-received', {'amountPiastres': amount}, 'اتسجل المقدم');
-              }, color: const Color(0xFF2563EB), key: const Key('quick-advance-received')),
+              }, key: const Key('quick-advance-received')),
             ]),
           if (o.advanceConfirmedAt != null)
             _card(children: [
