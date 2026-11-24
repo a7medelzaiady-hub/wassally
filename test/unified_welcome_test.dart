@@ -60,6 +60,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('التصميم المضغوط يظهر كل الخدمات على شاشة قصيرة',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      theme: buildAppTheme(),
+      home: const CustomerEntry(),
+    ));
+    await tester.pump();
+    expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
+    expect(find.text('تصفح العروض'), findsOneWidget);
+    expect(find.text('تصفح المحلات'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('صاحب المحل يحصل على نفس صفحة الترحيب مع مدخل لوحته',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
