@@ -150,7 +150,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
         child: InkWell(
           onTap: onTap,
           child: SizedBox(
-            height: 142,
+            height: 146,
             child: Row(
               textDirection: TextDirection.ltr,
               children: [
@@ -181,27 +181,27 @@ class _CustomerEntryState extends State<CustomerEntry> {
                 Expanded(
                   flex: 6,
                   child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 2, 10),
+                    padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 2, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Align(
                           alignment: AlignmentDirectional.centerStart,
-                          child: Icon(icon, color: Brand.green, size: 27),
+                          child: Icon(icon, color: Brand.green, size: 23),
                         ),
                         const SizedBox(height: 2),
                         Text(title, maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Brand.ink,
-                            fontSize: 19, height: 1.13, fontWeight: FontWeight.w900)),
+                            fontSize: 18, height: 1.08, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 3),
-                        Text(subtitle, maxLines: 2,
+                        Text(subtitle, maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Brand.palette.muted,
-                            fontSize: 11, height: 1.2, fontWeight: FontWeight.w700)),
+                            fontSize: 11, height: 1.1, fontWeight: FontWeight.w700)),
                         const Spacer(),
                         Container(
-                          height: 35,
+                          height: 34,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(colors: [
