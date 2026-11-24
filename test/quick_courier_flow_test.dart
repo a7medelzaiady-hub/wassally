@@ -182,6 +182,7 @@ void main() {
     await _tap(tester, const Key('quick-start'));
     expect(backend.calls.single.key, 'start-purchase');
     expect(backend.calls.single.value['estimatedPurchasesPiastres'], 250000);
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
   });
 
@@ -191,6 +192,7 @@ void main() {
     }));
     await _pumpPage(tester, backend);
     expect(find.byKey(const Key('quick-advance-received')), findsOneWidget);
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
     expect(_enabled(tester, const Key('quick-receipt')), isTrue);
   });
@@ -202,9 +204,16 @@ void main() {
 
   testWidgets('الشراء: إرسال الكشف مقفول من غير فواتير', (tester) async {
     await _pumpPage(tester, _FakeBackend(_doc('purchasing')));
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
-    await tester.enterText(find.descendant(of: find.byKey(const Key('quick-delivery')), matching: find.byType(TextField)), '30');
+    final deliveryField = find.descendant(
+      of: find.byKey(const Key('quick-delivery')),
+      matching: find.byType(TextField),
+    );
+    await _show(tester, deliveryField);
+    await tester.enterText(deliveryField, '30');
     await tester.pumpAndSettle();
+    await _show(tester, find.byKey(const Key('quick-submit-summary')));
     expect(_enabled(tester, const Key('quick-submit-summary')), isFalse);
   });
 
