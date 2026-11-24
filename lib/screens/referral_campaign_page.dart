@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/order_gateway.dart';
 import '../widgets/referral_code_card.dart';
+import '../widgets/referral_balance_tile.dart';
 
 const _campaignTitle = 'شير بكودك واكسب هدايا';
 
@@ -82,7 +83,7 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('الإحالات')),
+      appBar: AppBar(title: const Text('الدعوات')),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _campaign,
         builder: (context, snapshot) {
@@ -123,11 +124,18 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
                 const ListTile(title: Text('كود المسوّق')),
                 ReferralCodeCard(serverIssuedCode: data['marketerCode'] as String),
               ],
-              ListTile(title: const Text('النقاط'), trailing: Text('${amount('points')}')),
+              ReferralBalanceTile(
+                icon: Icons.stars_rounded,
+                title: 'رصيد النقاط',
+                value: '${amount('points')} نقطة',
+                explanation: 'نقاط خصم أثناء التسوق وفق شروط البرنامج.',
+              ),
               if (widget.storeOwner || data['marketerCode'] is String)
-                ListTile(
-                  title: const Text('رصيد المكافآت النقدية'),
-                  trailing: Text('${(amount('cashMinor') / 100).toStringAsFixed(2)} ج.م'),
+                ReferralBalanceTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'رصيد المكافآت النقدية',
+                  value: '${(amount('cashMinor') / 100).toStringAsFixed(2)} ج.م',
+                  explanation: 'مكافآت نقدية تقدر تطلب صرفها من الإدارة.',
                 ),
               if (amount('cashMinor') > 0)
                 OutlinedButton(
@@ -135,9 +143,11 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
                   child: const Text('طلب صرف الرصيد النقدي'),
                 ),
               if (widget.storeOwner)
-                ListTile(
-                  title: const Text('رصيد خصم العمولة'),
-                  trailing: Text('${(amount('commissionDiscountMinor') / 100).toStringAsFixed(2)} ج.م'),
+                ReferralBalanceTile(
+                  icon: Icons.percent_rounded,
+                  title: 'رصيد خصم العمولة',
+                  value: '${(amount('commissionDiscountMinor') / 100).toStringAsFixed(2)} ج.م',
+                  explanation: 'خصم عمولة وصّلي وليس رصيدًا للسحب.',
                 ),
             ],
           );
@@ -193,48 +203,79 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('إدارة الإحالات')),
+      appBar: AppBar(title: const Text('إدارة الدعوات')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          TextField(
-            controller: _uid,
-            enabled: !_loading,
-            textDirection: TextDirection.ltr,
-            decoration: const InputDecoration(labelText: 'معرّف حساب المسوّق'),
+          Text('إنشاء كود للمسوّق', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text('أدخل معرّف حساب موجود. الخادم بيتحقق من صلاحية الحساب قبل إصدار الكود.',
+            style: Theme.of(context).textTheme.bodySmall),
+          _referralField(
+            label: 'معرّف حساب المسوّق',
+            child: TextField(
+              controller: _uid,
+              enabled: !_loading,
+              textDirection: TextDirection.ltr,
+              decoration: _referralInput(hint: 'UID'),
+            ),
           ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: _loading ? null : _issue,
-            child: const Text('إصدار كود للمسوّق'),
+          const SizedBox(height: 10),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton.icon(
+              onPressed: _loading ? null : _issue,
+              icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
+              label: const Text('إصدار الكود'),
+            ),
           ),
           if (_loading) const LinearProgressIndicator(),
-          if (_error != null) Text(_error!),
+          if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
           if (_code != null) ReferralCodeCard(serverIssuedCode: _code),
-          const SizedBox(height: 20),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const _ReferralSettingsPage(),
-            )),
-            child: const Text('إعدادات المكافآت'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const _ReferralPayoutsPage(),
-            )),
-            child: const Text('طلبات الصرف'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const _ReferralCommissionPage(),
-            )),
-            child: const Text('تسوية عمولة محل'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const ReferralReimbursementPage(),
-            )),
-            child: const Text('تسديد خصم النقاط للمحل'),
+          const SizedBox(height: 12),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Column(children: [
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.tune),
+                title: const Text('إعدادات المكافآت'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const _ReferralSettingsPage(),
+                )),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.payments_outlined),
+                title: const Text('طلبات الصرف'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const _ReferralPayoutsPage(),
+                )),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.store_outlined),
+                title: const Text('تسوية عمولة محل'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const _ReferralCommissionPage(),
+                )),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.point_of_sale_outlined),
+                title: const Text('تسديد خصم النقاط للمحل'),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const ReferralReimbursementPage(),
+                )),
+              ),
+            ]),
           ),
         ],
       ),
@@ -243,7 +284,24 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
 }
 
 String _failureMessage(Object? error) =>
-    error is StateError ? error.message : 'تعذر تحميل الإحالات.';
+    error is StateError ? error.message : 'تعذر تحميل الدعوات.';
+
+InputDecoration _referralInput({String? hint}) => InputDecoration(
+  isDense: true,
+  hintText: hint,
+  border: const OutlineInputBorder(),
+  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+);
+
+Widget _referralField({required String label, required Widget child}) => Padding(
+  padding: const EdgeInsets.only(top: 8),
+  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Text(label, maxLines: 3,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 5),
+    child,
+  ]),
+);
 
 class _ReferralSettingsPage extends StatefulWidget {
   const _ReferralSettingsPage();
@@ -310,8 +368,8 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                 for (final (channel, label, unit) in const [
-                  ('customer', 'إحالات العملاء', 'points'),
-                  ('marketer', 'إحالات المسوقين', 'cash_minor'),
+                  ('customer', 'دعوات العملاء', 'points'),
+                  ('marketer', 'دعوات المسوّقين', 'cash_minor'),
                   ('store_owner', 'دعوة محل جديد', 'cash_minor'),
                   ('store_customer', 'دعوة عميل بواسطة محل', 'cash_minor'),
                 ])
@@ -322,36 +380,36 @@ class _ReferralSettingsPageState extends State<_ReferralSettingsPage> {
                     initial: raw?[channel] as Map<String, dynamic>?,
                     onSave: (policy) => policies[channel] = policy,
                   ),
-                TextFormField(
-                  initialValue: redemption?['pointValueMinor']?.toString() ?? '0',
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'قيمة النقطة بالقروش (صفر لإيقاف استخدام النقاط)',
+                _referralField(
+                  label: 'قيمة النقطة بالقروش (صفر لإيقاف استخدامها)',
+                  child: TextFormField(
+                    initialValue: redemption?['pointValueMinor']?.toString() ?? '0',
+                    keyboardType: TextInputType.number,
+                    decoration: _referralInput(hint: '0'),
+                    validator: (value) {
+                      final amount = int.tryParse(value?.trim() ?? '');
+                      _pointValueMinor = amount ?? 0;
+                      return amount == null || amount < 0 || amount > 10000000
+                          ? 'اكتب قيمة صحيحة للنقطة.' : null;
+                    },
+                    onSaved: (value) => _pointValueMinor = int.parse(value!.trim()),
                   ),
-                  validator: (value) {
-                    final amount = int.tryParse(value?.trim() ?? '');
-                    _pointValueMinor = amount ?? 0;
-                    return amount == null || amount < 0 || amount > 10000000
-                        ? 'اكتب قيمة صحيحة للنقطة.'
-                        : null;
-                  },
-                  onSaved: (value) => _pointValueMinor = int.parse(value!.trim()),
                 ),
-                TextFormField(
-                  initialValue: redemption?['maxDiscountMinor']?.toString() ?? '0',
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'أقصى خصم للطلب بالقروش',
+                _referralField(
+                  label: 'أقصى خصم للطلب بالقروش',
+                  child: TextFormField(
+                    initialValue: redemption?['maxDiscountMinor']?.toString() ?? '0',
+                    keyboardType: TextInputType.number,
+                    decoration: _referralInput(hint: '0'),
+                    validator: (value) {
+                      final amount = int.tryParse(value?.trim() ?? '');
+                      return amount == null || amount < _pointValueMinor || amount > 10000000
+                          ? 'اكتب حدًا صحيحًا لا يقل عن قيمة النقطة.' : null;
+                    },
+                    onSaved: (value) => _maxDiscountMinor = int.parse(value!.trim()),
                   ),
-                  validator: (value) {
-                    final amount = int.tryParse(value?.trim() ?? '');
-                    final minimum = _pointValueMinor;
-                    return amount == null || amount < minimum || amount > 10000000
-                        ? 'اكتب حدًا صحيحًا لا يقل عن قيمة النقطة.'
-                        : null;
-                  },
-                  onSaved: (value) => _maxDiscountMinor = int.parse(value!.trim()),
                 ),
+                const SizedBox(height: 14),
                 if (_error != null) Text(_error!),
                 FilledButton(
                   onPressed: _saving ? null : () => _save(settings?['version'] as int? ?? 0, policies),
@@ -394,60 +452,69 @@ class _PolicyEditorState extends State<_PolicyEditor> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: const EdgeInsets.symmetric(vertical: 5),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(widget.label),
-              value: _enabled,
-              onChanged: (value) => setState(() => _enabled = value),
-            ),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(child: Text(widget.label,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+              const SizedBox(width: 10),
+              Switch(value: _enabled,
+                onChanged: (value) => setState(() => _enabled = value)),
+            ]),
             if (widget.channel == 'store_owner' || widget.channel == 'store_customer')
-              DropdownButtonFormField<String>(
-                initialValue: _unit,
-                decoration: const InputDecoration(labelText: 'نوع المكافأة'),
-                items: const [
-                  DropdownMenuItem(value: 'cash_minor', child: Text('فلوس')),
-                  DropdownMenuItem(value: 'commission_discount_minor', child: Text('خصم عمولة')),
-                ],
-                onChanged: (value) => setState(() => _unit = value ?? widget.unit),
+              _referralField(
+                label: 'نوع المكافأة',
+                child: DropdownButtonFormField<String>(
+                  initialValue: _unit,
+                  isExpanded: true,
+                  decoration: _referralInput(),
+                  items: const [
+                    DropdownMenuItem(value: 'cash_minor', child: Text('فلوس قابلة للسحب')),
+                    DropdownMenuItem(value: 'commission_discount_minor', child: Text('خصم عمولة وصّلي')),
+                  ],
+                  onChanged: (value) => setState(() => _unit = value ?? widget.unit),
+                ),
               ),
-            TextFormField(
-              initialValue: '$_amount',
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: _unit == 'points' ? 'عدد النقاط' : 'المبلغ بالقروش',
+            _referralField(
+              label: _unit == 'points' ? 'عدد النقاط' : 'المبلغ بالقروش',
+              child: TextFormField(
+                initialValue: '$_amount',
+                keyboardType: TextInputType.number,
+                decoration: _referralInput(hint: '0'),
+                validator: (value) {
+                  final amount = int.tryParse(value?.trim() ?? '');
+                  return amount == null || amount < (_enabled ? 1 : 0)
+                      ? 'اكتب قيمة صحيحة للمكافأة.' : null;
+                },
+                onSaved: (value) => _amount = int.parse(value!.trim()),
               ),
-              validator: (value) {
-                final amount = int.tryParse(value?.trim() ?? '');
-                return amount == null || amount < (_enabled ? 1 : 0)
-                    ? 'اكتب قيمة صحيحة للمكافأة.'
-                    : null;
-              },
-              onSaved: (value) => _amount = int.parse(value!.trim()),
             ),
-            TextFormField(
-              initialValue: widget.initial?['maxPerInviter']?.toString(),
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'حد المكافآت لكل مُحيل (اختياري)'),
-              validator: (value) {
-                final text = value?.trim() ?? '';
-                return text.isNotEmpty && (int.tryParse(text) ?? -1) < 0
-                    ? 'اكتب حدًا صحيحًا.'
-                    : null;
-              },
-              onSaved: (value) {
-                final limit = int.tryParse(value?.trim() ?? '');
-                widget.onSave({
-                  'channel': widget.channel,
-                  'enabled': _enabled,
-                  'unit': _unit,
-                  'amount': _amount,
-                  if (limit != null) 'maxPerInviter': limit,
-                });
-              },
+            _referralField(
+              label: 'حد المكافآت لكل داعٍ (اختياري)',
+              child: TextFormField(
+                initialValue: widget.initial?['maxPerInviter']?.toString(),
+                keyboardType: TextInputType.number,
+                decoration: _referralInput(hint: 'بدون حد'),
+                validator: (value) {
+                  final text = value?.trim() ?? '';
+                  return text.isNotEmpty && (int.tryParse(text) ?? -1) < 0
+                      ? 'اكتب حدًا صحيحًا.' : null;
+                },
+                onSaved: (value) {
+                  final limit = int.tryParse(value?.trim() ?? '');
+                  widget.onSave({
+                    'channel': widget.channel,
+                    'enabled': _enabled,
+                    'unit': _unit,
+                    'amount': _amount,
+                    if (limit != null) 'maxPerInviter': limit,
+                  });
+                },
+              ),
             ),
           ],
         ),
