@@ -18,6 +18,10 @@ class OrderGateway {
     defaultValue: 'https://throbbing-water-4ef7.a7medelzaiady.workers.dev',
   );
 
+  static const referralCampaignEnabled = bool.fromEnvironment(
+    'WASALLY_REFERRAL_REGISTRATION',
+  );
+
   static bool get isConfigured => baseUrl.trim().isNotEmpty;
 
   /// هيدر App Check (لو متاح) لكل طلبات الـ Worker.
@@ -65,6 +69,131 @@ class OrderGateway {
       );
     } catch (_) {
       debugPrint('تعذر إرسال إشعار حالة الطلب.');
+    }
+  }
+
+  static Future<Map<String, dynamic>> referralCampaign({
+    required String channel,
+    String? marketerUid,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/campaign',
+      payload: {
+        'channel': channel,
+        if (marketerUid != null) 'marketerUid': marketerUid,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+  }
+
+  static Future<Map<String, dynamic>?> referralSettings({
+    Map<String, dynamic>? settings,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    final response = await _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/settings',
+      payload: {if (settings != null) 'settings': settings},
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+    return response['settings'] as Map<String, dynamic>?;
+  }
+
+  static Future<Map<String, dynamic>> quoteReferralPoints(int itemsSubtotalMinor) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/points/quote',
+      payload: {'itemsSubtotalMinor': itemsSubtotalMinor},
+      connectivityMessage: 'تعذر حساب خصم النقاط.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> referralRedemption(
+    String orderId,
+    String action, {
+    String? reference,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/redemption',
+      payload: {
+        'orderId': orderId,
+        'action': action,
+        if (reference != null) 'reference': reference,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة تسوية خصم النقاط.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> settleReferralCommission({
+    required String ownerUid,
+    required String storeId,
+    required String reference,
+    required int dueMinor,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/commissions',
+      payload: {
+        'ownerUid': ownerUid,
+        'storeId': storeId,
+        'reference': reference,
+        'dueMinor': dueMinor,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة تسوية عمولة الإحالة.',
+    );
+  }
+
+  static Future<Map<String, dynamic>> referralPayout({
+    required String action,
+    String? requestId,
+    String? payoutId,
+    String? reference,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول الأول.');
+    return _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/payouts',
+      payload: {
+        'action': action,
+        if (requestId != null) 'requestId': requestId,
+        if (payoutId != null) 'payoutId': payoutId,
+        if (reference != null) 'reference': reference,
+      },
+      connectivityMessage: 'تعذر الاتصال بخدمة صرف الإحالات.',
+    );
+  }
+
+  static Future<void> claimRegistrationReferral({
+    required String idToken,
+    required String code,
+  }) async {
+    final body = await _request(
+      idToken: idToken,
+      method: 'POST',
+      path: '/v1/referrals/registration',
+      payload: {'code': code},
+      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+    );
+    if (body['accepted'] != true) {
+      throw StateError('لم يصل تأكيد حفظ كود الإحالة.');
     }
   }
 
@@ -201,6 +330,24 @@ class OrderGateway {
     required String path,
     required Map<String, dynamic> payload,
   }) async {
+    final body = await _request(
+      idToken: idToken,
+      method: method,
+      path: path,
+      payload: payload,
+    );
+    if ((body['orderId'] ?? '').toString().isEmpty) {
+      throw StateError('لم يصل تأكيد العملية من الخادم.');
+    }
+  }
+
+  static Future<Map<String, dynamic>> _request({
+    required String idToken,
+    required String method,
+    required String path,
+    required Map<String, dynamic> payload,
+    String connectivityMessage = 'تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.',
+  }) async {
     final root = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
     final uri = Uri.tryParse('$root$path');
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
@@ -229,7 +376,7 @@ class OrderGateway {
         },
       );
     } catch (_) {
-      throw StateError('تعذر الاتصال بخدمة تأكيد الأسعار. حاول مرة أخرى.');
+      throw StateError(connectivityMessage);
     } finally {
       client.close();
     }
@@ -258,9 +405,7 @@ class OrderGateway {
       }
       throw StateError(text);
     }
-    if ((body['orderId'] ?? '').toString().isEmpty) {
-      throw StateError('لم يصل تأكيد العملية من الخادم.');
-    }
+    return body;
   }
 }
 

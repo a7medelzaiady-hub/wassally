@@ -204,14 +204,14 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   // ───────────── واجهة ─────────────
 
-  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Color? color, Key? key}) {
+  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Key? key}) {
     return SizedBox(
       width: double.infinity,
       height: 60,
       child: FilledButton.icon(
         key: key,
         style: FilledButton.styleFrom(
-          backgroundColor: color ?? Brand.green,
+          backgroundColor: Brand.green,
           textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
@@ -254,7 +254,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ),
       );
 
-  Widget _totalsCard(QuickTotalsView t, {String title = 'الكشف'}) {
+  Widget _totalsCard(
+    QuickTotalsView t, {
+    String title = 'الحساب النهائي',
+    bool delivered = false,
+  }) {
     return _card(children: [
       Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       const SizedBox(height: 6),
@@ -264,46 +268,104 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       if (t.prepaid > 0) _row('المقدم المحوّل', '- ${formatPiastres(t.prepaid)}'),
       const Divider(),
       t.due >= 0
-          ? _row('تحصّل من العميل', formatPiastres(t.due), bold: true)
-          : _row('ترجّع للعميل', formatPiastres(-t.due), bold: true),
+          ? _row(delivered ? 'المبلغ عند التسليم' : 'تحصّل من العميل',
+              formatPiastres(t.due), bold: true)
+          : _row(delivered ? 'الرد عند التسليم' : 'ترجّع للعميل',
+              formatPiastres(-t.due), bold: true),
     ]);
   }
 
+  Widget _requestDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (var i = 0; i < (constraints.maxWidth / 8).floor(); i++)
+            SizedBox(width: 4, height: 1, child: ColoredBox(color: kMuted)),
+        ],
+      ),
+    ),
+  );
+
   Widget _requestCard(QuickCourierOrder o) {
     return _card(children: [
-      Text('طلب ${o.customerFirstName.isEmpty ? 'العميل' : o.customerFirstName}',
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-      if (o.area.isNotEmpty)
-        Text('📍 منطقة العميل: ${o.area}', style: TextStyle(color: kMuted)),
-      if (!o.canSeeContact)
-        Text('العنوان التفصيلي ورقم الهاتف يظهران بعد قبول الطلب فقط.',
-            style: TextStyle(color: kMuted, fontSize: 12)),
-      for (final s in o.stores) ...[
-        const SizedBox(height: 10),
-        Row(children: [
-          Icon(Icons.storefront, color: Brand.green),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(s.name.isEmpty ? 'أي محل قريب' : s.name,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+      Row(
+        children: [
+          Icon(Icons.receipt_long_outlined, color: Brand.green, size: 20),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'إيصال الطلب',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
           ),
-        ]),
-        for (final p in s.pricedItems)
-          _row('• ${p.name} × ${p.qty}', 'تقريبًا ${formatPiastres(p.subtotalPiastres)}'),
-        if (s.items.isNotEmpty) Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(s.items, style: const TextStyle(fontSize: 15, height: 1.5)),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      if (o.area.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
+      ],
+      for (final (index, store) in o.stores.indexed) ...[
+        _requestDivider(),
+        Text(
+          store.name.isEmpty
+              ? (o.stores.length > 1 ? 'محل ${index + 1} · أي محل قريب' : 'أي محل قريب')
+              : store.name,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
         ),
+        if (store.pricedItems.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(child: Text('الصنف', style: TextStyle(color: kMuted))),
+              Text('الكمية', style: TextStyle(color: kMuted)),
+            ],
+          ),
+          for (final item in store.pricedItems)
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.name, style: const TextStyle(fontSize: 17, height: 1.4)),
+                        Text('تقريبًا ${formatPiastres(item.subtotalPiastres)}',
+                            style: TextStyle(color: kMuted)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('${item.qty}',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
+        ],
+        if (store.items.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              store.items.trim(),
+              style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
+            ),
+          ),
       ],
       if (o.notes.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Text('ملاحظات: ${o.notes}', style: TextStyle(color: kMuted)),
+        _requestDivider(),
+        const Text('ملاحظات العميل', style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(o.notes),
       ],
       if ((o.approxTotalPiastres ?? 0) > 0) ...[
-        const Divider(height: 24),
+        _requestDivider(),
         _row('الإجمالي التقريبي', formatPiastres(o.approxTotalPiastres!), bold: true),
-        Text('الأسعار تقريبية وقد تزيد أو تقل حسب المحل. الحساب النهائي من الفواتير.',
-            style: TextStyle(color: kMuted, fontSize: 12.5)),
+        Text('الحساب النهائي من الفواتير.', style: TextStyle(color: kMuted)),
       ],
     ]);
   }
@@ -327,25 +389,38 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         child: Text(c.address, style: const TextStyle(height: 1.5)),
       ),
       if (c.address.isEmpty) const Text('العنوان التفصيلي غير متاح'),
-      if (c.address.isNotEmpty)
-        OutlinedButton.icon(
-          onPressed: _busy
-              ? null
-              : () async {
-                  try {
-                    final opened = await openInMaps(c.address);
-                    if (!opened && mounted) _toast('تعذر فتح الخريطة.');
-                  } catch (_) {
-                    if (mounted) _toast('تعذر فتح الخريطة.');
-                  }
-                },
-          icon: const Icon(Icons.map_outlined),
-          label: const Text('افتح الخريطة'),
-        ),
       if (c.notes.isNotEmpty) Text(c.notes, style: TextStyle(color: kMuted)),
-      const SizedBox(height: 10),
-      _bigButton('اتصل بالعميل', Icons.call, c.phone.isEmpty ? null : _call,
-          color: const Color(0xFF2563EB), key: const Key('quick-call')),
+      if (c.address.isNotEmpty || c.phone.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            if (c.phone.isNotEmpty)
+              TextButton.icon(
+                key: const Key('quick-call'),
+                onPressed: _busy ? null : _call,
+                icon: const Icon(Icons.call_outlined, size: 18),
+                label: const Text('اتصل بالعميل'),
+              ),
+            if (c.address.isNotEmpty)
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        try {
+                          final opened = await openInMaps(c.address);
+                          if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                        } catch (_) {
+                          if (mounted) _toast('تعذر فتح الخريطة.');
+                        }
+                      },
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('افتح الخريطة'),
+              ),
+          ],
+        ),
+      ],
     ]);
   }
 
@@ -402,7 +477,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                 final amount = await _askAmount('المبلغ اللي وصلك فعلًا كام جنيه؟', initial: o.advanceAmountPiastres);
                 if (amount == null) return;
                 await _act('advance-received', {'amountPiastres': amount}, 'اتسجل المقدم');
-              }, color: const Color(0xFF2563EB), key: const Key('quick-advance-received')),
+              }, key: const Key('quick-advance-received')),
             ]),
           if (o.advanceConfirmedAt != null)
             _card(children: [
@@ -504,11 +579,13 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
       case QuickCourierStep.delivered:
         return [
-          if (o.totals != null) _totalsCard(o.totals!),
           _card(children: const [
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
-            Text('الطلب اتسلّم', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
+            SizedBox(height: 8),
+            Text('الطلب اتسلّم', textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ]),
+          if (o.totals != null) _totalsCard(o.totals!, delivered: true),
         ];
 
       case QuickCourierStep.cancelled:
@@ -528,7 +605,13 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(o == null ? 'طلب سريع' : quickStepLabel(o.step)),
+          backgroundColor: Brand.ink,
+          foregroundColor: Colors.white,
+          titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+          title: const Text('تفاصيل الطلب السريع'),
           actions: [
             if (o != null && o.canRelease)
               TextButton(
@@ -577,10 +660,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                   child: Center(child: Text('جاري تحميل تفاصيل الطلب...')),
                 ),
               if (o != null) ...[
-                if (o.step == QuickCourierStep.available) _requestCard(o),
+                _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
-                if (o.step != QuickCourierStep.available) _requestCard(o),
               ],
             ],
           ),

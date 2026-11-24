@@ -1,0 +1,7 @@
+appId: com.wassally.app
+---
+- runFlow:
+    when:
+      visible: "مش دلوقتي"
+    commands:
+      - tapOn: "مش دلوقتي"

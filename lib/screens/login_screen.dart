@@ -2,7 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../legal/legal_content.dart';
+import '../models/referral.dart';
 import '../services/auth_service.dart';
+import '../services/order_gateway.dart';
+import '../services/e2e_support.dart';
 import 'legal_page.dart';
 import '../theme/app_theme.dart';
 
@@ -15,12 +18,59 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
+  String? _referralCode;
+
+  Future<void> _editReferralCode() async {
+    var input = _referralCode ?? '';
+    final form = GlobalKey<FormState>();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('كود الإحالة'),
+        content: Form(
+          key: form,
+          child: TextFormField(
+            initialValue: input,
+            autofocus: true,
+            textDirection: TextDirection.ltr,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 12,
+            decoration: const InputDecoration(labelText: 'اختياري عند التسجيل الأول'),
+            onChanged: (value) => input = value,
+            validator: (value) {
+              final code = normalizeReferralCode(value ?? '');
+              return code.isEmpty || isReferralCodeFormatValid(code)
+                  ? null
+                  : 'اكتب من ٦ إلى ١٢ حرفًا إنجليزيًا أو رقمًا.';
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (form.currentState!.validate()) {
+                Navigator.pop(context, normalizeReferralCode(input));
+              }
+            },
+            child: const Text('تم'),
+          ),
+        ],
+      ),
+    );
+    if (mounted && code != null) {
+      setState(() => _referralCode = code.isEmpty ? null : code);
+    }
+  }
 
   Future<void> _signIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
     try {
-      await AuthService.signInWithGoogle();
+      await AuthService.signInWithGoogle(referralCode: _referralCode);
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in failed: ${e.code} | ${e.message}');
       if (mounted) {
@@ -193,6 +243,31 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('المتابعة بحساب جوجل'),
                           ),
                   ),
+                  if (OrderGateway.referralCampaignEnabled)
+                    TextButton(
+                      onPressed: _isLoading ? null : _editReferralCode,
+                      child: Text(_referralCode == null
+                          ? 'عندي كود إحالة'
+                          : 'كود الإحالة: $_referralCode'),
+                    ),
+                  if (E2eSupport.enabled) ...[
+                    const SizedBox(height: 10),
+                    for (final r in const [
+                      ('customer', 'عميل'),
+                      ('owner', 'صاحب محل'),
+                      ('courier', 'مندوب'),
+                    ])
+                      TextButton(
+                        onPressed: () => E2eSupport.signInAs(
+                          'sub-${r.$1}',
+                          '${r.$1}@e2e.test',
+                        ),
+                        child: Text(
+                          'دخول تجريبي: ${r.$2}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 14),
                   Wrap(
                     alignment: WrapAlignment.center,

@@ -992,7 +992,13 @@ service cloud.firestore {
       // العميل ينشئ طلب باسمه وبحالة new، بحقول محددة وحدود معقولة (validNewOrder).
       allow create: if !securityFlag('serverOrders') && signedIn() && validNewOrder(request.resource.data) && orderRateOk(request.auth.uid);
 
-      allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data);
+      allow update: if signedIn() && evalOrderUpdate(request.resource.data, resource.data) &&
+        (resource.data.get('referralDiscountMinor', 0) == 0 ||
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verifiedTotal']) ||
+         request.resource.data.get('verifiedTotal', -1) ==
+           resource.data.get('total', -1) +
+             (request.resource.data.get('finalDeliveryFee', resource.data.get('deliveryFee', 0)) -
+              resource.data.get('deliveryFee', 0)));
 
       // مفيش حذف فعلي للطلبات من التطبيق: الطلب بيكون وصل للمحل، ومسحه بيضيّع السجل.
       // "حذف الطلب" عند العميل = إلغاء (لو جديد) + إخفاء من قائمته (customerHidden).
@@ -1107,7 +1113,9 @@ service cloud.firestore {
     // (كانت قاعدتين match مكررتين لنفس المسار، اتدمجوا في واحدة بنفس الصلاحيات بالظبط.)
     match /app_info/{doc} {
       allow read: if signedIn();
-      allow write: if isAdmin() ||
+      // Referral policy version and payouts must be updated by the trusted Worker,
+      // never by direct client writes (including admin clients).
+      allow write: if doc != 'referral_config' && (isAdmin() ||
         (doc == 'catalog' && isAnyStoreOwner() &&
           request.resource.data.keys().hasOnly(['version', 'updatedAt']) &&
           request.resource.data.keys().hasAll(['version', 'updatedAt']) &&
@@ -1119,7 +1127,7 @@ service cloud.firestore {
                request.resource.data.version == resource.data.get('version', 0) + 1 &&
                // حد سرعة: زيادة واحدة كل 60 ثانية من أصحاب المحلات (المدير بلا حد)،
                // عشان صاحب محل ما يستهلكش حصة الكتابة اليومية على Spark بزيادات متكررة.
-               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's'))));
+               request.time > resource.data.get('updatedAt', timestamp.value(0)) + duration.value(60, 's')))));
       allow create: if doc == 'catalog_versions' &&
         catalogVersionsWriteOk({}, request.resource.data);
       allow update: if doc == 'catalog_versions' &&
@@ -1788,6 +1796,57 @@ service cloud.firestore {
           : (request.resource.data.paidAmountMinor == resource.data.get('paidAmountMinor', 0) &&
              request.resource.data.lastPaymentId == resource.data.get('lastPaymentId', '')));
       allow delete: if false;
+    }
+
+    // نظام الإحالات: الصرف والأرصدة والإسناد تُكتب حصريًا من Worker
+    // باستخدام حساب الخدمة. لا تسمح بتزوير النقاط أو المكافآت من التطبيق.
+    match /referral_codes/{code} {
+      allow read, write: if false;
+    }
+
+    match /referral_attributions/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /referral_store_origins/{storeId} {
+      function isApprovedOriginalDraft() {
+        let data = request.resource.data;
+        let store = /databases/$(database)/documents/stores/$(storeId);
+        let application = /databases/$(database)/documents/role_requests/$(data.uid + '_store_owner');
+        return data.keys().hasOnly(['uid', 'approvalAt']) &&
+          data.approvalAt == request.time &&
+          get(store).data.ownerUid == data.uid &&
+          get(store).data.approved == false &&
+          getAfter(store).data.approved == true &&
+          getAfter(store).data.approvedAt == request.time &&
+          getAfter(application).data.storeId == storeId &&
+          getAfter(application).data.status == 'approved' &&
+          getAfter(application).data.reviewedAt == request.time;
+      }
+      allow create: if isAdmin() && isApprovedOriginalDraft();
+      allow read, update, delete: if false;
+    }
+
+    match /referral_store_attributions/{storeId} {
+      allow read, write: if false;
+    }
+
+    match /referral_grants/{grantId} {
+      allow read, write: if false;
+    }
+
+    match /referral_balances/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /referral_first_orders/{uid} {
+      allow read, write: if false;
+    }
+
+    match /referral_store_first_orders/{storeId} {
+      allow read, write: if false;
     }
 
     // كوبونات الخصم: العميل يقرأ كود واحد بالاسم، والمدير يدير الكل.

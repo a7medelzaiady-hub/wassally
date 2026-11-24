@@ -8,6 +8,7 @@ import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
+import '../services/order_gateway.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/delivery_pin_notice.dart';
@@ -37,6 +38,43 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final _promo = TextEditingController();
   bool _submitting = false;
   bool _checkingPromo = false;
+  bool _quotingPoints = false;
+  int _referralPoints = 0;
+  int _referralDiscountMinor = 0;
+
+  Future<void> _applyReferralPoints() async {
+    if (_quotingPoints || _submitting) return;
+    if (_referralPoints > 0) {
+      setState(() {
+        _referralPoints = 0;
+        _referralDiscountMinor = 0;
+      });
+      return;
+    }
+    setState(() => _quotingPoints = true);
+    try {
+      final quote = await OrderGateway.quoteReferralPoints((cart.subtotal * 100).round());
+      if (!mounted) return;
+      final points = quote['points'] as int;
+      if (points == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('مفيش نقاط متاحة للطلب ده.')),
+        );
+      }
+      setState(() {
+        _referralPoints = points;
+        _referralDiscountMinor = quote['discountMinor'] as int;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تحميل خصم النقاط. حاول تاني.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _quotingPoints = false);
+    }
+  }
   List<DeliveryArea> _areas = const [];
 
   @override
@@ -173,7 +211,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _submit() async {
-    if (_submitting) return;
+    if (_submitting || _quotingPoints) return;
     if (!(_form.currentState?.validate() ?? false)) return;
 
     final messenger = ScaffoldMessenger.of(context);
@@ -212,6 +250,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         address: _address.text.trim(),
         notes: _notes.text.trim(),
         courierNotes: _courierNotes.text.trim(),
+        referralPoints: _referralPoints,
+        referralDiscountMinor: _referralDiscountMinor,
       );
 
 
@@ -565,9 +605,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             ),
                           ],
                           const SizedBox(height: 8),
+                          if (OrderGateway.referralCampaignEnabled &&
+                              OrderGateway.serverOrdersEnabled)
+                            TextButton(
+                              onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
+                              child: Text(_referralPoints > 0
+                                  ? 'إلغاء استخدام النقاط'
+                                  : 'استخدم نقاط الإحالة'),
+                            ),
+                          if (_referralPoints > 0)
+                            _line('خصم $_referralPoints نقطة',
+                                '- ${formatPrice(_referralDiscountMinor / 100)}'),
                           _line(
                             'الإجمالي',
-                            formatPrice(cart.total),
+                            formatPrice(cart.total - _referralDiscountMinor / 100),
                             strong: true,
                           ),
                         ],

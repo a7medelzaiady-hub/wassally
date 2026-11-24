@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'referral_campaign_page.dart';
+
 import '../models/order.dart';
 import 'admin_navigation_page.dart';
 import '../services/price_check.dart';
@@ -1438,6 +1440,16 @@ class _ManageSheetState extends State<_ManageSheet> {
           ),
           _stepsCard(),
           _priceCard(),
+          if (_o.referralDiscountMinor > 0 &&
+              (_o.status == OrderStatus.delivered || _o.status == OrderStatus.cancelled))
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ReferralReimbursementPage(initialOrderId: _o.id),
+              )),
+              child: Text(_o.status == OrderStatus.delivered
+                  ? 'تسديد خصم النقاط للمحل'
+                  : 'استرجاع نقاط الطلب'),
+            ),
           if (needsPinDecision(o)) ...[
             const SizedBox(height: 12),
             _pinDecisionCard(o),

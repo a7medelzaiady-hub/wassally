@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/order_gateway.dart';
+import 'referral_campaign_page.dart';
 import '../data/seed_stores.dart';
 import '../legal/legal_content.dart';
 import '../models/app_role.dart';
@@ -339,6 +341,8 @@ class _AccountPageState extends State<AccountPage> {
                 },
               ),
               _joinSection(_profileData),
+              if (OrderGateway.referralCampaignEnabled)
+                const ReferralCampaignLink(),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,

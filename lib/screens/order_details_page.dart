@@ -12,6 +12,7 @@ import '../services/delivery_pin_service.dart';
 import '../services/driver_service.dart';
 import '../services/order_contact_service.dart';
 import '../services/order_service.dart';
+import '../services/order_gateway.dart';
 import '../theme/app_theme.dart';
 import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
@@ -428,9 +429,26 @@ class _Details extends StatelessWidget {
                   style: text.bodySmall?.copyWith(color: kMuted),
                 ),
               const SizedBox(height: 16),
-              if (order.status == OrderStatus.cancelled)
-                _CancelledBanner(status: order.status)
-              else
+              if (order.status == OrderStatus.cancelled) ...[
+                _CancelledBanner(status: order.status),
+                if (order.referralDiscountMinor > 0)
+                  TextButton(
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await OrderGateway.referralRedemption(order.id, 'refund');
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('تمت مراجعة استرجاع نقاط الطلب.')),
+                        );
+                      } catch (_) {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('تعذر استرجاع النقاط. حاول تاني.')),
+                        );
+                      }
+                    },
+                    child: const Text('استرجاع نقاط الطلب'),
+                  ),
+              ] else
                 _Timeline(current: order.status),
             ],
           ),
@@ -510,7 +528,8 @@ class _Details extends StatelessWidget {
             driverName: order.courierName,
             driverPhone: order.courierPhone,
             onRateTap: () => _showRatingDialog(context),
-            isDelivered: order.status == OrderStatus.delivered,
+            status: order.status,
+            customerConfirmed: order.customerConfirmedAt != null,
           ),
         ],
 
@@ -563,6 +582,9 @@ class _Details extends StatelessWidget {
                 _line('رسوم الخدمة', formatPrice(order.serviceFee!)),
               ],
               const SizedBox(height: 8),
+              if (order.referralDiscountMinor > 0)
+                _line('خصم نقاط الإحالة',
+                    '- ${formatPrice(order.referralDiscountMinor / 100)}'),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
             ],
           ),
@@ -714,17 +736,26 @@ class _DriverCardForCustomer extends StatelessWidget {
   final String driverName;
   final String driverPhone;
   final VoidCallback onRateTap;
-  final bool isDelivered;
+  final OrderStatus status;
+  final bool customerConfirmed;
 
   const _DriverCardForCustomer({
     required this.driverName,
     required this.driverPhone,
     required this.onRateTap,
-    required this.isDelivered,
+    required this.status,
+    required this.customerConfirmed,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDelivered = status == OrderStatus.delivered;
+    final deliveryComplete = isDelivered || customerConfirmed;
+    final statusText = deliveryComplete
+        ? 'تم تسليم الطلب'
+        : status == OrderStatus.onTheWay
+            ? 'المندوب في الطريق إليك'
+            : 'تم تعيين المندوب';
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -774,12 +805,10 @@ class _DriverCardForCustomer extends StatelessWidget {
                     ),
                   ),
                 Text(
-                  isDelivered
-                      ? 'تم تسليم الطلب بنجاح ✅'
-                      : 'جاري التوصيل إليك 🚀',
+                  statusText,
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDelivered ? kSuccess : kMuted,
+                    color: deliveryComplete ? kSuccess : kMuted,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -789,15 +818,15 @@ class _DriverCardForCustomer extends StatelessWidget {
           if (isDelivered)
             ElevatedButton.icon(
               onPressed: onRateTap,
-              icon: Icon(Icons.star_rounded, size: 16, color: kInk),
+              icon: const Icon(Icons.star_rounded, size: 16),
               label: const Text('تقييم', style: TextStyle(fontSize: 12)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: kAccent,
-                foregroundColor: kInk,
+                backgroundColor: kPrimary,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
               ),
             )
-          else if (driverPhone.isNotEmpty)
+          else if (!deliveryComplete && driverPhone.isNotEmpty)
             IconButton(
               onPressed: () async {
                 final uri = Uri.parse('tel:$driverPhone');
