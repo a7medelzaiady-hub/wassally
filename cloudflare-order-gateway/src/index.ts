@@ -6,6 +6,14 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
+import {
+  REFERRAL_IDENTITY_COLLECTION,
+  googleSubjectFromFirebaseLookup,
+  hasValidIdentitySecret,
+  identityMarkerExpiresAt,
+  isActiveDeletedIdentity,
+  referralIdentityDocumentId,
+} from "./referral_identity";
 import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
@@ -32,6 +40,8 @@ interface Env {
   FIREBASE_PROJECT_ID: string;
   REFERRAL_REGISTRATION_ENABLED?: string;
   REFERRAL_DELIVERY_ENABLED?: string;
+  /** Cloudflare secret; 32+ bytes, never committed or exposed to clients. */
+  REFERRAL_IDENTITY_HMAC_KEY?: string;
   FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   ALLOWED_ORIGINS?: string;
@@ -128,6 +138,7 @@ const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   createdAtMs: number;
   lastLoginAtMs: number;
+  googleSubject: string | null;
   validSince: number;
   disabled: boolean;
 }>();
@@ -421,7 +432,11 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string; lastLoginAt?: string }>;
+      users?: Array<{
+        localId?: string; validSince?: string; disabled?: boolean;
+        createdAt?: string; lastLoginAt?: string;
+        providerUserInfo?: Array<{ providerId?: string; rawId?: string }>;
+      }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
@@ -438,6 +453,7 @@ async function assertFirebaseUserActive(
       disabled: user.disabled === true,
       createdAtMs: Number(user.createdAt),
       lastLoginAtMs: Number(user.lastLoginAt),
+      googleSubject: googleSubjectFromFirebaseLookup(user.providerUserInfo),
     };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
@@ -927,6 +943,60 @@ async function deleteFirebaseAuthUser(env: Env, token: string, uid: string): Pro
   }
 }
 
+/**
+ * In the deletion flow, the verified Google subject is only used in memory.
+ * Deleting accounts is never blocked by a missing secret or missing provider
+ * metadata: the right to delete must be preserved. The referral CLAIM endpoint
+ * fails closed in that state, and production rollout requires the secret.
+ */
+async function rememberDeletedReferralIdentity(
+  env: Env,
+  token: string,
+  uid: string,
+): Promise<void> {
+  const googleSubject = firebaseUserStateCache.get(uid)?.googleSubject ?? null;
+  if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY) || !googleSubject) {
+    console.warn("Referral re-registration protection not configured for account deletion");
+    return;
+  }
+  const marker = await referralIdentityDocumentId(
+    env.REFERRAL_IDENTITY_HMAC_KEY!, googleSubject,
+  );
+  await commitFirestoreWrites(env, token, [{
+    update: {
+      name: firestoreDocumentName(env, `${REFERRAL_IDENTITY_COLLECTION}/${marker}`),
+      fields: encodeFields({
+        reason: "deleted_account_referral_prevention",
+        createdAt: new Date(),
+        expiresAt: identityMarkerExpiresAt(new Date()),
+      }),
+    },
+  }]);
+}
+
+async function rejectPreviouslyDeletedReferralIdentity(
+  env: Env,
+  uid: string,
+  token: string,
+): Promise<void> {
+  if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY)) {
+    throw new HttpError(503, "حماية الإحالات غير مهيأة حاليًا.");
+  }
+  const googleSubject = firebaseUserStateCache.get(uid)?.googleSubject;
+  if (!googleSubject) {
+    throw new HttpError(403, "تعذر التحقق من أهلية كود الإحالة لحساب جوجل.");
+  }
+  const marker = await referralIdentityDocumentId(
+    env.REFERRAL_IDENTITY_HMAC_KEY!, googleSubject,
+  );
+  const deleted = await getDocument(
+    env, `${REFERRAL_IDENTITY_COLLECTION}/${marker}`, token,
+  );
+  if (deleted && isActiveDeletedIdentity(decodeFields(deleted.fields ?? {}), new Date())) {
+    throw new HttpError(403, "كود الدعوة للمستخدم الجديد فقط، ولا يُعاد بعد حذف الحساب.");
+  }
+}
+
 async function deleteAccount(request: Request, env: Env): Promise<Response> {
   if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
       !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -934,6 +1004,7 @@ async function deleteAccount(request: Request, env: Env): Promise<Response> {
   }
   const uid = await verifyRecentCustomer(request, env);
   const token = await googleAccessToken(env);
+  await rememberDeletedReferralIdentity(env, token, uid);
   await deleteAccountData(env, token, uid);
   await deleteFirebaseAuthUser(env, token, uid);
   return response({ ok: true, deleted: true });
@@ -2227,6 +2298,7 @@ export default {
           throw new HttpError(400, "اكتب كود إحالة صحيح.");
         }
         const token = await googleAccessToken(env);
+        await rejectPreviouslyDeletedReferralIdentity(env, uid, token);
         const accepted = await registerReferral({
           projectId: env.FIREBASE_PROJECT_ID,
           token,
