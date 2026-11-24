@@ -27,7 +27,7 @@ jobs:
 
     # 2. تثبيت جافا (مطلوب لبناء تطبيقات أندرويد)
     - name: Set up Java
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
@@ -74,7 +74,7 @@ jobs:
 
     # تفريغ مساحة من الأدوات غير المطلوبة قبل تنزيل NDK وبناء Android.
     - name: Free disk space before Android build
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       run: |
         sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
         sudo rm -rf /usr/local/lib/android/sdk/system-images
@@ -86,11 +86,11 @@ jobs:
     # تأكد أن مسار رفع الصور في Worker منشور فعلًا وليس endpoint قديمًا يعيد Unknown action.
     # ثبّت مفتاح Debug بين تشغيلات CI حتى لا تتغير بصمة Google OAuth مع كل APK.
     - name: Prepare Android debug keystore directory
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       run: mkdir -p "$HOME/.android"
 
     - name: Restore stable Android debug keystore
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       id: android-debug-key
       uses: actions/cache/restore@v5
       with:
@@ -98,7 +98,7 @@ jobs:
         key: wasally-android-debug-keystore-v1
 
     - name: Generate stable Android debug keystore when absent
-      if: github.event_name == 'workflow_dispatch' && steps.android-debug-key.outputs.cache-hit != 'true'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124') && steps.android-debug-key.outputs.cache-hit != 'true'
       run: |
         keytool -genkeypair -v \
           -keystore "$HOME/.android/debug.keystore" \
@@ -107,7 +107,7 @@ jobs:
           -dname "CN=Android Debug,O=Android,C=US"
 
     - name: Save stable Android debug keystore
-      if: github.event_name == 'workflow_dispatch' && steps.android-debug-key.outputs.cache-hit != 'true'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124') && steps.android-debug-key.outputs.cache-hit != 'true'
       uses: actions/cache/save@v5
       with:
         path: ~/.android/debug.keystore
@@ -117,10 +117,10 @@ jobs:
 
     # نسخة الاختبار اليدوية تستخدم Firestore افتراضيًا، ويمكن اختيار وضع Worker عند التشغيل.
     - name: Build debug APK (retry transient dependency failures)
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       shell: bash
       env:
-        WASALLY_SERVER_ORDERS: ${{ inputs.server_orders }}
+        WASALLY_SERVER_ORDERS: ${{ inputs.server_orders || 'false' }}
       run: |
         for attempt in 1 2 3; do
           echo "Android build attempt ${attempt}/3"
@@ -137,7 +137,7 @@ jobs:
 
     # اطبع بصمة شهادة APK الفعلية للتأكد من تطابق الملف الناتج.
     - name: Report debug APK signing certificate SHA-1
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       run: |
         APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
         test -n "$APKSIGNER"
@@ -146,7 +146,7 @@ jobs:
     # لازم بصمة التوقيع الفعلية للـ APK تكون مسجّلة في Firebase، وإلا دخول جوجل (الأصلي أو
     # عبر المتصفح) بيفشل. الفحص ده على الـ APK الناتج نفسه مش على الـ keystore بس.
     - name: Verify APK signing certificate is registered in Firebase config
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       run: |
         APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
         APK_SHA1="$("$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
@@ -172,7 +172,7 @@ jobs:
         PY
 
     - name: Upload installable debug APK
-      if: github.event_name == 'workflow_dispatch'
+      if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'build/android-preview-20261124')
       uses: actions/upload-artifact@v4
       with:
         name: wasally-debug-apk
