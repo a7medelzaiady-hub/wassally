@@ -188,7 +188,7 @@ void main() {
       expect(second.restoredCount, 0);
     });
 
-    test('السلة الأقدم من 3 أيام بتتمسح، والحديثة بتفضل', () async {
+    test('السلال القديمة بتفضل محفوظة حتى يفرغها العميل', () async {
       final now = DateTime(2026, 11, 22, 12);
       final data = {
         'v': 1,
@@ -208,10 +208,10 @@ void main() {
       };
       final book = CartBook(CartModel(), storage: _MemoryStorage(jsonEncode(data)));
       await book.load(now: now);
-      expect(book.restoredCount, 1);
+      expect(book.restoredCount, 2);
       expect(book.parkedFor('new')!.count, 2);
-      expect(book.parkedFor('old'), isNull);
-      expect(book.active.isEmpty, isTrue);
+      expect(book.active.storeId, 'old');
+      expect(book.active.count, 1);
     });
 
     test('تخزين تالف ما يوقعش التطبيق', () async {
