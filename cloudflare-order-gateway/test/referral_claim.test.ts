@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideReferralClaim } from "../src/referral_claim";
+import { decideReferralClaim, REFERRAL_REGISTRATION_WINDOW_MS } from "../src/referral_claim";
 
 const record = {
   code: "ABC12345", inviterUid: "owner-1", channel: "customer" as const, active: true,
@@ -16,10 +16,28 @@ describe("server-verified first registration referral claims", () => {
     });
   });
 
-  it("accepts a claim exactly at the registration window boundary", () => {
+  it("accepts a claim after ten minutes within the 24-hour grace period", () => {
     expect(decideReferralClaim("ABC12345", record, {
-      ...evidence, claimAtMs: evidence.accountCreatedAtMs + evidence.registrationWindowMs,
+      ...evidence,
+      registrationWindowMs: REFERRAL_REGISTRATION_WINDOW_MS,
+      claimAtMs: evidence.accountCreatedAtMs + 10 * 60 * 1000,
     }).allowed).toBe(true);
+  });
+
+  it("accepts a claim exactly at the 24-hour window boundary", () => {
+    expect(decideReferralClaim("ABC12345", record, {
+      ...evidence,
+      registrationWindowMs: REFERRAL_REGISTRATION_WINDOW_MS,
+      claimAtMs: evidence.accountCreatedAtMs + REFERRAL_REGISTRATION_WINDOW_MS,
+    }).allowed).toBe(true);
+  });
+
+  it("rejects a claim after 24 hours", () => {
+    expect(decideReferralClaim("ABC12345", record, {
+      ...evidence,
+      registrationWindowMs: REFERRAL_REGISTRATION_WINDOW_MS,
+      claimAtMs: evidence.accountCreatedAtMs + REFERRAL_REGISTRATION_WINDOW_MS + 1,
+    })).toEqual({ allowed: false, reason: "not_first_registration" });
   });
 
   it.each([
@@ -33,7 +51,7 @@ describe("server-verified first registration referral claims", () => {
     ["existing attribution", "ABC12345", record, { ...evidence, alreadyAttributed: true }, "already_attributed"],
     ["old account", "ABC12345", record, { ...evidence, claimAtMs: 1100000 }, "not_first_registration"],
     ["future creation", "ABC12345", record, { ...evidence, claimAtMs: 999999 }, "not_first_registration"],
-    ["excessive window", "ABC12345", record, { ...evidence, registrationWindowMs: 3600001 }, "not_first_registration"],
+    ["excessive window", "ABC12345", record, { ...evidence, registrationWindowMs: REFERRAL_REGISTRATION_WINDOW_MS + 1 }, "not_first_registration"],
     ["zero creation timestamp", "ABC12345", record, { ...evidence, accountCreatedAtMs: 0 }, "not_first_registration"],
     ["fractional claim timestamp", "ABC12345", record, { ...evidence, claimAtMs: 1000000.5 }, "not_first_registration"],
     ["negative registration window", "ABC12345", record, { ...evidence, registrationWindowMs: -1 }, "not_first_registration"],
