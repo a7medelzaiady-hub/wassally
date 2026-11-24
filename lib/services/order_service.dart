@@ -484,6 +484,12 @@ class OrderService {
       }
     }
 
+    // أول ما يؤكد الخادم إنشاء الطلب، احفظ حالة السلة المرسلة قبل مسح
+    // مفتاح إعادة المحاولة، لتقليل خطر إرسال نفس الأصناف مرتين بعد تعطل التطبيق.
+    if (groupId != null) carts.markGroupedOrder(storeId);
+    cart.markSubmitted(ref.id);
+    await carts.flush();
+
     unawaited(OrderGateway.notifyEvent(ref.id, 'created'));
 
     try {
@@ -500,10 +506,6 @@ class OrderService {
       );
     } catch (_) {}
 
-    if (groupId != null) carts.markGroupedOrder(storeId);
-    cart.markSubmitted(ref.id);
-    // لا تمسح المنتجات. احفظ علامة الإرسال فورًا حتى بعد إعادة تشغيل التطبيق.
-    await carts.flush();
     return ref.id;
   }
 
