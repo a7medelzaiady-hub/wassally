@@ -18,6 +18,7 @@ vi.mock("jose", () => ({
 }));
 
 import worker from "../src/index";
+import { referralIdentityDocumentId } from "../src/referral_identity";
 
 const root = "projects/referral-test/databases/(default)/documents/";
 const env = {
@@ -25,6 +26,7 @@ const env = {
   FIREBASE_SERVICE_ACCOUNT_EMAIL: "test@example.com",
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "mock-key",
   REFERRAL_REGISTRATION_ENABLED: "true",
+  REFERRAL_IDENTITY_HMAC_KEY: "fake-secret-for-automated-tests-only-0123456789",
   APP_CHECK_MODE: "off",
 };
 
@@ -65,7 +67,16 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
     }
     if (url.endsWith(":lookup")) {
       expect(body.localId).toEqual([uid]);
-      return Response.json({ users: [{ localId: uid, createdAt: String(created), lastLoginAt: String(created), validSince: "1" }] });
+      return Response.json({ users: [{
+        localId: uid, createdAt: String(created), lastLoginAt: String(created), validSince: "1",
+        providerUserInfo: [{ providerId: "google.com", rawId: "google-subject-" + uid }],
+      }] });
+    }
+    if (url.includes("/documents/referral_deleted_identities/") &&
+        (!init?.method || init.method === "GET")) {
+      const path = url.split("/documents/")[1];
+      const fields = docs[path];
+      return fields ? Response.json({ name: root + path, fields }) : new Response("", { status: 404 });
     }
     if (url.endsWith(":beginTransaction")) return Response.json({ transaction: "abc" });
     expect(body.transaction).toBe("abc");
@@ -103,6 +114,27 @@ it("rejects a later login before opening a Firestore transaction", async () => {
   const { fetchMock } = setup("returning-client", "customer", 10_000);
   expect((await call("returning-client")).status).toBe(403);
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(":beginTransaction"))).toBe(false);
+});
+
+it("blocks an account recreated from a deleted Google identity even with a new Firebase UID", async () => {
+  const { docs, saves, fetchMock } = setup("firebase-new-uid");
+  const googleSubject = "google-subject-firebase-new-uid";
+  const digest = await referralIdentityDocumentId(env.REFERRAL_IDENTITY_HMAC_KEY, googleSubject);
+  docs[`referral_deleted_identities/${digest}`] = {
+    reason: { stringValue: "deleted_account_referral_prevention" },
+    expiresAt: { timestampValue: new Date(Date.now() + 86400000).toISOString() },
+  };
+  const result = await call("firebase-new-uid");
+  expect(result.status).toBe(403);
+  expect((await result.json()).error).toContain("حذف الحساب");
+  expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(":beginTransaction"))).toBe(false);
+  expect(saves).toHaveLength(0);
+});
+
+it("does not block a brand-new Google identity with no deletion marker", async () => {
+  const { saves } = setup("different-firebase-user");
+  expect((await call("different-firebase-user")).status).toBe(200);
+  expect(saves).toHaveLength(1);
 });
 
 it("requires a marketer code issued by an administrator", async () => {
