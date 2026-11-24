@@ -16,9 +16,9 @@ class ThemeController extends ChangeNotifier {
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Apply the requested green branding to existing installs too.
-      Brand.palette = AppPalette.green;
-      await prefs.setString(_key, AppPalette.green.id);
+      // Keep the approved navy-and-orange Wasally identity on upgrades too.
+      Brand.palette = AppPalette.wasally;
+      await prefs.setString(_key, AppPalette.wasally.id);
     } catch (_) {
       // لو فشلت القراءة بنكمّل بالسمة الافتراضية.
     }

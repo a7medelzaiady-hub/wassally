@@ -57,7 +57,8 @@ ThemeData buildAppTheme() {
     cardTheme: CardThemeData(
       color: scheme.surface,
       surfaceTintColor: Colors.transparent,
-      elevation: 0,
+      elevation: 2,
+      shadowColor: kInk.withValues(alpha: 0.12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: kLine),
@@ -71,12 +72,12 @@ ThemeData buildAppTheme() {
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: kPrimary),
     appBarTheme: AppBarTheme(
-      backgroundColor: Colors.white,
-      foregroundColor: kInk,
+      backgroundColor: kInk,
+      foregroundColor: Colors.white,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: true,
-      titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+      titleTextStyle: text.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
