@@ -1093,15 +1093,15 @@ class _HomePageState extends State<HomePage>
                         constraints: const BoxConstraints(maxWidth: 150),
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD6F24B),
+                          color: Brand.palette.soft,
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Text(
                           badge,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF1B1D22),
+                          style: TextStyle(
+                            color: Brand.ink,
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                           ),
