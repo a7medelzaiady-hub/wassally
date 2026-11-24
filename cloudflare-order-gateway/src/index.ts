@@ -6,6 +6,7 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
+import { REFERRAL_REGISTRATION_WINDOW_MS } from "./referral_claim";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -465,9 +466,16 @@ async function verifyCustomer(request: Request, env: Env, firstRegistration = fa
   if (firstRegistration) {
     const createdAtMs = firebaseUserStateCache.get(payload.sub)?.createdAtMs ?? 0;
     const age = Date.now() - createdAtMs;
-    if (!Number.isSafeInteger(createdAtMs) || age < 0 || age > 300_000 ||
-        Number(payload.auth_time) !== Math.floor(createdAtMs / 1000)) {
-      throw new HttpError(403, "كود الإحالة متاح عند التسجيل الأول فقط.");
+    // Firebase Auth is authoritative for the account creation timestamp;
+    // a valid later Google sign-in is still eligible during the 24-hour grace
+    // period. A user can't register a code after that period or change one
+    // already recorded in Firestore.
+    const authTimeMs = Number(payload.auth_time) * 1000;
+    if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0 ||
+        !Number.isSafeInteger(authTimeMs) ||
+        authTimeMs < createdAtMs - 2_000 ||
+        age < 0 || age > REFERRAL_REGISTRATION_WINDOW_MS) {
+      throw new HttpError(403, "كود الإحالة متاح خلال أول ٢٤ ساعة من إنشاء الحساب فقط.");
     }
   }
   return payload.sub;
