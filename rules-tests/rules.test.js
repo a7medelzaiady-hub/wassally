@@ -52,6 +52,24 @@ test('auth: Firestore rejects email/password sessions when Google-only login is 
 });
 
 
+test('referral deletion marker: no client (including admin) can read or write fingerprint', async () => {
+  const digest = 'a'.repeat(64);
+  const path = `referral_deleted_identities/${digest}`;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), path), {
+      reason: 'deleted_account_referral_prevention',
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+  });
+  for (const uid of ['cust1', 'admin1']) {
+    const db = as(uid);
+    await assertFails(getDoc(doc(db, path)));
+    await assertFails(setDoc(doc(db, path), { reason: 'tampered' }));
+    await assertFails(updateDoc(doc(db, path), { reason: 'tampered' }));
+    await assertFails(deleteDoc(doc(db, path)));
+  }
+});
+
 test('users: whitelist يمنع حقول غريبة', async () => {
   const db = as('cust1');
   await assertSucceeds(setDoc(doc(db, 'users/cust1'), { name: 'Ali', phone: '010', address: 'x' }, { merge: true }));
