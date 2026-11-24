@@ -15,6 +15,11 @@ on:
       - 'cloudflare-order-gateway/test/referral*.test.ts'
       - 'cloudflare-order-gateway/package*.json'
       - '.github/workflows/referral-worker-validation.yml'
+      - 'lib/screens/referral_campaign_page.dart'
+      - 'lib/services/order_gateway.dart'
+      - 'test/brand_and_referral_preview_test.dart'
+      - '.github/workflows/flutter.yml'
+      - '.github/workflows/release-aab.yml'
   workflow_dispatch:
 
 permissions:
