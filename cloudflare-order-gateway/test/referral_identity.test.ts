@@ -7,6 +7,10 @@ import {
   identityMarkerExpiresAt,
   isActiveDeletedIdentity,
   referralIdentityDocumentId,
+  referralDeviceDocumentId,
+  referralDeviceOwnerDigest,
+  referralDeviceEligibility,
+  isValidAndroidSsaid,
 } from "../src/referral_identity";
 import { pruneExpiredDeletedReferralIdentities } from "../src/referral_identity_prune";
 
@@ -57,6 +61,38 @@ describe("private anti-repeat-referral marker", () => {
       .toBe(false);
     expect(isActiveDeletedIdentity({ expiresAt: "invalid" }, now)).toBe(true);
     expect(isActiveDeletedIdentity(null, now)).toBe(false);
+  });
+});
+
+describe("one Google account per scoped Android device for referral awards", () => {
+  const device = "a1b2c3d4e5f60718";
+  const now = new Date("2026-11-24T12:00:00Z");
+
+  it("produces stable device HMACs while never persisting raw Android IDs", async () => {
+    const id = await referralDeviceDocumentId(KEY, device);
+    expect(id).toMatch(/^[a-f0-9]{64}$/);
+    expect(id).not.toContain(device);
+    expect(await referralDeviceDocumentId(KEY, device.toUpperCase())).toBe(id);
+    expect(await referralDeviceDocumentId(KEY, "ffffffffffffffff")).not.toBe(id);
+    expect(await referralDeviceOwnerDigest(KEY, "google-subject-first")).not.toBe(
+      await referralDeviceOwnerDigest(KEY, "google-subject-second")
+    );
+    expect(isValidAndroidSsaid(device)).toBe(true);
+    expect(isValidAndroidSsaid("0000000000000000")).toBe(false);
+    expect(isValidAndroidSsaid("9774d56d682e549c")).toBe(false);
+    expect(isValidAndroidSsaid("invalid")).toBe(false);
+  });
+
+  it("permits one Google owner and denies another on the same active device", () => {
+    const first = "a".repeat(64), second = "b".repeat(64);
+    const record = { googleOwnerDigest: first, expiresAt: identityMarkerExpiresAt(now) };
+    expect(referralDeviceEligibility(null, first, now)).toBe("create");
+    expect(referralDeviceEligibility(record, first, now)).toBe("same");
+    expect(referralDeviceEligibility(record, second, now)).toBe("block");
+    expect(referralDeviceEligibility({ googleOwnerDigest: first }, second, now)).toBe("block");
+    expect(referralDeviceEligibility(
+      { googleOwnerDigest: first, expiresAt: new Date(now.getTime() - 1000) },
+      second, now)).toBe("replace-expired");
   });
 });
 
