@@ -113,9 +113,14 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
 afterEach(() => vi.restoreAllMocks());
 
 it("binds the first registration once and accepts a retry of the same code", async () => {
-  const { saves } = setup("new-client");
+  const { saves, fetchMock } = setup("new-client");
   const firstClaim = await call("new-client", " abc123 ");
-  expect(firstClaim.status, JSON.stringify(await firstClaim.json())).toBe(200);
+  expect(firstClaim.status,
+    JSON.stringify(await firstClaim.json()) +
+    " requests=" + fetchMock.mock.calls.map(([url, init]) =>
+      String(url).split("/").slice(-2).join("/") + ":" + (init?.method ?? "GET")
+    ).join(",")
+  ).toBe(200);
   expect((await call("new-client")).status).toBe(200);
   expect((await call("new-client", "OTHER1")).status).toBe(409);
   expect(saves).toHaveLength(1);
@@ -150,7 +155,12 @@ it("reserves a shared phone for the first Google identity, blocks a second Googl
       body: JSON.stringify({ deviceId }),
     }), env as never);
   const first = await bind(firstUid);
-  expect(first.status, JSON.stringify(await first.clone().json())).toBe(200);
+  expect(first.status,
+    JSON.stringify(await first.clone().json()) +
+    " requests=" + fetchMock.mock.calls.map(([url, init]) =>
+      String(url).split("/").slice(-2).join("/") + ":" + (init?.method ?? "GET")
+    ).join(",")
+  ).toBe(200);
   expect((await first.json() as { eligible: boolean }).eligible).toBe(true);
   const again = await bind(firstUid);
   expect((await again.json() as { eligible: boolean }).eligible).toBe(true);
