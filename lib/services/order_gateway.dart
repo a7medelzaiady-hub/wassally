@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'performance_monitor.dart';
+import 'referral_device.dart';
 
 /// عنوان بوابة الطلبات الموثوقة يمرر وقت البناء، ولا يحتوي أي أسرار.
 class OrderGateway {
@@ -181,15 +182,61 @@ class OrderGateway {
     );
   }
 
+  /// Associates a verified Google account with one Android device for
+  /// first-time invitation eligibility. Safe for repeat login. No Firestore
+  /// listener or paid service; other Google accounts can still sign in.
+  static String? _referralDeviceBoundUid;
+  static Future<bool>? _referralDeviceBinding;
+
+  static Future<bool> registerReferralDevice() async {
+    if (!referralCampaignEnabled) return false;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    if (_referralDeviceBoundUid == uid && _referralDeviceBinding == null) {
+      return true;
+    }
+    if (_referralDeviceBoundUid == uid && _referralDeviceBinding != null) {
+      return _referralDeviceBinding!;
+    }
+    _referralDeviceBoundUid = uid;
+    final pending = _performReferralDeviceBinding();
+    _referralDeviceBinding = pending;
+    try {
+      final allowed = await pending;
+      if (!allowed) _referralDeviceBoundUid = null;
+      return allowed;
+    } catch (_) {
+      _referralDeviceBoundUid = null;
+      rethrow;
+    } finally {
+      _referralDeviceBinding = null;
+    }
+  }
+
+  static Future<bool> _performReferralDeviceBinding() async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null || token.isEmpty) throw StateError('سجّل الدخول من جديد.');
+    final deviceId = await ReferralDevice.androidScopedId();
+    final result = await _request(
+      idToken: token,
+      method: 'POST',
+      path: '/v1/referrals/device-binding',
+      payload: {'deviceId': deviceId},
+      connectivityMessage: 'تعذر الاتصال بخدمة حماية الدعوات.',
+    );
+    return result['eligible'] == true;
+  }
+
   static Future<void> claimRegistrationReferral({
     required String idToken,
     required String code,
   }) async {
+    final deviceId = await ReferralDevice.androidScopedId();
     final body = await _request(
       idToken: idToken,
       method: 'POST',
       path: '/v1/referrals/registration',
-      payload: {'code': code},
+      payload: {'code': code, 'deviceId': deviceId},
       connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
     );
     if (body['accepted'] != true) {
