@@ -2298,7 +2298,12 @@ export default {
     const deletedCount = await pruneExpiredDeletedReferralIdentities(
       env.FIREBASE_PROJECT_ID, token, fetch,
     );
-    if (deletedCount) console.info("Expired referral markers deleted", deletedCount);
+    const expiredDevices = await pruneExpiredDeletedReferralIdentities(
+      env.FIREBASE_PROJECT_ID, token, fetch, new Date(), 10, REFERRAL_DEVICE_COLLECTION,
+    );
+    if (deletedCount || expiredDevices) {
+      console.info("Expired referral protection markers deleted", deletedCount + expiredDevices);
+    }
   },
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let headers: Headers;
