@@ -222,10 +222,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: selected ? Brand.green : Brand.ink,
+              Icon(icon, color: selected ? const Color(0xFF38156D) : Brand.ink,
                 size: selected ? 31 : 25),
               Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: selected ? Brand.green : Brand.ink,
+                style: TextStyle(color: selected ? const Color(0xFF38156D) : Brand.ink,
                   fontSize: 11, fontWeight: FontWeight.w800)),
             ],
           ),
@@ -241,9 +241,9 @@ class _CustomerEntryState extends State<CustomerEntry> {
     final isCustomer = widget.dashboard == null;
     final availableHeight = MediaQuery.sizeOf(context).height - MediaQuery.paddingOf(context).vertical - MediaQuery.viewPaddingOf(context).bottom - 92;
     final compact = availableHeight < 800;
-    final heroHeight = compact ? 158.0 : 236.0;
-    final cardHeight = compact ? 112.0 : 146.0;
-    final cardGap = compact ? 7.0 : 14.0;
+    final heroHeight = compact ? 188.0 : 236.0;
+    final cardHeight = compact ? 138.0 : 164.0;
+    final cardGap = compact ? 12.0 : 16.0;
     return Scaffold(
       backgroundColor: Brand.bg,
       body: SafeArea(
@@ -253,7 +253,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           // Keep accessibility scrolling available on small screens while
           // the compact layout fits all three service cards on standard phones.
           physics: const ClampingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(12, compact ? 6 : 12, 12, compact ? 6 : 14),
+          padding: EdgeInsets.fromLTRB(12, compact ? 10 : 12, 12, compact ? 12 : 14),
           children: [
             _hero(height: heroHeight),
             SizedBox(height: compact ? 8 : 16),
@@ -261,7 +261,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
             // first-registration dialog. Returning users see no fake field.
             _serviceCard(
               title: 'خدمة وصّلي ع السريع',
-              subtitle: 'سجل اللى عاوزه ونوصلهولك بسرعة',
+              subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
               action: 'اطلب الآن',
               icon: Icons.bolt_rounded,
               art: const Rect.fromLTWH(20, 541, 303, 195),
