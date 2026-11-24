@@ -114,17 +114,17 @@ class AppPalette {
 
   static const wasally = AppPalette(
     id: 'wasally',
-    name: 'وصّلي الأصلي',
+    name: 'وصّلي - برتقالي وبنفسجي ملكي',
     primary: Color(0xFFFF7900),
     primaryDark: Color(0xFFE65F00),
     primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF102344),
-    accentDeep: Color(0xFF08182F),
-    bg: Color(0xFFF5F6FA),
-    ink: Color(0xFF102344),
+    accent: Color(0xFF512DA8),
+    accentDeep: Color(0xFF381B78),
+    bg: Color(0xFFF7F7FA),
+    ink: Color(0xFF19243B),
     muted: Color(0xFF69758B),
-    line: Color(0xFFE0E5ED),
-    soft: Color(0xFFFFE9D5),
+    line: Color(0xFFE6E1F0),
+    soft: Color(0xFFF1EBFA),
   );
 
   // Approved identity is fixed for every role; legacy definitions are kept
