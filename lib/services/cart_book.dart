@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/product.dart';
@@ -17,18 +18,29 @@ abstract class CartStorage {
 
 class PrefsCartStorage implements CartStorage {
   const PrefsCartStorage();
-  static const String key = 'wasally_carts_v1';
+  // بيانات كل حساب منفصلة؛ التخزين القديم المشترك لا يُحمّل بين حسابات جوجل.
+  static const String key = 'wasally_carts_v2';
+  String? get _accountKey {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid == null ? null : '${key}_$uid';
+  }
 
   @override
-  Future<String?> read() async => (await SharedPreferences.getInstance()).getString(key);
+  Future<String?> read() async {
+    final accountKey = _accountKey;
+    if (accountKey == null) return null;
+    return (await SharedPreferences.getInstance()).getString(accountKey);
+  }
 
   @override
   Future<void> write(String? value) async {
+    final accountKey = _accountKey;
+    if (accountKey == null) return;
     final prefs = await SharedPreferences.getInstance();
     if (value == null) {
-      await prefs.remove(key);
+      await prefs.remove(accountKey);
     } else {
-      await prefs.setString(key, value);
+      await prefs.setString(accountKey, value);
     }
   }
 }
@@ -54,6 +66,7 @@ class CartBook extends ChangeNotifier {
   bool _loaded = false;
   bool _saving = false;
   bool _saveAgain = false;
+  Future<void>? _saveFuture;
 
   /// عدد السلال اللي رجعت من آخر مرة (للتنبيه). بيتصفر لما العميل يشوف «سلّاتي».
   int restoredCount = 0;
@@ -160,7 +173,7 @@ class CartBook extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// تسجيل خروج: كل السلال تتمسح (من الموبايل كمان).
+  /// تفريغ صريح للحساب الحالي (وحذف الحساب إن طلب العميل).
   void clearAll() {
     _groupId = null;
     _groupStartedAt = null;
@@ -172,6 +185,37 @@ class CartBook extends ChangeNotifier {
     active.clear();
     notifyListeners();
     _scheduleSave();
+  }
+
+  /// انتظر وصول آخر تعديل إلى التخزين قبل تبديل حساب جوجل.
+  Future<void> flush() async {
+    final pending = _saveFuture;
+    if (pending != null) await pending;
+  }
+
+  void _resetInMemory() {
+    _loaded = false;
+    _parked.clear();
+    _touched.clear();
+    _stores.clear();
+    _groupId = null;
+    _groupStartedAt = null;
+    _groupStores.clear();
+    restoredCount = 0;
+    active.clear(); // _loaded=false: لا يمسح سلة الحساب المحفوظة.
+    notifyListeners();
+  }
+
+  /// تبديل المستخدم: نفصل الذاكرة فقط ونبقي سلة الحساب السابق محفوظة.
+  Future<void> detachForSignOut() async {
+    await flush();
+    _resetInMemory();
+  }
+
+  Future<void> attachAfterSignIn() async {
+    await flush();
+    _resetInMemory();
+    await load();
   }
 
   void _onActiveChanged() {
@@ -228,7 +272,7 @@ class CartBook extends ChangeNotifier {
       return;
     }
     _saving = true;
-    unawaited(_save());
+    _saveFuture = _save();
   }
 
   Future<void> _save() async {
@@ -292,6 +336,7 @@ Map<String, dynamic> encodeCarts(
             'fee': c.fee,
             'promoCode': c.promoCode,
             'promoPercent': c.promoPercent,
+            if (c.submittedOrderId != null) 'submittedOrderId': c.submittedOrderId,
             if (c.specialRequest != null && _jsonSafe(c.specialRequest!)) 'special': c.specialRequest,
             'items': [for (final e in c.items.entries) _encodeLine(e.key, e.value)],
           },
@@ -351,6 +396,8 @@ Map<String, StoredCart> decodeCarts(Object? data, {required DateTime now}) {
         fee: fee is num ? fee.toDouble() : CartModel.deliveryFee,
         promoCode: (raw['promoCode'] ?? '').toString(),
         promoPercent: promo is num ? promo.toDouble() : 0,
+        submittedOrderId: (raw['submittedOrderId'] as String?)?.trim().isNotEmpty == true
+            ? raw['submittedOrderId'] as String : null,
       ),
       touchedAt,
     );
