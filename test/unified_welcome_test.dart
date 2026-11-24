@@ -19,6 +19,17 @@ void main() {
     ));
     await tester.pump();
 
+    // The approved entry hero uses royal purple, not the legacy navy palette.
+    final purpleHero = find.byWidgetPredicate((widget) {
+      if (widget is! Container) return false;
+      final decoration = widget.decoration;
+      if (decoration is! BoxDecoration) return false;
+      final gradient = decoration.gradient;
+      return gradient is LinearGradient &&
+          gradient.colors.contains(const Color(0xFF6530A5)) &&
+          gradient.colors.contains(const Color(0xFF38156D));
+    });
+    expect(purpleHero, findsOneWidget);
     expect(find.text('كل اللي بتحبه...'), findsOneWidget);
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
