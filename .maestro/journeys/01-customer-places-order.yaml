@@ -8,14 +8,12 @@ appId: com.wassally.app
     visible: "دخول تجريبي: عميل"
     timeout: 60000
 - tapOn: "دخول تجريبي: عميل"
-- extendedWaitUntil:
-    visible: "مش دلوقتي"
-    timeout: 60000
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
-    visible: "كل المحلات"
+    visible: "(?s).*تصفح المحلات.*"
     timeout: 90000
-- tapOn: "كل المحلات"
+- tapOn: "(?s).*تصفح المحلات.*"
+- runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
     visible: ".*متجر الاختبار.*"
     timeout: 90000

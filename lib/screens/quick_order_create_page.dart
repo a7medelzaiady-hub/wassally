@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/quick_price_guide.dart';
+import '../theme/brand.dart';
 import '../services/user_service.dart';
 import 'quick_order_customer_detail_page.dart';
 import '../services/quick_order_api.dart';
@@ -119,7 +120,15 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('طلباتك على السريع')),
+    appBar: AppBar(
+      backgroundColor: Brand.ink,
+      foregroundColor: Colors.white,
+      titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w800,
+      ),
+      title: const Text('طلباتك على السريع'),
+    ),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
