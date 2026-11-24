@@ -17,15 +17,31 @@ void main() {
       isWithinReferralRegistrationWindow(
         accountCreatedAt: created,
         lastSignInAt: created,
-        now: created.add(const Duration(minutes: 6)),
+        now: created.add(const Duration(minutes: 10)),
       ),
-      isFalse,
+      isTrue,
     );
     expect(
       isWithinReferralRegistrationWindow(
         accountCreatedAt: created,
-        lastSignInAt: created.add(const Duration(minutes: 1)),
-        now: created.add(const Duration(minutes: 2)),
+        lastSignInAt: created.add(const Duration(minutes: 10)),
+        now: created.add(const Duration(minutes: 11)),
+      ),
+      isTrue,
+    );
+    expect(
+      isWithinReferralRegistrationWindow(
+        accountCreatedAt: created,
+        lastSignInAt: created,
+        now: created.add(const Duration(hours: 24)),
+      ),
+      isTrue,
+    );
+    expect(
+      isWithinReferralRegistrationWindow(
+        accountCreatedAt: created,
+        lastSignInAt: created,
+        now: created.add(const Duration(hours: 24, seconds: 1)),
       ),
       isFalse,
     );
