@@ -304,7 +304,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                 child: Card(
                   clipBehavior: Clip.antiAlias,
                   child: ListTile(
-                    leading: const Icon(Icons.grid_view_rounded, color: Color(0xFF087653)),
+                    leading: Icon(Icons.grid_view_rounded, color: kPrimary),
                     title: const Text('أدوات الإدارة', style: TextStyle(fontWeight: FontWeight.w800)),
                     subtitle: const Text('المحلات، المناديب، الصلاحيات والتقارير'),
                     trailing: const Icon(Icons.chevron_left_rounded),
