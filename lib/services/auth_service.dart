@@ -19,20 +19,37 @@ class AuthService {
 
   static bool _googleInitialized = false;
 
+  /// Ephemeral invite onboarding shown only for a brand-new Google account.
+  /// No pending invitation is restored for users who registered previously.
+  static final ValueNotifier<String?> newAccountInvitation = ValueNotifier(null);
+
+  static void _onGoogleLogin(UserCredential credential) {
+    newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
+        ? credential.user?.uid
+        : null;
+  }
+
+  static void dismissNewAccountInvitation(String uid) {
+    if (newAccountInvitation.value == uid) {
+      newAccountInvitation.value = null;
+    }
+  }
+
+
   /// تسجيل الدخول بجوجل.
   /// - ويب: نافذة منبثقة.
   /// - أندرويد: نافذة جوجل الأصلية المنبثقة لاختيار الحساب، بدون متصفح خارجي وبدون
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
   static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        await _nativeGoogleSignIn();
+        _onGoogleLogin(await _nativeGoogleSignIn());
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -51,7 +68,7 @@ class AuthService {
         );
       }
     }
-    await _providerSignInWithRetry();
+    _onGoogleLogin(await _providerSignInWithRetry());
   }
 
   static Future<UserCredential> _nativeGoogleSignIn() async {
@@ -101,6 +118,7 @@ class AuthService {
   /// لو اتبعت context بنقفل أي شاشات مفتوحة فوق البوابة (زي "عرض كعميل")
   /// قبل الخروج، عشان متفضلش ظاهرة بعد تسجيل الخروج.
   static Future<void> signOut([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     if (context != null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -120,6 +138,7 @@ class AuthService {
 
   /// حذف الحساب نهائيًا بعد إعادة تأكيد الهوية وتنظيف البيانات عبر Worker.
   static Future<void> deleteAccount([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     final initialUser = FirebaseAuth.instance.currentUser;
     if (initialUser == null) return;
     if (!OrderGateway.isConfigured) {
