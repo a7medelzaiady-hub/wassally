@@ -26,11 +26,11 @@ void main() {
       if (decoration is! BoxDecoration) return false;
       final gradient = decoration.gradient;
       return gradient is LinearGradient &&
-          gradient.colors.contains(const Color(0xFF6530A5)) &&
-          gradient.colors.contains(const Color(0xFF38156D));
+          gradient.colors.contains(const Color(0xFF38156D)) &&
+          gradient.colors.contains(const Color(0xFF24104F));
     });
     expect(purpleHero, findsOneWidget);
-    expect(find.text('كل اللي بتحبه...'), findsOneWidget);
+    expect(find.text('وصّلي...\\nلحد عندي'), findsOneWidget);
     // Approved five-slot navigation with the cart in the middle.
     expect(find.text('السلة'), findsOneWidget);
     expect(find.text('المفضلة'), findsOneWidget);
