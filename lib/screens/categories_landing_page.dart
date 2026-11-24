@@ -81,10 +81,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
       Expanded(flex: 5, child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Text('وصّلي...\\nلحد عندي', textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white, fontSize: 27,
+          Text('وصّلي...\\nلحد عندي', textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white, fontSize: height < 190 ? 21 : 27,
               fontWeight: FontWeight.w900, height: 1.15)),
-          const SizedBox(height: 12),
+          SizedBox(height: height < 190 ? 5 : 12),
           FilledButton(
             onPressed: () => _enter(const QuickOrderCreatePage()),
             style: FilledButton.styleFrom(backgroundColor: Brand.palette.primary),
@@ -315,9 +315,9 @@ class _CustomerEntryState extends State<CustomerEntry> {
                   child: InkWell(
                     onTap: () => isCustomer ? _enter(null, 1) : _enter(),
                     child: Transform.translate(
-                      offset: const Offset(0, -13),
+                      offset: const Offset(0, -8),
                       child: Container(
-                        height: 67,
+                        height: 52,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           gradient: LinearGradient(colors: [
@@ -327,7 +327,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                         ),
                         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(isCustomer ? Icons.shopping_cart_outlined : Icons.dashboard_outlined,
-                            color: Colors.white, size: 27),
+                            color: Colors.white, size: 21),
                           Text(isCustomer ? 'السلة' : 'لوحتي',
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
                         ]),
