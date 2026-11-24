@@ -37,14 +37,12 @@ class PrefsCartStorage implements CartStorage {
 /// والسلال التانية محفوظة هنا. كل سلة بتتطلب كطلب مستقل بنظام الطلبات الحالي.
 ///
 /// كل السلال بتتحفظ على موبايل العميل (مش Firebase، فمفيش تكلفة) وبترجع لما يفتح التطبيق تاني،
-/// لمدة [keepFor] من آخر تعديل في كل سلة. الأسعار بتتراجع من قائمة المحل لما يفتحه،
+/// بدون انتهاء تلقائي حسب العمر؛ والأسعار بتتراجع من قائمة المحل لما يفتحه،
 /// والسيرفر بيراجعها تاني وقت الطلب.
 class CartBook extends ChangeNotifier {
   CartBook(this.active, {CartStorage storage = const PrefsCartStorage()}) : _storage = storage {
     active.addListener(_onActiveChanged);
   }
-
-  static const Duration keepFor = Duration(days: 3);
 
   /// السلة الحالية (نفس [cart] في التطبيق).
   final CartModel active;
@@ -189,7 +187,7 @@ class CartBook extends ChangeNotifier {
   }
 
   /// بيرجّع السلال المحفوظة على الموبايل (مرة واحدة عند فتح التطبيق).
-  /// السلال الأقدم من [keepFor] بتتمسح. أي خطأ = نبدأ من غير سلال (السلة مش حاجة حساسة).
+  /// لا نحذف السلال بسبب الوقت. أي بيانات تالفة لا تُستعاد.
   Future<void> load({DateTime? now}) async {
     if (_loaded) return;
     try {
@@ -301,7 +299,7 @@ Map<String, dynamic> encodeCarts(
   };
 }
 
-/// قراءة السلال المحفوظة. السلة الأقدم من [CartBook.keepFor] أو التالفة بتتشال.
+/// قراءة السلال المحفوظة. لا تُحذف السلال بسبب العمر؛ غير الصالح فقط يُتجاهل.
 Map<String, StoredCart> decodeCarts(Object? data, {required DateTime now}) {
   final result = <String, StoredCart>{};
   if (data is! Map || data['v'] != 1 || data['carts'] is! List) return result;
@@ -309,7 +307,7 @@ Map<String, StoredCart> decodeCarts(Object? data, {required DateTime now}) {
     if (raw is! Map) continue;
     final storeId = (raw['storeId'] ?? '').toString();
     final touchedAt = DateTime.tryParse((raw['touchedAt'] ?? '').toString());
-    if (storeId.isEmpty || touchedAt == null || now.difference(touchedAt) > CartBook.keepFor) continue;
+    if (storeId.isEmpty || touchedAt == null) continue;
     final items = <Product, int>{};
     if (raw['items'] is List) {
       for (final line in raw['items'] as List) {
