@@ -284,22 +284,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
           children: [
             _hero(height: heroHeight),
             SizedBox(height: compact ? 8 : 16),
-            // Referral redemption is deliberately restricted to the first
-            // account creation. RoleGate owns the secure Worker-backed dialog;
-            // never show a misleading editable field to existing accounts.
-            Container(
-              height: compact ? 42 : 52,
-              margin: EdgeInsets.only(bottom: compact ? 8 : 14),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), border: Border.all(color: Brand.palette.line)),
-              child: Row(children: [
-                const SizedBox(width: 14),
-                Icon(Icons.card_giftcard_rounded, color: Brand.palette.accent),
-                const SizedBox(width: 10),
-                Expanded(child: Text('كود الدعوة متاح عند إنشاء حساب جديد فقط',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Brand.palette.muted, fontSize: compact ? 11 : 13, fontWeight: FontWeight.w800))),
-              ]),
-            ),
+            // Referral code entry is shown exclusively in RoleGate's secure
+            // first-registration dialog. Returning users see no fake field.
             _serviceCard(
               title: 'خدمة وصّلي ع السريع',
               subtitle: 'سجل اللى عاوزه ونوصلهولك بسرعة',
