@@ -21,7 +21,7 @@ void main() {
     expect(buildAppTheme().appBarTheme.backgroundColor, AppPalette.wasally.ink);
   });
 
-  testWidgets('دخول جوجل يظهر إدخال كود الإحالة فقط في بناء الحملة',
+  testWidgets('شاشة جوجل لا تعرض إدخال كود الإحالة',
       (tester) async {
     tester.view.physicalSize = const Size(430, 940);
     tester.view.devicePixelRatio = 1;
@@ -37,7 +37,7 @@ void main() {
 
     expect(
       find.text('عندي كود إحالة'),
-      OrderGateway.referralCampaignEnabled ? findsOneWidget : findsNothing,
+      findsNothing,
     );
     expect(tester.takeException(), isNull);
   });
