@@ -64,7 +64,7 @@ void main() {
     ));
     await tester.pump();
     expect(find.text('كود الدعوة متاح عند إنشاء حساب جديد فقط'),
-        findsOneWidget);
+        findsNothing);
     expect(find.text('اكتب هنا كود الدعوة'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -85,6 +85,7 @@ void main() {
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
+    expect(find.text('تصفح المحلات').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
