@@ -31,17 +31,34 @@ class CartModel extends ChangeNotifier {
   void setArea(String name, double newFee) {
     area = name;
     fee = newFee;
+    _submittedOrderId = null;
     notifyListeners();
   }
 
   void setPromo(String code, double percent) {
     promoCode = code;
     promoPercent = percent;
+    _submittedOrderId = null;
     notifyListeners();
   }
 
   final Map<Product, int> _items = {};
   Map<String, dynamic>? _specialRequest;
+  String? _submittedOrderId;
+
+  /// آخر طلب ناجح أُرسل بنفس محتويات السلة؛ يمنع الإرسال المكرر.
+  String? get submittedOrderId => _submittedOrderId;
+
+  void markSubmitted(String orderId) {
+    _submittedOrderId = orderId;
+    notifyListeners();
+  }
+
+  /// يبدأ طلبًا جديدًا بنفس الأصناف بإجراء صريح من العميل.
+  void beginNewOrder() {
+    _submittedOrderId = null;
+    notifyListeners();
+  }
 
   Map<String, dynamic>? get specialRequest => _specialRequest == null
       ? null
@@ -56,12 +73,14 @@ class CartModel extends ChangeNotifier {
     _storeId = storeId;
     _storeName = storeName;
     _specialRequest = Map<String, dynamic>.from(request);
+    _submittedOrderId = null;
     notifyListeners();
     return true;
   }
 
   void clearSpecialRequest() {
     _specialRequest = null;
+    _submittedOrderId = null;
     if (_items.isEmpty) {
       _storeId = null;
       _storeName = null;
@@ -103,11 +122,13 @@ class CartModel extends ChangeNotifier {
     _storeId = storeId;
     _storeName = storeName;
     _items[p] = (_items[p] ?? 0) + qty;
+    _submittedOrderId = null;
     notifyListeners();
     return true;
   }
 
   void remove(Product p) {
+    _submittedOrderId = null;
     final current = _items[p] ?? 0;
     if (current <= 1) {
       _items.remove(p);
@@ -123,6 +144,7 @@ class CartModel extends ChangeNotifier {
 
   /// حذف الصنف بالكامل من السلة.
   void removeItem(Product p) {
+    _submittedOrderId = null;
     _items.remove(p);
     if (_items.isEmpty && _specialRequest == null) {
       _storeId = null;
@@ -162,6 +184,7 @@ class CartModel extends ChangeNotifier {
       next[updated] = (next[updated] ?? 0) + e.value;
     }
     if (changes.isEmpty) return const [];
+    _submittedOrderId = null;
     _items
       ..clear()
       ..addAll(next);
@@ -183,6 +206,7 @@ class CartModel extends ChangeNotifier {
         fee: fee,
         promoCode: promoCode,
         promoPercent: promoPercent,
+        submittedOrderId: _submittedOrderId,
       );
 
   /// يرجّع سلة محفوظة كسلة حالية (بيستبدل اللي في السلة دلوقتي).
@@ -197,10 +221,12 @@ class CartModel extends ChangeNotifier {
     fee = s.fee;
     promoCode = s.promoCode;
     promoPercent = s.promoPercent;
+    _submittedOrderId = s.submittedOrderId;
     notifyListeners();
   }
 
   void clear() {
+    _submittedOrderId = null;
     promoCode = '';
     promoPercent = 0;
     _items.clear();
@@ -221,6 +247,7 @@ class CartSnapshot {
   final double fee;
   final String promoCode;
   final double promoPercent;
+  final String? submittedOrderId;
 
   const CartSnapshot.fromParts({
     required this.storeId,
@@ -231,6 +258,7 @@ class CartSnapshot {
     required this.fee,
     required this.promoCode,
     required this.promoPercent,
+    this.submittedOrderId,
   });
 
   bool get isEmpty => items.isEmpty && specialRequest == null;
