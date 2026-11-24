@@ -27,6 +27,7 @@ const env = {
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: "mock-key",
   REFERRAL_REGISTRATION_ENABLED: "true",
   REFERRAL_IDENTITY_HMAC_KEY: "fake-secret-for-automated-tests-only-0123456789",
+  REFERRAL_DEVICE_APP_CHECK_REQUIRED: "false",
   APP_CHECK_MODE: "off",
 };
 
@@ -34,7 +35,7 @@ function call(uid: string, code = "ABC123", enabled = true) {
   return worker.fetch(new Request("https://worker.test/v1/referrals/registration", {
     method: "POST",
     headers: { Authorization: `Bearer ${uid}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ code, inviterUid: "untrusted" }),
+    body: JSON.stringify({ code, inviterUid: "untrusted", deviceId: "a1b2c3d4e5f60718" }),
   }), { ...env, REFERRAL_REGISTRATION_ENABLED: String(enabled) } as never);
 }
 
@@ -72,7 +73,8 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
         providerUserInfo: [{ providerId: "google.com", rawId: "google-subject-" + uid }],
       }] });
     }
-    if (url.includes("/documents/referral_deleted_identities/") &&
+    if ((url.includes("/documents/referral_deleted_identities/") ||
+         url.includes("/documents/referral_device_bindings/")) &&
         (!init?.method || init.method === "GET")) {
       const path = url.split("/documents/")[1];
       const fields = docs[path];
@@ -88,6 +90,14 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
     if (url.endsWith(":rollback")) return Response.json({});
     if (url.endsWith(":commit")) {
       const [{ update: { name, fields }, currentDocument }] = body.writes;
+      if (name.startsWith(root + "referral_device_bindings/")) {
+        expect(currentDocument).toEqual({ exists: false });
+        expect(fields.googleOwnerDigest.stringValue).toMatch(/^[a-f0-9]{64}$/);
+        expect(fields).not.toHaveProperty("rawAndroidId");
+        expect(fields).not.toHaveProperty("uid");
+        docs[name.slice(root.length)] = fields;
+        return Response.json({});
+      }
       expect(currentDocument).toEqual({ exists: false });
       expect(name).toBe(root + `referral_attributions/${uid}`);
       expect(fields.inviterUid).toEqual(str("inviter"));
