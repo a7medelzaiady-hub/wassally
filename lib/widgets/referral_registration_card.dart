@@ -101,7 +101,7 @@ class _ReferralRegistrationCardState extends State<ReferralRegistrationCard> {
                       maxLength: 12,
                       decoration: const InputDecoration(
                         labelText: 'كود الدعوة (اختياري)',
-                        hintText: 'مثال: 2689B4526EF4',
+                        hintText: 'اكتب كود الدعوة اللي وصلك',
                         border: OutlineInputBorder(),
                       ),
                       validator: (input) =>
