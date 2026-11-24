@@ -214,6 +214,24 @@ void main() {
       expect(book.active.count, 1);
     });
 
+    test('علامة إرسال الطلب محفوظة مع السلة بعد فتح التطبيق وتسجيل الخروج', () async {
+      final storage = _MemoryStorage();
+      final first = CartBook(CartModel(), storage: storage);
+      await first.load();
+      first.active.add(_rice, storeId: 'g', storeName: 'بقالة الخير');
+      first.active.markSubmitted('order_123');
+      await first.flush();
+      expect(storage.value, contains('submittedOrderId'));
+
+      await first.detachForSignOut();
+      expect(first.active.isEmpty, isTrue);
+      expect(storage.value, isNotNull);
+
+      await first.attachAfterSignIn();
+      expect(first.active.submittedOrderId, 'order_123');
+      expect(first.active.count, 1);
+    });
+
     test('تخزين تالف ما يوقعش التطبيق', () async {
       final book = CartBook(CartModel(), storage: _MemoryStorage('{not json'));
       await book.load();
