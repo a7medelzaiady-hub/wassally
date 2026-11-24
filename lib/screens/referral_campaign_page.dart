@@ -115,7 +115,10 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              ReferralCodeCard(serverIssuedCode: data['code'] as String?),
+              ReferralCodeCard(
+                serverIssuedCode: data['code'] as String?,
+                rewardsEnabled: data['rewardsEnabled'] == true,
+              ),
               if (data['marketerCode'] is String) ...[
                 const ListTile(title: Text('كود المسوّق')),
                 ReferralCodeCard(serverIssuedCode: data['marketerCode'] as String),

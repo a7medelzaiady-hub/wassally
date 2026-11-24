@@ -2848,7 +2848,7 @@ async function referralCampaign(request: Request, env: Env, ctx?: ExecutionConte
   const code = await getOrIssueReferralCode(env.FIREBASE_PROJECT_ID, token, {
     uid: codeOwnerUid, issuerUid: uid, channel,
   }, fetch);
-  if (channel === "marketer") return { code };
+  if (channel === "marketer") return { code, rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED === "true" };
   // An invited user or owner can recover from a missed or interrupted delivery callback.
   scheduleReferralDelivery(env, ctx, token, { userId: uid, storeId });
   const [balance, marketerCode] = await Promise.all([
@@ -2859,6 +2859,7 @@ async function referralCampaign(request: Request, env: Env, ctx?: ExecutionConte
     code,
     balance: balance ? decodeFields(balance.fields ?? {}) : {},
     marketerCode: marketerCode ? decodeFields(marketerCode.fields ?? {}).code : null,
+    rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED === "true",
   };
 }
 

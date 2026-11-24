@@ -8,11 +8,14 @@ import '../models/referral.dart';
 class ReferralCodeCard extends StatelessWidget {
   final String? serverIssuedCode;
   final VoidCallback? onShare;
+  /// Whether the Worker is actively awarding successful referrals.
+  final bool rewardsEnabled;
 
   const ReferralCodeCard({
     super.key,
     required this.serverIssuedCode,
     this.onShare,
+    this.rewardsEnabled = true,
   });
 
   @override
@@ -64,8 +67,10 @@ class ReferralCodeCard extends StatelessWidget {
               const Text('كود الدعوة غير متاح حاليًا',
                   textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            const Text(
-              'المكافآت بتتحسب بعد أول طلب ناجح، حسب شروط البرنامج.',
+            Text(
+              rewardsEnabled
+                  ? 'المكافآت بتتحسب بعد أول طلب ناجح، حسب شروط البرنامج.'
+                  : 'المكافآت لسه مش مفعّلة. تقدر تنسخ الكود، لكن مش هتتحسب أي مكافأة قبل تشغيل البرنامج رسميًا.',
               textAlign: TextAlign.center,
             ),
           ],

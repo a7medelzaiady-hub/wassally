@@ -1,6 +1,6 @@
-name: Wasally Referral First-Signup Worker Rollout
+name: Wasally Referral Safe Worker Rollout
 
-# Reconcile the first-signup-only invitation rules with the already-enabled code gateway.
+# Reconcile the first-signup invitation rules and show the true rewards rollout state.
 # This workflow only deploys tested main code after all safety checks pass.
 # Do not activate referral delivery, payouts, or financial credits here.
 on:
@@ -48,6 +48,7 @@ jobs:
           grep -Eq '^APP_CHECK_MODE *= *"monitor"' wrangler.toml
           test -s src/referral_first_session.ts
           grep -q 'isOriginalRegistrationSession' src/index.ts
+          grep -q 'rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED' src/index.ts
           grep -q 'REFERRAL_IDENTITY_HMAC_KEY' src/index.ts
           grep -q 'referral_deleted_identities' src/referral_identity.ts
           echo "Only original signups can register; cash and reward settlement stay disabled."
