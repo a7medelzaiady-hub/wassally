@@ -12,6 +12,9 @@ on:
       - "firebase.e2e.json"
       - "firestore.rules"
       - "lib/services/e2e_support.dart"
+      - "lib/screens/courier_orders_page.dart"
+      - "lib/widgets/courier_order_receipt.dart"
+      - "test/courier_order_receipt_test.dart"
 
 concurrency:
   group: maestro-journeys-${{ github.event.pull_request.number || github.ref }}
