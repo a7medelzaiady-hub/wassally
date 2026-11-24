@@ -204,7 +204,7 @@ class _AccountPageState extends State<AccountPage> {
     final ok = await confirmDialog(
       context,
       title: 'متأكد؟',
-      message: 'الحذف نهائي ومينفعش يترجع.',
+      message: 'الحذف نهائي ومينفعش يترجع. لمنع تكرار مكافآت «عميل جديد»، يحتفظ وصّلي ببصمة مستعارة آمنة لحساب جوجل لمدة تصل إلى سنة وفق سياسة الخصوصية، بدون تخزين البريد أو الاسم في سجل البصمة.',
       confirmLabel: 'حذف حسابي',
       destructive: true,
     );
