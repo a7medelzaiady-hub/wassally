@@ -1,6 +1,7 @@
-name: Repair Wasally Referral Code Gateway
+name: Wasally Referral First-Signup Worker Rollout
 
-# One-time rollout of *code issuance only* after the guarded workflow lands on main.
+# Reconcile the first-signup-only invitation rules with the already-enabled code gateway.
+# This workflow only deploys tested main code after all safety checks pass.
 # Do not activate referral delivery, payouts, or financial credits here.
 on:
   push:
@@ -45,7 +46,9 @@ jobs:
           grep -Eq '^REFERRAL_DELIVERY_ENABLED *= *"false"' wrangler.toml
           grep -Eq '^FIREBASE_PROJECT_ID *= *"wasally-12259"' wrangler.toml
           grep -Eq '^APP_CHECK_MODE *= *"monitor"' wrangler.toml
-          echo "Code issuing enabled. Financial settlement remains disabled."
+          test -s src/referral_first_session.ts
+          grep -q 'isOriginalRegistrationSession' src/index.ts
+          echo "Only original signups can register; cash and reward settlement stay disabled."
       - name: Check Wrangler bundle
         run: npx wrangler deploy --dry-run
 
@@ -121,5 +124,6 @@ jobs:
             echo "::error::Referral registration gate not live (anonymous HTTP $code; expected 401)."
             exit 1
           fi
-          echo "OK: Worker live, registration route enabled and rejects anonymous requests."
+          echo "OK: tested Worker deployed, referral route enabled and rejects anonymous requests."
+          echo "First-login validation unit tests passed in verify job."
           echo "IMPORTANT: Reward settlement and payouts are still OFF." >> "$GITHUB_STEP_SUMMARY"
