@@ -6,7 +6,6 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
-import { REFERRAL_REGISTRATION_WINDOW_MS } from "./referral_claim";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -127,6 +126,7 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   createdAtMs: number;
+  lastLoginAtMs: number;
   validSince: number;
   disabled: boolean;
 }>();
@@ -431,7 +431,13 @@ async function assertFirebaseUserActive(
     if (!Number.isFinite(validSince)) {
       throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
     }
-    state = { checkedAt: now, validSince, disabled: user.disabled === true, createdAtMs: Number(user.createdAt) };
+    state = {
+      checkedAt: now,
+      validSince,
+      disabled: user.disabled === true,
+      createdAtMs: Number(user.createdAt),
+      lastLoginAtMs: Number(user.lastLoginAt),
+    };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
       const oldestUid = firebaseUserStateCache.keys().next().value;
@@ -464,18 +470,19 @@ async function verifyCustomer(request: Request, env: Env, firstRegistration = fa
   }
   await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
   if (firstRegistration) {
-    const createdAtMs = firebaseUserStateCache.get(payload.sub)?.createdAtMs ?? 0;
-    const age = Date.now() - createdAtMs;
-    // Firebase Auth is authoritative for the account creation timestamp;
-    // a valid later Google sign-in is still eligible during the 24-hour grace
-    // period. A user can't register a code after that period or change one
-    // already recorded in Firestore.
+    const state = firebaseUserStateCache.get(payload.sub);
+    const createdAtMs = state?.createdAtMs ?? 0;
     const authTimeMs = Number(payload.auth_time) * 1000;
+    const lastLoginAtMs = state?.lastLoginAtMs ?? 0;
+    // A code may be entered only during the *original Google registration
+    // session*. Later Google sign-ins cannot claim, regardless of order
+    // history or elapsed time. Firebase Auth metadata is authoritative.
     if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0 ||
         !Number.isSafeInteger(authTimeMs) ||
-        authTimeMs < createdAtMs - 2_000 ||
-        age < 0 || age > REFERRAL_REGISTRATION_WINDOW_MS) {
-      throw new HttpError(403, "كود الإحالة متاح خلال أول ٢٤ ساعة من إنشاء الحساب فقط.");
+        Math.abs(authTimeMs - createdAtMs) > 5_000 ||
+        !Number.isSafeInteger(lastLoginAtMs) ||
+        Math.abs(lastLoginAtMs - createdAtMs) > 5_000) {
+      throw new HttpError(403, "كود الدعوة متاح عند إنشاء حساب جديد فقط.");
     }
   }
   return payload.sub;
