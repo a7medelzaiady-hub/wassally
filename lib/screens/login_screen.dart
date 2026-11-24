@@ -107,7 +107,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     final text = loginTheme.textTheme;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const ink = Color(0xFF0E0E10);
+    final ink = kInk; // Navy identity shared with welcome, staff and admin.
 
     return Theme(
       data: loginTheme,
