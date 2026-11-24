@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/referral.dart';
 
-/// The Worker authorizes only claims made during the first five minutes of
+/// The Worker authorizes only claims made within 24 hours after
 /// the first Google registration. This is a UI hint, never an authorization
 /// check: the Worker always verifies the account and code independently.
 bool isWithinReferralRegistrationWindow({
@@ -11,12 +11,13 @@ bool isWithinReferralRegistrationWindow({
   DateTime? now,
 }) {
   if (accountCreatedAt == null || lastSignInAt == null) return false;
-  final age = (now ?? DateTime.now()).difference(accountCreatedAt);
+  final clock = now ?? DateTime.now();
+  final age = clock.difference(accountCreatedAt);
   final signInDelay = lastSignInAt.difference(accountCreatedAt);
   return !age.isNegative &&
-      age <= const Duration(minutes: 5) &&
+      age <= const Duration(hours: 24) &&
       signInDelay >= const Duration(seconds: -2) &&
-      signInDelay <= const Duration(seconds: 2);
+      !lastSignInAt.isAfter(clock.add(const Duration(seconds: 2)));
 }
 
 /// Code entry lives inside the authenticated referral page, not on Google
@@ -90,7 +91,7 @@ class _ReferralRegistrationCardState extends State<ReferralRegistrationCard> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'ادخل الكود هنا بعد أول تسجيل بجوجل. متاح مرة واحدة خلال أول ٥ دقايق من إنشاء الحساب.',
+                      'ادخل الكود هنا بعد أول تسجيل بجوجل. متاح مرة واحدة خلال أول ٢٤ ساعة من إنشاء الحساب.',
                     ),
                     const SizedBox(height: 8),
                     TextFormField(
