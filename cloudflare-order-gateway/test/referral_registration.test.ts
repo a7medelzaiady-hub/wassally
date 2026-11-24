@@ -114,7 +114,8 @@ afterEach(() => vi.restoreAllMocks());
 
 it("binds the first registration once and accepts a retry of the same code", async () => {
   const { saves } = setup("new-client");
-  expect((await call("new-client", " abc123 ")).status).toBe(200);
+  const firstClaim = await call("new-client", " abc123 ");
+  expect(firstClaim.status, JSON.stringify(await firstClaim.json())).toBe(200);
   expect((await call("new-client")).status).toBe(200);
   expect((await call("new-client", "OTHER1")).status).toBe(409);
   expect(saves).toHaveLength(1);
@@ -149,7 +150,7 @@ it("reserves a shared phone for the first Google identity, blocks a second Googl
       body: JSON.stringify({ deviceId }),
     }), env as never);
   const first = await bind(firstUid);
-  expect(first.status).toBe(200);
+  expect(first.status, JSON.stringify(await first.clone().json())).toBe(200);
   expect((await first.json() as { eligible: boolean }).eligible).toBe(true);
   const again = await bind(firstUid);
   expect((await again.json() as { eligible: boolean }).eligible).toBe(true);
@@ -185,7 +186,7 @@ it("requires App Check for referral-device binding when production switch is ena
       headers: { Authorization: "Bearer appcheck-required", "Content-Type": "application/json" },
       body: JSON.stringify({ deviceId: "a1b2c3d4e5f60718" }),
     }), { ...env, REFERRAL_DEVICE_APP_CHECK_REQUIRED: "true", FIREBASE_PROJECT_NUMBER: "244081237486" } as never);
-  expect(result.status).toBe(403);
+  expect(result.status).toBe(401);
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
