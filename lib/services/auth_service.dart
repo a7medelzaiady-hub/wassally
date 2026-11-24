@@ -28,14 +28,18 @@ class AuthService {
     // choose to enter an invitation. A second account cannot claim a second
     // new-user reward simply because the first account skipped the code.
     // Failure never blocks normal Google login; the claim endpoint fails closed.
+    bool deviceEligible = false;
     try {
-      await OrderGateway.registerReferralDevice();
+      deviceEligible = await OrderGateway.registerReferralDevice();
     } catch (_) {
       debugPrint('Referral device verification unavailable (sign-in unaffected).');
     }
-    newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
-        ? credential.user?.uid
-        : null;
+    // A second Google account on this phone, or a missing verification,
+    // must not even see a "new customer" invitation form.
+    newAccountInvitation.value =
+        deviceEligible && credential.additionalUserInfo?.isNewUser == true
+            ? credential.user?.uid
+            : null;
   }
 
   static void dismissNewAccountInvitation(String uid) {
