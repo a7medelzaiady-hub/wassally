@@ -421,7 +421,7 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string }>;
+      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string; lastLoginAt?: string }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
