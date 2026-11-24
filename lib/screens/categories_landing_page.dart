@@ -26,13 +26,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
-    shellTab.value = tab;
-    setState(() => _entered = true);
     if (destination != null) {
+      // Back returns to the welcome choices rather than jumping to dashboard.
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
       );
+      return;
     }
+    shellTab.value = tab;
+    setState(() => _entered = true);
   }
 
   Widget get _dashboard => widget.dashboard ?? const MainShell();
@@ -315,15 +317,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
             borderRadius: BorderRadius.circular(30),
             child: Row(
               children: [
-                if (isCustomer)
-                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
-                else
-                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
+                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
                 if (isCustomer)
                   _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
                 else
                   _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
-                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                if (isCustomer)
+                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
+                else
+                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
                 _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
               ],
             ),
