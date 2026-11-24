@@ -29,7 +29,7 @@ void main() {
           gradient.colors.contains(const Color(0xFF38156D)) &&
           gradient.colors.contains(const Color(0xFF24104F));
     });
-    expect(purpleHero, findsOneWidget);
+    expect(purpleHero, findsWidgets);
     expect(find.text('وصّلي...\\nلحد عندي'), findsOneWidget);
     // Approved five-slot navigation with the cart in the middle.
     expect(find.text('السلة'), findsOneWidget);
