@@ -64,7 +64,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
       Row(children: [
         const Icon(Icons.location_on_outlined, color: Colors.white, size: 23),
         const SizedBox(width: 5),
-        const Expanded(child: Text('التوصيل إلى: كفر الشيخ',
+        const Expanded(child: Text('حدد عنوان التوصيل',
           maxLines: 1, overflow: TextOverflow.ellipsis,
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
         IconButton(tooltip: 'الإشعارات', onPressed: () => _enter(const NotificationsPage()),
