@@ -38,6 +38,12 @@ appId: com.wassally.app
     visible: ".*وصلت إلى عنوان العميل.*"
     timeout: 60000
 - tapOn: ".*وصلت إلى عنوان العميل.*"
+# الفاتورة بقيت في أول الكارت بشكل كامل، فزر التسليم قد يكون أسفل الشاشة.
+- scrollUntilVisible:
+    element:
+      text: ".*تأكيد التسليم بالرمز.*"
+    direction: DOWN
+    timeout: 60000
 - extendedWaitUntil:
     visible: ".*تأكيد التسليم بالرمز.*"
     timeout: 60000
