@@ -51,11 +51,11 @@ void main() {
     ));
 
     expect(find.text('عندك كود دعوة؟'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField), '2689b4526ef4');
+    await tester.enterText(find.byType(TextFormField), 'abcd1234');
     await tester.tap(find.text('تأكيد كود الدعوة'));
     await tester.pumpAndSettle();
 
-    expect(submitted, '2689B4526EF4');
+    expect(submitted, 'ABCD1234');
     expect(find.text('تم حفظ كود الدعوة بنجاح، ومش هينفع تغيّره.'), findsOneWidget);
     expect(find.byType(TextFormField), findsNothing);
   });
