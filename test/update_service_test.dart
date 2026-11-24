@@ -1,7 +1,28 @@
 import 'package:city_store/services/update_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
 void main() {
+  testWidgets('بروتوكول الطلب القديم يعرض تحديث إجباري دون زر لاحقًا',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(builder: (context) => Scaffold(
+        body: ElevatedButton(
+          onPressed: () => UpdateService.showProtocolUpdateRequired(context),
+          child: const Text('راجع الإصدار'),
+        ),
+      )),
+    ));
+    await tester.tap(find.text('راجع الإصدار'));
+    await tester.pumpAndSettle();
+    expect(find.text('تحديث الآن'), findsOneWidget);
+    expect(find.text('لاحقاً'), findsNothing);
+    expect(find.textContaining('المنتجات هتفضل محفوظة'), findsOneWidget);
+    // تنظيف نافذة الاختبار حتى لا تبقى حالة الحماية فعّالة للاختبارات التالية.
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+  });
+
   group('UpdateService.isNewer', () {
     test('إصدار أحدث', () {
       expect(UpdateService.isNewer('1.0.0', '1.0.1'), isTrue);
