@@ -23,9 +23,14 @@ ThemeData buildAppTheme() {
         primary: kPrimary,
         onPrimary: Colors.white,
         secondary: kAccent,
-        onSecondary: kInk,
+        onSecondary: kAccent.computeLuminance() > 0.179 ? Colors.black : Colors.white,
         surface: Colors.white,
         onSurface: kInk,
+        onSurfaceVariant: kMuted,
+        surfaceContainerLow: Colors.white,
+        surfaceContainer: kBg,
+        surfaceContainerHigh: kPrimarySoft,
+        outlineVariant: kLine,
         error: kDanger,
       );
 
@@ -49,6 +54,21 @@ ThemeData buildAppTheme() {
   return base.copyWith(
     scaffoldBackgroundColor: kBg,
     textTheme: text,
+    cardTheme: CardThemeData(
+      color: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: kLine),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surface,
+      surfaceTintColor: Colors.transparent,
+      titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+      contentTextStyle: text.bodyMedium,
+    ),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: kPrimary),
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.white,
