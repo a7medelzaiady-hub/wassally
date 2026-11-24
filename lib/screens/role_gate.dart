@@ -130,21 +130,39 @@ class _RoleGateState extends State<RoleGate> {
 
   Widget _panelFor(AppRole role, RoleInfo info, User user) {
     final name = info.name.isNotEmpty ? info.name : (user.displayName ?? '');
+    // The same branded entry appears after sign-in for every role.
+    // Role-specific dashboards stay isolated; this is presentation/navigation only.
     switch (role) {
       case AppRole.admin:
-        return AdminOrdersPage(name: name);
+        return CustomerEntry(
+          key: const ValueKey('welcome-admin'),
+          dashboard: AdminOrdersPage(name: name),
+          dashboardLabel: 'لوحة الإدارة',
+        );
       case AppRole.courier:
-        return CourierOrdersPage(name: name);
+        return CustomerEntry(
+          key: const ValueKey('welcome-courier'),
+          dashboard: CourierOrdersPage(name: name),
+          dashboardLabel: 'لوحة المندوب',
+        );
       case AppRole.storeOwner:
-        return StoreOwnerPage(
-          storeId: info.storeId,
-          name: name,
-          pendingApproval: info.pendingStoreOwner,
+        return CustomerEntry(
+          key: const ValueKey('welcome-store'),
+          dashboard: StoreOwnerPage(
+            storeId: info.storeId,
+            name: name,
+            pendingApproval: info.pendingStoreOwner,
+          ),
+          dashboardLabel: 'لوحة المحل',
         );
       case AppRole.supervisor:
-        return SupervisorPage(name: name);
+        return CustomerEntry(
+          key: const ValueKey('welcome-supervisor'),
+          dashboard: SupervisorPage(name: name),
+          dashboardLabel: 'لوحة المشرف',
+        );
       case AppRole.customer:
-        return const CustomerEntry();
+        return const CustomerEntry(key: ValueKey('welcome-customer'));
     }
   }
 }
