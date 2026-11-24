@@ -1,8 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/order_gateway.dart';
+import '../models/referral_admin_choices.dart';
 import '../widgets/referral_code_card.dart';
 import '../widgets/referral_balance_tile.dart';
 
@@ -534,36 +536,55 @@ class ReferralReimbursementPage extends StatefulWidget {
 }
 
 class _ReferralReimbursementPageState extends State<ReferralReimbursementPage> {
-  late final _order = TextEditingController(text: widget.initialOrderId);
   final _reference = TextEditingController();
+  late Future<List<ReferralOrderChoice>> _eligible = _loadEligible();
+  String? _selectedOrderId;
   bool _busy = false;
   Map<String, dynamic>? _claim;
   String? _message;
 
   @override
+  void initState() {
+    super.initState();
+    _selectedOrderId = widget.initialOrderId.isEmpty ? null : widget.initialOrderId;
+  }
+
+  Future<List<ReferralOrderChoice>> _loadEligible() async {
+    // قراءة واحدة محدودة بدل استماع دائم؛ تحقّق الأهلية النهائي في Worker.
+    final docs = await FirebaseFirestore.instance.collection('orders')
+        .orderBy('createdAt', descending: true).limit(100).get();
+    final rows = <Map<String, dynamic>>[
+      for (final doc in docs.docs) {'id': doc.id, ...doc.data()},
+    ];
+    // إذا فُتحت الشاشة من طلب قديم، تأكد من أهليته بقراءة مستند واحد.
+    final initialId = widget.initialOrderId.trim();
+    if (initialId.isNotEmpty && !rows.any((row) => row['id'] == initialId)) {
+      final doc = await FirebaseFirestore.instance.collection('orders').doc(initialId).get();
+      if (doc.exists && doc.data() != null) {
+        rows.insert(0, {'id': doc.id, ...doc.data()!});
+      }
+    }
+    return referralEligibleOrders(rows);
+  }
+
+  @override
   void dispose() {
-    _order.dispose();
     _reference.dispose();
     super.dispose();
   }
 
   Future<void> _act(String action) async {
     if (_busy) return;
-    final orderId = _order.text.trim();
+    final orderId = _selectedOrderId;
     final reference = _reference.text.trim();
-    if (orderId.isEmpty || (action == 'paid' && reference.length < 5)) {
-      setState(() => _message = 'اكتب رقم الطلب، ومرجع التحويل عند تسجيل السداد.');
+    if (orderId == null || (action == 'paid' && reference.length < 5)) {
+      setState(() => _message = 'اختار الطلب، واكتب مرجع التحويل عند تسجيل السداد.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _message = null;
-    });
+    setState(() { _busy = true; _message = null; });
     try {
       final result = await OrderGateway.referralRedemption(
-        orderId,
-        action,
-        reference: action == 'paid' ? reference : null,
+        orderId, action, reference: action == 'paid' ? reference : null,
       );
       if (!mounted) return;
       setState(() {
@@ -571,7 +592,9 @@ class _ReferralReimbursementPageState extends State<ReferralReimbursementPage> {
           _claim = result;
         } else {
           _claim = null;
+          _selectedOrderId = null;
           _reference.clear();
+          _eligible = _loadEligible();
           _message = action == 'paid'
               ? 'تم تسجيل سداد فرق الخصم للمحل.'
               : 'تمت مراجعة استرجاع نقاط الطلب الملغي.';
@@ -586,39 +609,94 @@ class _ReferralReimbursementPageState extends State<ReferralReimbursementPage> {
 
   @override
   Widget build(BuildContext context) {
-    final claim = _claim;
     return Scaffold(
-      appBar: AppBar(title: const Text('تسديد خصم النقاط للمحل')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller: _order,
-            enabled: !_busy && claim == null,
-            decoration: const InputDecoration(labelText: 'رقم الطلب'),
+      appBar: AppBar(
+        title: const Text('تسديد خصم النقاط للمحل'),
+        actions: [
+          IconButton(
+            tooltip: 'تحديث الطلبات المؤهلة',
+            onPressed: _busy ? null : () => setState(() => _eligible = _loadEligible()),
+            icon: const Icon(Icons.refresh),
           ),
-          if (claim == null) ...[
-            FilledButton(
-              onPressed: _busy ? null : () => _act('claim'),
-              child: const Text('استلام تسوية الطلب')),
-            TextButton(
-              onPressed: _busy ? null : () => _act('refund'),
-              child: const Text('استرجاع نقاط طلب ملغي')),
-          ] else ...[
-            Text('المحل: ${claim['storeId']}'),
-            Text('المستحق: ${((claim['discountMinor'] as num) / 100).toStringAsFixed(2)} ج.م.'),
-            TextField(
-              controller: _reference,
-              enabled: !_busy,
-              decoration: const InputDecoration(labelText: 'مرجع التحويل اليدوي'),
-            ),
-            FilledButton(
-              onPressed: _busy ? null : () => _act('paid'),
-              child: const Text('تسجيل السداد')),
-          ],
-          if (_busy) const LinearProgressIndicator(),
-          if (_message != null) Text(_message!),
         ],
+      ),
+      body: FutureBuilder<List<ReferralOrderChoice>>(
+        future: _eligible,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('تعذر تحميل الطلبات. تحقق من الاتصال والصلاحيات.'));
+          }
+          final choices = snapshot.data ?? const <ReferralOrderChoice>[];
+          ReferralOrderChoice? selected;
+          for (final choice in choices) {
+            if (choice.id == _selectedOrderId) selected = choice;
+          }
+          final claim = _claim;
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text('آخر 100 طلب — تظهر الطلبات المسلّمة أو الملغاة ذات خصم النقاط فقط.',
+                style: Theme.of(context).textTheme.bodySmall),
+              if (choices.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text('لا توجد طلبات مؤهلة حاليًا ضمن آخر 100 طلب.'),
+                )
+              else
+                _referralField(
+                  label: 'اختار الطلب',
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('redemption-$_selectedOrderId'),
+                    isExpanded: true,
+                    initialValue: selected?.id,
+                    decoration: _referralInput(hint: 'الطلبات المؤهلة'),
+                    items: [
+                      for (final choice in choices)
+                        DropdownMenuItem(
+                          value: choice.id,
+                          child: Text(choice.label,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: _busy || claim != null ? null : (id) {
+                      setState(() { _selectedOrderId = id; _message = null; });
+                    },
+                  ),
+                ),
+              const SizedBox(height: 12),
+              if (claim == null) ...[
+                if (selected?.isDelivered == true)
+                  FilledButton(
+                    onPressed: _busy ? null : () => _act('claim'),
+                    child: const Text('استلام تسوية الطلب')),
+                if (selected?.isCancelled == true)
+                  OutlinedButton(
+                    onPressed: _busy ? null : () => _act('refund'),
+                    child: const Text('استرجاع نقاط الطلب الملغي')),
+              ] else ...[
+                Text('المحل: ${claim['storeId']}'),
+                Text('المستحق: ${((claim['discountMinor'] as num) / 100).toStringAsFixed(2)} ج.م.'),
+                _referralField(
+                  label: 'مرجع التحويل اليدوي',
+                  child: TextField(
+                    controller: _reference,
+                    enabled: !_busy,
+                    decoration: _referralInput(hint: 'مرجع السداد الفعلي'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _busy ? null : () => _act('paid'),
+                  child: const Text('تسجيل السداد')),
+              ],
+              if (_busy) const LinearProgressIndicator(),
+              if (_message != null) Text(_message!),
+            ],
+          );
+        },
       ),
     );
   }
@@ -633,6 +711,7 @@ class _ReferralCommissionPage extends StatefulWidget {
 
 class _ReferralCommissionPageState extends State<_ReferralCommissionPage> {
   final _form = GlobalKey<FormState>();
+  late Future<List<ReferralStoreOwnerChoice>> _owners = _loadOwners();
   String _ownerUid = '';
   String _storeId = '';
   String _reference = '';
@@ -640,15 +719,32 @@ class _ReferralCommissionPageState extends State<_ReferralCommissionPage> {
   bool _saving = false;
   String? _result;
   String? _error;
+  String? _selection;
+
+  Future<List<ReferralStoreOwnerChoice>> _loadOwners() async {
+    // الإدارة فقط: قراءتان محدودتان عند فتح النافذة، من غير listeners جديدة.
+    final ownerDocs = await FirebaseFirestore.instance.collection('storeOwners')
+        .limit(200).get();
+    final storeDocs = await FirebaseFirestore.instance.collection('stores')
+        .limit(200).get();
+    return referralStoreOwnerChoices(
+      owners: [
+        for (final doc in ownerDocs.docs) {'uid': doc.id, ...doc.data()},
+      ],
+      storeNames: {
+        for (final doc in storeDocs.docs) doc.id: (doc.data()['name'] ?? '').toString(),
+      },
+    );
+  }
 
   Future<void> _settle() async {
     if (_saving || !_form.currentState!.validate()) return;
     _form.currentState!.save();
-    setState(() {
-      _saving = true;
-      _result = null;
-      _error = null;
-    });
+    if (_ownerUid.isEmpty || _storeId.isEmpty) {
+      setState(() => _error = 'اختار المحل وصاحب الحساب المرتبط به.');
+      return;
+    }
+    setState(() { _saving = true; _result = null; _error = null; });
     try {
       final result = await OrderGateway.settleReferralCommission(
         ownerUid: _ownerUid,
@@ -668,59 +764,110 @@ class _ReferralCommissionPageState extends State<_ReferralCommissionPage> {
     }
   }
 
-  Widget _identifier(
-    String label,
-    RegExp pattern,
-    ValueChanged<String> save,
-  ) => TextFormField(
-    enabled: !_saving,
-    textDirection: TextDirection.ltr,
-    decoration: InputDecoration(labelText: label),
-    validator: (value) => pattern.hasMatch(value?.trim() ?? '')
-        ? null
-        : 'راجع $label.',
-    onSaved: (value) => save(value!.trim()),
-  );
-
   @override
   Widget build(BuildContext context) {
-    final identifier = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
     return Scaffold(
-      appBar: AppBar(title: const Text('تسوية عمولة محل')),
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _identifier('معرّف المحل', identifier, (value) => _storeId = value),
-            _identifier('معرّف صاحب المحل', identifier, (value) => _ownerUid = value),
-            _identifier(
-              'مرجع العمولة المسجّلة',
-              RegExp(r'^[A-Za-z0-9_-]{4,64}$'),
-              (value) => _reference = value,
+      appBar: AppBar(
+        title: const Text('تسوية عمولة محل'),
+        actions: [
+          IconButton(
+            tooltip: 'تحديث المحلات',
+            onPressed: _saving ? null : () => setState(() => _owners = _loadOwners()),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<ReferralStoreOwnerChoice>>(
+        future: _owners,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return const Center(child: Text('تعذر تحميل المحلات وأصحابها. تحقق من الصلاحيات والإنترنت.'));
+          }
+          final choices = snapshot.data ?? const <ReferralStoreOwnerChoice>[];
+          final keys = choices.map((choice) => choice.key).toSet();
+          return Form(
+            key: _form,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (choices.isEmpty)
+                  const Text('لا توجد محلات مرتبطة بأصحاب نشطين ضمن أول 200 سجل.')
+                else
+                  _referralField(
+                    label: 'اختار المحل (صاحب الحساب يظهر تلقائيًا)',
+                    child: DropdownButtonFormField<String>(
+                      key: const Key('commission-store-choice'),
+                      initialValue: keys.contains(_selection) ? _selection : null,
+                      isExpanded: true,
+                      decoration: _referralInput(hint: 'المحل وصاحبه'),
+                      items: [
+                        for (final choice in choices)
+                          DropdownMenuItem(
+                            value: choice.key,
+                            child: Text(choice.label, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                      onChanged: _saving ? null : (value) {
+                        setState(() {
+                          _selection = value;
+                          _ownerUid = '';
+                          _storeId = '';
+                          for (final choice in choices) {
+                            if (choice.key == value) {
+                              _ownerUid = choice.ownerUid;
+                              _storeId = choice.storeId;
+                            }
+                          }
+                        });
+                      },
+                      validator: (value) =>
+                          value == null || !keys.contains(value) ? 'اختار المحل.' : null,
+                    ),
+                  ),
+                _referralField(
+                  label: 'مرجع العمولة المسجّلة',
+                  child: TextFormField(
+                    enabled: !_saving,
+                    textDirection: TextDirection.ltr,
+                    decoration: _referralInput(hint: 'مرجع العمولة الفعلي'),
+                    validator: (value) =>
+                        RegExp(r'^[A-Za-z0-9_-]{4,64}$').hasMatch(value?.trim() ?? '')
+                            ? null : 'راجع مرجع العمولة.',
+                    onSaved: (value) => _reference = value!.trim(),
+                  ),
+                ),
+                _referralField(
+                  label: 'العمولة المستحقة بالقروش',
+                  child: TextFormField(
+                    enabled: !_saving,
+                    keyboardType: TextInputType.number,
+                    decoration: _referralInput(hint: 'المبلغ الفعلي'),
+                    validator: (value) {
+                      final amount = int.tryParse(value?.trim() ?? '');
+                      return amount == null || amount < 1 || amount > 10000000
+                          ? 'اكتب قيمة صحيحة للعمولة.' : null;
+                    },
+                    onSaved: (value) => _dueMinor = int.parse(value!.trim()),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('يتم تطبيق الخصم على عمولة مسجّلة فعلًا، وليس احتساب عمولة جديدة.',
+                  style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: _saving || choices.isEmpty ? null : _settle,
+                  child: const Text('سجّل العمولة وطبّق الخصم'),
+                ),
+                if (_saving) const LinearProgressIndicator(),
+                if (_error != null) Text(_error!),
+                if (_result != null) Text(_result!),
+              ],
             ),
-            TextFormField(
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'العمولة المستحقة بالقروش'),
-              validator: (value) {
-                final amount = int.tryParse(value?.trim() ?? '');
-                return amount == null || amount < 1 || amount > 10000000
-                    ? 'اكتب قيمة صحيحة للعمولة.'
-                    : null;
-              },
-              onSaved: (value) => _dueMinor = int.parse(value!.trim()),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _saving ? null : _settle,
-              child: const Text('سجّل العمولة وطبّق الخصم'),
-            ),
-            if (_saving) const LinearProgressIndicator(),
-            if (_error != null) Text(_error!),
-            if (_result != null) Text(_result!),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
