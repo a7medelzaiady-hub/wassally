@@ -118,11 +118,11 @@ class AppPalette {
     primary: Color(0xFFFF7900),
     primaryDark: Color(0xFFE65F00),
     primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF102344),
-    accentDeep: Color(0xFF08182F),
+    accent: Color(0xFF6530A5),
+    accentDeep: Color(0xFF38156D),
     bg: Color(0xFFF5F6FA),
-    ink: Color(0xFF102344),
-    muted: Color(0xFF69758B),
+    ink: Color(0xFF2A1947),
+    muted: Color(0xFF756783),
     line: Color(0xFFE0E5ED),
     soft: Color(0xFFFFE9D5),
   );
@@ -156,8 +156,8 @@ class Brand {
 
   static LinearGradient get headerGradient => LinearGradient(
     colors: [
-      palette.primary,
-      Color.lerp(palette.primary, palette.primaryDark, 0.6)!,
+      palette.accent,
+      Color.lerp(palette.accent, palette.accentDeep, 0.6)!,
     ],
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
