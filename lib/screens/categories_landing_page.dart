@@ -152,6 +152,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           child: SizedBox(
             height: 142,
             child: Row(
+              textDirection: TextDirection.ltr,
               children: [
                 Expanded(
                   flex: 5,
@@ -180,7 +181,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                 Expanded(
                   flex: 6,
                   child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(2, 10, 12, 10),
+                    padding: const EdgeInsetsDirectional.fromSTEB(12, 10, 2, 10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
