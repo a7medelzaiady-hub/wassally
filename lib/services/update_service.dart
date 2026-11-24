@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +29,7 @@ class UpdateService {
   static bool _lifecycleAttached = false;
   static bool _bannerShownThisSession = false;
   static bool _bannerSnoozedThisSession = false;
+  static bool _protocolPromptOpen = false;
 
   static const _snoozeKey = 'update_dialog_snooze_until';
 
@@ -45,7 +48,7 @@ class UpdateService {
     final showDialogNow = _force || !await _isSnoozed();
     if (!context.mounted) return;
     if (showDialogNow) {
-      _showUpdateDialog(context, _url, _force);
+      unawaited(_showUpdateDialog(context, _url, _force));
     }
   }
 
@@ -174,10 +177,16 @@ class UpdateService {
 
   static Future<void> _openStore() async {
     var opened = false;
-    if (_validUrl(_url)) {
+    var target = _url;
+    if (!_validUrl(target)) {
+      // قد تظهر نافذة عدم توافق بروتوكول الطلب قبل قراءة app_info/version.
+      final info = await PackageInfo.fromPlatform();
+      target = _playUrl(info.packageName, '');
+    }
+    if (_validUrl(target)) {
       try {
         opened = await launchUrl(
-          Uri.parse(_url),
+          Uri.parse(target),
           mode: LaunchMode.externalApplication,
         );
       } catch (_) {}
@@ -281,8 +290,24 @@ class UpdateService {
       .map((e) => int.tryParse(e.trim()) ?? 0)
       .toList();
 
-  static void _showUpdateDialog(BuildContext context, String url, bool force) {
-    showDialog<void>(
+  /// التحديث هنا إجباري لأن إصدار العميل لا يعرض رسوم Worker المعتمدة،
+  /// لذلك لا يجوز إنشاء الطلب عبر المسار القديم أو تجاوز فحص الأسعار.
+  static void showProtocolUpdateRequired(BuildContext context) {
+    if (_protocolPromptOpen || !context.mounted) return;
+    _protocolPromptOpen = true;
+    unawaited(
+      _showUpdateDialog(context, _url, true, protocol: true)
+          .whenComplete(() => _protocolPromptOpen = false),
+    );
+  }
+
+  static Future<void> _showUpdateDialog(
+    BuildContext context,
+    String url,
+    bool force, {
+    bool protocol = false,
+  }) {
+    return showDialog<void>(
       context: context,
       barrierDismissible: !force,
       builder: (dialogContext) {
@@ -300,9 +325,13 @@ class UpdateService {
               ],
             ),
             content: Text(
-              force
-                  ? 'لازم تحدّث التطبيق عشان تكمّل استخدامه.'
-                  : 'فيه إصدار جديد من وصلي فيه تحسينات ومميزات جديدة.',
+              protocol
+                  ? 'نسخة وصّلي دي قديمة ومش بتعرض رسوم الطلب المعتمدة من السيرفر. '
+                      'حدّث التطبيق من Google Play علشان تشوف الإجمالي الصحيح قبل الإرسال. '
+                      'المنتجات هتفضل محفوظة في سلتك.'
+                  : force
+                      ? 'لازم تحدّث التطبيق عشان تكمّل استخدامه.'
+                      : 'فيه إصدار جديد من وصلي فيه تحسينات ومميزات جديدة.',
             ),
             actions: [
               if (!force)
