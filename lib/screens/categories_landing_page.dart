@@ -39,19 +39,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   Widget get _dashboard => widget.dashboard ?? const MainShell();
 
-  Widget _topButton(IconData icon, String label, Widget page) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 3,
-      child: IconButton(
-        tooltip: label,
-        icon: Icon(icon, color: Brand.palette.ink, size: 26),
-        onPressed: () => _enter(page),
-      ),
-    );
-  }
-
   Widget _header() => Container(
     padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
     decoration: const BoxDecoration(
