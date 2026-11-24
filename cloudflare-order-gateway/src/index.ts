@@ -6,6 +6,7 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
+import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -126,6 +127,7 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   createdAtMs: number;
+  lastLoginAtMs: number;
   validSince: number;
   disabled: boolean;
 }>();
@@ -419,7 +421,7 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string }>;
+      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string; lastLoginAt?: string }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
@@ -430,7 +432,13 @@ async function assertFirebaseUserActive(
     if (!Number.isFinite(validSince)) {
       throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
     }
-    state = { checkedAt: now, validSince, disabled: user.disabled === true, createdAtMs: Number(user.createdAt) };
+    state = {
+      checkedAt: now,
+      validSince,
+      disabled: user.disabled === true,
+      createdAtMs: Number(user.createdAt),
+      lastLoginAtMs: Number(user.lastLoginAt),
+    };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
       const oldestUid = firebaseUserStateCache.keys().next().value;
@@ -463,11 +471,15 @@ async function verifyCustomer(request: Request, env: Env, firstRegistration = fa
   }
   await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
   if (firstRegistration) {
-    const createdAtMs = firebaseUserStateCache.get(payload.sub)?.createdAtMs ?? 0;
-    const age = Date.now() - createdAtMs;
-    if (!Number.isSafeInteger(createdAtMs) || age < 0 || age > 300_000 ||
-        Number(payload.auth_time) !== Math.floor(createdAtMs / 1000)) {
-      throw new HttpError(403, "كود الإحالة متاح عند التسجيل الأول فقط.");
+    const state = firebaseUserStateCache.get(payload.sub);
+    const createdAtMs = state?.createdAtMs ?? 0;
+    const authTimeMs = Number(payload.auth_time) * 1000;
+    const lastLoginAtMs = state?.lastLoginAtMs ?? 0;
+    // A code may be entered only during the *original Google registration
+    // session*. Later Google sign-ins cannot claim, regardless of order
+    // history or elapsed time. Firebase Auth metadata is authoritative.
+    if (!isOriginalRegistrationSession(createdAtMs, lastLoginAtMs, authTimeMs)) {
+      throw new HttpError(403, "كود الدعوة متاح عند إنشاء حساب جديد فقط.");
     }
   }
   return payload.sub;

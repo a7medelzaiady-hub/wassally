@@ -19,22 +19,37 @@ class AuthService {
 
   static bool _googleInitialized = false;
 
+  /// Ephemeral invite onboarding shown only for a brand-new Google account.
+  /// No pending invitation is restored for users who registered previously.
+  static final ValueNotifier<String?> newAccountInvitation = ValueNotifier(null);
+
+  static void _onGoogleLogin(UserCredential credential) {
+    newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
+        ? credential.user?.uid
+        : null;
+  }
+
+  static void dismissNewAccountInvitation(String uid) {
+    if (newAccountInvitation.value == uid) {
+      newAccountInvitation.value = null;
+    }
+  }
+
+
   /// تسجيل الدخول بجوجل.
   /// - ويب: نافذة منبثقة.
   /// - أندرويد: نافذة جوجل الأصلية المنبثقة لاختيار الحساب، بدون متصفح خارجي وبدون
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
-  static Future<void> signInWithGoogle({String? referralCode}) async {
+  static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      final credential = await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
-      await _claimRegistrationReferral(credential, referralCode);
+      _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        final credential = await _nativeGoogleSignIn();
-        await _claimRegistrationReferral(credential, referralCode);
+        _onGoogleLogin(await _nativeGoogleSignIn());
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -53,31 +68,7 @@ class AuthService {
         );
       }
     }
-    final credential = await _providerSignInWithRetry();
-    await _claimRegistrationReferral(credential, referralCode);
-  }
-
-  static Future<void> _claimRegistrationReferral(
-    UserCredential credential,
-    String? code,
-  ) async {
-    if (code == null || code.isEmpty) return;
-    var message = 'كود الإحالة متاح عند التسجيل الأول فقط.';
-    if (credential.additionalUserInfo?.isNewUser == true) {
-      try {
-        final token = await credential.user?.getIdToken();
-        if (token == null) throw StateError('Missing Firebase ID token');
-        await OrderGateway.claimRegistrationReferral(idToken: token, code: code);
-        message = 'تم حفظ كود الإحالة.';
-      } on StateError catch (error) {
-        message = error.message;
-      } catch (_) {
-        message = 'تعذر حفظ كود الإحالة.';
-      }
-    }
-    NotificationService.messengerKey.currentState?.showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    _onGoogleLogin(await _providerSignInWithRetry());
   }
 
   static Future<UserCredential> _nativeGoogleSignIn() async {
@@ -127,6 +118,7 @@ class AuthService {
   /// لو اتبعت context بنقفل أي شاشات مفتوحة فوق البوابة (زي "عرض كعميل")
   /// قبل الخروج، عشان متفضلش ظاهرة بعد تسجيل الخروج.
   static Future<void> signOut([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     if (context != null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
@@ -146,6 +138,7 @@ class AuthService {
 
   /// حذف الحساب نهائيًا بعد إعادة تأكيد الهوية وتنظيف البيانات عبر Worker.
   static Future<void> deleteAccount([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     final initialUser = FirebaseAuth.instance.currentUser;
     if (initialUser == null) return;
     if (!OrderGateway.isConfigured) {

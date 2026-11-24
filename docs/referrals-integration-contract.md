@@ -7,9 +7,14 @@ Cloud Functions or new Firestore snapshot listeners.
 
 ## Registration and campaign
 
-- The optional code travels with the first Google sign-in. The Worker validates
-  the Firebase session and account creation time, checks campaign policy, and
-  writes one immutable attribution using a Firestore transaction.
+- A brand-new account is offered an **optional invitation-code dialog inside
+  the signed-in app immediately after its first Google registration**. The login
+  page and existing accounts never show an input field. If the new customer
+  skips the invitation and closes the dialog, they cannot add one later.
+  The Worker checks authoritative Firebase Auth creation, original-session
+  authentication and last-login timestamps (not client claims), plus campaign
+  policy, and commits one immutable attribution. No arbitrary 5-minute or
+  24-hour countdown is used; eligibility is tied to initial registration.
 - Customers and active, approved store owners can obtain a stable code. The
   administrator issues a marketer code against an existing account UID. The
   account screen shows that marketer's code and its own aggregate balances.

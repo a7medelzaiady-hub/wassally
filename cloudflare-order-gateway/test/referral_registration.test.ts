@@ -65,7 +65,7 @@ function setup(uid: string, channel = "customer", creationOffset = 0) {
     }
     if (url.endsWith(":lookup")) {
       expect(body.localId).toEqual([uid]);
-      return Response.json({ users: [{ localId: uid, createdAt: String(created), validSince: "1" }] });
+      return Response.json({ users: [{ localId: uid, createdAt: String(created), lastLoginAt: String(created), validSince: "1" }] });
     }
     if (url.endsWith(":beginTransaction")) return Response.json({ transaction: "abc" });
     expect(body.transaction).toBe("abc");
