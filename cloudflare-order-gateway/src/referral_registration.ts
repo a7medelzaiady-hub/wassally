@@ -1,5 +1,5 @@
 import { commitVerifiedAttribution } from "./referral_attribution_commit";
-import { decideReferralClaim, REFERRAL_REGISTRATION_WINDOW_MS } from "./referral_claim";
+import { decideReferralClaim } from "./referral_claim";
 import type { FirestoreTransport } from "./referral_commit";
 import { decodeFirestoreReferralFields } from "./referral_firestore_values";
 import { readReferralDocument } from "./referral_read";
@@ -47,7 +47,6 @@ export async function registerReferral(
       invitedUid: uid,
       accountCreatedAtMs: createdAtMs,
       claimAtMs: now,
-      registrationWindowMs: REFERRAL_REGISTRATION_WINDOW_MS,
       alreadyAttributed: false,
     });
     if (!claim.allowed) return false;
