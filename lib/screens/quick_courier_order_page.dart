@@ -222,13 +222,20 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     );
   }
 
-  Widget _card({required List<Widget> children}) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+  Widget _card({required List<Widget> children, bool receipt = false}) => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: receipt ? const Color(0xFFFFFEF8) : Colors.white,
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: kLine),
+          boxShadow: [
+            BoxShadow(
+              color: Brand.ink.withValues(alpha: 0.10),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
       );
@@ -289,15 +296,15 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   );
 
   Widget _requestCard(QuickCourierOrder o) {
-    return _card(children: [
+    return _card(receipt: true, children: [
       Row(
         children: [
-          Icon(Icons.receipt_long_outlined, color: Brand.green, size: 20),
+          Icon(Icons.receipt_long_rounded, color: Brand.green, size: 30),
           const SizedBox(width: 8),
           const Expanded(
             child: Text(
-              'إيصال الطلب',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              'فاتورة مشتريات العميل',
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -397,14 +404,14 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           runSpacing: 4,
           children: [
             if (c.phone.isNotEmpty)
-              TextButton.icon(
+              FilledButton.icon(
                 key: const Key('quick-call'),
                 onPressed: _busy ? null : _call,
-                icon: const Icon(Icons.call_outlined, size: 18),
+                icon: const Icon(Icons.call_rounded, size: 22),
                 label: const Text('اتصل بالعميل'),
               ),
             if (c.address.isNotEmpty)
-              TextButton.icon(
+              OutlinedButton.icon(
                 onPressed: _busy
                     ? null
                     : () async {
