@@ -52,9 +52,10 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Brand.bg,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: Brand.ink,
+          foregroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
           title: const Text('تسوق', style: TextStyle(fontWeight: FontWeight.w800)),
           centerTitle: true,
