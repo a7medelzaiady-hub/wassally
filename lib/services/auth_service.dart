@@ -23,18 +23,16 @@ class AuthService {
   /// - ويب: نافذة منبثقة.
   /// - أندرويد: نافذة جوجل الأصلية المنبثقة لاختيار الحساب، بدون متصفح خارجي وبدون
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
-  static Future<void> signInWithGoogle({String? referralCode}) async {
+  static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      final credential = await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
-      await _claimRegistrationReferral(credential, referralCode);
+      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        final credential = await _nativeGoogleSignIn();
-        await _claimRegistrationReferral(credential, referralCode);
+        await _nativeGoogleSignIn();
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -53,31 +51,7 @@ class AuthService {
         );
       }
     }
-    final credential = await _providerSignInWithRetry();
-    await _claimRegistrationReferral(credential, referralCode);
-  }
-
-  static Future<void> _claimRegistrationReferral(
-    UserCredential credential,
-    String? code,
-  ) async {
-    if (code == null || code.isEmpty) return;
-    var message = 'كود الإحالة متاح عند التسجيل الأول فقط.';
-    if (credential.additionalUserInfo?.isNewUser == true) {
-      try {
-        final token = await credential.user?.getIdToken();
-        if (token == null) throw StateError('Missing Firebase ID token');
-        await OrderGateway.claimRegistrationReferral(idToken: token, code: code);
-        message = 'تم حفظ كود الإحالة.';
-      } on StateError catch (error) {
-        message = error.message;
-      } catch (_) {
-        message = 'تعذر حفظ كود الإحالة.';
-      }
-    }
-    NotificationService.messengerKey.currentState?.showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    await _providerSignInWithRetry();
   }
 
   static Future<UserCredential> _nativeGoogleSignIn() async {
