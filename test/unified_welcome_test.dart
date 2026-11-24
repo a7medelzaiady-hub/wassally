@@ -23,6 +23,10 @@ void main() {
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
+    // All three entry actions must fit in the initial 390x844 viewport.
+    final stores = find.text('تصفح المحلات');
+    expect(stores.hitTestable(), findsOneWidget);
+    expect(tester.getBottomLeft(stores).dy, lessThan(760));
     expect(tester.takeException(), isNull);
   });
 
