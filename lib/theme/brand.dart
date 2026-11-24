@@ -127,7 +127,9 @@ class AppPalette {
     soft: Color(0xFFFFE9D5),
   );
 
-  static const all = <AppPalette>[wasally, orange, green, blue, purple, rose];
+  // Approved identity is fixed for every role; legacy definitions are kept
+  // for source compatibility but cannot be selected in the shipped app.
+  static const all = <AppPalette>[wasally];
 
   static AppPalette byId(String? id) {
     for (final p in all) {

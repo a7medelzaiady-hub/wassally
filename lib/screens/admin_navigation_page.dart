@@ -79,7 +79,7 @@ class AdminNavigationPage extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(item.icon, size: 34, color: const Color(0xFF087653)),
+                        Icon(item.icon, size: 34, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(height: 10),
                         Text(item.title, textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis,
