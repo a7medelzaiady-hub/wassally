@@ -89,6 +89,15 @@ class _RoleGateState extends State<RoleGate> {
     roleInfoOverride.addListener(_onOverride);
     AuthService.newAccountInvitation.addListener(_offerNewAccountInvite);
     _offerNewAccountInvite();
+    // Existing Firebase sessions also reserve their device, without waiting
+    // for another Google sign-in or adding a Firestore listener.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && OrderGateway.referralCampaignEnabled) {
+        unawaited(OrderGateway.registerReferralDevice().then((_) {}).catchError((Object error) {
+          debugPrint('Referral device binding skipped (normal app use unaffected).');
+        }));
+      }
+    });
     // تذكير التحديث لكل الأدوار (مش العملاء بس). الفحص مرة واحدة في الجلسة.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) UpdateService.checkForUpdates(context);
