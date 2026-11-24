@@ -60,9 +60,12 @@ class _CustomerEntryState extends State<CustomerEntry> {
           icon: const Icon(Icons.person_outline_rounded, color: Colors.white)),
       ]),
       const SizedBox(height: 2),
-      const Text('وصّلي 🛍', style: TextStyle(
-        color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
-      const Text('Wasally', style: TextStyle(color: Colors.white70, fontSize: 12)),
+      // Use the approved Wasally bag-and-speed mark, not an emoji.
+      const SizedBox(
+        height: 62,
+        width: 132,
+        child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
+      ),
     ]),
   );
 
