@@ -89,7 +89,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           right: 12,
           child: _topButton(Icons.person_outline_rounded, 'حسابي', const AccountPage()),
         ),
-        const Positioned(
+        Positioned(
           top: 7,
           left: 105,
           right: 105,
