@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../models/app_role.dart';
 import '../services/live_alerts_service.dart';
+import '../services/auth_service.dart';
+import '../services/order_gateway.dart';
+import '../widgets/referral_registration_card.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/role_service.dart';
@@ -27,6 +30,56 @@ class RoleGate extends StatefulWidget {
 class _RoleGateState extends State<RoleGate> {
   String _uid = '';
   RoleInfo? _info;
+  bool _inviteDialogOpen = false;
+
+  void _offerNewAccountInvite() {
+    final uid = AuthService.newAccountInvitation.value;
+    if (!mounted || _inviteDialogOpen || !OrderGateway.referralCampaignEnabled ||
+        uid == null || uid != FirebaseAuth.instance.currentUser?.uid) {
+      return;
+    }
+    _inviteDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || uid != FirebaseAuth.instance.currentUser?.uid) {
+        _inviteDialogOpen = false;
+        return;
+      }
+      try {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('أهلًا بيك في وصّلي!'),
+            content: SingleChildScrollView(
+              child: ReferralRegistrationCard(
+                onSubmit: (code) async {
+                  final user = FirebaseAuth.instance.currentUser;
+                  if (user?.uid != uid) throw StateError('سجّل الدخول من جديد.');
+                  final token = await user!.getIdToken();
+                  if (token == null || token.isEmpty) {
+                    throw StateError('سجّل الدخول من جديد.');
+                  }
+                  await OrderGateway.claimRegistrationReferral(
+                    idToken: token,
+                    code: code,
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('متابعة بدون كود / إغلاق'),
+              ),
+            ],
+          ),
+        );
+      } finally {
+        AuthService.dismissNewAccountInvitation(uid);
+        _inviteDialogOpen = false;
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -34,6 +87,8 @@ class _RoleGateState extends State<RoleGate> {
     // بعد تسجيل الدخول: نفعّل إشعارات الجهاز (على أندرويد).
     NotificationService.init();
     roleInfoOverride.addListener(_onOverride);
+    AuthService.newAccountInvitation.addListener(_offerNewAccountInvite);
+    _offerNewAccountInvite();
     // تذكير التحديث لكل الأدوار (مش العملاء بس). الفحص مرة واحدة في الجلسة.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) UpdateService.checkForUpdates(context);
@@ -64,6 +119,7 @@ class _RoleGateState extends State<RoleGate> {
   @override
   void dispose() {
     roleInfoOverride.removeListener(_onOverride);
+    AuthService.newAccountInvitation.removeListener(_offerNewAccountInvite);
     super.dispose();
   }
 
