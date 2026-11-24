@@ -274,6 +274,9 @@ class _CustomerEntryState extends State<CustomerEntry> {
       backgroundColor: Brand.bg,
       body: SafeArea(
         child: ListView(
+          // Keep accessibility scrolling available on small screens while
+          // the compact layout fits all three service cards on standard phones.
+          physics: const ClampingScrollPhysics(),
           padding: EdgeInsets.fromLTRB(12, compact ? 6 : 12, 12, compact ? 6 : 14),
           children: [
             _hero(height: heroHeight),
