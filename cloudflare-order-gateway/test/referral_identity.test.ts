@@ -133,6 +133,33 @@ describe("daily Spark-compatible marker retention cleanup", () => {
     expect(queryBody.structuredQuery.where.fieldFilter.value.timestampValue).toBe(now.toISOString());
   });
 
+  it("also purges only expired device HMACs, not unexpired accounts", async () => {
+    const devicePath = "projects/wasally-test/databases/(default)/documents/referral_device_bindings/" + "e".repeat(64);
+    let queries = 0, commits = 0;
+    const fake = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body));
+      if (url.endsWith(":runQuery")) {
+        queries++;
+        expect(body.structuredQuery.from).toEqual([{ collectionId: "referral_device_bindings" }]);
+        expect(body.structuredQuery.where.fieldFilter.op).toBe("LESS_THAN_OR_EQUAL");
+        return Response.json([{ document: { name: devicePath } }]);
+      }
+      commits++;
+      expect(body.writes).toEqual([{ delete: devicePath }]);
+      return Response.json({});
+    };
+    expect(await pruneExpiredDeletedReferralIdentities(
+      "wasally-test", "dummy-service-token", fake, now, 10, "referral_device_bindings",
+    )).toBe(1);
+    expect(queries).toBe(1);
+    expect(commits).toBe(1);
+    await expect(pruneExpiredDeletedReferralIdentities(
+      "wasally-test", "dummy-service-token", fake, now, 1, "users",
+    )).rejects.toThrow("unsupported");
+    expect(queries).toBe(1);
+  });
+
   it("keeps markers when the delete commit fails, enabling retry", async () => {
     const valid = prefix + "b".repeat(64);
     const fake = async (input: RequestInfo | URL): Promise<Response> =>
