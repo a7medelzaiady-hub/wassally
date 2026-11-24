@@ -177,35 +177,35 @@ class _CustomerEntryState extends State<CustomerEntry> {
                 Expanded(
                   flex: 6,
                   child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 2, 8),
+                    padding: EdgeInsetsDirectional.fromSTEB(12, height < 130 ? 4 : 8, 2, height < 130 ? 4 : 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Align(
                           alignment: AlignmentDirectional.centerStart,
-                          child: Icon(icon, color: Brand.green, size: 23),
+                          child: Icon(icon, color: Brand.palette.primary, size: height < 130 ? 18 : 23),
                         ),
-                        const SizedBox(height: 2),
+                        SizedBox(height: height < 130 ? 0 : 2),
                         Text(title, maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Brand.ink,
-                            fontSize: 18, height: 1.08, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 3),
+                            fontSize: height < 130 ? 15 : 18, height: 1.08, fontWeight: FontWeight.w900)),
+                        SizedBox(height: height < 130 ? 1 : 3),
                         Text(subtitle, maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Brand.palette.muted,
-                            fontSize: 11, height: 1.1, fontWeight: FontWeight.w700)),
+                            fontSize: height < 130 ? 10 : 11, height: 1.1, fontWeight: FontWeight.w700)),
                         const Spacer(),
                         Container(
-                          height: 34,
+                          height: height < 130 ? 27 : 34,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             gradient: LinearGradient(colors: [
-                              Brand.palette.primaryLight, Brand.green,
+                              Brand.palette.primaryLight, Brand.palette.primary,
                             ]),
                             borderRadius: BorderRadius.circular(22),
                             boxShadow: [BoxShadow(
-                              color: Brand.green.withValues(alpha: 0.22),
+                              color: Brand.palette.primary.withValues(alpha: 0.22),
                               blurRadius: 7, offset: const Offset(0, 3),
                             )],
                           ),
