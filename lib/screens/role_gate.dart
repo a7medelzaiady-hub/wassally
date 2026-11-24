@@ -69,7 +69,7 @@ class _RoleGateState extends State<RoleGate> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('متابعة بدون كود / إغلاق'),
+                child: const Text('متابعة / تخطي الكود'),
               ),
             ],
           ),
