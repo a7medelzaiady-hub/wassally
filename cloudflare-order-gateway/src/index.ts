@@ -6,6 +6,7 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
+import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -477,11 +478,7 @@ async function verifyCustomer(request: Request, env: Env, firstRegistration = fa
     // A code may be entered only during the *original Google registration
     // session*. Later Google sign-ins cannot claim, regardless of order
     // history or elapsed time. Firebase Auth metadata is authoritative.
-    if (!Number.isSafeInteger(createdAtMs) || createdAtMs <= 0 ||
-        !Number.isSafeInteger(authTimeMs) ||
-        Math.abs(authTimeMs - createdAtMs) > 5_000 ||
-        !Number.isSafeInteger(lastLoginAtMs) ||
-        Math.abs(lastLoginAtMs - createdAtMs) > 5_000) {
+    if (!isOriginalRegistrationSession(createdAtMs, lastLoginAtMs, authTimeMs)) {
       throw new HttpError(403, "كود الدعوة متاح عند إنشاء حساب جديد فقط.");
     }
   }
