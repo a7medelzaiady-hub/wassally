@@ -45,7 +45,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ReferralRegistrationCard(
-          onSubmit: (code) async => submitted = code,
+          onSubmit: (code) async { submitted = code; },
         ),
       ),
     ));
@@ -66,7 +66,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: ReferralRegistrationCard(
-          onSubmit: (code) async => submitted = code,
+          onSubmit: (code) async { submitted = code; },
         ),
       ),
     ));
