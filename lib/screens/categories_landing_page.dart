@@ -60,7 +60,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
       gradient: LinearGradient(
         begin: Alignment.topRight,
         end: Alignment.bottomLeft,
-        colors: [Brand.palette.accent, Brand.palette.accentDeep],
+        colors: [const Color(0xFF6530A5), const Color(0xFF38156D)],
       ),
     ),
     child: Stack(
