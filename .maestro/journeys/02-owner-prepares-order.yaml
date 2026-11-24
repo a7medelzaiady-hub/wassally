@@ -13,6 +13,11 @@ appId: com.wassally.app
     timeout: 15000
     optional: true
 - runFlow: _dismiss-prompts.yaml
+# بعد شاشة الترحيب الموحدة، لازم ندخل لوحة الدور المخصص أولًا.
+- extendedWaitUntil:
+    visible: "لوحتي"
+    timeout: 30000
+- tapOn: "لوحتي"
 - extendedWaitUntil:
     visible: ".*ابدأ التجهيز.*"
     timeout: 90000
