@@ -1,11 +1,9 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/order_gateway.dart';
 import '../widgets/referral_code_card.dart';
-import '../widgets/referral_registration_card.dart';
 
 const _campaignTitle = 'شير بكودك واكسب هدايا';
 
@@ -41,22 +39,6 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
 
   String? _payoutKey;
   bool _requestingPayout = false;
-
-  bool get _canEnterInviteCode {
-    final metadata = FirebaseAuth.instance.currentUser?.metadata;
-    return isWithinReferralRegistrationWindow(
-      accountCreatedAt: metadata?.creationTime,
-      lastSignInAt: metadata?.lastSignInTime,
-    );
-  }
-
-  Future<void> _saveInviteCode(String code) async {
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null || token.isEmpty) {
-      throw StateError('سجّل الدخول من جديد.');
-    }
-    await OrderGateway.claimRegistrationReferral(idToken: token, code: code);
-  }
 
   Future<void> _requestPayout() async {
     final confirmed = await showDialog<bool>(
@@ -101,23 +83,7 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('الإحالات')),
-      body: Column(
-        children: [
-          if (!widget.storeOwner && _canEnterInviteCode)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: ReferralRegistrationCard(onSubmit: _saveInviteCode),
-            ),
-          if (!widget.storeOwner && !_canEnterInviteCode)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                'إدخال كود الدعوة متاح للحساب الجديد خلال أول ٢٤ ساعة من التسجيل فقط، ومرة واحدة. تقدر تشارك كودك مع أصحابك في أي وقت.',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          Expanded(
-            child: FutureBuilder<Map<String, dynamic>>(
+      body: FutureBuilder<Map<String, dynamic>>(
         future: _campaign,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -173,9 +139,6 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
             ],
           );
         },
-            ),
-          ),
-        ],
       ),
     );
   }
