@@ -19,7 +19,7 @@ void main() {
     ));
     await tester.pump();
 
-    expect(find.text('وصّلي'), findsOneWidget);
+    expect(find.text('كل اللي بتحبه...'), findsOneWidget);
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
