@@ -70,6 +70,25 @@ test('referral deletion marker: no client (including admin) can read or write fi
   }
 });
 
+test('referral device bindings: nobody can inspect or forge another phone eligibility', async () => {
+  const digest = 'b'.repeat(64);
+  const path = `referral_device_bindings/${digest}`;
+  await env.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), path), {
+      googleOwnerDigest: 'c'.repeat(64),
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 86400000),
+    });
+  });
+  for (const uid of ['cust1', 'admin1']) {
+    const db = as(uid);
+    await assertFails(getDoc(doc(db, path)));
+    await assertFails(setDoc(doc(db, path), { googleOwnerDigest: 'fake' }));
+    await assertFails(updateDoc(doc(db, path), { googleOwnerDigest: 'fake' }));
+    await assertFails(deleteDoc(doc(db, path)));
+  }
+});
+
 test('users: whitelist يمنع حقول غريبة', async () => {
   const db = as('cust1');
   await assertSucceeds(setDoc(doc(db, 'users/cust1'), { name: 'Ali', phone: '010', address: 'x' }, { merge: true }));
