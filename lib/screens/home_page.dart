@@ -51,7 +51,9 @@ class _StoreItem {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.offersOnly = false});
+
+  final bool offersOnly;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -95,6 +97,7 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    if (widget.offersOnly) return;
 
     // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
@@ -764,115 +767,36 @@ class _HomePageState extends State<HomePage>
     return stores;
   }
 
-  void _openOffers() {
+  Widget _offersPage() {
     final stores = _storesFuture;
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text('تصفح العروض')),
-        body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
-          future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return const Center(child: Text('تعذر تحميل العروض.'));
-            }
-            final offers = snapshot.data;
-            if (offers == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (offers.isEmpty) {
-              return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: offers.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (_, i) => Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: _offerCard(offers[i], offer: true),
-              ),
-            );
-          },
-        ),
-      ),
-    ));
-  }
-
-  Widget _homeShortcut({
-    required String title,
-    required IconData icon,
-    required VoidCallback onTap,
-    bool primary = false,
-  }) {
-    final foreground = primary ? Colors.white : Brand.ink;
-    return Material(
-      color: primary ? Brand.palette.primaryDark : Brand.palette.soft,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: primary ? 108 : 100),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, size: primary ? 32 : 25, color: foreground),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: primary ? 21 : 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
+    return Scaffold(
+      appBar: AppBar(title: const Text('تصفح العروض')),
+      body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
+        future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(child: Text('تعذر تحميل العروض.'));
+          }
+          final offers = snapshot.data;
+          if (offers == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (offers.isEmpty) {
+            return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: offers.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (_, i) => Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: _offerCard(offers[i], offer: true),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
-
-  Widget _homeShortcuts() => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _homeShortcut(
-          title: 'طلباتك على السريع',
-          icon: Icons.delivery_dining_outlined,
-          primary: true,
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-            builder: (_) => const QuickOrderCreatePage(),
-          )),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _homeShortcut(
-                title: 'تصفح العروض',
-                icon: Icons.local_offer_outlined,
-                onTap: _openOffers,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _homeShortcut(
-                title: 'تصفح المحلات',
-                icon: Icons.storefront_outlined,
-                onTap: () => _openDirectory(),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
 
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
 
@@ -1301,6 +1225,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.offersOnly) return _offersPage();
     return Container(
       color: Colors.white,
       child: FutureBuilder<List<CatalogDoc>>(
@@ -1320,7 +1245,20 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              SliverToBoxAdapter(child: _homeShortcuts()),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.delivery_dining_outlined),
+                    label: const Text('طلباتك على السريع'),
+                  ),
+                ),
+              ),
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),
