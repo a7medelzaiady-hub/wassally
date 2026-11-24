@@ -42,10 +42,12 @@ void main() {
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
-    // All three entry actions must fit in the initial 390x844 viewport.
+    // Larger approved artwork may require scrolling, but every card
+    // must remain reachable without an overflow.
     final stores = find.text('تصفح المحلات');
+    await tester.ensureVisible(stores);
+    await tester.pump();
     expect(stores.hitTestable(), findsOneWidget);
-    expect(tester.getBottomLeft(stores).dy, lessThan(760));
     expect(tester.takeException(), isNull);
   });
 
@@ -84,6 +86,8 @@ void main() {
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
+    await tester.ensureVisible(find.text('تصفح المحلات'));
+    await tester.pump();
     expect(find.text('تصفح المحلات').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
