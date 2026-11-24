@@ -50,8 +50,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
     );
   }
 
-  Widget _hero() => Container(
-    height: 236,
+  Widget _hero({double height = 236}) => Container(
+    height: height,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(26),
@@ -129,9 +129,11 @@ class _CustomerEntryState extends State<CustomerEntry> {
     required IconData icon,
     required Rect art,
     required VoidCallback onTap,
+    double height = 146,
+    double gap = 14,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(bottom: gap),
       child: Material(
         elevation: 5,
         shadowColor: Brand.palette.ink.withValues(alpha: 0.15),
@@ -144,7 +146,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
         child: InkWell(
           onTap: onTap,
           child: SizedBox(
-            height: 146,
+            height: height,
             child: Row(
               textDirection: TextDirection.ltr,
               children: [
@@ -261,20 +263,38 @@ class _CustomerEntryState extends State<CustomerEntry> {
     if (_entered) return _dashboard;
 
     final isCustomer = widget.dashboard == null;
+    final availableHeight = MediaQuery.sizeOf(context).height - MediaQuery.paddingOf(context).vertical - MediaQuery.viewPaddingOf(context).bottom - 92;
+    final compact = availableHeight < 800;
+    final heroHeight = compact ? 158.0 : 236.0;
+    final cardHeight = compact ? 112.0 : 146.0;
+    final cardGap = compact ? 7.0 : 14.0;
     return Scaffold(
       backgroundColor: Brand.bg,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+          padding: EdgeInsets.fromLTRB(12, compact ? 6 : 12, 12, compact ? 6 : 14),
           children: [
-            _hero(),
-            const SizedBox(height: 16),
+            _hero(height: heroHeight),
+            SizedBox(height: compact ? 8 : 16),
+            Container(
+              height: compact ? 42 : 52,
+              margin: EdgeInsets.only(bottom: compact ? 8 : 14),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), border: Border.all(color: Brand.palette.line)),
+              child: Row(children: [
+                const SizedBox(width: 14),
+                Icon(Icons.card_giftcard_rounded, color: Brand.palette.accent),
+                const SizedBox(width: 10),
+                Expanded(child: Text('اكتب هنا كود الدعوة', style: TextStyle(color: Brand.palette.muted, fontWeight: FontWeight.w800))),
+              ]),
+            ),
             _serviceCard(
               title: 'خدمة وصّلي ع السريع',
               subtitle: 'سجل اللى عاوزه ونوصلهولك بسرعة',
               action: 'اطلب الآن',
               icon: Icons.bolt_rounded,
               art: const Rect.fromLTWH(20, 541, 303, 195),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const QuickOrderCreatePage()),
             ),
             _serviceCard(
@@ -283,6 +303,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
               action: 'شاهد العروض',
               icon: Icons.local_offer_rounded,
               art: const Rect.fromLTWH(22, 796, 295, 173),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const HomePage(offersOnly: true)),
             ),
             _serviceCard(
@@ -291,6 +313,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
               action: 'استعرض المحلات',
               icon: Icons.storefront_rounded,
               art: const Rect.fromLTWH(22, 1026, 305, 174),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const StoreDirectoryPage()),
             ),
             if (!isCustomer) ...[
