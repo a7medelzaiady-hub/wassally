@@ -120,6 +120,75 @@ it("binds the first registration once and accepts a retry of the same code", asy
   expect(saves).toHaveLength(1);
 });
 
+it("reserves a shared phone for the first Google identity, blocks a second Google account", async () => {
+  const firstUid = "first-google-on-phone";
+  const secondUid = "second-google-on-phone";
+  const { docs, fetchMock, saves } = setup(firstUid);
+  const base = fetchMock.getMockImplementation()!;
+  const deviceId = "a1b2c3d4e5f60718";
+  const markerRequests: string[] = [];
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    const body = typeof init?.body === "string" && init.body.startsWith("{")
+      ? JSON.parse(init.body) : {};
+    if (url.endsWith(":lookup") && body.localId?.[0] === secondUid) {
+      const now = Date.now();
+      return Response.json({ users: [{
+        localId: secondUid, createdAt: String(now), lastLoginAt: String(now),
+        validSince: "1",
+        providerUserInfo: [{ providerId: "google.com", rawId: "second-google-subject-1234" }],
+      }] });
+    }
+    if (url.includes("referral_device_bindings/")) markerRequests.push(url);
+    return base(input, init);
+  });
+  const bind = (uid: string) => worker.fetch(new Request(
+    "https://worker.test/v1/referrals/device-binding", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${uid}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId }),
+    }), env as never);
+  const first = await bind(firstUid);
+  expect(first.status).toBe(200);
+  expect((await first.json() as { eligible: boolean }).eligible).toBe(true);
+  const again = await bind(firstUid);
+  expect((await again.json() as { eligible: boolean }).eligible).toBe(true);
+  expect(Object.keys(docs).filter(k => k.startsWith("referral_device_bindings/"))).toHaveLength(1);
+  const second = await bind(secondUid);
+  expect(second.status).toBe(200);
+  expect((await second.json() as { eligible: boolean }).eligible).toBe(false);
+  const claim = await call(secondUid);
+  expect(claim.status).toBe(403);
+  expect((await claim.json() as { error?: string }).error).toContain("نفس الموبايل");
+  expect(saves).toHaveLength(0);
+  expect(markerRequests.length).toBeGreaterThan(0);
+});
+
+it("rejects missing or fake Android device identifiers for invitation claims", async () => {
+  setup("device-missing");
+  const req = (deviceId?: string) => worker.fetch(new Request(
+    "https://worker.test/v1/referrals/registration", {
+      method: "POST",
+      headers: { Authorization: "Bearer device-missing", "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "ABC123", ...(deviceId == null ? {} : { deviceId }) }),
+    }), env as never);
+  expect((await req()).status).toBe(403);
+  expect((await req("0000000000000000")).status).toBe(403);
+  expect((await req("bad-device")).status).toBe(403);
+});
+
+it("requires App Check for referral-device binding when production switch is enabled", async () => {
+  const { fetchMock } = setup("appcheck-required");
+  const result = await worker.fetch(new Request(
+    "https://worker.test/v1/referrals/device-binding", {
+      method: "POST",
+      headers: { Authorization: "Bearer appcheck-required", "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId: "a1b2c3d4e5f60718" }),
+    }), { ...env, REFERRAL_DEVICE_APP_CHECK_REQUIRED: "true", FIREBASE_PROJECT_NUMBER: "244081237486" } as never);
+  expect(result.status).toBe(403);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 it("rejects a later login before opening a Firestore transaction", async () => {
   const { fetchMock } = setup("returning-client", "customer", 10_000);
   expect((await call("returning-client")).status).toBe(403);
