@@ -23,7 +23,16 @@ class AuthService {
   /// No pending invitation is restored for users who registered previously.
   static final ValueNotifier<String?> newAccountInvitation = ValueNotifier(null);
 
-  static void _onGoogleLogin(UserCredential credential) {
+  static Future<void> _onGoogleLogin(UserCredential credential) async {
+    // Register every Google account on this device, not only customers who
+    // choose to enter an invitation. A second account cannot claim a second
+    // new-user reward simply because the first account skipped the code.
+    // Failure never blocks normal Google login; the claim endpoint fails closed.
+    try {
+      await OrderGateway.registerReferralDevice();
+    } catch (_) {
+      debugPrint('Referral device verification unavailable (sign-in unaffected).');
+    }
     newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
         ? credential.user?.uid
         : null;
@@ -42,14 +51,14 @@ class AuthService {
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
   static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
+      await _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        _onGoogleLogin(await _nativeGoogleSignIn());
+        await _onGoogleLogin(await _nativeGoogleSignIn());
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -68,7 +77,7 @@ class AuthService {
         );
       }
     }
-    _onGoogleLogin(await _providerSignInWithRetry());
+    await _onGoogleLogin(await _providerSignInWithRetry());
   }
 
   static Future<UserCredential> _nativeGoogleSignIn() async {
