@@ -352,15 +352,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
             borderRadius: BorderRadius.circular(30),
             child: Row(
               children: [
-                if (isCustomer)
-                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
-                else
+                if (isCustomer) ...[
+                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2)),
+                  _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1)),
+                ] else ...[
                   _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
-                if (isCustomer)
-                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
-                else
                   _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
-                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                  _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                ],
                 _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
               ],
             ),
