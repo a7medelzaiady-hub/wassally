@@ -48,6 +48,8 @@ jobs:
           grep -Eq '^APP_CHECK_MODE *= *"monitor"' wrangler.toml
           test -s src/referral_first_session.ts
           grep -q 'isOriginalRegistrationSession' src/index.ts
+          grep -q 'REFERRAL_IDENTITY_HMAC_KEY' src/index.ts
+          grep -q 'referral_deleted_identities' src/referral_identity.ts
           echo "Only original signups can register; cash and reward settlement stay disabled."
       - name: Check Wrangler bundle
         run: npx wrangler deploy --dry-run
@@ -84,7 +86,7 @@ jobs:
             echo "::error::Cannot read Worker secret inventory. No changes made."
             exit 1
           fi
-          for name in FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET DELIVERY_PIN_SECRET; do
+          for name in FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET DELIVERY_PIN_SECRET REFERRAL_IDENTITY_HMAC_KEY; do
             if ! grep -q "\"$name\"" <<< "$list"; then
               echo "::error::Worker is missing prerequisite binding $name; no deployment attempted."
               exit 1
