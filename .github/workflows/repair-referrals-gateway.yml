@@ -44,6 +44,8 @@ jobs:
           set -euo pipefail
           grep -Eq '^REFERRAL_REGISTRATION_ENABLED *= *"true"' wrangler.toml
           grep -Eq '^REFERRAL_DELIVERY_ENABLED *= *"false"' wrangler.toml
+          grep -Eq '^REFERRAL_DEVICE_APP_CHECK_REQUIRED *= *"true"' wrangler.toml
+          grep -q 'referral_device_bindings' src/index.ts
           grep -Eq '^FIREBASE_PROJECT_ID *= *"wasally-12259"' wrangler.toml
           grep -Eq '^APP_CHECK_MODE *= *"monitor"' wrangler.toml
           test -s src/referral_first_session.ts
