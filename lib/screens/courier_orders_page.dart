@@ -15,6 +15,7 @@ import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/maps.dart';
 import '../widgets/customer_rating_dialog.dart';
+import '../widgets/courier_order_receipt.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
@@ -1104,7 +1105,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
           ),
-          const SizedBox(height: 8),
+          // محتوى طلب العميل هو أول معلومة يحتاجها المندوب.
+          // الفاتورة واضحة من غير ضغطة إضافية ولا استعلامات Firestore.
+          CourierOrderReceipt(
+            items: o.items,
+            specialRequest: o.specialRequest,
+            notes: o.notes,
+          ),
           Text(
             'طلب ${_courierOrderNumber(o.id)} • $statusLabel',
             style: TextStyle(fontSize: 12, color: kMuted),
@@ -1186,25 +1193,6 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
-            ],
-          ),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-            title: const Text('تفاصيل الطلب'),
-            subtitle: Text('${o.items.length} صنف'),
-            children: [
-              if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
-              for (final item in o.items)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('${item.qty} × ${item.name}'),
-                  subtitle: item.options.isEmpty
-                      ? null
-                      : Text(item.options.join('، ')),
-                  trailing: Text(formatPrice(item.total)),
-                ),
             ],
           ),
           if (o.status == OrderStatus.onTheWay &&
