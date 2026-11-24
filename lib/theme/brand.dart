@@ -118,12 +118,12 @@ class AppPalette {
     primary: Color(0xFFFF7900),
     primaryDark: Color(0xFFE65F00),
     primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF102344),
-    accentDeep: Color(0xFF08182F),
+    accent: Color(0xFF512DA8),
+    accentDeep: Color(0xFF311B73),
     bg: Color(0xFFF5F6FA),
-    ink: Color(0xFF102344),
+    ink: Color(0xFF19243B),
     muted: Color(0xFF69758B),
-    line: Color(0xFFE0E5ED),
+    line: Color(0xFFE8E1F2),
     soft: Color(0xFFFFE9D5),
   );
 
