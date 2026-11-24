@@ -126,7 +126,7 @@ it("blocks an account recreated from a deleted Google identity even with a new F
   };
   const result = await call("firebase-new-uid");
   expect(result.status).toBe(403);
-  expect((await result.json()).error).toContain("حذف الحساب");
+  expect(((await result.json()) as { error?: string }).error).toContain("حذف الحساب");
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(":beginTransaction"))).toBe(false);
   expect(saves).toHaveLength(0);
 });
@@ -194,7 +194,7 @@ it("delete then rejoin same Google account: persistent HMAC marker prevents refe
 
   const rejoined = await call(newUid);
   expect(rejoined.status).toBe(403);
-  expect((await rejoined.json()).error).toContain("حذف الحساب");
+  expect(((await rejoined.json()) as { error?: string }).error).toContain("حذف الحساب");
 });
 
 it("deletion never removes an account when saving a configured marker fails", async () => {
