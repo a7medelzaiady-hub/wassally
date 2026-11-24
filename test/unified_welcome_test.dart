@@ -31,6 +31,15 @@ void main() {
     });
     expect(purpleHero, findsOneWidget);
     expect(find.text('كل اللي بتحبه...'), findsOneWidget);
+    // Customer bottom navigation: orders, home, cart, account.
+    final ordersX = tester.getCenter(find.text('طلباتي')).dx;
+    final homeX = tester.getCenter(find.text('الرئيسية')).dx;
+    final cartX = tester.getCenter(find.text('السلة')).dx;
+    final accountX = tester.getCenter(find.text('حسابي')).dx;
+    expect(ordersX, lessThan(homeX));
+    expect(homeX, lessThan(cartX));
+    expect(cartX, lessThan(accountX));
+
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
