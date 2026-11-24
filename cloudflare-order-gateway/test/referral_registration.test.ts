@@ -137,6 +137,88 @@ it("does not block a brand-new Google identity with no deletion marker", async (
   expect(saves).toHaveLength(1);
 });
 
+it("delete then rejoin same Google account: persistent HMAC marker prevents referral reuse", async () => {
+  const oldUid = "deleted-rejoin-old";
+  const newUid = "deleted-rejoin-new";
+  const originalSubject = "google-subject-" + oldUid;
+  const { fetchMock, docs } = setup(oldUid);
+  const base = fetchMock.getMockImplementation()!;
+  const events: string[] = [];
+  const now = Date.now();
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" && init.body.startsWith("{")
+      ? JSON.parse(init.body) : {};
+    if (url.endsWith("accounts:lookup") && body.localId?.[0] === newUid) {
+      return Response.json({ users: [{
+        localId: newUid,
+        createdAt: String(now), lastLoginAt: String(now),
+        validSince: "1",
+        providerUserInfo: [{ providerId: "google.com", rawId: originalSubject }],
+      }] });
+    }
+    if (url.endsWith("/accounts:delete")) {
+      events.push("auth_deleted");
+      expect(body.localId).toBe(oldUid);
+      return Response.json({});
+    }
+    if (url.endsWith(":runQuery")) return Response.json([]);
+    if (url.endsWith("/storeOwners/" + oldUid) && method === "GET") {
+      return new Response("", { status: 404 });
+    }
+    if (url.endsWith(":commit")) {
+      for (const write of (body.writes ?? [])) {
+        if (write.update?.name?.includes("/referral_deleted_identities/")) {
+          events.push("marker_saved");
+          docs[write.update.name.slice(root.length)] = write.update.fields;
+          expect(write.update.fields).not.toHaveProperty("email");
+          expect(write.update.fields).not.toHaveProperty("uid");
+          expect(write.update.fields).not.toHaveProperty("googleSubject");
+        }
+      }
+      return Response.json({});
+    }
+    return base(input, init);
+  });
+
+  const deleted = await worker.fetch(new Request(
+    "https://worker.test/v1/account/delete", {
+      method: "POST", headers: { Authorization: `Bearer ${oldUid}` },
+    }), env as never);
+  expect(deleted.status).toBe(200);
+  expect(events).toContain("marker_saved");
+  expect(events.indexOf("marker_saved")).toBeLessThan(events.indexOf("auth_deleted"));
+  expect(Object.keys(docs).some(key => key.startsWith("referral_deleted_identities/")))
+    .toBe(true);
+
+  const rejoined = await call(newUid);
+  expect(rejoined.status).toBe(403);
+  expect((await rejoined.json()).error).toContain("حذف الحساب");
+});
+
+it("deletion never removes an account when saving a configured marker fails", async () => {
+  const uid = "marker-write-failure-account";
+  const { fetchMock } = setup(uid);
+  const base = fetchMock.getMockImplementation()!;
+  let authDeleted = false;
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.endsWith(":commit")) return new Response("unavailable", { status: 503 });
+    if (url.endsWith("/accounts:delete")) {
+      authDeleted = true;
+      return Response.json({});
+    }
+    return base(input, init);
+  });
+  const response = await worker.fetch(new Request(
+    "https://worker.test/v1/account/delete", {
+      method: "POST", headers: { Authorization: `Bearer ${uid}` },
+    }), env as never);
+  expect(response.status).toBeGreaterThanOrEqual(500);
+  expect(authDeleted).toBe(false);
+});
+
 it("requires a marketer code issued by an administrator", async () => {
   const { docs, saves } = setup("marketer-client", "marketer");
   expect((await call("marketer-client")).status).toBe(409);
