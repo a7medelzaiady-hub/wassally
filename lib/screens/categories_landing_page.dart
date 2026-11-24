@@ -104,13 +104,16 @@ class _CustomerEntryState extends State<CustomerEntry> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('كل اللي بتحبه...', maxLines: 1,
-                style: TextStyle(color: Colors.white, fontSize: 19,
+              Text('كل اللي بتحبه...', maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white,
+                    fontSize: height < 190 ? 15 : 19,
                     fontWeight: FontWeight.w900)),
               RichText(
                 text: TextSpan(
-                  style: const TextStyle(fontFamily: 'Tajawal',
-                    color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  style: TextStyle(fontFamily: 'Tajawal',
+                    color: Colors.white, fontSize: height < 190 ? 14 : 18,
+                    fontWeight: FontWeight.w800),
                   children: [
                     TextSpan(text: 'يوصلك ', style: TextStyle(color: Brand.palette.primaryLight)),
                     const TextSpan(text: 'لحد باب بيتك'),
