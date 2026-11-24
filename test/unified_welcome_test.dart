@@ -41,6 +41,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('الصفحة لا تعرض حقل دعوة مضلل للحسابات القديمة',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      theme: buildAppTheme(),
+      home: const CustomerEntry(),
+    ));
+    await tester.pump();
+    expect(find.text('كود الدعوة متاح عند إنشاء حساب جديد فقط'),
+        findsOneWidget);
+    expect(find.text('اكتب هنا كود الدعوة'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('صاحب المحل يحصل على نفس صفحة الترحيب مع مدخل لوحته',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
