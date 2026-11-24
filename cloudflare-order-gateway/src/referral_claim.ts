@@ -1,5 +1,8 @@
 import { isReferralCode, normalizeReferralCode, type CodeReferralChannel } from "./referrals";
 
+/** A new account may enter one invite code anytime during its first 24 hours. */
+export const REFERRAL_REGISTRATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Validates the server-owned code record and registration evidence before
  * creating an immutable attribution. All evidence must be fetched by the
@@ -20,7 +23,7 @@ export interface RegistrationEvidence {
   claimAtMs: number;
   /** Set by Worker from Auth/Firestore, not the app. */
   alreadyAttributed: boolean;
-  /** This is a new registration claim, not a later login. */
+  /** Server-enforced grace period counted from Firebase Auth account creation. */
   registrationWindowMs: number;
 }
 
@@ -53,7 +56,7 @@ export function decideReferralClaim(
       !Number.isSafeInteger(evidence.claimAtMs) ||
       !Number.isSafeInteger(evidence.registrationWindowMs) ||
       evidence.accountCreatedAtMs <= 0 || evidence.registrationWindowMs <= 0 ||
-      evidence.registrationWindowMs > 3600000 ||
+      evidence.registrationWindowMs > REFERRAL_REGISTRATION_WINDOW_MS ||
       evidence.claimAtMs < evidence.accountCreatedAtMs ||
       evidence.claimAtMs - evidence.accountCreatedAtMs > evidence.registrationWindowMs) {
     return { allowed: false, reason: "not_first_registration" };
