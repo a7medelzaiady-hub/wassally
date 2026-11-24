@@ -14,6 +14,7 @@ import {
   isActiveDeletedIdentity,
   referralIdentityDocumentId,
 } from "./referral_identity";
+import { pruneExpiredDeletedReferralIdentities } from "./referral_identity_prune";
 import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
@@ -2206,6 +2207,16 @@ async function cleanupOrderAttachmentsFor(
 }
 
 export default {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY)) return;
+    const token = await googleAccessToken(env);
+    // Only the HMAC document IDs are ever touched. No user email, raw Google
+    // subject or Firebase UID is persisted by this retention job.
+    const deletedCount = await pruneExpiredDeletedReferralIdentities(
+      env.FIREBASE_PROJECT_ID, token, fetch,
+    );
+    if (deletedCount) console.info("Expired referral markers deleted", deletedCount);
+  },
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let headers: Headers;
     try {
