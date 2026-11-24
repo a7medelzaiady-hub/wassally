@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
 import '../theme/brand.dart';
+import 'account_page.dart';
 import 'home_page.dart';
 import 'main_shell.dart';
+import 'notifications_page.dart';
 import 'quick_order_create_page.dart';
 import 'store_directory_page.dart';
 
-/// The signed-in customer's starting page.
+/// A single signed-in landing experience for every role.
+/// Other roles keep their own dashboard and permissions behind the "لوحتي" entry.
 class CustomerEntry extends StatefulWidget {
-  const CustomerEntry({super.key});
+  const CustomerEntry({super.key, this.dashboard, this.dashboardLabel});
+
+  final Widget? dashboard;
+  final String? dashboardLabel;
 
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
@@ -18,9 +24,9 @@ class CustomerEntry extends StatefulWidget {
 class _CustomerEntryState extends State<CustomerEntry> {
   bool _entered = false;
 
-  void _enter([Widget? destination]) {
+  void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
-    shellTab.value = 0;
+    shellTab.value = tab;
     setState(() => _entered = true);
     if (destination != null) {
       Navigator.of(context).push(
@@ -29,146 +35,300 @@ class _CustomerEntryState extends State<CustomerEntry> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_entered) return const MainShell();
+  Widget get _dashboard => widget.dashboard ?? const MainShell();
 
-    return Scaffold(
-      backgroundColor: Brand.bg,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-          children: [
-            Material(
-              color: Brand.ink,
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'وصّلي',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          Text(
-                            'كل اللي بتحبه لحد باب بيتك',
-                            style: TextStyle(color: Colors.white, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 126,
-                    height: 136,
-                    child: _EntryArtwork(Rect.fromLTWH(12, 311, 310, 207)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            _EntryCard(
-              title: 'طلباتك على السريع',
-              action: 'اطلب الآن',
-              icon: Icons.bolt_rounded,
-              art: const Rect.fromLTWH(20, 541, 303, 195),
-              onTap: () => _enter(const QuickOrderCreatePage()),
-            ),
-            _EntryCard(
-              title: 'تصفح العروض',
-              action: 'شاهد العروض',
-              icon: Icons.local_offer_outlined,
-              art: const Rect.fromLTWH(22, 796, 295, 173),
-              onTap: () => _enter(const HomePage(offersOnly: true)),
-            ),
-            _EntryCard(
-              title: 'تصفح المحلات',
-              action: 'استعرض المحلات',
-              icon: Icons.storefront_outlined,
-              art: const Rect.fromLTWH(22, 1026, 305, 174),
-              onTap: () => _enter(const StoreDirectoryPage()),
-            ),
-            TextButton.icon(
-              onPressed: () => _enter(),
-              icon: const Icon(Icons.home_outlined),
-              label: const Text('الرئيسية'),
-            ),
-          ],
-        ),
+  Widget _topButton(IconData icon, String label, Widget page) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 3,
+      child: IconButton(
+        tooltip: label,
+        icon: Icon(icon, color: Brand.palette.ink, size: 26),
+        onPressed: () => _enter(page),
       ),
     );
   }
-}
 
-class _EntryCard extends StatelessWidget {
-  const _EntryCard({
-    required this.title,
-    required this.action,
-    required this.icon,
-    required this.art,
-    required this.onTap,
-  });
+  Widget _hero() => Container(
+    height: 236,
+    clipBehavior: Clip.antiAlias,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(26),
+      gradient: LinearGradient(
+        begin: Alignment.topRight,
+        end: Alignment.bottomLeft,
+        colors: [Brand.palette.accent, Brand.palette.accentDeep],
+      ),
+    ),
+    child: Stack(
+      children: [
+        Positioned(
+          left: -4,
+          bottom: -4,
+          width: 190,
+          height: 146,
+          child: const _EntryArtwork(Rect.fromLTWH(12, 311, 310, 207)),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 8,
+          child: ColoredBox(color: Brand.palette.primary),
+        ),
+        Positioned(
+          top: 10,
+          left: 12,
+          child: _topButton(Icons.notifications_none_rounded, 'الإشعارات', const NotificationsPage()),
+        ),
+        Positioned(
+          top: 10,
+          right: 12,
+          child: _topButton(Icons.person_outline_rounded, 'حسابي', const AccountPage()),
+        ),
+        const Positioned(
+          top: 19,
+          left: 70,
+          right: 70,
+          child: Column(
+            children: [
+              Text('وصّلي', textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 41,
+                  height: 1.0, fontWeight: FontWeight.w900)),
+              Text('Wasally', style: TextStyle(color: Colors.white,
+                  fontSize: 15, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 111,
+          right: 18,
+          left: 160,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('كل اللي بتحبه...', maxLines: 1,
+                style: TextStyle(color: Colors.white, fontSize: 19,
+                    fontWeight: FontWeight.w900)),
+              RichText(
+                text: TextSpan(
+                  style: const TextStyle(fontFamily: 'Tajawal',
+                    color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  children: [
+                    TextSpan(text: 'يوصلك ', style: TextStyle(color: Brand.palette.primaryLight)),
+                    const TextSpan(text: 'لحد باب بيتك'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 
-  final String title;
-  final String action;
-  final IconData icon;
-  final Rect art;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _serviceCard({
+    required String title,
+    required String subtitle,
+    required String action,
+    required IconData icon,
+    required Rect art,
+    required VoidCallback onTap,
+  }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Material(
+        elevation: 5,
+        shadowColor: Brand.palette.ink.withValues(alpha: 0.15),
         color: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(26),
           side: BorderSide(color: Brand.palette.line),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          child: SizedBox(
+            height: 142,
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 5,
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Icon(icon, color: Brand.green, size: 22),
-                      const SizedBox(height: 4),
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: Brand.ink,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        action,
-                        style: TextStyle(
-                          color: Brand.palette.primaryDark,
-                          fontWeight: FontWeight.w800,
+                      _EntryArtwork(art),
+                      const Positioned(
+                        top: 0,
+                        bottom: 0,
+                        right: 0,
+                        width: 40,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.white, Colors.transparent],
+                              begin: Alignment.centerRight,
+                              end: Alignment.centerLeft,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              SizedBox(width: 124, height: 108, child: _EntryArtwork(art)),
+                Expanded(
+                  flex: 6,
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(2, 10, 12, 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Icon(icon, color: Brand.green, size: 27),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(title, maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Brand.ink,
+                            fontSize: 19, height: 1.13, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 3),
+                        Text(subtitle, maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Brand.palette.muted,
+                            fontSize: 11, height: 1.2, fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        Container(
+                          height: 35,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(colors: [
+                              Brand.palette.primaryLight, Brand.green,
+                            ]),
+                            borderRadius: BorderRadius.circular(22),
+                            boxShadow: [BoxShadow(
+                              color: Brand.green.withValues(alpha: 0.22),
+                              blurRadius: 7, offset: const Offset(0, 3),
+                            )],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(action, style: const TextStyle(
+                                color: Colors.white, fontSize: 13,
+                                fontWeight: FontWeight.w900)),
+                              const SizedBox(width: 2),
+                              const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 19),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _navButton(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: selected ? Brand.green : Brand.ink,
+                size: selected ? 31 : 25),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: selected ? Brand.green : Brand.ink,
+                  fontSize: 11, fontWeight: FontWeight.w800)),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_entered) return _dashboard;
+
+    final isCustomer = widget.dashboard == null;
+    return Scaffold(
+      backgroundColor: Brand.bg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+          children: [
+            _hero(),
+            const SizedBox(height: 16),
+            _serviceCard(
+              title: 'خدمة وصّلي ع السريع',
+              subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
+              action: 'اطلب الآن',
+              icon: Icons.bolt_rounded,
+              art: const Rect.fromLTWH(20, 541, 303, 195),
+              onTap: () => _enter(const QuickOrderCreatePage()),
+            ),
+            _serviceCard(
+              title: 'تصفح العروض',
+              subtitle: 'أقوى الخصومات والعروض الحصرية',
+              action: 'شاهد العروض',
+              icon: Icons.local_offer_rounded,
+              art: const Rect.fromLTWH(22, 796, 295, 173),
+              onTap: () => _enter(const HomePage(offersOnly: true)),
+            ),
+            _serviceCard(
+              title: 'تصفح المحلات',
+              subtitle: 'اكتشف جميع المحلات والأصناف',
+              action: 'استعرض المحلات',
+              icon: Icons.storefront_rounded,
+              art: const Rect.fromLTWH(22, 1026, 305, 174),
+              onTap: () => _enter(const StoreDirectoryPage()),
+            ),
+            if (!isCustomer) ...[
+              const SizedBox(height: 2),
+              FilledButton.icon(
+                onPressed: () => _enter(),
+                icon: const Icon(Icons.dashboard_customize_outlined),
+                label: Text(widget.dashboardLabel ?? 'افتح لوحتي'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 3, 12, 10),
+          child: Material(
+            color: Colors.white,
+            elevation: 5,
+            shadowColor: Brand.ink.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(30),
+            child: Row(
+              children: [
+                _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
+                if (isCustomer) ...[
+                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2)),
+                ] else ...[
+                  _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
+                ],
+                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                if (isCustomer)
+                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
+                else
+                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
+              ],
+            ),
           ),
         ),
       ),
