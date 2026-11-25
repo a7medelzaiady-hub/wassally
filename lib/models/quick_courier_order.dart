@@ -109,6 +109,9 @@ class QuickCourierOrder {
   final String area;
   final String notes;
   final List<QuickStoreRequest> stores;
+
+  /// صور «صوّر طلبك» اللي العميل رفعها (بتتمسح بعد التسليم).
+  final List<String> customerImages;
   final int? approxTotalPiastres;
   final int prepaidThresholdPiastres;
   final int maximumAdvancePiastres;
@@ -134,6 +137,7 @@ class QuickCourierOrder {
     this.area = '',
     this.notes = '',
     this.stores = const [],
+    this.customerImages = const [],
     this.approxTotalPiastres,
     this.prepaidThresholdPiastres = 20000,
     this.maximumAdvancePiastres = 100000,
@@ -157,6 +161,7 @@ class QuickCourierOrder {
     final policy = _map(m['policy']);
     final advance = _map(m['advance']);
     final rawStores = m['stores'];
+    final rawImages = m['customerImages'];
     final rawReceipts = m['receipts'];
     return QuickCourierOrder(
       id: id,
@@ -165,6 +170,9 @@ class QuickCourierOrder {
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
       notes: _str(m['notes']),
+      customerImages: rawImages is List
+          ? [for (final u in rawImages) if (u is String && u.startsWith('https://')) u]
+          : const [],
       stores: [
         if (rawStores is List)
           for (final s in rawStores)

@@ -134,8 +134,35 @@ export function quickApproxTotal(stores: QuickStore[]): number {
       n + item.qty * item.unitPricePiastres, 0), 0);
 }
 
-/** المحلات: من 1 لـ10، اسم المحل اختياري (فاضي = المندوب يختار)، والطلبات نص حر. */
-export function validateQuickStores(input: unknown): QuickStore[] {
+/** أقصى عدد صور «صوّر طلبك» في الطلب الواحد. */
+export const QUICK_MAX_CUSTOMER_IMAGES = 3;
+
+/**
+ * صور «صوّر طلبك»: لحد 3 روابط، كل رابط لازم يعدّي [isOwnImage]
+ * (Cloudinary + مجلد العميل نفسه). غياب الحقل = مفيش صور.
+ */
+export function validateQuickImages(input: unknown, isOwnImage: (url: string) => boolean): string[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.length > QUICK_MAX_CUSTOMER_IMAGES) {
+    fail(400, "invalid_images", `ممكن ترفع لحد ${QUICK_MAX_CUSTOMER_IMAGES} صور بس.`);
+  }
+  const urls = input.map((value) => (typeof value === "string" ? value.trim() : ""));
+  if (urls.some((url) => !url || url.length > 450 || !isOwnImage(url)) ||
+      new Set(urls).size !== urls.length) {
+    fail(400, "invalid_images", "صورة الطلب غير صالحة. ارفعها تاني.");
+  }
+  return urls;
+}
+
+/**
+ * المحلات: من 1 لـ10، اسم المحل اختياري (فاضي = المندوب يختار)، والطلبات نص حر.
+ * لو العميل باعت صور للطلب [hasImages]، الكتابة بقت اختيارية (الصورة هي الطلب).
+ */
+export function validateQuickStores(input: unknown, hasImages = false): QuickStore[] {
+  if (hasImages && (input === undefined || input === null ||
+      (Array.isArray(input) && input.length === 0))) {
+    return [{ name: "", items: "" }];
+  }
   if (!Array.isArray(input) || input.length < 1 || input.length > QUICK_LIMITS.maxStores) {
     fail(400, "invalid_stores", "اكتب طلباتك لمحل واحد على الأقل (بحد أقصى 10 محلات).");
   }
@@ -147,7 +174,8 @@ export function validateQuickStores(input: unknown): QuickStore[] {
     const name = typeof e.name === "string" ? e.name.trim() : "";
     const items = typeof e.items === "string" ? e.items.trim() : "";
     if (name.length > QUICK_LIMITS.maxStoreName || items.length > QUICK_LIMITS.maxItemsText ||
-        (items.length < 1 && !(Array.isArray(e.pricedItems) && e.pricedItems.length > 0))) {
+        (!hasImages && items.length < 1 &&
+          !(Array.isArray(e.pricedItems) && e.pricedItems.length > 0))) {
       fail(400, "invalid_stores", "راجع اسم المحل والطلبات (الطلبات من 1 لـ500 حرف).");
     }
     // null أو غياب الحقل = محل من غير أصناف مسعّرة (نص حر بس).
@@ -203,6 +231,7 @@ export function newQuickOrder(input: {
   notes: string;
   stores: QuickStore[];
   settings: QuickSettings;
+  customerImages?: string[];
 }): JsonMap {
   return {
     userId: input.uid,
@@ -210,6 +239,8 @@ export function newQuickOrder(input: {
     area: input.area,
     notes: input.notes,
     stores: input.stores,
+    // صور «صوّر طلبك» (Cloudinary). بتتمسح مراجعها وملفاتها عند التسليم.
+    customerImages: input.customerImages ?? [],
     approxTotalPiastres: quickApproxTotal(input.stores),
     status: "open",
     courierId: "",
@@ -526,6 +557,14 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
     deliveredBy: uid,
     courierOwedPiastres: numOrNull(totals.serviceFee) ?? 0,
     collectedPiastres: numOrNull(totals.due) ?? 0,
+    // صور العميل بتتشال من الطلب لحظة تأكيد الاستلام (والملفات بتتمسح من Cloudinary).
+    customerImages: [],
     rev: (numOrNull(order.rev) ?? 0) + 1,
   };
+}
+
+/** صور العميل اللي محتاجة تتمسح من Cloudinary بعد التسليم. */
+export function quickCustomerImages(order: JsonMap): string[] {
+  const raw = order.customerImages;
+  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
 }

@@ -352,6 +352,45 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             style: TextStyle(fontSize: 12, color: kMuted),
           ),
         ),
+      // صور «صوّر طلبك»: في أول المحتوى وبتتكبّر بالضغط.
+      if (o.customerImages.isNotEmpty) ...[
+        _requestDivider(),
+        const Text('صور طلب العميل',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            key: const Key('quick-courier-customer-images'),
+            scrollDirection: Axis.horizontal,
+            itemCount: o.customerImages.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final url = o.customerImages[i];
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => Dialog(
+                    clipBehavior: Clip.antiAlias,
+                    child: InteractiveViewer(
+                      maxScale: 5,
+                      child: Image.network(url, fit: BoxFit.contain),
+                    ),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(url, width: 100, height: 120, fit: BoxFit.cover,
+                      cacheWidth: 300,
+                      errorBuilder: (_, _, _) => const SizedBox(
+                          width: 100, child: Icon(Icons.broken_image_outlined))),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
       for (final (index, store) in o.stores.indexed) ...[
         _requestDivider(),
         Text(

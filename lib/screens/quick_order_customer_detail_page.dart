@@ -379,6 +379,32 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   ],
                 ],
               ),
+              if (order['customerImages'] is List &&
+                  (order['customerImages'] as List).isNotEmpty)
+                _card(
+                  key: const Key('quick-customer-images'),
+                  title: 'صور طلبك',
+                  icon: Icons.photo_camera_outlined,
+                  children: [
+                    Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
+                      for (final url in (order['customerImages'] as List).whereType<String>())
+                        InkWell(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          onTap: () => _openReceipt(url),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            child: Image.network(url, width: 90, height: 90, fit: BoxFit.cover,
+                                cacheWidth: 270,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                    width: 90, height: 90, child: Icon(Icons.broken_image_outlined))),
+                          ),
+                        ),
+                    ]),
+                    const SizedBox(height: AppSpacing.xs),
+                    const Text('الصور بتتمسح تلقائيًا بعد ما تستلم طلبك.',
+                        style: AppTypography.secondary),
+                  ],
+                ),
               if (hasFinalBill)
                 _card(
                   key: const Key('quick-final-bill'),

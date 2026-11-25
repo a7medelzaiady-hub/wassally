@@ -164,4 +164,18 @@ void main() {
     expect(formatPiastres(1250), '12.50 ج');
     expect(formatPiastres(-500), '-5 ج');
   });
+
+  test('صور «صوّر طلبك» بتتقري للمندوب، وروابط غير https بتتشال', () {
+    final order = QuickCourierOrder.fromMap('cust1_abcdefghijklmnop', _base({
+      'customerImages': [
+        'https://res.cloudinary.com/x/image/upload/v1/special_requests/h/quick/a.jpg',
+        'http://insecure.example/a.jpg',
+        42,
+      ],
+    }));
+    expect(order.customerImages, [
+      'https://res.cloudinary.com/x/image/upload/v1/special_requests/h/quick/a.jpg',
+    ]);
+    expect(QuickCourierOrder.fromMap('cust1_abcdefghijklmnop', _base()).customerImages, isEmpty);
+  });
 }
