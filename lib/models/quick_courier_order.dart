@@ -112,7 +112,7 @@ class QuickCourierOrder {
 
   /// صور «صوّر طلبك» اللي العميل رفعها (بتتمسح بعد التسليم).
   final List<String> customerImages;
-  final String customerVoiceUrl;
+  final bool hasCustomerVoice;
   final int? approxTotalPiastres;
   final int prepaidThresholdPiastres;
   final int maximumAdvancePiastres;
@@ -139,7 +139,7 @@ class QuickCourierOrder {
     this.notes = '',
     this.stores = const [],
     this.customerImages = const [],
-    this.customerVoiceUrl = '',
+    this.hasCustomerVoice = false,
     this.approxTotalPiastres,
     this.prepaidThresholdPiastres = 20000,
     this.maximumAdvancePiastres = 100000,
@@ -172,7 +172,7 @@ class QuickCourierOrder {
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
       notes: _str(m['notes']),
-      customerVoiceUrl: _str(m['customerVoiceUrl']),
+      hasCustomerVoice: m['hasCustomerVoice'] == true,
       customerImages: rawImages is List
           ? [for (final u in rawImages) if (u is String && u.startsWith('https://')) u]
           : const [],
@@ -244,7 +244,7 @@ class QuickCourierOrder {
   /// Explains an empty quick-order receipt instead of presenting an empty
   /// details screen. Items can be written freely or priced in a store group.
   bool get hasCustomerRequest =>
-      customerImages.isNotEmpty || customerVoiceUrl.isNotEmpty || notes.trim().isNotEmpty ||
+      customerImages.isNotEmpty || hasCustomerVoice || notes.trim().isNotEmpty ||
       stores.any((s) =>
           s.items.trim().isNotEmpty ||
           s.pricedItems.any((line) => line.name.trim().isNotEmpty));
