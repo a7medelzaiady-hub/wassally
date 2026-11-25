@@ -370,7 +370,8 @@ export function applyQuickAction(
       if (status !== "open") {
         fail(409, "edit_after_accept", "المندوب قبل الطلب. كلّمه بالتليفون لأي تغيير.");
       }
-      const stores = validateQuickStores(body.stores);
+      const stores = validateQuickStores(body.stores,
+        order.hasCustomerVoice === true || quickCustomerImages(order).length > 0);
       return { stores, approxTotalPiastres: quickApproxTotal(stores), notes: validateQuickNotes(body.notes), rev };
     }
 
