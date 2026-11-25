@@ -357,7 +357,9 @@ class _StoreCard extends StatelessWidget {
                           ),
                         const Spacer(),
                         // عدد الأصناف مش محفوظ على مستند المحل (الأصناف في قايمة منفصلة)،
-                        // فبدل «0 منتج» الغلط بنعرض حالة المحل؛ والعدد يظهر لو معروف بس.
+                        // فبدل «0 منتج» الغلط بنعرض «مفتوح الآن»؛ والعدد يظهر لو معروف بس.
+                        // المحل المقفول عليه شارة «مغلق» جنب اسمه أصلًا.
+                        if (productCount > 0 || store.isOpen)
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: AppSpacing.md, vertical: AppSpacing.xxs + 1),
