@@ -241,8 +241,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (!mounted) return;
 
     setState(() => _submitting = true);
-    final navigator = Navigator.of(context);
-
     try {
       await OrderService.placeOrder(
         cart: cart,
@@ -255,78 +253,34 @@ class _CheckoutPageState extends State<CheckoutPage> {
         referralDiscountMinor: _referralDiscountMinor,
       );
 
-
-      navigator.popUntil((route) => route.isFirst);
-      shellTab.value = 2;
-      final dialogContext = navigator.context;
-      if (dialogContext.mounted) {
-        showDialog<void>(
-          context: dialogContext,
-          builder: (ctx) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              title: const Text(
-                'تم إرسال طلبك',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(height: 1.5),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: kPrimary.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: kPrimary.withValues(alpha: 0.4)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.pin_outlined, size: 20),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            kDeliveryPinKeepNotice,
-                            style: TextStyle(height: 1.45, fontSize: 13, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              actionsAlignment: MainAxisAlignment.center,
-              actions: [
-                FilledButton(
-                  onPressed: () {
-                    shellTab.value = 2; // طلباتي
-                    Navigator.pop(ctx);
-                  },
-                  style: FilledButton.styleFrom(
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                  ),
-                  child: const Text('تابع طلبي'),
+      // Only navigate after the Worker/Firestore confirms successful creation.
+      // The entry screen may still be the root (e.g. checkout via "Browse stores"),
+      // so selecting shellTab alone would leave the customer on entry cards.
+      if (!mounted) return;
+      openCustomerTab(context, 2); // طلباتي
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!messenger.mounted) return;
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 12),
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'تم إرسال طلبك بنجاح.',
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
+                SizedBox(height: 6),
+                Text(kDeliveryPinKeepNotice),
               ],
             ),
           ),
         );
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('تم إرسال طلبك. تابعه من صفحة طلباتي.')),
-        );
-      }
+      });
     } on OrderLimitException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
