@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   QuickRuleError,
+  applyQuickAction,
   newQuickOrder,
   quickCustomerVoice,
   quickDeliveredPatch,
@@ -54,6 +55,33 @@ describe("quick customer voice", () => {
       uid: "cust1", customerFirstName: "Ahmed", area: "الحي", notes: "",
       stores: [{ name: "", items: "لبن" }], settings: resolveQuickSettings(null),
     }).hasCustomerVoice).toBe(false);
+  });
+
+
+  it("replaces or deletes the voice only for its owner before courier acceptance", async () => {
+    const folder = (await quickRequestFolder("cust1")) + "/voice";
+    const first = makeUrl(folder, "first");
+    const second = makeUrl(folder, "second");
+    const onlyVoice = newQuickOrder({
+      uid: "cust1", customerFirstName: "Ahmed", area: "الحي",
+      notes: "", stores: [{ name: "", items: "" }],
+      customerVoiceUrl: first, settings: resolveQuickSettings(null),
+    });
+    const ctx = { orderId: "cust1_abcdefghijklmnop", now: new Date() };
+    const actor = { uid: "cust1", role: "customer" as const };
+    const replaced = applyQuickAction(onlyVoice, "edit-voice", actor, { customerVoiceUrl: second }, ctx);
+    expect(replaced.hasCustomerVoice).toBe(true);
+    expect(replaced.rev).toBe(2);
+    expect(() => applyQuickAction(onlyVoice, "edit-voice", actor, { customerVoiceUrl: "" }, ctx))
+      .toThrow(QuickRuleError); // Cannot leave a voice-only order empty.
+    expect(() => applyQuickAction({ ...onlyVoice, status: "accepted" },
+      "edit-voice", actor, { customerVoiceUrl: second }, ctx)).toThrow(QuickRuleError);
+    expect(() => applyQuickAction(onlyVoice, "edit-voice",
+      { uid: "other", role: "customer" }, { customerVoiceUrl: second }, ctx))
+      .toThrow(QuickRuleError);
+    const withText = { ...onlyVoice, stores: [{ name: "", items: "لبن وخبز" }] };
+    expect(applyQuickAction(withText, "edit-voice", actor,
+      { customerVoiceUrl: "" }, ctx).hasCustomerVoice).toBe(false);
   });
 
   it("validates the voice file content by signature, not uploaded extension", () => {
