@@ -75,198 +75,112 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
   }
 
   /// تايل إحصائية: عدد الطلبات بالحالة، وبيشتغل كفلتر لما تضغط عليه.
-  Widget _statTile({
-    required String label,
-    required int count,
-    required IconData icon,
-    required Color color,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(end: 10),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          width: 134,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: selected
-                ? LinearGradient(
-                    begin: Alignment.topRight,
-                    end: Alignment.bottomLeft,
-                    colors: [color, Color.lerp(color, Colors.black, 0.28)!],
-                  )
-                : null,
-            color: selected ? null : Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: selected ? Colors.transparent : kLine),
-            boxShadow: [
-              BoxShadow(
-                color: (selected ? color : Colors.black).withValues(
-                  alpha: selected ? 0.35 : 0.05,
-                ),
-                blurRadius: selected ? 14 : 8,
-                offset: const Offset(0, 4),
+  /// فلاتر مضغوطة (Chips) بعدد كل حالة بدل الكروت الكبيرة.
+  Widget _filters(List<AppOrder> all) {
+    Widget chip(String label, int count, bool selected, VoidCallback onTap, {Color? color}) {
+      final c = color ?? AppColors.purple;
+      return Padding(
+        padding: const EdgeInsetsDirectional.only(end: AppSpacing.xs),
+        child: ChoiceChip(
+          showCheckmark: false,
+          selected: selected,
+          onSelected: (_) => onTap(),
+          selectedColor: c,
+          backgroundColor: Colors.white,
+          side: BorderSide(color: selected ? c : AppColors.line),
+          shape: const StadiumBorder(),
+          label: Text.rich(TextSpan(children: [
+            TextSpan(text: label),
+            TextSpan(
+              text: '  $count',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: selected ? Colors.white : c,
               ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: selected
-                          ? Colors.white.withValues(alpha: 0.22)
-                          : color.withValues(alpha: 0.12),
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 16,
-                      color: selected ? Colors.white : color,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 22,
-                      height: 1,
-                      fontWeight: FontWeight.w800,
-                      color: selected ? Colors.white : Brand.ink,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? Colors.white : kMuted,
-                  ),
-                ),
-              ),
-            ],
+            ),
+          ])),
+          labelStyle: TextStyle(
+            fontSize: AppTypography.label,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.inkSoft,
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _filters(List<AppOrder> all) {
     return SizedBox(
-      height: 100,
+      height: 52,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.xs, AppSpacing.page, AppSpacing.xs),
         children: [
-          _statTile(
-            label: 'كل الطلبات',
-            count: all.length,
-            icon: Icons.dashboard_rounded,
-            color: Brand.green,
-            selected: _filter == null,
-            onTap: () => setState(() => _filter = null),
-          ),
-          for (final s in OrderStatus.values)
-            _statTile(
-              label: s.label,
-              count: all.where((o) => o.status == s).length,
-              icon: s.icon,
-              color: s.color,
-              selected: _filter == s,
-              onTap: () => setState(() => _filter = s),
-            ),
+          chip('الكل', all.length, _filter == null, () => setState(() => _filter = null)),
+          for (final st in OrderStatus.values)
+            if (all.any((o) => o.status == st) || _filter == st)
+              chip(
+                st.label,
+                all.where((o) => o.status == st).length,
+                _filter == st,
+                () => setState(() => _filter = st),
+                color: st.color,
+              ),
         ],
       ),
     );
   }
 
-  /// كارت الوصول السريع لصفحة التحكم في بوسترات الرئيسية.
-  Widget _bannersShortcut() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-      child: Material(
-        color: Brand.gold.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminBannersPage())),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Brand.gold.withValues(alpha: 0.5)),
+  /// اختصارات الإدارة في صف واحد مضغوط بدل كارتين كبار.
+  Widget _quickActions() {
+    Widget tile(IconData icon, String label, Widget page, Key key) => Expanded(
+          child: Material(
+            key: key,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              side: const BorderSide(color: AppColors.line),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Brand.gold,
-                    shape: BoxShape.circle,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute<void>(builder: (_) => page)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                child: Row(children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.purpleSoft,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(icon, color: AppColors.purple, size: 20),
                   ),
-                  child: Icon(
-                    Icons.view_carousel_rounded,
-                    color: Brand.ink,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'بوسترات الرئيسية',
-                        style: TextStyle(
-                          fontSize: 15,
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: AppTypography.label,
                           fontWeight: FontWeight.w800,
-                          color: Brand.ink,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'إضافة وترتيب وإخفاء إعلانات الصفحة الرئيسية',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: kMuted,
-                        ),
-                      ),
-                    ],
+                          color: AppColors.ink,
+                        )),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_left_rounded,
-                  color: Brand.goldDeep,
-                  size: 26,
-                ),
-              ],
+                ]),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.md, AppSpacing.page, 0),
+      child: Row(children: [
+        tile(Icons.grid_view_rounded, 'أدوات الإدارة', const AdminNavigationPage(),
+            const Key('admin-tools-shortcut')),
+        const SizedBox(width: AppSpacing.sm),
+        tile(Icons.view_carousel_rounded, 'بوسترات الرئيسية', const AdminBannersPage(),
+            const Key('admin-banners-shortcut')),
+      ]),
     );
   }
+
 
   void _openManage(AppOrder order) {
     showModalBottomSheet<void>(
@@ -298,24 +212,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                     : 'المدير: ${widget.name}',
               ),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: ListTile(
-                    leading: Icon(Icons.grid_view_rounded, color: kPrimary),
-                    title: const Text('أدوات الإدارة', style: TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: const Text('المحلات، المناديب، الصلاحيات والتقارير'),
-                    trailing: const Icon(Icons.chevron_left_rounded),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: (_) => const AdminNavigationPage()),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(child: _bannersShortcut()),
+            SliverToBoxAdapter(child: _quickActions()),
             const SliverToBoxAdapter(child: AdminStatsCard()),
           ];
 
@@ -436,38 +333,6 @@ class _AdminOrderCard extends StatelessWidget {
   final VoidCallback onTap;
   const _AdminOrderCard({required this.order, required this.onTap});
 
-  Widget _info(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '$label: ',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              color: kMuted,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.3,
-                fontWeight: FontWeight.w600,
-                color: Brand.ink,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final color = order.status.color;
@@ -475,182 +340,115 @@ class _AdminOrderCard extends StatelessWidget {
     final customer = order.displayCustomer.isEmpty
         ? 'عميل'
         : order.displayCustomer;
+    final timer = orderTotalTimer(
+      createdAt: order.createdAt,
+      deliveredAt: order.deliveredAt,
+      delivered: order.status == OrderStatus.delivered,
+      cancelled: order.status == OrderStatus.cancelled,
+    );
+    final place = order.area.isNotEmpty ? order.area : '';
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.10),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+    // كارت طلب مضغوط زي تطبيقات التوصيل: المحل والمبلغ، العميل والمنطقة،
+    // ثم الوقت والحالة والمندوب. الكارت كله بيفتح التفاصيل.
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: const BorderSide(color: AppColors.line),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Column(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: IntrinsicHeight(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: AlignmentDirectional.centerStart,
-                    end: AlignmentDirectional.centerEnd,
-                    colors: [
-                      color.withValues(alpha: 0.16),
-                      color.withValues(alpha: 0.03),
-                    ],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: order.createdAt == null
-                          ? const SizedBox.shrink()
-                          : Text(
-                              formatDateTime(order.createdAt!),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: kMuted,
-                              ),
-                            ),
-                    ),
-                    if (orderTotalTimer(
-                          createdAt: order.createdAt,
-                          deliveredAt: order.deliveredAt,
-                          delivered: order.status == OrderStatus.delivered,
-                          cancelled: order.status == OrderStatus.cancelled,
-                        ) !=
-                        null) ...[
-                      orderTotalTimer(
-                        createdAt: order.createdAt,
-                        deliveredAt: order.deliveredAt,
-                        delivered: order.status == OrderStatus.delivered,
-                        cancelled: order.status == OrderStatus.cancelled,
-                      )!,
-                      const SizedBox(width: 8),
-                    ],
-                    _StatusChip(status: order.status),
-                  ],
-                ),
-              ),
-              if (order.deliveryPinLockedAt != null &&
-                  order.status == OrderStatus.onTheWay &&
-                  order.customerConfirmedAt == null)
-                Container(
-                  color: kDanger.withValues(alpha: 0.08),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  child: Text(
-                    'رمز التسليم اتقفل بعد محاولات غلط من المندوب. راجع الطلب وقرر.',
-                    style: TextStyle(color: kDanger, fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            order.storeName.isEmpty ? 'محل' : order.storeName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: Brand.ink,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              'الإجمالي',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: kMuted,
-                              ),
-                            ),
-                            Text(
-                              formatPrice(order.payable),
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: Brand.goldDeep,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    _info('العميل', customer),
-                    _info('عنوان العميل', order.address.isNotEmpty ? order.address : (order.area.isNotEmpty ? '${order.area} — العنوان الكامل داخل التفاصيل' : 'العنوان الكامل داخل التفاصيل')),
-                    _info('عنوان المحل', 'اضغط تفاصيل الطلب لعرض العنوان'),
-                    const SizedBox(height: 10),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: TextButton.icon(
-                        onPressed: onTap,
-                        icon: const Icon(Icons.receipt_long_outlined),
-                        label: const Text('عرض تفاصيل الطلب والعناوين'),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        color: unassigned
-                            ? Brand.gold.withValues(alpha: 0.14)
-                            : Brand.green.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
+              // شريط لون الحالة على الطرف.
+              Container(width: 4, color: color),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.sm),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
                           Expanded(
                             child: Text(
-                              unassigned
-                                  ? 'لم يتم تعيين مندوب'
-                                  : 'المندوب: ${order.courierName}',
+                              order.storeName.isEmpty ? 'محل' : order.storeName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
+                              style: const TextStyle(
+                                fontSize: AppTypography.body,
                                 fontWeight: FontWeight.w800,
-                                color: unassigned ? Brand.goldDeep : Brand.ink,
+                                color: AppColors.ink,
                               ),
                             ),
                           ),
-                          Icon(
-                            Icons.chevron_left_rounded,
-                            size: 20,
-                            color: unassigned ? Brand.goldDeep : kMuted,
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(
+                            formatPrice(order.payable),
+                            style: const TextStyle(
+                              fontSize: AppTypography.body,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.orangeDeep,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        place.isEmpty ? customer : '$customer • $place',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.secondary.copyWith(fontSize: AppTypography.label),
+                      ),
+                      if (order.deliveryPinLockedAt != null &&
+                          order.status == OrderStatus.onTheWay &&
+                          order.customerConfirmedAt == null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'رمز التسليم اتقفل بعد محاولات غلط من المندوب. راجع الطلب وقرر.',
+                          style: TextStyle(color: kDanger, fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _StatusChip(status: order.status),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: unassigned ? AppColors.warningSoft : AppColors.surfaceAlt,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.delivery_dining_rounded, size: 15,
+                                  color: unassigned ? AppColors.warning : AppColors.inkSoft),
+                              const SizedBox(width: 3),
+                              Text(
+                                unassigned ? 'بدون مندوب' : order.courierName,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: unassigned ? AppColors.warning : AppColors.inkSoft,
+                                ),
+                              ),
+                            ]),
+                          ),
+                          ?timer,
+                          if (order.createdAt != null)
+                            Text(
+                              formatDateTime(order.createdAt!),
+                              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

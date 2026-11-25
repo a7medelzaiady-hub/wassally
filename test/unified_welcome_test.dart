@@ -66,17 +66,21 @@ void main() {
     }
   });
 
-  testWidgets('ترتيب الشريط المعتمد في RTL: السلة يمين الرئيسية',
-      (tester) async {
+  testWidgets('الشريط زي المرجع: السلة كبيرة في النص', (tester) async {
     await _pumpEntry(tester);
-    expect(find.text('الرئيسية'), findsOneWidget);
-    expect(find.text('السلة'), findsOneWidget);
-    expect(tester.getCenter(find.text('السلة')).dx,
-        greaterThan(tester.getCenter(find.text('طلباتي')).dx));
-    expect(tester.getCenter(find.text('طلباتي')).dx,
-        greaterThan(tester.getCenter(find.text('الرئيسية')).dx));
-    expect(tester.getCenter(find.text('الرئيسية')).dx,
-        greaterThan(tester.getCenter(find.text('حسابي')).dx));
+    final x = {
+      for (final l in ['الرئيسية', 'طلباتي', 'السلة', 'الإشعارات', 'حسابي'])
+        l: tester.getCenter(find.text(l)).dx,
+    };
+    expect(x['الرئيسية']!, greaterThan(x['طلباتي']!));
+    expect(x['طلباتي']!, greaterThan(x['السلة']!));
+    expect(x['السلة']!, greaterThan(x['الإشعارات']!));
+    expect(x['الإشعارات']!, greaterThan(x['حسابي']!));
+    // The cart is the raised button in the middle of the bar.
+    final cart = tester.getRect(find.byKey(const ValueKey('nav-السلة')));
+    expect(cart.center.dx, closeTo(195, 2));
+    expect(cart.height, greaterThan(60));
+    expect(cart.top, lessThan(tester.getTopLeft(find.text('حسابي')).dy - 20));
   });
 
   testWidgets('الهيدر ثابت: زر الإشعارات يستجيب أثناء ارتداد القائمة',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
 import '../services/saved_address.dart';
+import '../services/location_picker.dart';
 import '../theme/app_tokens.dart';
 import '../services/order_gateway.dart';
 import '../widgets/curved_nav_bar.dart';
@@ -140,8 +141,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
       builder: (context, address, _) => InkWell(
         key: const Key('entry-location'),
         borderRadius: BorderRadius.circular(AppRadius.md),
-        // تغيير العنوان موجود في الرئيسية.
-        onTap: () => _enter(null, 0),
+        // يفتح اختيار عنوان التوصيل مباشرة (موقعي الحالي أو كتابة العنوان).
+        onTap: () => DeliveryLocationPicker.open(context),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: kMinTapTarget),
           child: Row(
@@ -424,7 +425,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                                   title,
                                   maxLines: 1,
                                   style: const TextStyle(
-                                    color: AppColors.purpleDeep,
+                                    color: AppColors.ink,
                                     fontSize: 18,
                                     height: 1.2,
                                     fontWeight: FontWeight.w900,

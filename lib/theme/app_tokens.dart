@@ -8,10 +8,11 @@ class AppColors {
   AppColors._();
 
   // ── البنفسجي الملكي: الهيدر، التنقل النشط، العناوين البارزة.
-  static const purple = Color(0xFF4A1F9E);
-  static const purpleDeep = Color(0xFF29136B);
-  static const purpleDarker = Color(0xFF1C0D4F);
-  static const purpleSoft = Color(0xFFEFE9FB);
+  // نفس درجة البنفسجي المعتمدة من مرجع «طلبات» (#8318D8).
+  static const purple = Color(0xFF7A14CC);
+  static const purpleDeep = Color(0xFF8318D8);
+  static const purpleDarker = Color(0xFF4A0C80);
+  static const purpleSoft = Color(0xFFEFEAFD);
 
   // ── البرتقالي: أزرار الإجراءات، الأسعار، العروض، التمييز.
   static const orange = Color(0xFFF26B00);
@@ -41,7 +42,7 @@ class AppColors {
   static const headerGradient = LinearGradient(
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
-    colors: [purpleDeep, purple],
+    colors: [Color(0xFF8C22E0), Color(0xFF6E10BE)],
   );
 
   static const actionGradient = LinearGradient(

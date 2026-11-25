@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../theme/brand.dart';
+import '../theme/app_tokens.dart';
 import '../utils/quick_order_status.dart';
 import 'quick_order_customer_detail_page.dart';
 
@@ -62,25 +62,22 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
             await next;
           },
           child: ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: AppSpacing.pagePadding,
             itemCount: docs.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
             itemBuilder: (context, index) {
               final doc = docs[index];
-              final status = (doc.data()['status'] ?? '').toString();
-              return Card(
-                child: ListTile(
-                  leading: Icon(Icons.flash_on, color: Brand.green),
-                  title: Text('طلب سريع #${doc.id.length > 8 ? doc.id.substring(0, 8) : doc.id}'),
-                  subtitle: Text(quickOrderStatusLabel(status)),
-                  trailing: const Icon(Icons.chevron_left),
-                  onTap: () async {
-                    await Navigator.of(context).push(MaterialPageRoute<void>(
-                      builder: (_) => QuickOrderCustomerDetailPage(orderId: doc.id),
-                    ));
-                    if (mounted) _reload();
-                  },
-                ),
+              final data = doc.data();
+              final status = (data['status'] ?? '').toString();
+              return _QuickOrderTile(
+                data: data,
+                status: status,
+                onTap: () async {
+                  await Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => QuickOrderCustomerDetailPage(orderId: doc.id),
+                  ));
+                  if (mounted) _reload();
+                },
               );
             },
           ),
@@ -88,4 +85,117 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
       },
     ),
   );
+}
+
+/// كارت طلب سريع: الحالة والوقت وملخص الأصناف، من غير أكواد أو أرقام داخلية.
+class _QuickOrderTile extends StatelessWidget {
+  const _QuickOrderTile({required this.data, required this.status, required this.onTap});
+
+  final Map<String, dynamic> data;
+  final String status;
+  final VoidCallback onTap;
+
+  static String _when(Object? value) {
+    if (value is! Timestamp) return '';
+    final d = value.toDate().toLocal();
+    final now = DateTime.now();
+    final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+    final time = '$h:${d.minute.toString().padLeft(2, '0')} ${d.hour < 12 ? 'ص' : 'م'}';
+    final sameDay = d.year == now.year && d.month == now.month && d.day == now.day;
+    return sameDay ? 'النهارده $time' : '${d.day}/${d.month} • $time';
+  }
+
+  String get _summary {
+    final stores = data['stores'];
+    if (stores is! List || stores.isEmpty) return '';
+    final parts = <String>[];
+    for (final raw in stores) {
+      if (raw is! Map) continue;
+      final items = (raw['items'] ?? '').toString().trim();
+      if (items.isNotEmpty) parts.add(items.replaceAll('\n', '، '));
+      if (raw['pricedItems'] is List) {
+        for (final line in raw['pricedItems'] as List) {
+          if (line is Map && line['name'] != null) parts.add('${line['name']}');
+        }
+      }
+    }
+    return parts.join('، ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = switch (status) {
+      'delivered' => (AppColors.successSoft, AppColors.success),
+      'cancelled' || 'canceled' => (AppColors.dangerSoft, AppColors.danger),
+      'summary_pending' => (AppColors.orangeSoft, AppColors.orangeDeep),
+      _ => (AppColors.purpleSoft, AppColors.purple),
+    };
+    final when = _when(data['createdAt']);
+    final summary = _summary;
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: const BorderSide(color: AppColors.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.orangeSoft,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: const Icon(Icons.bolt_rounded, color: AppColors.orange),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Expanded(
+                        child: Text('طلب سريع', style: TextStyle(
+                          fontSize: AppTypography.body,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.ink,
+                        )),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: bg,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Text(quickOrderStatusLabel(status), style: TextStyle(
+                          color: fg,
+                          fontSize: AppTypography.caption,
+                          fontWeight: FontWeight.w800,
+                        )),
+                      ),
+                    ]),
+                    if (summary.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: AppTypography.secondary),
+                    ],
+                    if (when.isNotEmpty)
+                      Text(when, style: AppTypography.secondary.copyWith(fontSize: AppTypography.caption)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              const Icon(Icons.chevron_left_rounded, color: AppColors.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

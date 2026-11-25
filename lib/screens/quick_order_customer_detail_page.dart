@@ -223,6 +223,40 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         ),
       );
 
+  static List<String> _itemLines(String text) => text
+      .split(RegExp(r'[\n،,]+'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+
+  Widget _itemRow(String name, {String? qty}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              constraints: const BoxConstraints(minWidth: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                qty == null ? '•' : '$qty×',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: AppTypography.label,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: Text(name, style: AppTypography.bodyText)),
+          ],
+        ),
+      );
+
   void _openReceipt(String url) => showDialog<void>(
         context: context,
         builder: (dialog) => Dialog(
@@ -325,13 +359,12 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                           color: AppColors.purple,
                         ),
                       ),
-                      if ((raw['items'] ?? '').toString().trim().isNotEmpty)
-                        Text((raw['items'] ?? '').toString(), style: AppTypography.bodyText),
+                      for (final line in _itemLines((raw['items'] ?? '').toString()))
+                        _itemRow(line),
                       if (raw['pricedItems'] is List)
                         for (final line in raw['pricedItems'] as List)
                           if (line is Map)
-                            Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}',
-                                style: AppTypography.bodyText),
+                            _itemRow('${line['name'] ?? 'صنف'}', qty: '${line['qty'] ?? 1}'),
                     ],
                   if (notes.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
@@ -472,19 +505,20 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   }
 }
 
-/// رأس الحالة: اسم الحالة الحالية وخطوات الطلب بشكل مفهوم.
+/// رأس الحالة بأسلوب تطبيقات التوصيل: الحالة بخط واضح، سطر يشرح المطلوب،
+/// وشريط تقدم مقسّم لمراحل الطلب.
 class _StatusHeader extends StatelessWidget {
   const _StatusHeader({required this.status, required this.area});
 
   final String status;
   final String area;
 
-  static const _steps = <(String, IconData)>[
-    ('بانتظار مندوب', Icons.hourglass_top_rounded),
-    ('المندوب استلم', Icons.delivery_dining_rounded),
-    ('بيشتري طلبك', Icons.shopping_bag_outlined),
-    ('الحساب', Icons.receipt_long_rounded),
-    ('تم التسليم', Icons.verified_rounded),
+  static const _steps = <String>[
+    'بانتظار مندوب',
+    'المندوب استلم',
+    'بيشتري طلبك',
+    'الحساب',
+    'تم التسليم',
   ];
 
   /// رقم الخطوة الحالية (0..4)، أو -1 لو الطلب ملغي.
@@ -498,74 +532,131 @@ class _StatusHeader extends StatelessWidget {
         _ => 0,
       };
 
+  static String hintOf(String status) => switch (status) {
+        'open' => 'بندوّر لك على مندوب معتمد قريب منك.',
+        'accepted' || 'assigned' => 'المندوب هيكلمك يتفق معاك على الطلب والتوصيل.',
+        'awaiting_advance' => 'في انتظار تأكيد المبلغ المقدم.',
+        'shopping' || 'purchasing' => 'المندوب بيشتري طلباتك دلوقتي.',
+        'summary_pending' => 'راجع الفواتير والحساب النهائي ووافق عليه.',
+        'summary_approved' => 'ادّي رمز التسليم للمندوب لما توصلك الطلبات.',
+        'delivered' => 'تم التسليم. شكرًا لاستخدامك وصّلي!',
+        'cancelled' || 'canceled' => 'الطلب ده اتلغى.',
+        _ => 'بنتابع طلبك.',
+      };
+
   @override
   Widget build(BuildContext context) {
     final current = stepOf(status);
     final cancelled = current < 0;
-    return Container(
+    final done = current == _steps.length - 1;
+    final accent = cancelled
+        ? AppColors.danger
+        : done
+            ? AppColors.success
+            : AppColors.purple;
+    return AppCard(
       key: const Key('quick-status-header'),
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        gradient: cancelled ? null : AppColors.headerGradient,
-        color: cancelled ? AppColors.dangerSoft : null,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            quickOrderStatusLabel(status),
-            style: TextStyle(
-              color: cancelled ? AppColors.danger : Colors.white,
-              fontSize: AppTypography.headline,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          if (area.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xxs),
-            Text(
-              'الحي: $area',
-              style: TextStyle(
-                color: cancelled ? AppColors.inkSoft : Colors.white.withValues(alpha: 0.85),
-                fontSize: AppTypography.bodySmall,
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  cancelled
+                      ? Icons.cancel_outlined
+                      : done
+                          ? Icons.check_circle_rounded
+                          : Icons.delivery_dining_rounded,
+                  color: accent,
+                  size: 28,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      quickOrderStatusLabel(status),
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: AppTypography.title,
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(hintOf(status), style: AppTypography.secondary),
+                  ],
+                ),
+              ),
+            ],
+          ),
           if (!cancelled) ...[
             const SizedBox(height: AppSpacing.lg),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < _steps.length; i++)
+                for (var i = 0; i < _steps.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 4),
                   Expanded(
-                    child: Column(children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i <= current
-                              ? AppColors.orange
-                              : Colors.white.withValues(alpha: 0.16),
-                        ),
-                        child: Icon(_steps[i].$2, size: 18, color: Colors.white),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i <= current ? accent : AppColors.line,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        _steps[i].$1,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: i <= current ? 1 : 0.7),
-                          fontSize: AppTypography.caption,
-                          fontWeight: i == current ? FontWeight.w900 : FontWeight.w600,
-                          height: 1.2,
-                        ),
-                      ),
-                    ]),
+                    ),
                   ),
+                ],
               ],
             ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                Text(
+                  _steps[current],
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: AppTypography.caption,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'خطوة ${current + 1} من ${_steps.length}',
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: AppTypography.caption,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (area.isNotEmpty) ...[
+            const Divider(height: AppSpacing.xxl),
+            Row(children: [
+              const Icon(Icons.location_on_outlined, size: 20, color: AppColors.muted),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text('التوصيل إلى: $area',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.inkSoft,
+                      fontSize: AppTypography.bodySmall,
+                      fontWeight: FontWeight.w700,
+                    )),
+              ),
+            ]),
           ],
         ],
       ),
