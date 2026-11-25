@@ -27,6 +27,7 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/promo_banners.dart';
+import '../widgets/home_category_grid.dart';
 import 'notifications_page.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
@@ -798,116 +799,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // ───────────────────────── كروت الأقسام ─────────────────────────
-
-  // غيّر key لكل قسم لنفس القيمة اللي StoreDirectoryPage(initialCategory: ...) متوقعها.
-  // لو عندك صورة للقسم حط رابطها في image، وإلا هتظهر الأيقونة.
-  static const _categories =
-      <({String key, String name, String image, IconData icon})>[
-    (key: 'restaurants', name: 'مطاعم', image: 'assets/categories/restaurants.jpg', icon: Icons.restaurant_rounded),
-    (key: 'market', name: 'ماركت وخضروات', image: 'assets/categories/market.jpg', icon: Icons.shopping_basket_rounded),
-    (key: 'meat', name: 'لحوم ودواجن', image: 'assets/categories/meat.jpg', icon: Icons.set_meal_rounded),
-    (key: 'bakery', name: 'مخبوزات', image: 'assets/categories/bakery.jpg', icon: Icons.bakery_dining_rounded),
-    (key: 'pharmacy', name: 'صيدلية وتجميل', image: 'assets/categories/pharmacy.jpg', icon: Icons.local_pharmacy_rounded),
-    (key: 'roastery', name: 'محمصات', image: 'assets/categories/roastery.jpg', icon: Icons.coffee_rounded),
-    // زوّد أقسامك هنا
-  ];
-
-  /// كروت الأقسام: صور واقعية، ٣ كروت في الصف تحت البانر (زي الصورة).
-  Widget _categoryCards() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Text(
-              'أقسامنا المختلفة',
-              style: TextStyle(
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-          ),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _categories.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, // ٣ كروت في الصف زي الصورة
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 14,
-              childAspectRatio: 0.72,
-            ),
-            itemBuilder: (_, i) {
-              final c = _categories[i];
-              final fallback = Container(
-                color: Brand.green.withValues(alpha: 0.10),
-                alignment: Alignment.center,
-                child: Icon(c.icon, color: Brand.green, size: 30),
-              );
-              return GestureDetector(
-                onTap: () => _openDirectory(c.key),
-                child: Column(
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 1,
-                      child: Container(
-                        clipBehavior: Clip.antiAlias,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: kLine),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: c.image.isEmpty
-                            ? fallback
-                            : c.image.startsWith('assets/')
-                                ? Image.asset(
-                                    c.image,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 240,
-                                    errorBuilder: (_, _, _) => fallback,
-                                  )
-                                : CachedNetImage(
-                                    url: thumb(c.image, w: 240),
-                                    memCacheWidth: 240,
-                                    errorWidget: fallback,
-                                  ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      c.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.3,
-                        fontWeight: FontWeight.w500,
-                        color: Brand.ink,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
 
   Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
@@ -1380,8 +1271,11 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
 
-              // كروت الأقسام (٤ في الصف) تحت البانر مباشرة.
-              SliverToBoxAdapter(child: _categoryCards()),
+              // Four real-photo cards in each row. Browse-stores and
+              // browse-offers entry cards remain unchanged.
+              SliverToBoxAdapter(
+                child: HomeCategoryGrid(onSelected: (id) => _openDirectory(id)),
+              ),
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(

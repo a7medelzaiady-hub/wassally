@@ -4,6 +4,7 @@ import '../widgets/promo_banners.dart';
 import '../widgets/app_header.dart';
 
 import '../models/store.dart';
+import '../models/home_category.dart';
 import '../services/catalog_service.dart';
 import '../services/catalog_sync.dart';
 import '../theme/brand.dart';
@@ -93,9 +94,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
             final q = _search.text.trim().toLowerCase();
             final visible = stores.where((item) {
               final categoryOk = _category == null ||
-                  (isPharmacyCategory(_category!)
-                      ? item.store.isPharmacy
-                      : item.store.category == _category);
+                  matchesDirectoryCategory(_category!, item.store.category);
               return categoryOk && (q.isEmpty || item.store.name.toLowerCase().contains(q));
             }).toList();
 
@@ -127,6 +126,14 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   children: [
                     _FilterChip(label: 'الكل', selected: _category == null, onTap: () => setState(() => _category = null)),
+                    // A home card may represent multiple real store categories.
+                    // Show its name while selected, instead of a blank chip state.
+                    if (homeCategoryForId(_category) case final group?)
+                      _FilterChip(
+                        label: group.title,
+                        selected: true,
+                        onTap: () => setState(() => _category = null),
+                      ),
                     for (final category in categories)
                       _FilterChip(label: category, selected: _category == category, onTap: () => setState(() => _category = category)),
                   ],
