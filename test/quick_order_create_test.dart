@@ -53,6 +53,8 @@ void main() {
           .descendant(of: find.byKey(const Key('quick-create-list')), matching: find.byType(Scrollable))
           .first,
     );
+    await tester.ensureVisible(find.byKey(const Key('quick-address-other')));
+    await tester.pumpAndSettle();
     expect(find.text('على عنواني'), findsOneWidget);
     expect(find.text('اكتب العنوان'), findsNothing);
     await tester.tap(find.byKey(const Key('quick-address-other')));
