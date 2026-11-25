@@ -1058,7 +1058,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
             Text('ملاحظة: $comment'),
           ],
           const SizedBox(height: 4),
-          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
+          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 12)),
           if (moderationStatus == 'excluded') ...[
             const SizedBox(height: 8),
             const Text(
@@ -1087,7 +1087,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
           if (moderationStatus == 'excluded')
             const Text(
               'لا يتم اتخاذ إجراء تجاه العميل اعتمادًا على تقييم مستبعد.',
-              style: TextStyle(fontSize: 11.5, color: Colors.black54),
+              style: TextStyle(fontSize: 12, color: Colors.black54),
             )
           else if (widget.isRestricted)
             Row(
@@ -1128,14 +1128,14 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
                 else
                   const Text(
                     'تنبيه ومراجعة فقط: لا يُتاح التقييد قبل تكرار الوقائع في طلبات مختلفة ومراجعتها يدويًا.',
-                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
               ],
             )
           else
             const Text(
               'لا يوجد إجراء تلقائي. التقييمات المنخفضة فقط تُعرض للمراجعة.',
-              style: TextStyle(fontSize: 11.5, color: Colors.black54),
+              style: TextStyle(fontSize: 12, color: Colors.black54),
             ),
           if (_busy)
             const Padding(
@@ -1305,7 +1305,7 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
           const SizedBox(height: 6),
           Text('السبب: $reason'),
           if (note.isNotEmpty) Text('ملاحظة المندوب: $note'),
-          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 11)),
+          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 12)),
           if (status == 'open' || status == 'in_review') ...[
             const Divider(height: 18),
             Wrap(

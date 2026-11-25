@@ -1,95 +1,93 @@
 import 'package:city_store/services/navigation.dart';
-import 'package:city_store/widgets/scroll_following_overlay.dart';
+import 'package:city_store/widgets/notification_bell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Widget _list({required ScrollController controller, Widget? headerButton}) {
-  return CustomScrollView(
-    controller: controller,
-    physics: const BouncingScrollPhysics(),
-    slivers: [
-      SliverToBoxAdapter(
-        child: Container(
-          height: 120,
-          color: Colors.deepPurple,
-          alignment: AlignmentDirectional.topEnd,
-          padding: const EdgeInsets.all(8),
-          child: headerButton ?? const SizedBox(width: 44, height: 44),
-        ),
-      ),
-      SliverList.builder(
-        itemCount: 60,
-        itemBuilder: (_, i) => SizedBox(height: 60, child: Text('صف $i')),
-      ),
-    ],
-  );
-}
-
-void main() {
-  testWidgets('السبب: الزر داخل القائمة يضيع أول ضغطة أثناء الارتداد',
-      (tester) async {
-    var taps = 0;
-    final controller = ScrollController();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: _list(
-          controller: controller,
-          headerButton: IconButton(
-            key: const Key('bell'),
-            onPressed: () => taps++,
-            icon: const Icon(Icons.notifications),
-          ),
-        ),
-      ),
-    ));
-    // Pull down past the top and release: the list bounces back.
-    await tester.fling(find.byType(CustomScrollView), const Offset(0, 300), 1500);
-    await tester.pump(const Duration(milliseconds: 30));
-    await tester.tap(find.byKey(const Key('bell')), warnIfMissed: false);
-    await tester.pump();
-    expect(taps, 0, reason: 'Flutter ignores taps inside a Scrollable while it settles');
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('الإصلاح: زر الإشعارات فوق القائمة يفتح من أول ضغطة أثناء الارتداد',
-      (tester) async {
-    var taps = 0;
-    final controller = ScrollController();
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Stack(children: [
-          _list(controller: controller),
-          ScrollFollowingOverlay(
-            controller: controller,
-            top: 8,
-            end: 8,
-            hideAfter: 52,
-            child: IconButton(
-              key: const Key('bell'),
-              onPressed: () => taps++,
-              icon: const Icon(Icons.notifications),
+/// Replica of the old home bell: a 38px button with the unread badge drawn on
+/// top of its corner.
+Widget _oldBell(VoidCallback onTap) => Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: Colors.white,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onTap,
+            child: const SizedBox(
+              width: 38,
+              height: 38,
+              child: Icon(Icons.notifications_none_rounded),
             ),
           ),
-        ]),
-      ),
-    ));
-    final restingTop = tester.getTopLeft(find.byKey(const Key('bell'))).dy;
+        ),
+        Positioned(
+          top: -5,
+          left: -5,
+          child: Container(
+            key: const Key('old-badge'),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.5),
+            ),
+            child: const Text('3', style: TextStyle(fontSize: 10)),
+          ),
+        ),
+      ],
+    );
 
-    await tester.fling(find.byType(CustomScrollView), const Offset(0, 300), 1500);
-    await tester.pump(const Duration(milliseconds: 30));
-    // The button follows the content while the list bounces...
-    expect(tester.getTopLeft(find.byKey(const Key('bell'))).dy, greaterThan(restingTop));
-    // ...and the very first tap is delivered.
-    await tester.tap(find.byKey(const Key('bell')));
+Widget _host(Widget child) => MaterialApp(
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          backgroundColor: Colors.deepPurple,
+          body: Center(child: child),
+        ),
+      ),
+    );
+
+void main() {
+  testWidgets('السبب: الشارة القديمة كانت بتاخد الضغطة بدل الجرس', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(_host(_oldBell(() => taps++)));
+    // Tap where the badge overlaps the bell (inside the button's bounds).
+    final badge = tester.getRect(find.byKey(const Key('old-badge')));
+    await tester.tapAt(badge.bottomRight - const Offset(3, 3));
+    await tester.pump();
+    expect(taps, 0, reason: 'the red badge swallowed the tap');
+  });
+
+  testWidgets('الإصلاح: الضغط على الشارة أو أي جزء من الجرس يفتح من أول مرة',
+      (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(_host(NotificationBell(count: 3, onTap: () => taps++)));
+
+    final bell = find.byKey(const Key('notification-bell'));
+    final badge = find.byKey(const Key('notification-bell-badge'));
+    expect(badge, findsOneWidget);
+    expect(tester.getSize(bell), const Size(48, 48));
+
+    await tester.tap(badge);
     await tester.pump();
     expect(taps, 1);
-    await tester.pumpAndSettle();
-    expect(tester.getTopLeft(find.byKey(const Key('bell'))).dy, restingTop);
 
-    // Scrolled away with the header: the button disappears with it.
-    controller.jumpTo(400);
+    await tester.tap(bell);
     await tester.pump();
-    expect(find.byKey(const Key('bell')), findsNothing);
+    expect(taps, 2);
+
+    // Near the edge of the 48px circle still counts.
+    final rect = tester.getRect(bell);
+    await tester.tapAt(rect.center + const Offset(0, 20));
+    await tester.pump();
+    expect(taps, 3);
+  });
+
+  testWidgets('الجرس يعرض 9+ ويعلن عدد غير المقروء لقارئ الشاشة', (tester) async {
+    await tester.pumpWidget(_host(NotificationBell(count: 25, onTap: () {})));
+    expect(find.text('9+'), findsOneWidget);
+    expect(find.bySemanticsLabel('الإشعارات، 25 غير مقروءة'), findsOneWidget);
   });
 
   testWidgets('الضغط السريع المتكرر يفتح صفحة الإشعارات مرة واحدة',
@@ -100,29 +98,29 @@ void main() {
       home: Builder(
         builder: (context) => Scaffold(
           body: Center(
-            child: IconButton(
-              key: const Key('bell'),
-              icon: const Icon(Icons.notifications),
-              onPressed: () => pushOnce<void>(context, 'notifications',
-                  (_) => const Scaffold(body: Text('الإشعارات'))),
+            child: NotificationBell(
+              onTap: () => pushOnce<void>(context, 'notifications',
+                  (_) => const Scaffold(body: Text('صفحة الإشعارات'))),
             ),
           ),
         ),
       ),
     ));
-    await tester.tap(find.byKey(const Key('bell')));
-    await tester.tap(find.byKey(const Key('bell')), warnIfMissed: false);
-    await tester.tap(find.byKey(const Key('bell')), warnIfMissed: false);
+    final bell = find.byKey(const Key('notification-bell'));
+    await tester.tap(bell);
+    await tester.tap(bell, warnIfMissed: false);
+    await tester.tap(bell, warnIfMissed: false);
     await tester.pumpAndSettle();
-    expect(find.text('الإشعارات'), findsOneWidget);
+    expect(find.text('صفحة الإشعارات'), findsOneWidget);
     expect(observer.pushes, 2, reason: 'home route + one notifications page');
 
-    // After closing, it opens again normally.
-    Navigator.of(tester.element(find.text('الإشعارات'))).pop();
+    // After closing, it opens again normally with one tap.
+    Navigator.of(tester.element(find.text('صفحة الإشعارات'))).pop();
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('bell')));
+    await tester.tap(bell);
     await tester.pumpAndSettle();
-    expect(find.text('الإشعارات'), findsOneWidget);
+    expect(find.text('صفحة الإشعارات'), findsOneWidget);
+    expect(observer.pushes, 3);
   });
 }
 

@@ -115,7 +115,7 @@ void main() {
       const QuickOrderCreatePage(prefillFromAccount: false),
       before: (tester) async {
         await tester.drag(find.byKey(const Key('quick-create-list')), const Offset(0, -700));
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 1));
       },
     );
   });

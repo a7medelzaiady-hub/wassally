@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,7 +30,7 @@ import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
 import 'notifications_page.dart';
 import '../services/saved_address.dart';
-import '../widgets/scroll_following_overlay.dart';
+import '../widgets/notification_bell.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
@@ -68,9 +67,7 @@ class _HomePageState extends State<HomePage>
   // العنوان المحفوظ للعميل (مشترك مع صفحة الترحيب: قراءة واحدة).
   String _address = SavedAddress.value.value;
 
-  // الهيدر بيتحرك مع التمرير؛ زر الإشعارات مرسوم برا القائمة ويتبعه.
-  final ScrollController _scroll = ScrollController();
-  static const double _bellSize = 44;
+  static const double _bellSize = kMinTapTarget;
 
 
   // الإشعارات.
@@ -138,7 +135,6 @@ class _HomePageState extends State<HomePage>
   @override
   void dispose() {
     SavedAddress.value.removeListener(_onSavedAddress);
-    _scroll.dispose();
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -589,70 +585,20 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _bell() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openNotifications,
-            child: SizedBox(
-              width: _bellSize,
-              height: _bellSize,
-              child: AnimatedBuilder(
-                animation: _bellCtrl,
-                builder: (context, child) {
-                  // هزة يمين وشمال وتخفت تدريجيًا
-                  final t = _bellCtrl.value;
-                  final angle = math.sin(t * math.pi * 6) * 0.35 * (1 - t);
-                  return Transform.rotate(
-                    angle: angle,
-                    alignment: Alignment.topCenter,
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  color: Brand.green,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -5,
-          left: -5,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _unreadStream,
-            builder: (context, snap) {
-              if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
-              final n = snap.data?.docs.length ?? 0;
-              if (n == 0) return const SizedBox.shrink();
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: Text(
-                  n > 9 ? '9+' : '$n',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _unreadStream,
+      builder: (context, snap) {
+        if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
+        return NotificationBell(
+          count: snap.data?.docs.length ?? 0,
+          shake: _bellCtrl,
+          size: _bellSize,
+          onTap: _openNotifications,
+        );
+      },
     );
   }
+
 
   // ───────────────────────── الهيدر ─────────────────────────
 
@@ -710,8 +656,7 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
               const SizedBox(width: 10),
-              // مكان الجرس محجوز؛ الجرس نفسه مرسوم فوق القائمة (انظر build).
-              const SizedBox(width: _bellSize, height: _bellSize),
+              _bell(),
             ],
           ),
           const SizedBox(height: 8),
@@ -1234,7 +1179,7 @@ class _HomePageState extends State<HomePage>
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
@@ -1270,7 +1215,6 @@ class _HomePageState extends State<HomePage>
           final all = snapshot.hasData ? _parse(snapshot.data!) : <_StoreItem>[];
 
           final scroll = CustomScrollView(
-            controller: _scroll,
             physics: const BouncingScrollPhysics(),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
@@ -1335,18 +1279,9 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
-          final top = MediaQuery.paddingOf(context).top;
           return Stack(
             children: [
               scroll,
-              ScrollFollowingOverlay(
-                key: const Key('home-bell-overlay'),
-                controller: _scroll,
-                top: top + 6,
-                end: 16,
-                hideAfter: top + 6 + _bellSize,
-                child: _bell(),
-              ),
               Positioned(
                 top: 0,
                 left: 0,

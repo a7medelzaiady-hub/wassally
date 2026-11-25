@@ -500,7 +500,7 @@ class _Details extends StatelessWidget {
                 const Text(
                   'ما تديش الرمز لحد قبل ما تستلم الطلب.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 11.5),
+                  style: TextStyle(fontSize: 12),
                 ),
               ],
             ),

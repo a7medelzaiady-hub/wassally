@@ -60,7 +60,7 @@ void main() {
               matching: find.byType(Scrollable),
             ));
         await tester.pump();
-        expect(tester.getSize(art).width, greaterThan(140));
+        expect(tester.getSize(art).width, greaterThan(120));
       }
       expect(tester.takeException(), isNull, reason: 'textScale $scale');
     }

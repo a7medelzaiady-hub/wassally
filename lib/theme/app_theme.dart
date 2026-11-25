@@ -94,7 +94,6 @@ ThemeData buildAppTheme() {
       color: scheme.surface,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       shadowColor: kInk.withValues(alpha: 0.10),
       shape: RoundedRectangleBorder(
         borderRadius: AppRadius.card,

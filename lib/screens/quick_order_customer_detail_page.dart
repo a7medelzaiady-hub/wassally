@@ -7,6 +7,7 @@ import '../theme/app_tokens.dart';
 import '../theme/brand.dart';
 import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_ui.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -210,25 +211,12 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       );
 
   Widget _card({Key? key, required String title, IconData? icon, required List<Widget> children}) =>
-      Container(
+      AppCard(
         key: key,
-        margin: const EdgeInsets.only(bottom: AppSpacing.md),
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          border: Border.all(color: AppColors.line),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(children: [
-              if (icon != null) ...[
-                Icon(icon, color: AppColors.purple, size: 22),
-                const SizedBox(width: AppSpacing.sm),
-              ],
-              Expanded(child: Text(title, style: AppTypography.sectionTitle)),
-            ]),
+            AppSectionHeader(title: title, icon: icon),
             const SizedBox(height: AppSpacing.sm),
             ...children,
           ],
@@ -299,7 +287,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
               const LinearProgressIndicator(color: AppColors.purple),
               const SizedBox(height: AppSpacing.md),
             ],
-            if (_error != null) _Banner.error(_error!),
+            if (_error != null) AppNotice(_error!, type: AppNoticeType.error),
             if (order == null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
@@ -315,9 +303,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
               _StatusHeader(status: status, area: area),
               const SizedBox(height: AppSpacing.md),
               if (status == 'summary_pending')
-                const _Banner.action('راجع الفواتير والحساب النهائي تحت، ووافق عليه علشان يظهر رمز التسليم.'),
+                const AppNotice(type: AppNoticeType.action, 'راجع الفواتير والحساب النهائي تحت، ووافق عليه علشان يظهر رمز التسليم.'),
               if (status == 'summary_approved' && (_pin == null || _pin!.isEmpty))
-                const _Banner.action('اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
+                const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
               _card(
                 title: 'محتويات الطلب',
                 icon: Icons.shopping_basket_outlined,
@@ -583,45 +571,6 @@ class _StatusHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Banner extends StatelessWidget {
-  const _Banner.error(this.text) : error = true;
-  const _Banner.action(this.text) : error = false;
-
-  final String text;
-  final bool error;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: AppSpacing.md),
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: error ? AppColors.dangerSoft : AppColors.orangeSoft,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              error ? Icons.error_outline_rounded : Icons.touch_app_outlined,
-              color: error ? AppColors.danger : AppColors.orangeDeep,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                text,
-                style: TextStyle(
-                  color: error ? AppColors.danger : AppColors.inkSoft,
-                  fontSize: AppTypography.bodySmall,
-                  fontWeight: FontWeight.w700,
-                  height: 1.45,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
 }
 
 class _PinCard extends StatelessWidget {

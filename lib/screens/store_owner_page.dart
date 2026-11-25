@@ -2771,7 +2771,7 @@ class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
             const SizedBox(height: 4),
             const Text(
               'العميل بيدفع رسوم الخدمة (2%، من 5 لـ15 جنيه) ضمن إجمالي الطلب، فالمحل بيستلمها ويوردها لوصّلي.',
-              style: TextStyle(fontSize: 11.5),
+              style: TextStyle(fontSize: 12),
             ),
           ],
         );

@@ -511,7 +511,7 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                   child: const Text(
                     'حذف الحساب',
-                    style: TextStyle(fontSize: 11.5),
+                    style: TextStyle(fontSize: 12),
                   ),
                 ),
               ),

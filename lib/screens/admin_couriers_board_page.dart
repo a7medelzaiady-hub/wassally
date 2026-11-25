@@ -315,7 +315,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 11, color: kMuted)),
+            Text(label, style: TextStyle(fontSize: 12, color: kMuted)),
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,

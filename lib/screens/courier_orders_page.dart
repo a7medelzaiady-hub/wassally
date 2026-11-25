@@ -106,7 +106,7 @@ Widget _moneyBox(String label, String value, Color color) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 11.5, color: kMuted)),
+          Text(label, style: TextStyle(fontSize: 12, color: kMuted)),
           const SizedBox(height: 2),
           Text(
             value,
@@ -218,7 +218,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: kMuted, fontSize: 11),
+              style: TextStyle(color: kMuted, fontSize: 12),
             ),
           ],
         ),
@@ -496,7 +496,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     const SizedBox(height: 3),
                     Text(
                       'طلب ${_courierOrderNumber(o.id)}',
-                      style: TextStyle(fontSize: 11, color: kMuted),
+                      style: TextStyle(fontSize: 12, color: kMuted),
                     ),
                   ],
                 ),
@@ -504,7 +504,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('عمولتك', style: TextStyle(fontSize: 11, color: kMuted)),
+                  Text('عمولتك', style: TextStyle(fontSize: 12, color: kMuted)),
                   Text(
                     formatPrice(o.courierFee),
                     style: TextStyle(
@@ -883,7 +883,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ),
                   const Text(
                     'بعد تسجيل السبب تقدر ترجع الطلب للمحل مباشرة، والمحل يؤكد استلامه.',
-                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ],
               ),

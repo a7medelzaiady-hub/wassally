@@ -332,7 +332,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                 // الصورة الواقعية ملاصقة لمحتوى الكارت (الصورة نفسها
                 // بتتلاشى للأبيض ناحية النص زي التصميم المرجعي).
                 Expanded(
-                  flex: 11,
+                  flex: 9,
                   child: Image.asset(
                     asset,
                     key: ValueKey<String>('entry-art-$title'),
@@ -342,10 +342,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
                   ),
                 ),
                 Expanded(
-                  flex: 10,
+                  flex: 11,
                   child: Padding(
                     padding: const EdgeInsetsDirectional.fromSTEB(
-                        AppSpacing.md, AppSpacing.md, AppSpacing.xs, AppSpacing.md),
+                        AppSpacing.md, AppSpacing.md, AppSpacing.xxs, AppSpacing.md),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -373,7 +373,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: AppColors.purpleDeep,
-                                  fontSize: 18,
+                                  fontSize: 17,
                                   height: 1.15,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -445,7 +445,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// ارتفاع الكارت بيتبع عرض الشاشة وحجم الخط من إعدادات الهاتف.
   double _cardHeight(BuildContext context, double width) {
     final scale = MediaQuery.textScalerOf(context);
-    final content = scale.scale(18) * 1.15 * 2 +
+    final content = scale.scale(17) * 1.15 * 2 +
         AppSpacing.xs +
         scale.scale(AppTypography.caption) * 1.25 * 2 +
         AppSpacing.sm +

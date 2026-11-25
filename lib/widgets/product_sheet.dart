@@ -314,7 +314,7 @@ class _ProductSheetState extends State<_ProductSheet> {
               child: Text(
                 group.required ? 'إجباري' : 'اختياري',
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w800,
                   color: group.required ? const Color(0xFFD64530) : kMuted,
                 ),

@@ -135,13 +135,9 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
           backgroundColor: Brand.bg,
           appBar: AppBar(
             title: const Text('بوسترات الرئيسية'),
-            backgroundColor: Brand.green,
-            foregroundColor: Colors.white,
             actions: const [HomeActionButton()],
           ),
           floatingActionButton: FloatingActionButton.extended(
-            backgroundColor: Brand.gold,
-            foregroundColor: Brand.ink,
             onPressed: _busy ? null : () => _add(nextOrder),
             icon: _busy
                 ? SizedBox(

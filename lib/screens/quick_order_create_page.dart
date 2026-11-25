@@ -7,6 +7,7 @@ import '../services/user_service.dart';
 import 'quick_order_customer_detail_page.dart';
 import '../services/quick_order_api.dart';
 import '../widgets/quick_price_picker.dart';
+import '../widgets/app_ui.dart';
 
 /// Separate quick-order entry point; never adds items to the regular store cart.
 class QuickOrderCreatePage extends StatefulWidget {
@@ -254,47 +255,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     required IconData icon,
     Widget? trailing,
     required List<Widget> children,
-  }) => Container(
+  }) => AppCard(
     key: key,
+    elevated: true,
     margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-    padding: const EdgeInsets.all(AppSpacing.lg),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(AppRadius.xl),
-      border: Border.all(color: AppColors.line),
-      boxShadow: AppShadows.card,
-    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.purpleSoft,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: step == null
-                  ? Icon(icon, color: AppColors.purple, size: 21)
-                  : Text(
-                      '$step',
-                      style: const TextStyle(
-                        color: AppColors.purple,
-                        fontWeight: FontWeight.w900,
-                        fontSize: AppTypography.titleSmall,
-                      ),
-                    ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(title, style: AppTypography.sectionTitle),
-            ),
-            ?trailing,
-          ],
-        ),
+        AppSectionHeader(title: title, icon: icon, step: step, trailing: trailing),
         for (final child in children) ...[
           const SizedBox(height: AppSpacing.md),
           child,

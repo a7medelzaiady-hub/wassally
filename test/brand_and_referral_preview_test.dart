@@ -18,7 +18,7 @@ void main() {
     await ThemeController.instance.select(AppPalette.green);
     expect(Brand.palette.id, 'wasally');
     expect(buildAppTheme().colorScheme.primary, AppPalette.wasally.primary);
-    expect(buildAppTheme().appBarTheme.backgroundColor, AppPalette.wasally.ink);
+    expect(buildAppTheme().appBarTheme.backgroundColor, AppColors.purpleDeep);
   });
 
   testWidgets('شاشة جوجل لا تعرض إدخال كود الإحالة',
