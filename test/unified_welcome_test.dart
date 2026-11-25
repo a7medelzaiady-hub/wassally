@@ -62,6 +62,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('مواقع الرئيسية والسلة معكوسة حسب اعتماد RTL',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      theme: buildAppTheme(),
+      home: const Directionality(
+        textDirection: TextDirection.rtl,
+        child: CustomerEntry(loadHeroPhoto: false),
+      ),
+    ));
+    await tester.pump();
+
+    // Under RTL, the first entry in the Row is the rightmost slot.
+    expect(find.text('الرئيسية'), findsOneWidget);
+    expect(find.text('السلة'), findsOneWidget);
+    expect(tester.getCenter(find.text('السلة')).dx,
+        greaterThan(tester.getCenter(find.text('الرئيسية')).dx));
+    expect(find.text('تصفح المحلات'), findsOneWidget);
+    expect(find.text('تصفح العروض'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('البانر يحمل صورة حقيقية لعميلة بتتكلم في الهاتف', () {
     expect(const CustomerEntry().loadHeroPhoto, isTrue);
     final uri = Uri.parse(kEntryHeroPhoneImageUrl);
