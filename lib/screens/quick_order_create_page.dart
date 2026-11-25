@@ -1,3 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart' as audio;
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -36,6 +42,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   final List<String> _photos = [];
   bool _uploadingPhoto = false;
   static const _maxPhotos = 3;
+  final _voiceRecorder = AudioRecorder();
+  final _voicePlayer = audio.AudioPlayer();
+  Timer? _voiceTimer;
+  String? _voicePath;
+  String? _uploadedVoiceUrl;
+  bool _recording = false;
+  bool _playingVoice = false;
+  int _voiceSeconds = 0;
   String? _pendingOrderId;
 
   @override
@@ -63,6 +77,11 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
 
   @override
   void dispose() {
+    _voiceTimer?.cancel();
+    _voiceRecorder.dispose();
+    _voicePlayer.dispose();
+    final path = _voicePath;
+    if (path != null) File(path).delete().catchError((_) => File(path));
     for (final c in [_name, _area, _phone, _address, _notes]) {
       c.dispose();
     }
@@ -86,8 +105,68 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     }
   }
 
+  Future<void> _toggleVoice() async {
+    if (_submitting) return;
+    if (_recording) {
+      try {
+        final path = await _voiceRecorder.stop();
+        _voiceTimer?.cancel();
+        if (path == null || !await File(path).exists()) throw StateError('التسجيل لم يُحفظ.');
+        if (mounted) setState(() { _recording = false; _voicePath = path; _uploadedVoiceUrl = null; });
+      } catch (e) {
+        if (mounted) setState(() => _recording = false);
+        _voiceMessage('تعذر حفظ التسجيل الصوتي.');
+      }
+      return;
+    }
+    try {
+      if (!await _voiceRecorder.hasPermission()) {
+        _voiceMessage('اسمح باستخدام الميكروفون لتسجيل طلبك.');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/quick-${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _voicePlayer.stop();
+      await _voiceRecorder.start(const RecordConfig(
+        encoder: AudioEncoder.aacLc, bitRate: 32000, sampleRate: 22050, numChannels: 1,
+      ), path: path);
+      if (!mounted) return;
+      setState(() { _recording = true; _playingVoice = false; _voiceSeconds = 0; _voicePath = null; _uploadedVoiceUrl = null; });
+      _voiceTimer?.cancel();
+      _voiceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted || !_recording) { timer.cancel(); return; }
+        if (_voiceSeconds >= 20) { timer.cancel(); _toggleVoice(); return; }
+        setState(() => _voiceSeconds++);
+      });
+    } catch (_) { _voiceMessage('تعذر بدء التسجيل. حاول مرة تانية.'); }
+  }
+
+  void _voiceMessage(String message) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _previewVoice() async {
+    final path = _voicePath;
+    if (path == null || _submitting) return;
+    try {
+      if (_playingVoice) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _playingVoice = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.DeviceFileSource(path));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _playingVoice = true);
+      }
+    } catch (_) { _voiceMessage('تعذر تشغيل التسجيل.'); }
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
+    if (_recording) {
+      _voiceMessage('اضغط إيقاف التسجيل قبل إرسال الطلب.');
+      return;
+    }
     if (_uploadingPhoto) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('استنى لحد ما الصورة تترفع'),
@@ -102,7 +181,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       return;
     }
     // الصورة لوحدها طلب كامل؛ من غيرها لازم صنف مكتوب لكل محل.
-    if (_photos.isEmpty && _stores.any((store) => !store.hasItems)) {
+    if (_photos.isEmpty && _voicePath == null && _stores.any((store) => !store.hasItems)) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(kQuickPhotoOrdersEnabled
             ? 'اكتب طلبك أو صوّره'
@@ -123,6 +202,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       // retried without creating duplicate orders.
       final user = await _currentUserId();
       final id = _pendingOrderId ??= '${user}_${DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(16, '0')}';
+      if (_voicePath != null) {
+        _uploadedVoiceUrl ??= await ImageService.uploadQuickVoice(await File(_voicePath!).readAsBytes());
+      }
       await QuickOrderApi.create({
         'orderId': id,
         'customerName': _name.text.trim(),
@@ -130,6 +212,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         'notes': _notes.text.trim(),
         'stores': [for (final store in _stores) store.toWorkerMap()],
         if (_photos.isNotEmpty) 'customerImages': List<String>.of(_photos),
+        if (_uploadedVoiceUrl != null) 'customerVoiceUrl': _uploadedVoiceUrl,
         'contact': {
           'userName': _name.text.trim(),
           'phone': phone,
@@ -197,6 +280,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           _photoSection(),
           const SizedBox(height: AppSpacing.sm),
         ],
+        _voiceSection(),
+        const SizedBox(height: AppSpacing.sm),
         for (final store in _stores) _storeFields(store),
         if (_stores.length < 10)
           Align(
@@ -376,6 +461,49 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           ],
         ),
       );
+
+  Widget _voiceSection() => AppCard(
+    key: const Key('quick-voice-section'),
+    margin: EdgeInsets.zero,
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Row(children: [
+        Icon(Icons.mic_rounded, color: AppColors.purple),
+        SizedBox(width: AppSpacing.sm),
+        Expanded(child: Text('أو سجّل طلبك بصوتك', style: AppTypography.sectionTitle)),
+      ]),
+      const SizedBox(height: 4),
+      const Text('قول اللي محتاجه في رسالة صوتية قصيرة بدل الكتابة (حتى 20 ثانية).',
+          style: AppTypography.secondary),
+      const SizedBox(height: AppSpacing.sm),
+      Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        OutlinedButton.icon(
+          key: const Key('quick-voice-record'),
+          onPressed: _submitting ? null : _toggleVoice,
+          icon: Icon(_recording ? Icons.stop_circle_rounded : Icons.mic_rounded),
+          label: Text(_recording ? 'إيقاف التسجيل (${_voiceSeconds}s)' :
+              _voicePath == null ? 'سجّل طلبك' : 'تسجيل جديد'),
+        ),
+        if (_voicePath != null && !_recording) ...[
+          TextButton.icon(
+            key: const Key('quick-voice-preview'),
+            onPressed: _submitting ? null : _previewVoice,
+            icon: Icon(_playingVoice ? Icons.stop_rounded : Icons.play_arrow_rounded),
+            label: Text(_playingVoice ? 'إيقاف' : 'اسمع التسجيل'),
+          ),
+          IconButton(
+            tooltip: 'حذف التسجيل',
+            onPressed: _submitting ? null : () async {
+              await _voicePlayer.stop();
+              if (mounted) setState(() { _voicePath = null; _uploadedVoiceUrl = null; _playingVoice = false; });
+            },
+            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
+          ),
+        ],
+      ]),
+      const Text('التسجيل بيتمسح من التخزين بعد تأكيد استلام الطلب برمز التسليم.',
+          style: AppTypography.secondary),
+    ]),
+  );
 
   Widget _heading(String title, String? subtitle) => Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -634,7 +762,7 @@ class _QuickIntro extends StatelessWidget {
             children: [
               step(Icons.edit_note_rounded, 'اكتب طلبك'),
               step(Icons.phone_in_talk_rounded, 'المندوب يكلمك ويتفق معاك'),
-              step(Icons.receipt_long_rounded, 'توافق على الحساب'),
+              step(Icons.receipt_long_rounded, 'تشوف الحساب النهائي'),
               step(Icons.verified_rounded, 'تستلم برمز التسليم'),
             ],
           ),
