@@ -112,19 +112,21 @@ class AppPalette {
     soft: Color(0xFFFFE4EA),
   );
 
+  // Values mirror AppColors (app_tokens.dart): orange = primary actions,
+  // royal purple = identity accent, white/neutral surfaces.
   static const wasally = AppPalette(
     id: 'wasally',
-    name: 'وصّلي - البرتقالي والبنفسجي',
-    primary: Color(0xFFFF7900),
-    primaryDark: Color(0xFFE65F00),
-    primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF6530A5),
-    accentDeep: Color(0xFF38156D),
-    bg: Color(0xFFF7F7FA),
-    ink: Color(0xFF2A1947),
-    muted: Color(0xFF756783),
-    line: Color(0xFFE6E1F0),
-    soft: Color(0xFFFFE9D5),
+    name: 'وصّلي - البنفسجي الملكي والبرتقالي',
+    primary: Color(0xFFF26B00),
+    primaryDark: Color(0xFFC24A00),
+    primaryLight: Color(0xFFFF9133),
+    accent: Color(0xFF4A1F9E),
+    accentDeep: Color(0xFF29136B),
+    bg: Color(0xFFF6F5FA),
+    ink: Color(0xFF1E1638),
+    muted: Color(0xFF6B6480),
+    line: Color(0xFFE5E1EF),
+    soft: Color(0xFFFFEEDF),
   );
 
   // Approved identity is fixed for every role; legacy definitions are kept

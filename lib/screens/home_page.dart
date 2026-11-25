@@ -28,7 +28,10 @@ import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
+import '../widgets/curved_nav_bar.dart';
 import 'notifications_page.dart';
+import '../services/saved_address.dart';
+import '../widgets/scroll_following_overlay.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
@@ -62,8 +65,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  // العنوان المحفوظ للعميل.
-  String _address = '';
+  // العنوان المحفوظ للعميل (مشترك مع صفحة الترحيب: قراءة واحدة).
+  String _address = SavedAddress.value.value;
+
+  // الهيدر بيتحرك مع التمرير؛ زر الإشعارات مرسوم برا القائمة ويتبعه.
+  final ScrollController _scroll = ScrollController();
+  static const double _bellSize = 44;
 
 
   // الإشعارات.
@@ -119,7 +126,8 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
-    _loadSavedAddress();
+    SavedAddress.value.addListener(_onSavedAddress);
+    SavedAddress.load();
     _initNotifications();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -129,6 +137,8 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    SavedAddress.value.removeListener(_onSavedAddress);
+    _scroll.dispose();
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -165,23 +175,14 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── الموقع ─────────────────────────
 
-  Future<void> _loadSavedAddress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final a = (doc.data()?['address'] ?? '').toString();
-      if (mounted && a.isNotEmpty) setState(() => _address = a);
-    } catch (e) {
-      debugPrint('Load address error: $e');
-    }
+  void _onSavedAddress() {
+    final a = SavedAddress.value.value;
+    if (mounted && a.isNotEmpty && a != _address) setState(() => _address = a);
   }
 
   Future<void> _saveAddress(String address, {double? lat, double? lng}) async {
     if (mounted) setState(() => _address = address);
+    SavedAddress.update(address);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
@@ -532,10 +533,9 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _openNotifications() async {
     // افتح الصفحة فورًا؛ أي مزامنة للتوكن/الـ topics تتم في الخلفية
-    // علشان تعليق الشبكة أو FCM ما يوقفش الزر.
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    // علشان تعليق الشبكة أو FCM ما يوقفش الزر. الضغط المتكرر يفتحها مرة واحدة.
     unawaited(_syncNotificationsInBackground());
+    await pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
   }
 
   Future<void> _syncNotificationsInBackground() async {
@@ -599,8 +599,8 @@ class _HomePageState extends State<HomePage>
             customBorder: const CircleBorder(),
             onTap: _openNotifications,
             child: SizedBox(
-              width: 38,
-              height: 38,
+              width: _bellSize,
+              height: _bellSize,
               child: AnimatedBuilder(
                 animation: _bellCtrl,
                 builder: (context, child) {
@@ -710,7 +710,8 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
               const SizedBox(width: 10),
-              _bell(),
+              // مكان الجرس محجوز؛ الجرس نفسه مرسوم فوق القائمة (انظر build).
+              const SizedBox(width: _bellSize, height: _bellSize),
             ],
           ),
           const SizedBox(height: 8),
@@ -772,6 +773,7 @@ class _HomePageState extends State<HomePage>
     final stores = _storesFuture;
     return Scaffold(
       appBar: AppBar(title: const Text('تصفح العروض')),
+      bottomNavigationBar: const CustomerPageNav(),
       body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
         future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
         builder: (context, snapshot) {
@@ -785,15 +787,37 @@ class _HomePageState extends State<HomePage>
           if (offers.isEmpty) {
             return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: offers.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (_, i) => Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _offerCard(offers[i], offer: true),
-            ),
-          );
+          // شبكة بعمودين (3 على الشاشات العريضة) بدل كروت نص عرض
+          // الشاشة ومساحة فاضية جنبها.
+          return LayoutBuilder(builder: (context, constraints) {
+            const gap = AppSpacing.md;
+            final columns = constraints.maxWidth >= 600 ? 3 : 2;
+            final cardWidth = (constraints.maxWidth - AppSpacing.page * 2 -
+                    gap * (columns - 1)) /
+                columns;
+            final imageHeight = cardWidth * 0.8;
+            final textHeight = MediaQuery.textScalerOf(context).scale(15) * 1.3 +
+                MediaQuery.textScalerOf(context).scale(13) * 1.4 +
+                MediaQuery.textScalerOf(context).scale(16) * 1.4 +
+                40;
+            return GridView.builder(
+              key: const Key('offers-grid'),
+              padding: AppSpacing.pagePadding,
+              itemCount: offers.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: gap,
+                mainAxisSpacing: gap,
+                mainAxisExtent: imageHeight + textHeight,
+              ),
+              itemBuilder: (_, i) => _offerCard(
+                offers[i],
+                offer: true,
+                width: null,
+                imageHeight: imageHeight,
+              ),
+            );
+          });
         },
       ),
     );
@@ -968,7 +992,12 @@ class _HomePageState extends State<HomePage>
   }
 
   /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
-  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+  Widget _offerCard(
+    (_StoreItem, Map<String, dynamic>) entry, {
+    bool offer = false,
+    double? width = 232,
+    double imageHeight = 130,
+  }) {
     final (s, m) = entry;
     final price = (m['price'] as num?)?.toDouble() ?? 0;
     final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
@@ -986,7 +1015,7 @@ class _HomePageState extends State<HomePage>
     return GestureDetector(
       onTap: () => _openStore(s.store),
       child: Container(
-        width: 232,
+        width: width,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -999,7 +1028,7 @@ class _HomePageState extends State<HomePage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 130,
+              height: imageHeight,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1100,10 +1129,10 @@ class _HomePageState extends State<HomePage>
                     children: [
                       Text(
                         formatPrice(price),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.green,
+                        style: const TextStyle(
+                          fontSize: AppTypography.price - 1,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeDeep,
                         ),
                       ),
                       if (offer && hasDiscount) ...[
@@ -1241,6 +1270,7 @@ class _HomePageState extends State<HomePage>
           final all = snapshot.hasData ? _parse(snapshot.data!) : <_StoreItem>[];
 
           final scroll = CustomScrollView(
+            controller: _scroll,
             physics: const BouncingScrollPhysics(),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             slivers: [
@@ -1305,9 +1335,18 @@ class _HomePageState extends State<HomePage>
             ],
           );
 
+          final top = MediaQuery.paddingOf(context).top;
           return Stack(
             children: [
               scroll,
+              ScrollFollowingOverlay(
+                key: const Key('home-bell-overlay'),
+                controller: _scroll,
+                top: top + 6,
+                end: 16,
+                hideAfter: top + 6 + _bellSize,
+                child: _bell(),
+              ),
               Positioned(
                 top: 0,
                 left: 0,
