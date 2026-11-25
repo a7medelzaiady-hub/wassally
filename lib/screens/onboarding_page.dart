@@ -241,11 +241,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
                 child: Row(
                   children: [
-                    TextButton(
-                      key: const Key('onboarding-skip'),
-                      onPressed: _finish,
-                      style: TextButton.styleFrom(foregroundColor: Colors.white),
-                      child: const Text('تخطي'),
+                    Flexible(
+                      child: TextButton(
+                        key: const Key('onboarding-skip'),
+                        onPressed: _finish,
+                        style: TextButton.styleFrom(foregroundColor: Colors.white),
+                        child: const FittedBox(fit: BoxFit.scaleDown, child: Text('تخطي')),
+                      ),
                     ),
                     Expanded(
                       child: FittedBox(
@@ -283,15 +285,21 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       ),
                       ),
                     ),
-                    FilledButton(
-                      key: const Key('onboarding-next'),
-                      onPressed: _next,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(104, 48),
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                        shape: const StadiumBorder(),
+                    Flexible(
+                      flex: 2,
+                      child: FilledButton(
+                        key: const Key('onboarding-next'),
+                        onPressed: _next,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(96, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                          shape: const StadiumBorder(),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(last ? 'يلا نبدأ' : 'التالي'),
+                        ),
                       ),
-                      child: Text(last ? 'يلا نبدأ' : 'التالي'),
                     ),
                   ],
                 ),
