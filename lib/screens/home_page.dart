@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,7 +17,6 @@ import '../services/read_meter.dart';
 import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
-import '../services/performance_monitor.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -30,6 +28,7 @@ import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
 import 'notifications_page.dart';
 import '../services/saved_address.dart';
+import '../services/location_picker.dart';
 import '../widgets/notification_bell.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
@@ -176,184 +175,8 @@ class _HomePageState extends State<HomePage>
     if (mounted && a.isNotEmpty && a != _address) setState(() => _address = a);
   }
 
-  Future<void> _saveAddress(String address, {double? lat, double? lng}) async {
-    if (mounted) setState(() => _address = address);
-    SavedAddress.update(address);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'address': address,
-        'lat': ?lat,
-        'lng': ?lng,
-      }, SetOptions(merge: true));
-      _toast('تم حفظ موقعك');
-    } catch (e) {
-      debugPrint('Save address error: $e');
-      _toast('تعذر حفظ العنوان');
-    }
-  }
-
-  /// شرح واضح قبل طلب إذن الموقع (متطلب سياسة جوجل بلاي: طلب الإذن في سياقه).
-  Future<bool> _confirmLocationUse() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'استخدام موقعك',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هنستخدم موقع جهازك مرة واحدة بس عشان نحدد عنوان التوصيل، '
-            'ونحفظ العنوان في حسابك لتسهيل طلباتك الجاية. '
-            'مش بنتتبع موقعك في الخلفية، وتقدر تكتب عنوانك بنفسك بدل كده.',
-            style: TextStyle(height: 1.6),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('اكتب العنوان بنفسي'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('متابعة'),
-            ),
-          ],
-        ),
-      ),
-    );
-    return ok ?? false;
-  }
-
-  Future<void> _useGps() async {
-    if (!await _confirmLocationUse() || !mounted) return;
-    _toast('جاري تحديد موقعك...');
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        _toast('فعّل خدمة الموقع (GPS) من الإعدادات');
-        await Geolocator.openLocationSettings();
-        return;
-      }
-
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied) {
-        _toast('محتاجين إذن الموقع عشان نحدد مكانك');
-        return;
-      }
-      if (perm == LocationPermission.deniedForever) {
-        _toast('إذن الموقع مرفوض. فعّله من إعدادات التطبيق');
-        await Geolocator.openAppSettings();
-        return;
-      }
-
-      final pos = await PerformanceMonitor.trace(
-        'map_gps_location',
-        () => Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
-        ),
-      );
-
-      var text =
-          '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
-      try {
-        final marks = await PerformanceMonitor.trace(
-          'map_reverse_geocode',
-          () => placemarkFromCoordinates(pos.latitude, pos.longitude),
-        );
-        if (marks.isNotEmpty) {
-          final m = marks.first;
-          final parts = [
-            m.street,
-            m.subLocality,
-            m.locality,
-            m.administrativeArea,
-          ].where((e) => e != null && e.trim().isNotEmpty).toList();
-          if (parts.isNotEmpty) text = parts.join('، ');
-        }
-      } catch (e) {
-        debugPrint('Reverse geocoding error: $e');
-      }
-
-      await _saveAddress(text, lat: pos.latitude, lng: pos.longitude);
-    } catch (e) {
-      debugPrint('GPS error: $e');
-      _toast('تعذر تحديد الموقع، جرّب تاني أو اكتب العنوان بنفسك');
-    }
-  }
-
-  void _pickLocation() {
-    final ctrl = TextEditingController(text: _address);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          MediaQuery.viewInsetsOf(ctx).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'اختر موقع التوصيل',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _useGps();
-              },
-              icon: const Icon(Icons.my_location_rounded),
-              label: const Text('استخدم موقعي الحالي'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'أو اكتب عنوانك (الحي، الشارع، علامة مميزة)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () {
-                final t = ctrl.text.trim();
-                if (t.isEmpty) return;
-                Navigator.of(ctx).pop();
-                _saveAddress(t);
-              },
-              child: const Text('حفظ العنوان'),
-            ),
-          ],
-        ),
-      ),
-    ).whenComplete(ctrl.dispose);
-  }
+  /// نفس اختيار العنوان المستخدم في صفحة ما بعد الدخول.
+  void _pickLocation() => DeliveryLocationPicker.open(context);
 
   // ───────────────────────── الإشعارات ─────────────────────────
 
