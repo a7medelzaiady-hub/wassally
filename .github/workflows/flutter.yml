@@ -53,6 +53,15 @@ jobs:
         echo "Dart dependencies cache hit: ${PUB_CACHE_HIT:-false}"
         time flutter pub get
 
+    # The five standalone entry images must exist before Flutter tests and APK build.
+    - name: Generate independent entry images
+      run: |
+        python -m pip install --quiet Pillow
+        python scripts/split_entry_artwork.py
+        for image in wasally_logo hero_food quick_delivery offers stores; do
+          test -s "assets/images/entry/${image}.jpg"
+        done
+
     # 5. عمل فحص وتأكد من سلامة الكود (اختياري)
     - name: Export resolved dependency lockfile
       uses: actions/upload-artifact@v4
