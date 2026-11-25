@@ -633,6 +633,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   @override
   void dispose() {
+    // The card may disappear while its bottom sheet stays mounted (for
+    // example when a courier assignment is revoked or the order leaves the
+    // current tab). Revoke visible PII *before* disposing the notifier.
+    // Otherwise the orphaned sheet could keep displaying the cached contact.
+    _contactRequest++;
+    _detailContactAllowed.value = false;
+    _contact = null;
     _detailContactAllowed.dispose();
     super.dispose();
   }
