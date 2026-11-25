@@ -149,6 +149,7 @@ void main() {
       'notes': '',
     }));
     await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-request-number')), findsOneWidget);
     expect(find.byKey(const Key('quick-request-empty')), findsOneWidget);
     expect(find.byKey(const Key('quick-contact-privacy-hint')), findsOneWidget);
     expect(find.byKey(const Key('quick-call')), findsNothing);
