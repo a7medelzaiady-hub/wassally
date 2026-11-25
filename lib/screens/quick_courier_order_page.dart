@@ -343,8 +343,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
       ],
       if (!o.canSeeContact)
-        const Padding(
-          padding: EdgeInsets.only(top: 6),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
           child: Text(
             'العنوان ورقم التليفون بيظهروا بعد قبول الطلب فقط.',
             style: TextStyle(fontSize: 12, color: kMuted),
