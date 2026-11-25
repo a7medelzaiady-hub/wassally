@@ -186,7 +186,9 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
     final snap = await FirebaseFirestore.instance.collection('users')
         .limit(80).get();
     return referralMarketerChoices([
-      for (final doc in snap.docs) {'uid': doc.id, ...doc.data()},
+      // The Firestore document ID is authoritative. A writable `uid` field
+      // inside profile data must never override the selected marketer UID.
+      for (final doc in snap.docs) {...doc.data(), 'uid': doc.id},
     ]);
   }
 
