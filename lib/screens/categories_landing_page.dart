@@ -125,15 +125,17 @@ class _CustomerEntryState extends State<CustomerEntry> {
             height: height,
             child: Row(
               textDirection: TextDirection.ltr,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Fill the left half edge-to-edge, without an overlay or inset.
                 Expanded(
-                  flex: 5,
-                  child: _EntryArtwork(art),
+                  flex: 1,
+                  child: SizedBox.expand(child: _EntryArtwork(art)),
                 ),
                 Expanded(
-                  flex: 6,
+                  flex: 1,
                   child: Padding(
-                    padding: EdgeInsetsDirectional.fromSTEB(0, height < 130 ? 4 : 8, 2, height < 130 ? 4 : 8),
+                    padding: EdgeInsetsDirectional.fromSTEB(0, height < 130 ? 4 : 8, 0, height < 130 ? 4 : 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
