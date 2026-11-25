@@ -799,6 +799,429 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
+    List<_StoreItem> stores,
+  ) async {
+    final offers = <(_StoreItem, Map<String, dynamic>)>[];
+    for (final store in stores) {
+      var hasCatalog = false;
+      // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
+      // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
+      // مع كل فتحة للرئيسية؛ المسح بقى للمحل اللي ملخصه لسه ما اتحسبش بس.
+      if (store.data['offerItems'] is! List) {
+        try {
+          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+              .collection('stores')
+              .doc(store.store.id)
+              .collection('products')
+              .limit(200);
+          DocumentSnapshot<Map<String, dynamic>>? cursor;
+          do {
+            if (cursor != null) {
+              query = FirebaseFirestore.instance
+                  .collection('stores')
+                  .doc(store.store.id)
+                  .collection('products')
+                  .limit(200)
+                  .startAfterDocument(cursor);
+            }
+            final page = await query.get();
+            ReadMeter.query('home:offers-scan', page);
+            if (page.docs.isNotEmpty) hasCatalog = true;
+            for (final doc in page.docs) {
+              final item = doc.data();
+              final name = (item['name'] ?? '').toString().trim();
+              final price = (item['price'] as num?)?.toDouble() ?? 0;
+              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+              final text = (item['offerText'] ?? '').toString().trim();
+              final end = item['offerEndsAt'];
+              final expired = isOfferExpired(
+                end is Timestamp ? end.toDate() : null,
+                DateTime.now(),
+              );
+              if (name.isEmpty ||
+                  price <= 0 ||
+                  expired ||
+                  item['available'] == false ||
+                  item['isAvailable'] == false ||
+                  (!(old > price && old > 0) && text.isEmpty)) {
+                continue;
+              }
+              offers.add((store, item));
+            }
+            cursor = page.docs.isEmpty ? null : page.docs.last;
+            if (page.docs.length < 200) break;
+          } while (cursor != null);
+        } catch (error) {
+          debugPrint('Home offers load failed for ${store.store.id}: $error');
+        }
+      }
+      // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
+      if (!hasCatalog) {
+        final raw = store.data['offerItems'];
+        if (raw is List) {
+          for (final value in raw) {
+            if (value is! Map) continue;
+            final item = Map<String, dynamic>.from(value);
+            final end = item['offerEndsAt'];
+            final price = (item['price'] as num?)?.toDouble() ?? 0;
+            final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
+            final text = (item['offerText'] ?? '').toString().trim();
+            if (price <= 0 ||
+                isOfferExpired(end is Timestamp ? end.toDate() : null, DateTime.now()) ||
+                (!(old > price && old > 0) && text.isEmpty)) {
+              continue;
+            }
+            offers.add((store, item));
+          }
+        }
+      }
+    }
+    return offers;
+  }
+
+  Widget _highlights(
+    List<_StoreItem> all,
+    Future<List<(_StoreItem, Map<String, dynamic>)>> offersFuture,
+  ) {
+    final best = <(_StoreItem, Map<String, dynamic>)>[];
+    for (final s in all) {
+      if (s.data['active'] == false) continue;
+      final raw = s.data['bestItems'];
+      if (raw is! List) continue;
+      for (final entry in raw) {
+        if (entry is Map) {
+          best.add((s, Map<String, dynamic>.from(entry)));
+        }
+      }
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
+            future: offersFuture,
+            builder: (context, snapshot) {
+              final offers = snapshot.data ?? const <(_StoreItem, Map<String, dynamic>)>[];
+              if (offers.isEmpty) return const SizedBox.shrink();
+              return _hlRow('عروض وخصومات', offers, offer: true);
+            },
+          ),
+          if (best.isNotEmpty) _hlRow('الأكثر مبيعًا', best),
+        ],
+      ),
+    );
+  }
+
+  Widget _hlRow(
+    String title,
+    List<(_StoreItem, Map<String, dynamic>)> items, {
+    bool offer = false,
+  }) {
+    // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(bottom: 14),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Icon(
+                  offer ? Icons.local_offer_rounded : Icons.local_fire_department_rounded,
+                  color: Brand.green,
+                  size: 22,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Brand.ink,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 238,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length > 12 ? 12 : items.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => _offerCard(items[i], offer: offer),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
+  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+    final (s, m) = entry;
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+    final img = (m['image'] ?? '').toString();
+    final offerText = (m['offerText'] ?? '').toString().trim();
+    final hasDiscount = old > price && old > 0;
+    final badge = hasDiscount
+        ? 'خصم ${((1 - price / old) * 100).round()}%'
+        : offerText;
+    final fallback = Container(
+      decoration: BoxDecoration(gradient: Brand.softGradient),
+      alignment: Alignment.center,
+      child: Icon(s.store.icon, color: Colors.white70, size: 40),
+    );
+    return GestureDetector(
+      onTap: () => _openStore(s.store),
+      child: Container(
+        width: 232,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 3)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 130,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  img.isEmpty
+                      ? fallback
+                      : CachedNetImage(
+                          url: thumb(img, w: 500),
+                          memCacheWidth: 500,
+                          errorWidget: fallback,
+                        ),
+                  if (badge.isNotEmpty)
+                    PositionedDirectional(
+                      top: 10,
+                      start: 10,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Brand.palette.soft,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          badge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Brand.ink,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  PositionedDirectional(
+                    bottom: 8,
+                    end: 10,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: kLine),
+                      ),
+                      child: s.image.isEmpty
+                          ? Icon(s.store.icon, size: 20, color: Brand.green)
+                          : CachedNetImage(
+                              url: thumb(s.image, w: 120),
+                              memCacheWidth: 120,
+                              errorWidget:
+                                  Icon(s.store.icon, size: 20, color: Brand.green),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (m['name'] ?? '').toString(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: Brand.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Icon(Icons.storefront_rounded, size: 14, color: kMuted),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          s.store.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, color: kMuted),
+                        ),
+                      ),
+                      if (s.rating > 0) ...[
+                        const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 15),
+                        Text(
+                          s.rating.toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        formatPrice(price),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Brand.green,
+                        ),
+                      ),
+                      if (offer && hasDiscount) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          formatPrice(old),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: kMuted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────── روابط المحلات المختصرة ─────────────────────────
+
+  /// صف دوائر المحلات (شعار + اسم) زي طلبات: دخول سريع للمحل من الرئيسية.
+  Widget _storeShortcuts(List<_StoreItem> all) {
+    final shown = all.take(14).toList();
+    if (shown.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'محلات مميزة',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: Brand.ink,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _openDirectory,
+                  child: const Text('عرض الكل'),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 100,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: shown.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 14),
+              itemBuilder: (_, i) {
+                final item = shown[i];
+                final fallback = Container(
+                  color: Brand.green.withValues(alpha: 0.10),
+                  alignment: Alignment.center,
+                  child: Icon(item.store.icon, color: Brand.green, size: 28),
+                );
+                return GestureDetector(
+                  onTap: () => _openStore(item.store),
+                  child: SizedBox(
+                    width: 72,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 66,
+                          height: 66,
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: kLine, width: 1.5),
+                          ),
+                          child: item.image.isEmpty
+                              ? fallback
+                              : CachedNetImage(
+                                  url: thumb(item.image, w: 200),
+                                  memCacheWidth: 200,
+                                  errorWidget: fallback,
+                                ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          item.store.isOpen
+                              ? item.store.name
+                              : '${item.store.name} • ${ClosedBadge.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: item.store.isOpen ? Brand.ink : kDanger,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ───────────────────────── البناء ─────────────────────────
 
   @override
