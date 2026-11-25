@@ -185,7 +185,7 @@ class _InviteCodeFieldState extends State<InviteCodeField> {
                             key: const Key('invite-code-submit'),
                             tooltip: 'تأكيد كود الدعوة',
                             onPressed: _submit,
-                            icon: const Icon(Icons.arrow_back_rounded),
+                            icon: const Icon(Icons.arrow_forward_rounded),
                             style: IconButton.styleFrom(
                               backgroundColor: AppColors.purple,
                               foregroundColor: Colors.white,
