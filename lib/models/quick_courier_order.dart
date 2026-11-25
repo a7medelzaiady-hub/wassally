@@ -230,6 +230,14 @@ class QuickCourierOrder {
   /// المندوب يقدر يسيب الطلب قبل الشراء وقبل أي تحويل من العميل بس (نفس شرط الـWorker).
   bool get canRelease => status == 'accepted' && advanceSentAt == null;
 
+  /// Explains an empty quick-order receipt instead of presenting an empty
+  /// details screen. Items can be written freely or priced in a store group.
+  bool get hasCustomerRequest =>
+      notes.trim().isNotEmpty ||
+      stores.any((s) =>
+          s.items.trim().isNotEmpty ||
+          s.pricedItems.any((line) => line.name.trim().isNotEmpty));
+
   /// العميل قال إنه حوّل مقدم (اختياري) ولسه المندوب ما أكدش استلامه.
   bool get hasPendingAdvance => advanceSentAt != null && advanceConfirmedAt == null;
 
