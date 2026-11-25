@@ -1444,10 +1444,10 @@ class _OrderParticipants extends StatelessWidget {
               Text('تعذر تحميل الأسماء', style: TextStyle(color: kMuted, fontSize: 12)),
             if (customerId.isNotEmpty)
               line(Icons.person_outline,
-                'العميل: ${validCustomer ? _label(details?['customerName'], details?['userName']) : 'الاسم غير متاح'}'),
+                'العميل: ${validCustomer ? _label(details['customerName'], details['userName']) : 'الاسم غير متاح'}'),
             if (courierId.isNotEmpty)
               line(Icons.delivery_dining_outlined,
-                'المندوب: ${validCourier ? _label(details?['courierName'], null) : 'الاسم غير متاح'}'),
+                'المندوب: ${validCourier ? _label(details['courierName'], null) : 'الاسم غير متاح'}'),
             if (storeName.isNotEmpty)
               line(Icons.storefront_outlined, 'المحل: $storeName'),
             Align(
