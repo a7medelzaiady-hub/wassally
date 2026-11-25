@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/order.dart';
@@ -138,3 +139,4 @@ class CourierOrderDetailsSheet extends StatelessWidget {
           ),
         ),
       );
+}
