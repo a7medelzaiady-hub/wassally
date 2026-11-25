@@ -21,8 +21,10 @@ import {
   applyQuickAction,
   newQuickOrder,
   quickCustomerImages,
+  quickCustomerVoice,
   quickDeliveredPatch,
   validateQuickImages,
+  validateQuickVoice,
   quickDeliveryBlocker,
   resolveQuickSettings,
   validateQuickNotes,
@@ -1790,6 +1792,33 @@ export function isOwnQuickImage(url: string, folder: string, cloudName?: string)
 }
 
 /** مسح صور «صوّر طلبك» من Cloudinary (بعد التسليم). بترجع الصور اللي ما اتمسحتش. */
+/** فيديو m4a واحد من العميل، محفوظ في مسار غير قابل لحقن رابط طرف آخر. */
+export function isOwnQuickVoice(url: string, folder: string, cloudName?: string): boolean {
+  if (!isCloudinaryVoiceUrl(url)) return false;
+  if (cloudName && !new URL(url).pathname.startsWith(`/${cloudName}/video/upload/`)) return false;
+  return cloudinaryPublicIdFromUrl(url).startsWith(folder + "/");
+}
+
+/** حذف الملفات الصوتية من التخزين الفعلي، مش مجرد إزالة رابط Firestore. */
+export async function destroyQuickVoice(env: Env, url: string, folder: string): Promise<boolean> {
+  if (!url) return true;
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET ||
+      !isOwnQuickVoice(url, folder, env.CLOUDINARY_CLOUD_NAME)) return false;
+  try {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const params = { invalidate: "true", public_id: cloudinaryPublicIdFromUrl(url), timestamp };
+    const signature = await cloudinarySignature(params, env.CLOUDINARY_API_SECRET);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(params)) form.append(key, value);
+    form.append("api_key", env.CLOUDINARY_API_KEY);
+    form.append("signature", signature);
+    const deleted = await fetch(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/video/destroy`,
+      { method: "POST", body: form });
+    const result = deleted.ok ? await deleted.json() as { result?: string } : {};
+    return ["ok", "not found"].includes(String(result.result ?? ""));
+  } catch { return false; }
+}
+
 export async function destroyQuickImages(env: Env, urls: string[], folder: string): Promise<string[]> {
   const failed: string[] = [];
   if (!urls.length) return failed;
@@ -1961,7 +1990,7 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners", "special_requests", "quick_receipts", "quick_requests"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests", "quick_receipts", "quick_requests", "quick_voices"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
@@ -1970,6 +1999,14 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
 
   // «صوّر طلبك»: أي عميل مسجّل يرفع صور ورقة طلباته في مجلده هو بس،
   // من غير أي قراءة من Firestore. الصور بتتربط بالطلب عند إنشائه.
+  if (folder === "quick_voices") {
+    if (file.size > MAX_VOICE_UPLOAD_BYTES) throw new HttpError(413, "التسجيل الصوتي أكبر من 1MB.");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const audio = detectAudioContent(bytes);
+    if (!audio) throw new HttpError(415, "صيغة الصوت غير مدعومة. سجل بصيغة m4a.");
+    return await signedCloudinaryImageUpload(env, bytes, audio,
+      `${await quickRequestFolder(uid)}/voice`, "video");
+  }
   if (folder === "quick_requests") {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const image = detectImageContent(bytes);
@@ -3220,11 +3257,12 @@ async function signedCloudinaryImageUpload(
   bytes: Uint8Array<ArrayBuffer>,
   detected: { format: string; mime: string },
   folder: string,
+  resourceType: "image" | "video" = "image",
 ): Promise<Response> {
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = crypto.randomUUID();
   const signedParams = {
-    allowed_formats: "jpg,jpeg,png,webp",
+    allowed_formats: resourceType === "video" ? "m4a,aac,mp4" : "jpg,jpeg,png,webp",
     folder,
     overwrite: "false",
     public_id: publicId,
@@ -3239,7 +3277,7 @@ async function signedCloudinaryImageUpload(
   for (const [key, value] of Object.entries(signedParams)) upload.append(key, value);
   upload.append("signature", signature);
   const uploaded = await fetch(
-    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
     { method: "POST", body: upload },
   );
   if (!uploaded.ok) {
@@ -3251,7 +3289,7 @@ async function signedCloudinaryImageUpload(
   let parsedUrl: URL;
   try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
   if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "res.cloudinary.com" ||
-      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/`)) {
     throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
   }
   return response({ url: secureUrl });
@@ -3333,7 +3371,7 @@ const quickCustomerUpdates: Readonly<Record<string, string>> = {
   accept: "مندوب قبل طلبك السريع",
   release: "طلبك السريع بيدوّر على مندوب تاني",
   "advance-received": "المندوب أكّد استلام المقدم",
-  "submit-summary": "كشف حساب طلبك السريع جاهز للمراجعة",
+  "submit-summary": "كشف طلبك السريع جاهز — استلم طلبك بالرمز",
 };
 
 const quickCourierUpdates: Readonly<Record<string, string>> = {
@@ -3361,12 +3399,14 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
   if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
     throw new HttpError(400, "راجع الاسم والمنطقة.");
   }
-  let stores, notes, customerImages: string[] = [];
+  let stores, notes, customerImages: string[] = [], customerVoiceUrl = "";
   try {
     const folder = await quickRequestFolder(uid);
     customerImages = validateQuickImages(input.customerImages,
       (url) => isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME));
-    stores = validateQuickStores(input.stores, customerImages.length > 0);
+    customerVoiceUrl = validateQuickVoice(input.customerVoiceUrl,
+      (url) => isOwnQuickVoice(url, folder + "/voice", env.CLOUDINARY_CLOUD_NAME));
+    stores = validateQuickStores(input.stores, customerImages.length > 0 || !!customerVoiceUrl);
     notes = validateQuickNotes(input.notes);
   } catch (error) {
     quickError(error);
@@ -3407,7 +3447,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
   }
 
   const order = newQuickOrder({
-    uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages,
+    uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages, customerVoiceUrl,
   });
   await commitOrConflict(env, token, [
     {
@@ -3513,7 +3553,7 @@ async function getQuickDeliveryPin(request: Request, env: Env, orderId: string):
   const order = decodeFields(doc.fields ?? {});
   if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
   if (!QUICK_PIN_STATUSES.includes(String(order.status))) {
-    throw new HttpError(409, "الرمز بيظهر بعد قبول المندوب وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
+    throw new HttpError(409, "الرمز بيظهر بعد تجهيز الكشف النهائي وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
   }
   return response({ pin: await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET) });
 }
@@ -3576,8 +3616,12 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   const patch = quickDeliveredPatch(order, uid, new Date());
   // صور العميل: المراجع بتتشال في نفس الكتابة، والملفات بتتمسح من Cloudinary.
   const images = quickCustomerImages(order);
-  const imagesFolder = images.length ? await quickRequestFolder(String(order.userId ?? "")) : "";
+  const voice = quickCustomerVoice(order);
+  const imagesFolder = (images.length || voice) ? await quickRequestFolder(String(order.userId ?? "")) : "";
   const undeleted = await destroyQuickImages(env, images, imagesFolder);
+  if (voice && !await destroyQuickVoice(env, voice, imagesFolder + "/voice")) {
+    patch.customerVoicePendingCleanup = voice;
+  }
   if (undeleted.length) {
     // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
     patch.customerImagesPendingCleanup = undeleted;
