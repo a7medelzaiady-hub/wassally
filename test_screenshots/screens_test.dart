@@ -38,7 +38,7 @@ List<CatalogDoc> _stores() => [
 
 void main() {
   testWidgets('entry customer 390', (tester) async {
-    await shoot(tester, 'entry_customer_390x844', const CustomerEntry());
+    await shoot(tester, 'entry_customer_390x844', const CustomerEntry(showInviteCode: true));
   });
 
   testWidgets('entry customer small 320', (tester) async {
