@@ -42,18 +42,18 @@ describe("quick customer voice", () => {
       notes: "", stores, customerVoiceUrl: voice,
       settings: resolveQuickSettings(null),
     });
-    expect(order.customerVoiceUrl).toBe(voice);
-    expect(quickCustomerVoice(order)).toBe(voice);
+    expect(order.hasCustomerVoice).toBe(true);
+    expect(quickCustomerVoice({ customerVoiceUrl: voice })).toBe(voice);
     const delivered = quickDeliveredPatch(
       { ...order, totals: { serviceFee: 500, due: 1800 } },
       "cour1", new Date(),
     );
-    expect(delivered.customerVoiceUrl).toBe("");
-    expect(quickCustomerVoice({ ...order, ...delivered })).toBe("");
+    expect(delivered.hasCustomerVoice).toBe(false);
+    expect(quickCustomerVoice({ customerVoiceUrl: "" })).toBe("");
     expect(newQuickOrder({
       uid: "cust1", customerFirstName: "Ahmed", area: "الحي", notes: "",
       stores: [{ name: "", items: "لبن" }], settings: resolveQuickSettings(null),
-    }).customerVoiceUrl).toBe("");
+    }).hasCustomerVoice).toBe(false);
   });
 
   it("validates the voice file content by signature, not uploaded extension", () => {
