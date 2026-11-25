@@ -30,7 +30,14 @@ void main() {
 
     await tester.tap(find.byKey(const Key('guide-للعميل')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('guide-لصاحب المحل')));
+    // A narrow ListView lazily builds offscreen cards: scrolling by a
+    // finder that is not built yet requires scrollUntilVisible, not
+    // ensureVisible (which throws "Bad state: No element").
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('guide-لصاحب المحل')),
+      120,
+      scrollable: find.byKey(const Key('user-guide-list')),
+    );
     await tester.tap(find.byKey(const Key('guide-لصاحب المحل')));
     await tester.pumpAndSettle();
     expect(find.textContaining('بيانات اتصال العميل وعنوانه التفصيلي مش متاحة'), findsOneWidget);
