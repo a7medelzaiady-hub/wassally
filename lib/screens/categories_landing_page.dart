@@ -18,7 +18,6 @@ import 'quick_order_create_page.dart';
 import 'store_directory_page.dart';
 
 /// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
-const kEntryBannerAsset = 'assets/images/entry_banner.jpg';
 const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
 const kEntryOffersAsset = 'assets/images/entry_offers.jpg';
 const kEntryStoresAsset = 'assets/images/entry_stores.jpg';
@@ -118,10 +117,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// الهيدر ثابت برا القائمة: أزراره بتستجيب من أول ضغطة حتى أثناء التمرير.
   Widget _header(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
-    return Container(
-      color: AppColors.purpleDeep,
-      padding: EdgeInsets.fromLTRB(AppSpacing.md, top, AppSpacing.md, AppSpacing.sm),
-      child: Column(
+    return ClipPath(
+      key: const Key('entry-header-wave'),
+      clipper: const _EntryHeaderWaveClipper(),
+      child: Container(
+        color: AppColors.purpleDeep,
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md, top, AppSpacing.md, AppSpacing.sm + 28,
+        ),
+        child: Column(
         children: [
           Row(
             children: [
@@ -147,6 +151,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           else
             _searchBar(),
         ],
+        ),
       ),
     );
   }
@@ -232,117 +237,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
     );
   }
 
-  // ───────────────────────── البانر ─────────────────────────
-
-  /// البانر صورة واحدة: صورة الساندوتش والمشروب بتذوب في الخلفية
-  /// البنفسجي والكلام «وصّلي... لحد عندي» فوقها، زي التصميم المرجعي.
-  Widget _banner(double height) {
-    return SizedBox(
-      height: height,
-      child: Material(
-        key: const Key('entry-banner'),
-        elevation: 5,
-        shadowColor: AppColors.purpleDeep.withValues(alpha: 0.35),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          side: BorderSide(color: AppColors.orange.withValues(alpha: 0.75), width: 1.2),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Ink(
-          decoration: const BoxDecoration(
-            // نفس ألوان حافة الصورة علشان مايبانش فاصل.
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF27105E), Color(0xFF1D0B52)],
-            ),
-          ),
-          child: InkWell(
-            onTap: () => _enter(const StoreDirectoryPage()),
-            child: LayoutBuilder(builder: (context, box) {
-              return Stack(
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: box.maxWidth * 0.74,
-                    child: ShaderMask(
-                      blendMode: BlendMode.dstIn,
-                      shaderCallback: (rect) => const LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        stops: [0.0, 0.72, 1.0],
-                        colors: [Colors.white, Colors.white, Color(0x00FFFFFF)],
-                      ).createShader(rect),
-                      child: Image.asset(
-                        kEntryBannerAsset,
-                        key: const Key('entry-banner-art'),
-                        fit: BoxFit.cover,
-                        alignment: Alignment.centerLeft,
-                        excludeFromSemantics: true,
-                      ),
-                    ),
-                  ),
-                  PositionedDirectional(
-                    start: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: box.maxWidth * 0.44,
-                    child: Padding(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                          AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerStart,
-                              child: Text(
-                                'وصّلي...\nلحد عندي',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 26,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w900,
-                                  shadows: [Shadow(color: Color(0x66000000), blurRadius: 8)],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-                            decoration: BoxDecoration(
-                              color: const Color(0xCC5A3524),
-                              borderRadius: BorderRadius.circular(AppRadius.pill),
-                            ),
-                            child: const Text(
-                              'اطلب الآن',
-                              maxLines: 1,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: AppTypography.label,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ───────────────────────── كروت الخدمات ─────────────────────────
 
   /// كارت زي التصميم المرجعي: الصورة الواقعية على اليسار وبتتلاشى في
@@ -351,7 +245,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
     required String title,
     required String subtitle,
     required String action,
-    required IconData icon,
     required String asset,
     required VoidCallback onTap,
     required double height,
@@ -417,39 +310,19 @@ class _CustomerEntryState extends State<CustomerEntry> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 34,
-                              height: 34,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topRight,
-                                  end: Alignment.bottomLeft,
-                                  colors: [AppColors.orangeLight, AppColors.orangeDeep],
-                                ),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                              ),
-                              child: Icon(icon, color: Colors.white, size: 21),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: AppColors.ink,
+                              fontSize: 17,
+                              height: 1.2,
+                              fontWeight: FontWeight.w900,
                             ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text(
-                                  title,
-                                  maxLines: 1,
-                                  style: const TextStyle(
-                                    color: AppColors.ink,
-                                    fontSize: 18,
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                         FittedBox(
                           fit: BoxFit.scaleDown,
@@ -459,7 +332,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                             maxLines: 1,
                             style: const TextStyle(
                               color: AppColors.muted,
-                              fontSize: AppTypography.caption,
+                              fontSize: AppTypography.caption - 1,
                               height: 1.25,
                               fontWeight: FontWeight.w600,
                             ),
@@ -484,21 +357,14 @@ class _CustomerEntryState extends State<CustomerEntry> {
                           // يفضل في سطر واحد كامل من غير «...» حتى في الشاشات الضيقة.
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  action,
-                                  maxLines: 1,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: AppTypography.label,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 18),
-                              ],
+                            child: Text(
+                              action,
+                              maxLines: 1,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label - 1,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),
@@ -517,8 +383,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// أقل ارتفاع للكارت يكفي العنوان والوصف والزر (حسب حجم الخط).
   double _minCardHeight(BuildContext context) {
     final scale = MediaQuery.textScalerOf(context);
-    return scale.scale(18) * 1.2 +
-        scale.scale(AppTypography.caption) * 1.25 +
+    return scale.scale(17) * 1.2 +
+        scale.scale(AppTypography.caption - 1) * 1.25 +
         34 +
         AppSpacing.sm * 2 +
         AppSpacing.md * 2;
@@ -529,7 +395,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
           title: 'خدمة وصّلي ع السريع',
           subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
           action: 'اطلب الآن',
-          icon: Icons.bolt_rounded,
           asset: kEntryQuickAsset,
           height: height,
           onTap: () => _enter(const QuickOrderCreatePage()),
@@ -538,7 +403,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
           title: 'تصفح العروض',
           subtitle: 'أقوى الخصومات والعروض الحصرية',
           action: 'شاهد العروض',
-          icon: Icons.percent_rounded,
           asset: kEntryOffersAsset,
           height: height,
           onTap: () => _enter(const HomePage(offersOnly: true)),
@@ -547,55 +411,35 @@ class _CustomerEntryState extends State<CustomerEntry> {
           title: 'تصفح المحلات',
           subtitle: 'اكتشف جميع المحلات والأصناف',
           action: 'استعرض المحلات',
-          icon: Icons.storefront_rounded,
           asset: kEntryStoresAsset,
           height: height,
           onTap: () => _enter(const StoreDirectoryPage()),
         ),
       ];
 
-  /// البانر والكروت الثلاثة بيتقسموا المساحة المتاحة بالظبط زي التصميم
-  /// المرجعي، فالصفحة كلها ظاهرة من غير تمرير. على الشاشات الصغيرة جدًا
-  /// بس بيتحول لقائمة قابلة للتمرير بدل ما المحتوى يتضغط.
+  /// الكروت الثلاثة تملأ المساحة المتاحة أسفل الهيدر المموج.
+  /// الشاشات الصغيرة تسمح بالتمرير بدل ضغط النص أو إخفاء الأزرار.
   Widget _body(BuildContext context) {
     const gap = AppSpacing.md;
     final minCard = _minCardHeight(context);
     return LayoutBuilder(builder: (context, box) {
       final available = box.maxHeight - gap * 4;
-      // نسبة البانر للكارت في التصميم المرجعي ≈ 1.3.
-      var card = available / 4.3;
-      var banner = card * 1.3;
+      var card = available / 3;
+      final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0);
+      if (card > maxCard) card = maxCard;
       final fits = card >= minCard;
-      if (!fits) {
-        card = minCard;
-        banner = (box.maxWidth - AppSpacing.md * 2) / 2.4;
-      }
-      // لا نكبر الكروت أكتر من اللازم على الشاشات الطويلة.
-      final maxCard = box.maxWidth * 0.36;
-      if (card > maxCard) {
-        card = maxCard;
-        banner = maxCard * 1.3;
-      }
-      final children = <Widget>[
-        Stack(children: [
-          // امتداد لون الهيدر خلف نصف البانر العلوي زي التصميم المرجعي.
-          Container(height: banner / 2 + gap, color: AppColors.purpleDeep),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
-            child: _banner(banner),
-          ),
-        ]),
-        for (final c in _cards(card))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
-            child: c,
-          ),
-      ];
+      if (!fits) card = minCard;
       return ListView(
         key: const Key('entry-list'),
         physics: fits ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.only(bottom: gap),
-        children: children,
+        children: [
+          for (final service in _cards(card))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
+              child: service,
+            ),
+        ],
       );
     });
   }
@@ -667,4 +511,24 @@ class _StandaloneAccount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Scaffold(body: AccountPage());
+}
+
+/// الحافة السفلية المموجة للهيدر، من غير طبقة تغطي الكروت أو الأزرار.
+class _EntryHeaderWaveClipper extends CustomClipper<Path> {
+  const _EntryHeaderWaveClipper();
+
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    return Path()
+      ..moveTo(0, 0)
+      ..lineTo(0, h - 24)
+      ..cubicTo(w * 0.28, h + 5, w * 0.72, h - 40, w, h - 18)
+      ..lineTo(w, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant _EntryHeaderWaveClipper oldClipper) => false;
 }
