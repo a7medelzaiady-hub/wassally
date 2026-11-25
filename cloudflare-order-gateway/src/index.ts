@@ -2979,17 +2979,6 @@ async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?:
       updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
     });
   }
-  if (voiceDoc) {
-    const voicePatch = {
-      customerVoiceUrl: "",
-      ...(voiceDeleteFailed ? { customerVoicePendingCleanup: voice } : {}),
-    };
-    writes.push({
-      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
-      updateMask: { fieldPaths: Object.keys(voicePatch) },
-      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
-    });
-  }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
   if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order);
@@ -3642,6 +3631,17 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
     updateMask: { fieldPaths: Object.keys(patch) },
     currentDocument: orderPrecondition,
   }];
+  if (voiceDoc) {
+    const voicePatch = {
+      customerVoiceUrl: "",
+      ...(voiceDeleteFailed ? { customerVoicePendingCleanup: voice } : {}),
+    };
+    writes.push({
+      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
+      updateMask: { fieldPaths: Object.keys(voicePatch) },
+      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
+    });
+  }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
   scheduleReferralDelivery(env, ctx, token, { userId: order.userId });
