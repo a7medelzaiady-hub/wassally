@@ -13,6 +13,38 @@ const kTopAdPlacement = 'top';
 /// مقاس إعلانات أعلى الرئيسية: 3:2 (مثلًا 1200×800 بكسل).
 const double kTopAdAspectRatio = 1.5;
 
+/// صفحات الإعلان اللي بعد تسجيل الدخول (شاشة كاملة طولية 1080×1920).
+const kTourPlacement = 'tour';
+const double kTourAspectRatio = 9 / 16;
+
+/// أماكن ليها عرض خاص، فمتظهرش في شريط البوسترات العادي.
+const kSpecialPlacements = {kTopAdPlacement, kTourPlacement};
+
+/// روابط البوسترات المفعّلة لمكان معيّن، بالترتيب.
+List<String> bannerPostersFor(QuerySnapshot<Map<String, dynamic>>? snap, String placement) {
+  if (snap == null) return const [];
+  final docs = snap.docs.where((d) {
+    final m = d.data();
+    return (m['active'] as bool? ?? true) &&
+        m['placement'] == placement &&
+        (m['image'] ?? '').toString().isNotEmpty;
+  }).toList()
+    ..sort((a, b) =>
+        ((a.data()['order'] as num?) ?? 0).compareTo((b.data()['order'] as num?) ?? 0));
+  return [for (final d in docs) d.data()['image'].toString()];
+}
+
+/// بوسترات الجولة (نفس قراءة البوسترات المحفوظة في الكاش). أي خطأ = مفيش.
+Future<List<String>> loadTourPosters() async {
+  try {
+    final snap = await CatalogService.get(FirebaseFirestore.instance.collection('banners'), 'banners')
+        .timeout(const Duration(seconds: 4));
+    return bannerPostersFor(snap, kTourPlacement);
+  } catch (_) {
+    return const [];
+  }
+}
+
 /// إعلانات أعلى الرئيسية: بوسترات الإدارة (placement = top) متحركة.
 /// لو مفيش بوسترات مرفوعة، بيظهر إعلان «وصّلي ع السريع» المدمج.
 /// نفس قراءة البوسترات المحفوظة في الكاش (مفيش قراءات إضافية).
@@ -31,18 +63,6 @@ class _HomeTopAdsState extends State<HomeTopAds> {
     'banners',
   );
 
-  static List<String> posters(QuerySnapshot<Map<String, dynamic>>? snap) {
-    if (snap == null) return const [];
-    final docs = snap.docs.where((d) {
-      final m = d.data();
-      return (m['active'] as bool? ?? true) &&
-          m['placement'] == kTopAdPlacement &&
-          (m['image'] ?? '').toString().isNotEmpty;
-    }).toList()
-      ..sort((a, b) => ((a.data()['order'] as num?) ?? 0)
-          .compareTo((b.data()['order'] as num?) ?? 0));
-    return [for (final d in docs) d.data()['image'].toString()];
-  }
 
   Widget _poster(String url) => Material(
         borderRadius: BorderRadius.circular(AppRadius.xl),
@@ -67,7 +87,7 @@ class _HomeTopAdsState extends State<HomeTopAds> {
     return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
       future: _future,
       builder: (context, snap) {
-        final urls = posters(snap.data);
+        final urls = bannerPostersFor(snap.data, kTopAdPlacement);
         return PromoCarousel(
           aspectRatio: kTopAdAspectRatio,
           slides: urls.isEmpty

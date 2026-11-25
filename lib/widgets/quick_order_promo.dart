@@ -6,7 +6,7 @@ import '../theme/app_tokens.dart';
 
 /// ميزة «صوّر طلبك» (#242). الإعلان بتاعها بيظهر بس لما الميزة تتفعل،
 /// علشان ما نعلنش عن حاجة العميل مش هيلاقيها.
-const bool kQuickPhotoOrdersEnabled = false;
+const bool kQuickPhotoOrdersEnabled = true;
 
 /// إطار إعلان موحد: صورة حقيقية على طرف بتذوب في الخلفية والكلام فوقها.
 /// الكلام بيصغر لوحده لو المساحة ضيقة بدل ما يتقص.

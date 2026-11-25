@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_tokens.dart';
+import '../utils/img.dart';
+import '../widgets/cached_net_image.dart';
 import '../widgets/quick_order_promo.dart' show kQuickPhotoOrdersEnabled;
 
 /// الجولة الإعلانية بتظهر لحد مرتين في اليوم لكل حساب (محليًا، بدون Firestore).
@@ -61,7 +63,10 @@ class _Step {
 /// جولة إعلانية من 3 شاشات عند فتح التطبيق (لحد مرتين في اليوم).
 /// «التالي» و«تخطي» دايمًا تحت، ومؤشر ١/٣. ما بتطلبش أي صلاحيات.
 class OnboardingPage extends StatefulWidget {
-  const OnboardingPage({super.key, this.onDone});
+  const OnboardingPage({super.key, this.onDone, this.posters = const []});
+
+  /// صور الإدارة (شاشة كاملة 1080×1920). لو فاضية بتظهر الجولة المدمجة.
+  final List<String> posters;
 
   /// للاختبارات: بديل لإغلاق الصفحة.
   final VoidCallback? onDone;
@@ -106,7 +111,20 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final _controller = PageController();
   int _page = 0;
 
-  static const _arabicDigits = ['١', '٢', '٣', '٤'];
+  static String _ar(int n) =>
+      n.toString().split('').map((c) => '٠١٢٣٤٥٦٧٨٩'[int.parse(c)]).join();
+
+  int get _count =>
+      widget.posters.isNotEmpty ? widget.posters.length : OnboardingPage._steps.length;
+
+  Widget _posterView(String url) => CachedNetImage(
+        url: thumb(url, w: 1080),
+        memCacheWidth: 1080,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        errorWidget: const ColoredBox(color: AppColors.purpleDeep),
+      );
 
   Future<void> _finish() async {
     await OnboardingStore.markDone();
@@ -120,7 +138,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   }
 
   void _next() {
-    if (_page == OnboardingPage._steps.length - 1) {
+    if (_page == _count - 1) {
       _finish();
     } else {
       _controller.nextPage(
@@ -216,7 +234,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
   @override
   Widget build(BuildContext context) {
     final steps = OnboardingPage._steps;
-    final last = _page == steps.length - 1;
+    final count = _count;
+    final last = _page == count - 1;
     return PopScope(
       // الرجوع من أول شاشة = تخطي (المستخدم ما يتعلقش جوه الجولة).
       canPop: false,
@@ -239,9 +258,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
               child: PageView.builder(
                 key: const Key('onboarding-pages'),
                 controller: _controller,
-                itemCount: steps.length,
+                itemCount: count,
                 onPageChanged: (i) => setState(() => _page = i),
-                itemBuilder: (_, i) => _stepView(steps[i]),
+                itemBuilder: (_, i) => widget.posters.isNotEmpty
+                    ? _posterView(widget.posters[i])
+                    : _stepView(steps[i]),
               ),
             ),
             SafeArea(
@@ -267,7 +288,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              for (var i = 0; i < steps.length; i++)
+                              for (var i = 0; i < count; i++)
                                 AnimatedContainer(
                                   duration: const Duration(milliseconds: 220),
                                   margin: const EdgeInsets.symmetric(horizontal: 3),
@@ -282,7 +303,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${_arabicDigits[_page]}/${_arabicDigits[steps.length - 1]}',
+                            '${_ar(_page + 1)}/${_ar(count)}',
                             key: const Key('onboarding-progress'),
                             style: const TextStyle(
                               color: Colors.white70,
