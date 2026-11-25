@@ -3692,11 +3692,27 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   // الصور في الطلب العام؛ الصوت في private/contact فقط. حذف المراجع يتم مع التسليم.
   const images = quickCustomerImages(order);
   const voicePath = `${orderPath}/private/contact`;
-  const voiceDoc = order.hasCustomerVoice === true ? await getDocument(env, voicePath, token) : null;
-  const voice = quickCustomerVoice(voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {});
-  const imagesFolder = (images.length || voice) ? await quickRequestFolder(String(order.userId ?? "")) : "";
+  const voiceDoc = await getDocument(env, voicePath, token);
+  const contact = voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {};
+  const voice = quickCustomerVoice(contact);
+  const pendingVoices = [
+    ...new Set([
+      ...(Array.isArray(contact.customerVoicesPendingCleanup)
+        ? contact.customerVoicesPendingCleanup.filter((v): v is string => typeof v === "string")
+        : []),
+      ...(typeof contact.customerVoicePendingCleanup === "string" &&
+          contact.customerVoicePendingCleanup ? [contact.customerVoicePendingCleanup] : []),
+      ...(voice ? [voice] : []),
+    ]),
+  ];
+  const imagesFolder = (images.length || pendingVoices.length)
+    ? await quickRequestFolder(String(order.userId ?? "")) : "";
   const undeleted = await destroyQuickImages(env, images, imagesFolder);
-  const voiceDeleteFailed = !!voice && !await destroyQuickVoice(env, voice, imagesFolder + "/voice");
+  const voiceFolder = imagesFolder + "/voice";
+  const failedVoices: string[] = [];
+  for (const url of pendingVoices) {
+    if (!await destroyQuickVoice(env, url, voiceFolder)) failedVoices.push(url);
+  }
   if (undeleted.length) {
     // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
     patch.customerImagesPendingCleanup = undeleted;
@@ -3709,7 +3725,8 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   if (voiceDoc) {
     const voicePatch = {
       customerVoiceUrl: "",
-      ...(voiceDeleteFailed ? { customerVoicePendingCleanup: voice } : {}),
+      customerVoicePendingCleanup: "",
+      customerVoicesPendingCleanup: failedVoices,
     };
     writes.push({
       update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
