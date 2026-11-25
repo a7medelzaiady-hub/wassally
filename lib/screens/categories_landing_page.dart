@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../services/navigation.dart';
 import '../services/saved_address.dart';
 import '../theme/app_tokens.dart';
+import '../services/order_gateway.dart';
 import '../widgets/curved_nav_bar.dart';
+import '../widgets/invite_code_field.dart';
 import 'account_page.dart';
 import 'home_page.dart';
 import 'main_shell.dart';
@@ -25,10 +27,14 @@ class CustomerEntry extends StatefulWidget {
     super.key,
     this.dashboard,
     this.dashboardLabel,
+    this.showInviteCode,
   });
 
   final Widget? dashboard;
   final String? dashboardLabel;
+
+  /// خانة كود الدعوة بدل البحث (الافتراضي: لما حملة الدعوات مفعلة).
+  final bool? showInviteCode;
 
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
@@ -119,7 +125,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          _searchBar(),
+          if (widget.showInviteCode ?? OrderGateway.referralCampaignEnabled)
+            const InviteCodeField(key: Key('entry-invite-code'))
+          else
+            _searchBar(),
         ],
       ),
     );
@@ -208,12 +217,13 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   // ───────────────────────── البانر ─────────────────────────
 
+  /// البانر صورة واحدة: صورة الساندوتش والمشروب بتذوب في الخلفية
+  /// البنفسجي والكلام «وصّلي... لحد عندي» فوقها، زي التصميم المرجعي.
   Widget _banner(double height) {
     return SizedBox(
       height: height,
       child: Material(
         key: const Key('entry-banner'),
-        color: const Color(0xFF2E1774),
         elevation: 5,
         shadowColor: AppColors.purpleDeep.withValues(alpha: 0.35),
         shape: RoundedRectangleBorder(
@@ -221,68 +231,95 @@ class _CustomerEntryState extends State<CustomerEntry> {
           side: BorderSide(color: AppColors.orange.withValues(alpha: 0.75), width: 1.2),
         ),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _enter(const StoreDirectoryPage()),
-          child: Row(
-            textDirection: TextDirection.ltr,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                flex: 6,
-                child: Image.asset(
-                  kEntryBannerAsset,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.centerLeft,
-                  excludeFromSemantics: true,
-                ),
-              ),
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: const EdgeInsetsDirectional.fromSTEB(
-                      AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            'وصّلي...\nلحد عندي',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
+        child: Ink(
+          decoration: const BoxDecoration(
+            // نفس ألوان حافة الصورة علشان مايبانش فاصل.
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF27105E), Color(0xFF1D0B52)],
+            ),
+          ),
+          child: InkWell(
+            onTap: () => _enter(const StoreDirectoryPage()),
+            child: LayoutBuilder(builder: (context, box) {
+              return Stack(
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: box.maxWidth * 0.74,
+                    child: ShaderMask(
+                      blendMode: BlendMode.dstIn,
+                      shaderCallback: (rect) => const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        stops: [0.0, 0.72, 1.0],
+                        colors: [Colors.white, Colors.white, Color(0x00FFFFFF)],
+                      ).createShader(rect),
+                      child: Image.asset(
+                        kEntryBannerAsset,
+                        key: const Key('entry-banner-art'),
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerLeft,
+                        excludeFromSemantics: true,
+                      ),
+                    ),
+                  ),
+                  PositionedDirectional(
+                    start: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: box.maxWidth * 0.44,
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.fromSTEB(
+                          AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.md),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Text(
+                                'وصّلي...\nلحد عندي',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w900,
+                                  shadows: [Shadow(color: Color(0x66000000), blurRadius: 8)],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                        decoration: BoxDecoration(
-                          color: const Color(0xCC5A3524),
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                        ),
-                        child: const Text(
-                          'اطلب الآن',
-                          maxLines: 1,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: AppTypography.label,
-                            fontWeight: FontWeight.w800,
+                          const SizedBox(height: AppSpacing.sm),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+                            decoration: BoxDecoration(
+                              color: const Color(0xCC5A3524),
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: const Text(
+                              'اطلب الآن',
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            }),
           ),
         ),
       ),
