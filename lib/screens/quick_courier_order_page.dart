@@ -296,6 +296,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   );
 
   Widget _requestCard(QuickCourierOrder o) {
+    final hasRequest = o.stores.any((store) =>
+        store.items.trim().isNotEmpty || store.pricedItems.isNotEmpty) ||
+        o.notes.trim().isNotEmpty;
     return _card(receipt: true, children: [
       Row(
         children: [
@@ -362,6 +365,22 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
               style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
             ),
           ),
+      ],
+      if (!hasRequest) ...[
+        const SizedBox(height: 8),
+        const Text(
+          'تفاصيل المشتريات مش متاحة في الطلب ده. ما تبدأش الشراء قبل ما تتأكد من المطلوب.',
+          key: Key('quick-request-empty'),
+          style: TextStyle(fontSize: 15, height: 1.5),
+        ),
+      ],
+      if (o.step == QuickCourierStep.available) ...[
+        const SizedBox(height: 8),
+        Text(
+          'بيانات الاتصال والعنوان التفصيلي بتظهر للمندوب المعيّن بعد قبول الطلب فقط.',
+          key: const Key('quick-contact-privacy-hint'),
+          style: TextStyle(fontSize: 13, height: 1.45, color: kMuted),
+        ),
       ],
       if (o.notes.isNotEmpty) ...[
         _requestDivider(),
