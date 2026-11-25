@@ -60,8 +60,8 @@ class AdminNavigationPage extends StatelessWidget {
           // Height follows the phone font size so titles never overflow.
           final scale = MediaQuery.textScalerOf(context);
           final extent = 12 * 2 + 8 + 34 + 10 + 4 +
-              scale.scale(15) * 1.35 * 2 +
-              scale.scale(13) * 1.4 * 2;
+              scale.scale(15) * 1.75 * 2 +
+              scale.scale(13) * 1.5 * 2;
           return GridView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: items.length,

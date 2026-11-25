@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/order_gateway.dart';
 import '../models/referral_admin_choices.dart';
+import '../theme/app_tokens.dart';
+import '../widgets/app_ui.dart';
 import '../widgets/referral_code_card.dart';
 import '../widgets/referral_balance_tile.dart';
 import '../widgets/referral_marketer_picker.dart';
@@ -245,45 +247,58 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('إنشاء كود للمسوّق', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 4),
-          Text('اختار حساب مسجّل من القائمة أو أدخل UID يدويًا. الخادم بيتحقق من هوية وصلاحية الحساب قبل إصدار الكود.',
-            style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            key: const Key('admin-marketer-select'),
-            onPressed: _loading ? null : _pickMarketer,
-            icon: const Icon(Icons.manage_accounts_outlined),
-            label: const Text('اختار مسوّق من الحسابات'),
-          ),
-          if (_selectedMarketer != null) Padding(
-            padding: const EdgeInsets.only(top: 5),
-            child: Text('الحساب المحدد: $_selectedMarketer',
-              maxLines: 2, overflow: TextOverflow.ellipsis),
-          ),
-          _referralField(
-            label: 'معرّف حساب المسوّق',
-            child: TextField(
-              controller: _uid,
-              enabled: !_loading,
-              onChanged: (_) {
-                if (_selectedMarketer != null) setState(() => _selectedMarketer = null);
-              },
-              textDirection: TextDirection.ltr,
-              decoration: _referralInput(hint: 'UID'),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const AppSectionHeader(
+                  title: 'إنشاء كود للمسوّق',
+                  icon: Icons.qr_code_2_rounded,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                const Text(
+                  'اختار حساب مسجّل من القائمة أو أدخل UID يدويًا. الخادم بيتحقق من هوية وصلاحية الحساب قبل إصدار الكود.',
+                  style: AppTypography.secondary,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                OutlinedButton.icon(
+                  key: const Key('admin-marketer-select'),
+                  onPressed: _loading ? null : _pickMarketer,
+                  icon: const Icon(Icons.manage_accounts_outlined),
+                  label: const Text('اختار مسوّق من الحسابات'),
+                ),
+                if (_selectedMarketer != null) Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Text('الحساب المحدد: $_selectedMarketer',
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.w700)),
+                ),
+                _referralField(
+                  label: 'معرّف حساب المسوّق',
+                  child: TextField(
+                    controller: _uid,
+                    enabled: !_loading,
+                    onChanged: (_) {
+                      if (_selectedMarketer != null) setState(() => _selectedMarketer = null);
+                    },
+                    textDirection: TextDirection.ltr,
+                    decoration: _referralInput(hint: 'UID'),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                FilledButton.icon(
+                  onPressed: _loading ? null : _issue,
+                  icon: const Icon(Icons.person_add_alt_1_outlined, size: 20),
+                  label: const Text('إصدار الكود'),
+                ),
+                if (_loading) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  const LinearProgressIndicator(),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.icon(
-              onPressed: _loading ? null : _issue,
-              icon: const Icon(Icons.person_add_alt_1_outlined, size: 18),
-              label: const Text('إصدار الكود'),
-            ),
-          ),
-          if (_loading) const LinearProgressIndicator(),
-          if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+          if (_error != null) AppNotice(_error!, type: AppNoticeType.error),
           if (_code != null) ReferralCodeCard(serverIssuedCode: _code),
           const SizedBox(height: 12),
           Card(
