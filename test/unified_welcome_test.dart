@@ -15,11 +15,16 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: buildAppTheme(),
-      home: const CustomerEntry(),
+      home: const CustomerEntry(loadHeroPhoto: false),
     ));
     await tester.pump();
 
     expect(find.text('كل اللي بتحبه...'), findsOneWidget);
+    expect(find.byKey(const Key('entry-hero-phone-photo')), findsOneWidget);
+    expect(find.byIcon(Icons.phone_in_talk_rounded), findsOneWidget);
+    final photo = tester.getRect(find.byKey(const Key('entry-hero-phone-photo')));
+    final title = tester.getRect(find.text('كل اللي بتحبه...'));
+    expect(photo.right, lessThan(title.left));
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
@@ -37,7 +42,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: buildAppTheme(),
-      home: const CustomerEntry(),
+      home: const CustomerEntry(loadHeroPhoto: false),
     ));
     await tester.pump();
 
@@ -57,11 +62,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('البانر يحمل صورة حقيقية لعميلة بتتكلم في الهاتف', () {
+    expect(const CustomerEntry().loadHeroPhoto, isTrue);
+    final uri = Uri.parse(kEntryHeroPhoneImageUrl);
+    expect(uri.scheme, 'https');
+    expect(uri.host, 'images.unsplash.com');
+    expect(uri.path, contains('photo-1758876201450-cf77ab8b95bc'));
+  });
+
   testWidgets('صاحب المحل يحصل على نفس صفحة الترحيب مع مدخل لوحته',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: buildAppTheme(),
       home: const CustomerEntry(
+        loadHeroPhoto: false,
         dashboard: SizedBox.shrink(),
         dashboardLabel: 'لوحة المحل',
       ),
