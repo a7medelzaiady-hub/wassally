@@ -371,11 +371,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             style: TextStyle(fontSize: 12, color: kMuted),
           ),
         ),
-      if (o.customerVoiceUrl.isNotEmpty && o.canSeeContact) ...[
+      if ((_contact?.voiceUrl ?? '').isNotEmpty && o.canSeeContact) ...[
         _requestDivider(),
         OutlinedButton.icon(
           key: const Key('quick-courier-customer-voice'),
-          onPressed: () => _toggleCustomerVoice(o.customerVoiceUrl),
+          onPressed: () => _toggleCustomerVoice(_contact!.voiceUrl),
           icon: Icon(_voicePlaying ? Icons.stop_circle_outlined : Icons.play_circle_outline),
           label: Text(_voicePlaying ? 'إيقاف صوت طلب العميل' : 'اسمع طلب العميل الصوتي'),
         ),
