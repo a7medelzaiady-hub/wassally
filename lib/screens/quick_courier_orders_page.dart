@@ -237,10 +237,18 @@ class QuickOrderSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final named = order.stores.map((s) => s.name).where((n) => n.isNotEmpty).toList();
     final approx = order.approxTotalPiastres;
+    // Only public shopping instructions, never private/contact data.
+    final request = order.stores
+        .map((store) => store.items.trim().isNotEmpty
+            ? store.items.trim()
+            : store.pricedItems.map((item) => item.name).join('، '))
+        .where((text) => text.isNotEmpty)
+        .join(' • ');
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
+        key: Key('quick-order-open-${order.id}'),
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
@@ -274,6 +282,14 @@ class QuickOrderSummaryCard extends StatelessWidget {
                       Text('📍 منطقة العميل: ${order.area}',
                         maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: kMuted)),
+                    if (request.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('طلب العميل: $request',
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700, height: 1.25)),
+                    ] else
+                      const Text('تفاصيل المشتريات غير محددة',
+                        style: TextStyle(color: Colors.black54)),
                     if (approx != null && approx > 0)
                       Text('تقريبًا ${formatPiastres(approx)}', style: TextStyle(color: kMuted)),
                     const SizedBox(height: 4),
@@ -283,7 +299,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'اضغط لعرض تفاصيل الطلب',
+                      'تفاصيل الطلب',
                       style: TextStyle(color: kMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ],
