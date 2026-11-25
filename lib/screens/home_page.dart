@@ -819,7 +819,7 @@ class _HomePageState extends State<HomePage>
                   _hlRow('عروض وخصومات', offers, offer: true),
                   // بانرات متحركة لعروض الأصناف بين العروض والأكثر مبيعًا.
                   Padding(
-                    padding: const EdgeInsets.only(top: 18),
+                    padding: const EdgeInsets.only(top: 12),
                     child: OfferCarousel(slides: [
                       for (final (store, item) in featured.take(6))
                         OfferSlide(
@@ -850,14 +850,14 @@ class _HomePageState extends State<HomePage>
   }) {
     // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
     return Container(
-      margin: const EdgeInsets.only(top: 18),
-      padding: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
                 Icon(
@@ -1067,7 +1067,7 @@ class _HomePageState extends State<HomePage>
     final shown = all.take(14).toList();
     if (shown.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1202,7 +1202,7 @@ class _HomePageState extends State<HomePage>
 
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 18),
+                  padding: EdgeInsets.only(top: 12),
                   child: PromoBanners(),
                 ),
               ),

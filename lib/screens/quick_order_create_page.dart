@@ -146,7 +146,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           AppSpacing.page, AppSpacing.lg, AppSpacing.page, AppSpacing.xxl),
       children: [
         const _QuickIntro(),
-        const SizedBox(height: AppSpacing.xl),
+        const SizedBox(height: AppSpacing.lg),
         _heading('إيه اللي محتاجه؟', 'من محل واحد أو أكتر، أو سيب المندوب يختار.'),
         for (final store in _stores) _storeFields(store),
         if (_stores.length < 10)
@@ -161,10 +161,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
               label: const Text('أضف محل تاني'),
             ),
           ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.sm),
         _heading('التوصيل إلى', null),
         _deliveryCard(),
-        const SizedBox(height: AppSpacing.md),
         if (!_showNotes)
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -176,7 +175,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             ),
           )
         else
-          TextField(
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: TextField(
             controller: _notes,
             minLines: 2,
             maxLines: 4,
@@ -187,7 +188,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
               prefixIcon: Icon(Icons.sticky_note_2_outlined),
             ),
           ),
-        const SizedBox(height: AppSpacing.lg),
+          ),
+        const SizedBox(height: AppSpacing.sm),
         const _FeesNote(),
       ],
     ),
@@ -207,7 +209,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             const Padding(
               padding: EdgeInsets.only(bottom: AppSpacing.xs),
               child: Text(
-                'مفيش دفع دلوقتي • بتدفع عند الاستلام بعد ما توافق على الحساب',
+                'مفيش دفع دلوقتي • الدفع عند الاستلام',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: AppColors.muted,
@@ -282,25 +284,25 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Flexible(
-                          child: Text(
-                            '${_name.text.trim()} • ${_phone.text.trim()}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: AppTypography.bodySmall,
-                              color: AppColors.ink,
-                            ),
-                          ),
+                      Text(
+                        _name.text.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: AppTypography.bodySmall,
+                          color: AppColors.ink,
                         ),
-                        const SizedBox(width: AppSpacing.xs),
-                        const _PrivacyBadge(),
-                      ]),
-                      const SizedBox(height: 2),
+                      ),
+                      Text(
+                        _phone.text.trim(),
+                        textDirection: TextDirection.ltr,
+                        style: AppTypography.secondary.copyWith(fontWeight: FontWeight.w700),
+                      ),
                       Text(_address.text.trim(), maxLines: 2, overflow: TextOverflow.ellipsis,
                           style: AppTypography.secondary),
+                      const SizedBox(height: AppSpacing.xxs),
+                      const _PrivacyBadge(),
                     ],
                   ),
                 ),
@@ -362,7 +364,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     return AppCard(
       key: ObjectKey(store),
       elevated: true,
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      margin: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -540,25 +542,24 @@ class _FeesNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         key: const Key('quick-fees-note'),
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
           color: AppColors.orangeSoft,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: AppColors.orange.withValues(alpha: 0.25)),
         ),
         child: const Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline_rounded, color: AppColors.orangeDeep),
-            SizedBox(width: AppSpacing.md),
+            Icon(Icons.info_outline_rounded, color: AppColors.orangeDeep, size: 20),
+            SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
-                'أجرة التوصيل بتتفق عليها مع المندوب في التليفون قبل الشراء. '
-                'بعد الشراء بتشوف الفواتير والحساب النهائي وتوافق عليه قبل الاستلام.',
+                'أجرة التوصيل بالاتفاق مع المندوب قبل الشراء، وبتوافق على الفواتير والحساب قبل الاستلام.',
                 style: TextStyle(
                   color: AppColors.inkSoft,
-                  fontSize: AppTypography.bodySmall,
-                  height: 1.5,
+                  fontSize: AppTypography.label,
+                  height: 1.45,
                   fontWeight: FontWeight.w600,
                 ),
               ),

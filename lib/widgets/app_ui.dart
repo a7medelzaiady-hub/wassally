@@ -10,8 +10,8 @@ class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(AppSpacing.lg),
-    this.margin = const EdgeInsets.only(bottom: AppSpacing.md),
+    this.padding = const EdgeInsets.all(14),
+    this.margin = const EdgeInsets.only(bottom: AppSpacing.sm),
     this.onTap,
     this.elevated = false,
     this.borderColor,
