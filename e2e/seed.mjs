@@ -39,6 +39,9 @@ const authRes = await fetch(AUTH, {
 });
 if (!authRes.ok) throw new Error(`Auth batchCreate: ${authRes.status} ${await authRes.text()}`);
 
+// ServerOrdersGate fails closed when serverOrders is missing (#233). The
+// emulator journeys exercise the legacy client batch, so state it explicitly.
+await put('app_info/security', { serverOrders: false });
 await put('app_info/delivery_areas', { areas: [{ name: 'منطقة الاختبار', fee: 10 }], fees: [10] });
 await put('stores/e2e-shop', {
   name: 'متجر الاختبار', category: 'مطاعم', icon: 'store', active: true,
