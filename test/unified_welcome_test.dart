@@ -89,23 +89,33 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('صاحب المحل يحصل على نفس الصفحة مع مدخل لوحته وشريطه الخاص',
+  testWidgets('على موبايل عادي البانر والكروت الثلاثة ظاهرين بدون تمرير',
+      (tester) async {
+    for (final size in const [Size(390, 844), Size(412, 915), Size(360, 780)]) {
+      await _pumpEntry(tester, size: size);
+      final navTop = tester.getTopLeft(find.text('الرئيسية')).dy - 20;
+      expect(tester.getRect(find.byKey(const Key('entry-banner'))).top, greaterThan(0));
+      for (final label in ['خدمة وصّلي ع السريع', 'تصفح العروض', 'تصفح المحلات']) {
+        final card = tester.getRect(find.byKey(ValueKey<String>('entry-card-$label')));
+        expect(card.bottom, lessThanOrEqualTo(navTop), reason: '$label on $size');
+      }
+      expect(tester.takeException(), isNull, reason: '$size');
+    }
+  });
+
+  testWidgets('صاحب المحل يحصل على نفس الصفحة ولوحته من «لوحتي»',
       (tester) async {
     await _pumpEntry(
       tester,
       entry: const CustomerEntry(
-        dashboard: SizedBox.shrink(),
+        dashboard: Text('لوحة المحل'),
         dashboardLabel: 'لوحة المحل',
       ),
     );
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
-    expect(find.text('لوحتي'), findsOneWidget);
     expect(customerShellAvailable.value, isFalse);
-    await tester.scrollUntilVisible(find.text('لوحة المحل'), 200,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('entry-list')),
-          matching: find.byType(Scrollable),
-        ));
+    await tester.tap(find.text('لوحتي'));
+    await tester.pump();
     expect(find.text('لوحة المحل'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
