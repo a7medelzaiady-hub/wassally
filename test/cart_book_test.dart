@@ -141,6 +141,8 @@ void main() {
       expect(find.byKey(const Key('cart-card-g')), findsOneWidget);
       expect(find.byKey(const Key('cart-card-p')), findsOneWidget);
       expect(find.text('السلة الحالية'), findsOneWidget);
+      expect(find.textContaining('لحد ما تفرّغها بنفسك'), findsOneWidget);
+      expect(find.textContaining('3 أيام'), findsNothing);
       // المحل المعروف بس عليه «إضافة منتجات من نفس المحل».
       expect(find.byKey(const Key('cart-add-more-g')), findsOneWidget);
       expect(find.byKey(const Key('cart-add-more-p')), findsNothing);
