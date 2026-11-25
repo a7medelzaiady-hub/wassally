@@ -98,6 +98,29 @@ class ImageService {
     );
   }
 
+  /// صورة «صوّر طلبك» للطلب السريع: الكاميرا أو المعرض، والرفع لمجلد العميل نفسه.
+  /// بيرجّع null لو العميل لغى الاختيار. الصور بتتمسح بعد تأكيد الاستلام.
+  static Future<String?> pickAndUploadQuickRequest({
+    ImageSource source = ImageSource.camera,
+  }) async {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 75,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: picked.name.isEmpty ? 'order.jpg' : picked.name,
+      folder: 'quick_requests',
+    );
+  }
+
   static Future<String> _upload({
     required List<int> bytes,
     required String filename,

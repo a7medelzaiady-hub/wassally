@@ -8,6 +8,9 @@ import 'quick_order_customer_detail_page.dart';
 import '../services/quick_order_api.dart';
 import '../widgets/quick_price_picker.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/quick_order_promo.dart' show kQuickPhotoOrdersEnabled;
+import '../services/image_service.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 
 /// Separate quick-order entry point; never adds items to the regular store cart.
 class QuickOrderCreatePage extends StatefulWidget {
@@ -28,6 +31,11 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   final _notes = TextEditingController();
   final _stores = [_QuickStoreDraft()];
   bool _submitting = false;
+
+  /// «صوّر طلبك»: روابط الصور المرفوعة (لحد 3).
+  final List<String> _photos = [];
+  bool _uploadingPhoto = false;
+  static const _maxPhotos = 3;
   String? _pendingOrderId;
 
   @override
@@ -61,13 +69,44 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     super.dispose();
   }
 
+  Future<void> _addPhoto(ImageSource source) async {
+    if (_uploadingPhoto || _photos.length >= _maxPhotos) return;
+    setState(() => _uploadingPhoto = true);
+    try {
+      final url = await ImageService.pickAndUploadQuickRequest(source: source);
+      if (url != null && mounted) setState(() => _photos.add(url));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(error is StateError ? error.message : 'تعذر رفع الصورة، جرّب تاني.'),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
   Future<void> _submit() async {
     if (_submitting) return;
-    if (_name.text.trim().isEmpty || _area.text.trim().isEmpty ||
-        _phone.text.trim().isEmpty || _address.text.trim().isEmpty ||
-        _stores.any((store) => !store.hasItems)) {
+    if (_uploadingPhoto) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('اكتب بيانات التواصل وصنف واحد على الأقل لكل محل'),
+        content: Text('استنى لحد ما الصورة تترفع'),
+      ));
+      return;
+    }
+    if (_name.text.trim().isEmpty || _area.text.trim().isEmpty ||
+        _phone.text.trim().isEmpty || _address.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('اكتب الحي والعنوان والاسم ورقم الموبايل'),
+      ));
+      return;
+    }
+    // الصورة لوحدها طلب كامل؛ من غيرها لازم صنف مكتوب لكل محل.
+    if (_photos.isEmpty && _stores.any((store) => !store.hasItems)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(kQuickPhotoOrdersEnabled
+            ? 'اكتب طلبك أو صوّره'
+            : 'اكتب صنف واحد على الأقل لكل محل'),
       ));
       return;
     }
@@ -90,6 +129,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         'area': _area.text.trim(),
         'notes': _notes.text.trim(),
         'stores': [for (final store in _stores) store.toWorkerMap()],
+        if (_photos.isNotEmpty) 'customerImages': List<String>.of(_photos),
         'contact': {
           'userName': _name.text.trim(),
           'phone': phone,
@@ -147,7 +187,16 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       children: [
         const _QuickIntro(),
         const SizedBox(height: AppSpacing.lg),
-        _heading('إيه اللي محتاجه؟', 'من محل واحد أو أكتر، أو سيب المندوب يختار.'),
+        _heading(
+          'إيه اللي محتاجه؟',
+          kQuickPhotoOrdersEnabled
+              ? 'اكتبها أو صوّرها… وإحنا نجيبها'
+              : 'من محل واحد أو أكتر، أو سيب المندوب يختار.',
+        ),
+        if (kQuickPhotoOrdersEnabled) ...[
+          _photoSection(),
+          const SizedBox(height: AppSpacing.sm),
+        ],
         for (final store in _stores) _storeFields(store),
         if (_stores.length < 10)
           Align(
@@ -236,6 +285,109 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
       ),
     ),
   );
+
+  Widget _photoTile({required Widget child, VoidCallback? onTap, Key? key}) => Material(
+        key: key,
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(width: 76, height: 76, child: child),
+        ),
+      );
+
+  /// «صوّر طلبك»: الكاميرا أو المعرض، لحد 3 صور مع معاينة وتكبير وحذف.
+  Widget _photoSection() => AppCard(
+        key: const Key('quick-photo-section'),
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Row(children: [
+              Icon(Icons.photo_camera_outlined, color: AppColors.purple),
+              SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text('صوّر طلبك', style: AppTypography.sectionTitle),
+              ),
+            ]),
+            const SizedBox(height: 2),
+            const Text(
+              'صوّر الورقة بوضوح والإضاءة كويسة. المندوب بيقرا الصورة ويكلمك.',
+              style: AppTypography.secondary,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                for (final (i, url) in _photos.indexed)
+                  Stack(clipBehavior: Clip.none, children: [
+                    _photoTile(
+                      key: ValueKey('quick-photo-$i'),
+                      onTap: () => showDialog<void>(
+                        context: context,
+                        builder: (dialog) => Dialog(
+                          clipBehavior: Clip.antiAlias,
+                          child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
+                        ),
+                      ),
+                      child: Image.network(url, fit: BoxFit.cover, cacheWidth: 240,
+                          errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined)),
+                    ),
+                    PositionedDirectional(
+                      top: -6,
+                      end: -6,
+                      child: Material(
+                        color: AppColors.danger,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: _submitting ? null : () => setState(() => _photos.removeAt(i)),
+                          child: const Padding(
+                            padding: EdgeInsets.all(3),
+                            child: Icon(Icons.close_rounded, size: 16, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
+                if (_uploadingPhoto)
+                  _photoTile(child: const Center(
+                    child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                  ))
+                else if (_photos.length < _maxPhotos) ...[
+                  _photoTile(
+                    key: const Key('quick-photo-camera'),
+                    onTap: _submitting ? null : () => _addPhoto(ImageSource.camera),
+                    child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.photo_camera_rounded, color: AppColors.purple),
+                      SizedBox(height: 2),
+                      Text('الكاميرا', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.purple)),
+                    ]),
+                  ),
+                  _photoTile(
+                    key: const Key('quick-photo-gallery'),
+                    onTap: _submitting ? null : () => _addPhoto(ImageSource.gallery),
+                    child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(Icons.photo_library_outlined, color: AppColors.purple),
+                      SizedBox(height: 2),
+                      Text('المعرض', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.purple)),
+                    ]),
+                  ),
+                ],
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Text(
+                '${_photos.length} من $_maxPhotos صور • بتتمسح بعد ما تستلم طلبك',
+                style: AppTypography.secondary.copyWith(fontSize: AppTypography.caption),
+              ),
+            ),
+          ],
+        ),
+      );
 
   Widget _heading(String title, String? subtitle) => Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),

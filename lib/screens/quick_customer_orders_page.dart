@@ -119,6 +119,10 @@ class _QuickOrderTile extends StatelessWidget {
         }
       }
     }
+    if (parts.isEmpty && data['customerImages'] is List &&
+        (data['customerImages'] as List).isNotEmpty) {
+      return 'طلب بالصور (${(data['customerImages'] as List).length})';
+    }
     return parts.join('، ');
   }
 

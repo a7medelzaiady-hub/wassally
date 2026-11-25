@@ -20,7 +20,9 @@ import {
   QuickRuleError,
   applyQuickAction,
   newQuickOrder,
+  quickCustomerImages,
   quickDeliveredPatch,
+  validateQuickImages,
   quickDeliveryBlocker,
   resolveQuickSettings,
   validateQuickNotes,
@@ -1775,6 +1777,54 @@ export async function cloudinarySpecialRequestFolder(uid: string): Promise<strin
   return `special_requests/${hash}`;
 }
 
+/** مجلد صور «صوّر طلبك» للعميل: جوه مجلد طلباته الخاصة، فحذف الحساب بيمسحه كمان. */
+export async function quickRequestFolder(uid: string): Promise<string> {
+  return `${await cloudinarySpecialRequestFolder(uid)}/quick`;
+}
+
+/** صورة «صوّر طلبك» صالحة ومن مجلد العميل نفسه. */
+export function isOwnQuickImage(url: string, folder: string, cloudName?: string): boolean {
+  if (!isCloudinaryImageUrl(url)) return false;
+  if (cloudName && !new URL(url).pathname.startsWith(`/${cloudName}/image/upload/`)) return false;
+  return cloudinaryPublicIdFromUrl(url).startsWith(folder + "/");
+}
+
+/** مسح صور «صوّر طلبك» من Cloudinary (بعد التسليم). بترجع الصور اللي ما اتمسحتش. */
+export async function destroyQuickImages(env: Env, urls: string[], folder: string): Promise<string[]> {
+  const failed: string[] = [];
+  if (!urls.length) return failed;
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) return urls;
+  for (const url of urls) {
+    const publicId = cloudinaryPublicIdFromUrl(url);
+    if (!isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME) || !publicId) {
+      failed.push(url);
+      continue;
+    }
+    try {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = await cloudinarySignature(
+        { invalidate: "true", public_id: publicId, timestamp },
+        env.CLOUDINARY_API_SECRET,
+      );
+      const form = new FormData();
+      form.append("public_id", publicId);
+      form.append("timestamp", timestamp);
+      form.append("invalidate", "true");
+      form.append("api_key", env.CLOUDINARY_API_KEY);
+      form.append("signature", signature);
+      const deleted = await fetch(
+        `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`,
+        { method: "POST", body: form },
+      );
+      const result = deleted.ok ? await deleted.json() as { result?: string } : {};
+      if (!["ok", "not found"].includes(String(result.result ?? ""))) failed.push(url);
+    } catch {
+      failed.push(url);
+    }
+  }
+  return failed;
+}
+
 export async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Promise<void> {
   if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
     throw new HttpError(503, "تعذر تنظيف صور الطلبات الخاصة من خدمة الصور.");
@@ -1911,11 +1961,20 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners", "special_requests", "quick_receipts"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests", "quick_receipts", "quick_requests"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
     throw new HttpError(400, "معرّف المحل غير صالح.");
+  }
+
+  // «صوّر طلبك»: أي عميل مسجّل يرفع صور ورقة طلباته في مجلده هو بس،
+  // من غير أي قراءة من Firestore. الصور بتتربط بالطلب عند إنشائه.
+  if (folder === "quick_requests") {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const image = detectImageContent(bytes);
+    if (!image) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+    return await signedCloudinaryImageUpload(env, bytes, image, await quickRequestFolder(uid));
   }
 
   const token = await googleAccessToken(env);
@@ -3302,9 +3361,12 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
   if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
     throw new HttpError(400, "راجع الاسم والمنطقة.");
   }
-  let stores, notes;
+  let stores, notes, customerImages: string[] = [];
   try {
-    stores = validateQuickStores(input.stores);
+    const folder = await quickRequestFolder(uid);
+    customerImages = validateQuickImages(input.customerImages,
+      (url) => isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME));
+    stores = validateQuickStores(input.stores, customerImages.length > 0);
     notes = validateQuickNotes(input.notes);
   } catch (error) {
     quickError(error);
@@ -3344,7 +3406,9 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(429, `وصلت للحد اليومي للطلبات السريعة (${settings.maxPerDay}). جرّب بكرة.`, DAILY_LIMIT_CODE);
   }
 
-  const order = newQuickOrder({ uid, customerFirstName, area, notes: notes!, stores: stores!, settings });
+  const order = newQuickOrder({
+    uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages,
+  });
   await commitOrConflict(env, token, [
     {
       update: { name: docName(env, orderPath), fields: encodeFields(order) },
@@ -3510,6 +3574,14 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   }
 
   const patch = quickDeliveredPatch(order, uid, new Date());
+  // صور العميل: المراجع بتتشال في نفس الكتابة، والملفات بتتمسح من Cloudinary.
+  const images = quickCustomerImages(order);
+  const imagesFolder = images.length ? await quickRequestFolder(String(order.userId ?? "")) : "";
+  const undeleted = await destroyQuickImages(env, images, imagesFolder);
+  if (undeleted.length) {
+    // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
+    patch.customerImagesPendingCleanup = undeleted;
+  }
   const writes: unknown[] = [{
     update: { name: docName(env, orderPath), fields: encodeFields(patch) },
     updateMask: { fieldPaths: Object.keys(patch) },
