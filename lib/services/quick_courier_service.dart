@@ -11,7 +11,8 @@ class QuickContact {
   final String phone;
   final String address;
   final String notes;
-  const QuickContact({this.name = '', this.phone = '', this.address = '', this.notes = ''});
+  final String voiceUrl;
+  const QuickContact({this.name = '', this.phone = '', this.address = '', this.notes = '', this.voiceUrl = ''});
 }
 
 /// كل اللي شاشات المندوب محتاجاه. الكتابة كلها عن طريق الـWorker؛ القراءة get بس (مفيش مستمعات).
@@ -95,6 +96,7 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
       phone: s(d['phone']),
       address: s(d['address']),
       notes: s(d['courierNotes']),
+      voiceUrl: s(d['customerVoiceUrl']),
     );
   }
 

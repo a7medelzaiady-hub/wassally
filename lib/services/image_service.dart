@@ -73,6 +73,15 @@ class ImageService {
     );
   }
 
+  /// تسجيل صوتي واحد للطلب السريع (m4a). يُرفع للمجلد الخاص بصاحب الطلب،
+  /// ويُحذف من Cloudinary عند تأكيد التسليم بالرمز.
+  static Future<String> uploadQuickVoice(List<int> bytes) async {
+    if (bytes.isEmpty || bytes.length > 1024 * 1024) {
+      throw StateError('التسجيل الصوتي يجب ألا يتجاوز 1MB. سجل رسالة أقصر.');
+    }
+    return _upload(bytes: bytes, filename: 'quick_voice.m4a', folder: 'quick_voices');
+  }
+
   /// صورة فاتورة «طلباتك على السريع»: الكاميرا افتراضيًا، والرفع لمجلد quick_receipts للطلب ده بس.
   /// الـWorker بيرفض الرفع لو المندوب مش المعيّن أو الطلب مش «جاري الشراء».
   /// بيرجّع null لو المندوب لغى التصوير.
@@ -176,9 +185,18 @@ class ImageService {
 
     final result = jsonDecode(uploadResponse.body);
     final url = result is Map ? result['url'] as String? : null;
+    // special_requests supports both images and pre-existing voice notes.
+    // quick_voices must be audio in the private Cloudinary folder.
+    final cloudPath = url == null ? '' : Uri.tryParse(url)?.path ?? '';
+    final allowedResource = folder == 'quick_voices'
+        ? cloudPath.contains('/video/upload/') &&
+            cloudPath.contains('/special_requests/')
+        : folder == 'special_requests'
+            ? cloudPath.contains('/image/upload/') ||
+                cloudPath.contains('/video/upload/')
+            : cloudPath.contains('/image/upload/');
     if (url == null || !isValidImageUrl(url) ||
-        !((Uri.parse(url).host == 'res.cloudinary.com') ||
-          Uri.parse(url).host.endsWith('.res.cloudinary.com'))) {
+        Uri.parse(url).host != 'res.cloudinary.com' || !allowedResource) {
       throw StateError('خدمة الصور لم ترجع رابطًا آمنًا صالحًا.');
     }
     return url;

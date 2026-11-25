@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../theme/brand.dart';
 import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/quick_voice_edit_sheet.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -23,11 +25,37 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String? _pin;
   String? _error;
   bool _busy = false;
+  final _voicePlayer = audio.AudioPlayer();
+  bool _playingVoice = false;
+  String _customerVoiceUrl = '';
 
   @override
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _voicePlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleVoice(String url) async {
+    try {
+      if (_playingVoice) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _playingVoice = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.UrlSource(url));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _playingVoice = true);
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تشغيل التسجيل الصوتي.')));
+    }
   }
 
   Future<void> _refresh() async {
@@ -41,8 +69,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!doc.exists || doc.data()?['userId'] != user.uid) {
         throw StateError('الطلب غير متاح');
       }
+      String voiceUrl = '';
+      if (doc.data()?['hasCustomerVoice'] == true) {
+        final contact = await FirebaseFirestore.instance.collection('quick_orders')
+            .doc(widget.orderId).collection('private').doc('contact').get();
+        voiceUrl = (contact.data()?['customerVoiceUrl'] ?? '').toString();
+      }
       if (!mounted) return;
-      setState(() { _order = doc.data(); _pin = null; });
+      setState(() { _order = doc.data(); _customerVoiceUrl = voiceUrl; _pin = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -61,7 +95,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!mounted) return;
       final updated = result['order'];
       if (updated is Map) {
-        setState(() { _order = Map<String, dynamic>.from(updated); _error = null; });
+        setState(() {
+          _order = Map<String, dynamic>.from(updated);
+          if (action == 'edit-voice') {
+            _customerVoiceUrl = (body['customerVoiceUrl'] ?? '').toString();
+            _playingVoice = false;
+          }
+          _error = null;
+        });
       } else {
         setState(() { _busy = false; });
         await _refresh();
@@ -137,6 +178,19 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       disposeAfterDialogCloses(controller);
     }
     if (mounted && updated != null) await _act('edit', updated);
+  }
+
+  Future<void> _editVoice() async {
+    if (_busy || _order?['status'] != 'open') return;
+    final url = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => QuickVoiceEditSheet(currentUrl: _customerVoiceUrl),
+    );
+    if (!mounted || url == null) return;
+    await _voicePlayer.stop();
+    if (!mounted) return;
+    await _act('edit-voice', {'customerVoiceUrl': url});
   }
 
   Future<void> _cancel() async {
@@ -336,9 +390,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
             else ...[
               _StatusHeader(status: status, area: area),
               const SizedBox(height: AppSpacing.md),
-              if (status == 'summary_pending')
-                const AppNotice(type: AppNoticeType.action, 'راجع الفواتير والحساب النهائي تحت، ووافق عليه علشان يظهر رمز التسليم.'),
-              if (status == 'summary_approved' && (_pin == null || _pin!.isEmpty))
+              if ((status == 'summary_pending' || status == 'summary_approved') && (_pin == null || _pin!.isEmpty))
                 const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
               _card(
                 title: 'محتويات الطلب',
@@ -379,6 +431,21 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   ],
                 ],
               ),
+              if (_customerVoiceUrl.isNotEmpty)
+                _card(
+                  key: const Key('quick-customer-voice'),
+                  title: 'تسجيل طلبك الصوتي',
+                  icon: Icons.mic_outlined,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _toggleVoice(_customerVoiceUrl),
+                      icon: Icon(_playingVoice ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+                      label: Text(_playingVoice ? 'إيقاف التسجيل' : 'اسمع تسجيل طلبك'),
+                    ),
+                    const Text('التسجيل بيتحذف تلقائيًا بعد استلام الطلب برمز التسليم.',
+                        style: AppTypography.secondary),
+                  ],
+                ),
               if (order['customerImages'] is List &&
                   (order['customerImages'] as List).isNotEmpty)
                 _card(
@@ -485,21 +552,8 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                     ),
                   ],
                 ),
-              if (status == 'summary_pending') ...[
-                FilledButton.icon(
-                  onPressed: _busy ? null : () => _act('approve-summary', {
-                    'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
-                  }),
-                  icon: const Icon(Icons.check_circle_outline_rounded),
-                  label: const Text('موافق على الحساب النهائي'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _act('reject-summary'),
-                  child: const Text('مش موافق — راجع الحساب مع المندوب'),
-                ),
-              ],
-              if (status == 'summary_approved') ...[
+              // الحساب للعلم فقط؛ العميل يؤكد الاستلام بالرمز بعد وصول الطلب.
+              if (status == 'summary_pending' || status == 'summary_approved') ...[
                 if (_pin != null && _pin!.isNotEmpty)
                   _PinCard(pin: _pin!)
                 else
@@ -515,6 +569,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   onPressed: _busy ? null : _edit,
                   icon: const Icon(Icons.edit_outlined),
                   label: const Text('تعديل الطلب'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                OutlinedButton.icon(
+                  key: const Key('quick-edit-voice'),
+                  onPressed: _busy ? null : _editVoice,
+                  icon: const Icon(Icons.mic_outlined),
+                  label: Text(_customerVoiceUrl.isNotEmpty
+                      ? 'تعديل التسجيل الصوتي' : 'إضافة تسجيل صوتي'),
                 ),
               ],
               if (status == 'open' || status == 'accepted')
@@ -563,7 +625,7 @@ class _StatusHeader extends StatelessWidget {
         'accepted' || 'assigned' => 'المندوب هيكلمك يتفق معاك على الطلب والتوصيل.',
         'awaiting_advance' => 'في انتظار تأكيد المبلغ المقدم.',
         'shopping' || 'purchasing' => 'المندوب بيشتري طلباتك دلوقتي.',
-        'summary_pending' => 'راجع الفواتير والحساب النهائي ووافق عليه.',
+        'summary_pending' => 'راجع الحساب واستلم طلبك برمز التسليم عند وصول المندوب.',
         'summary_approved' => 'ادّي رمز التسليم للمندوب لما توصلك الطلبات.',
         'delivered' => 'تم التسليم. شكرًا لاستخدامك وصّلي!',
         'cancelled' || 'canceled' => 'الطلب ده اتلغى.',
