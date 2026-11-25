@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,6 +38,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   final _estimateCtrl = TextEditingController();
   final _deliveryCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
+  final _voicePlayer = audio.AudioPlayer();
+  bool _voicePlaying = false;
 
   @override
   void initState() {
@@ -52,6 +55,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     _estimateCtrl.dispose();
     _deliveryCtrl.dispose();
     _pinCtrl.dispose();
+    _voicePlayer.dispose();
     super.dispose();
   }
 
@@ -117,6 +121,21 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _toggleCustomerVoice(String url) async {
+    if (_order?.canSeeContact != true) return;
+    try {
+      if (_voicePlaying) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _voicePlaying = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.UrlSource(url));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _voicePlaying = true);
+      }
+    } catch (_) { _toast('تعذر تشغيل التسجيل الصوتي.'); }
   }
 
   void _toast(String message) {
@@ -352,6 +371,15 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             style: TextStyle(fontSize: 12, color: kMuted),
           ),
         ),
+      if (o.customerVoiceUrl.isNotEmpty && o.canSeeContact) ...[
+        _requestDivider(),
+        OutlinedButton.icon(
+          key: const Key('quick-courier-customer-voice'),
+          onPressed: () => _toggleCustomerVoice(o.customerVoiceUrl),
+          icon: Icon(_voicePlaying ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+          label: Text(_voicePlaying ? 'إيقاف صوت طلب العميل' : 'اسمع طلب العميل الصوتي'),
+        ),
+      ],
       // صور «صوّر طلبك»: في أول المحتوى وبتتكبّر بالضغط.
       if (o.customerImages.isNotEmpty) ...[
         _requestDivider(),
@@ -610,11 +638,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           ]),
           if (preview != null && o.receipts.isNotEmpty && !deliveryTooHigh) _totalsCard(preview, title: 'الكشف اللي هيوصل للعميل'),
           _bigButton(
-            'ابعت الكشف للعميل',
+            'جهّز الحساب النهائي والتسليم',
             Icons.send,
             o.receipts.isEmpty || delivery == null || deliveryTooHigh
                 ? null
-                : () => _act('submit-summary', {'deliveryPiastres': delivery}, 'الكشف وصل للعميل'),
+                : () => _act('submit-summary', {'deliveryPiastres': delivery}, 'الحساب جاهز، سلّم بالرمز'),
             key: const Key('quick-submit-summary'),
           ),
         ];
@@ -625,7 +653,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           _card(children: const [
             Icon(Icons.hourglass_top, size: 40),
             SizedBox(height: 8),
-            Text('مستني العميل يوافق على الكشف. ممنوع التسليم قبل موافقته.',
+            Text('الحساب النهائي جاهز. اتصل بالعميل واستلم رمز التسليم عند وصول الطلب.',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 16, height: 1.5)),
           ]),
           _bigButton('تحديث', Icons.refresh, _refresh, key: const Key('quick-refresh')),
@@ -634,7 +662,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       case QuickCourierStep.deliver:
         final pin = DeliveryPinService.normalize(_pinCtrl.text);
         return [
-          if (o.totals != null) _totalsCard(o.totals!, title: 'العميل وافق على الكشف ✅'),
+          if (o.totals != null) _totalsCard(o.totals!, title: 'الحساب النهائي'),
           _card(children: [
             const Text('اطلب من العميل رمز التسليم (4 أرقام):',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
