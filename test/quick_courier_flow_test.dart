@@ -121,6 +121,52 @@ void main() {
     expect(find.text('متاح للقبول'), findsOneWidget);
   });
 
+  testWidgets('قائمة السريع تعرض طلبات العميل قبل القبول بدون بيانات التواصل',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(
+        backend: _FakeBackend(_doc('open')),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('المطلوب: عيش بلدي'), findsOneWidget);
+    expect(find.byKey(const Key('quick-order-item-preview')), findsOneWidget);
+    expect(find.textContaining('وسط البلد'), findsOneWidget);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('تفاصيل الطلب السريع بها فاتورة واضحة عند انتظار المندوب',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrderPage(
+        orderId: _id,
+        backend: _FakeBackend(_doc('open')),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('فاتورة مشتريات العميل'), findsOneWidget);
+    expect(find.text('الخير'), findsOneWidget);
+    expect(find.text('عيش بلدي'), findsOneWidget);
+    expect(find.textContaining('وسط البلد'), findsOneWidget);
+    expect(find.text('متاح للقبول'), findsOneWidget);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(find.byKey(const Key('quick-call')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
