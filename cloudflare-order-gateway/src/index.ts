@@ -2979,6 +2979,17 @@ async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?:
       updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
     });
   }
+  if (voiceDoc) {
+    const voicePatch = {
+      customerVoiceUrl: "",
+      ...(voiceDeleteFailed ? { customerVoicePendingCleanup: voice } : {}),
+    };
+    writes.push({
+      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
+      updateMask: { fieldPaths: Object.keys(voicePatch) },
+      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
+    });
+  }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
   if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order);
@@ -3456,7 +3467,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
       currentDocument: { exists: false },
     },
     {
-      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields(contact) },
+      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields({ ...contact, customerVoiceUrl }) },
       currentDocument: { exists: false },
     },
     {
@@ -3614,14 +3625,14 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   }
 
   const patch = quickDeliveredPatch(order, uid, new Date());
-  // صور العميل: المراجع بتتشال في نفس الكتابة، والملفات بتتمسح من Cloudinary.
+  // الصور في الطلب العام؛ الصوت في private/contact فقط. حذف المراجع يتم مع التسليم.
   const images = quickCustomerImages(order);
-  const voice = quickCustomerVoice(order);
+  const voicePath = `${orderPath}/private/contact`;
+  const voiceDoc = order.hasCustomerVoice === true ? await getDocument(env, voicePath, token) : null;
+  const voice = quickCustomerVoice(voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {});
   const imagesFolder = (images.length || voice) ? await quickRequestFolder(String(order.userId ?? "")) : "";
   const undeleted = await destroyQuickImages(env, images, imagesFolder);
-  if (voice && !await destroyQuickVoice(env, voice, imagesFolder + "/voice")) {
-    patch.customerVoicePendingCleanup = voice;
-  }
+  const voiceDeleteFailed = !!voice && !await destroyQuickVoice(env, voice, imagesFolder + "/voice");
   if (undeleted.length) {
     // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
     patch.customerImagesPendingCleanup = undeleted;
