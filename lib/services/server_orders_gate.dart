@@ -7,13 +7,19 @@
 class ServerOrdersGate {
   const ServerOrdersGate._();
 
+  /// A missing, non-boolean or unpublished setting is not an explicit
+  /// legacy-mode authorization. It must not become `false` by coercion.
+  static bool? verifiedFlag(Object? value) => value is bool ? value : null;
+
   static Future<bool> resolve({
     required bool clientWorkerEnabled,
-    required Future<bool> Function() readServerMode,
+    required Future<bool?> Function() readServerMode,
   }) async {
     if (clientWorkerEnabled) return true;
     try {
-      return await readServerMode();
+      final verified = await readServerMode();
+      if (verified == null) throw StateError('Missing serverOrders flag');
+      return verified;
     } catch (_) {
       // Fail closed on network failure, permission errors or unavailable
       // server configuration. Never silently try the legacy Firestore batch.
