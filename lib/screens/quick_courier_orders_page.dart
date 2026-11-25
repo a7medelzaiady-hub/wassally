@@ -237,6 +237,16 @@ class QuickOrderSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final named = order.stores.map((s) => s.name).where((n) => n.isNotEmpty).toList();
     final approx = order.approxTotalPiastres;
+    // Preview only the request text already in the public quick-order feed.
+    // Never show private contact, address or phone before assignment.
+    final requested = <String>[
+      for (final store in order.stores)
+        if (store.items.trim().isNotEmpty)
+          store.items.trim()
+        else if (store.pricedItems.isNotEmpty)
+          store.pricedItems.map((item) => '${item.qty} × ${item.name}').join('، '),
+      if (order.notes.trim().isNotEmpty) order.notes.trim(),
+    ];
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
@@ -270,6 +280,20 @@ class QuickOrderSummaryCard extends StatelessWidget {
                     ),
                     if (named.isNotEmpty)
                       Text(named.join(' • '), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 6),
+                    Text(
+                      requested.isEmpty ? 'تفاصيل المشتريات غير متاحة حتى الآن' : requested.join(' • '),
+                      key: const Key('quick-order-request-preview'),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        color: Brand.ink,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                        fontSize: 14,
+                      ),
+                    ),
                     if (order.area.isNotEmpty)
                       Text('📍 منطقة العميل: ${order.area}',
                         maxLines: 2, overflow: TextOverflow.ellipsis,

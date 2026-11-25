@@ -53,6 +53,22 @@ void main() {
     expect(fromWorker.approxTotalPiastres, 15000);
   });
 
+  test('تفاصيل الطلب السريع لا تظهر فاتورة خالية بلا تنبيه', () {
+    expect(_order().hasCustomerRequest, isTrue);
+    expect(_order({'stores': <Object>[], 'notes': ''}).hasCustomerRequest, isFalse);
+    expect(_order({
+      'stores': [{'name': 'سوبرماركت', 'items': '   ', 'pricedItems': <Object>[]}],
+      'notes': '   ',
+    }).hasCustomerRequest, isFalse);
+    expect(_order({'stores': <Object>[], 'notes': 'من غير شطة'}).hasCustomerRequest, isTrue);
+    expect(_order({
+      'stores': [{'name': '', 'items': '', 'pricedItems': [
+        {'name': 'عيش', 'qty': 2, 'unitPricePiastres': 300},
+      ]}],
+      'notes': '',
+    }).hasCustomerRequest, isTrue);
+  });
+
   test('كل حالة بتودّي لخطوة واحدة واضحة', () {
     expect(_order().step, QuickCourierStep.available);
     expect(_order({'status': 'accepted'}).step, QuickCourierStep.estimate);

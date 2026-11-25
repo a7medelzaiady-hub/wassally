@@ -124,6 +124,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _call() async {
+    // Never dial a cached phone after the server revoked the assignment.
+    if (_order?.canSeeContact != true) return;
     final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
     // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
@@ -311,10 +313,45 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       ),
       const SizedBox(height: 4),
       Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      if (o.step == QuickCourierStep.available)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب متاح للقبول. العنوان التفصيلي ورقم العميل يظهروا بعد تعيينك عليه بس.',
+            key: Key('quick-before-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        )
+      else if (o.isActive)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب مُسند ليك. راجع المشتريات وكمّل الخطوة الموضحة تحت الفاتورة.',
+            key: Key('quick-after-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      if (!o.hasCustomerRequest)
+        const Padding(
+          padding: EdgeInsets.only(top: 10),
+          child: Text(
+            'مفيش أصناف أو تفاصيل مشتريات ظاهرة في الطلب ده. اسحب لتحديث التفاصيل، ولو فضلت فاضية تواصل مع الدعم قبل الشراء.',
+            key: Key('quick-request-empty-warning'),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+        ),
       if (o.area.isNotEmpty) ...[
         const SizedBox(height: 4),
         Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
       ],
+      if (!o.canSeeContact)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            'العنوان ورقم التليفون بيظهروا بعد قبول الطلب فقط.',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
+        ),
       for (final (index, store) in o.stores.indexed) ...[
         _requestDivider(),
         Text(
