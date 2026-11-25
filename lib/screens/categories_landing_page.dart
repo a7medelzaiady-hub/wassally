@@ -54,10 +54,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
     customerShellAvailable.value = _isCustomer;
     enterShellRequest.addListener(_onEnterShellRequest);
     SavedAddress.load();
-    if (_isCustomer) _maybeShowTour();
+    _maybeShowTour();
   }
 
-  /// الجولة التعريفية بعد أول دخول للعميل (مرة واحدة لكل حساب، محليًا).
+  /// الجولة الإعلانية لكل الحسابات، لحد مرتين في اليوم (محليًا).
   Future<void> _maybeShowTour() async {
     if (!await OnboardingStore.shouldShow() || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute<void>(

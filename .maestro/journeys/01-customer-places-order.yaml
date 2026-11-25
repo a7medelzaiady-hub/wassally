@@ -10,15 +10,7 @@ appId: com.wassally.app
 - tapOn: "دخول تجريبي: عميل"
 - runFlow: _dismiss-prompts.yaml
 # الجولة التعريفية بتظهر أول مرة للعميل؛ «تخطي» بيوصل لصفحة الكروت.
-# التطبيق بيبدأ بحالة نظيفة، فالجولة بتظهر دايمًا هنا.
-- extendedWaitUntil:
-    visible: "١/٣"
-    timeout: 60000
-- waitForAnimationToEnd
-- tapOn: "تخطي"
-- extendedWaitUntil:
-    notVisible: "١/٣"
-    timeout: 15000
+- runFlow: _skip-tour.yaml
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
     visible: ".*ابحث عن محل أو ماركت.*"

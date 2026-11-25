@@ -27,7 +27,7 @@ import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
 import '../widgets/offer_carousel.dart';
-import '../widgets/quick_order_promo.dart';
+import '../widgets/home_top_ads.dart';
 import 'notifications_page.dart';
 import '../services/saved_address.dart';
 import '../services/location_picker.dart';
@@ -1182,18 +1182,15 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Builder(builder: (context) {
-                    void open() => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const QuickOrderCreatePage(),
-                          ),
-                        );
-                    // إعلانات متحركة؛ أي إعلان جديد يتضاف للقائمة دي.
-                    return PromoCarousel(slides: [
-                      QuickOrderPromo(onTap: open),
-                      if (kQuickPhotoOrdersEnabled) PhotoOrderPromo(onTap: open),
-                    ]);
-                  }),
+                  // بوسترات الإدارة (مكان «إعلان أعلى الرئيسية») متحركة،
+                  // وإعلان «وصّلي ع السريع» المدمج لو مفيش بوسترات.
+                  child: HomeTopAds(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
+                      ),
+                    ),
+                  ),
                 ),
               ),
 

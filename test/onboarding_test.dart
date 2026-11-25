@@ -23,12 +23,17 @@ Future<void> _pump(WidgetTester tester, VoidCallback onDone, {Size size = const 
 }
 
 void main() {
-  test('الجولة تظهر مرة واحدة لكل حساب وتتحفظ محليًا', () async {
+  test('الجولة بتظهر لحد مرتين في اليوم لكل حساب', () async {
     SharedPreferences.setMockInitialValues({});
-    expect(await OnboardingStore.shouldShow(uid: 'u1'), isTrue);
-    await OnboardingStore.markDone(uid: 'u1');
-    expect(await OnboardingStore.shouldShow(uid: 'u1'), isFalse);
-    expect(await OnboardingStore.shouldShow(uid: 'u2'), isTrue, reason: 'كل حساب لوحده');
+    final day = DateTime(2026, 11, 25, 10);
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isTrue);
+    await OnboardingStore.markDone(uid: 'u1', now: day);
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isTrue, reason: 'المرة التانية');
+    await OnboardingStore.markDone(uid: 'u1', now: day);
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isFalse, reason: 'خلاص النهارده');
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day.add(const Duration(days: 1))), isTrue,
+        reason: 'يوم جديد');
+    expect(await OnboardingStore.shouldShow(uid: 'u2', now: day), isTrue, reason: 'كل حساب لوحده');
     expect(await OnboardingStore.shouldShow(), isFalse, reason: 'من غير حساب مفيش جولة');
   });
 

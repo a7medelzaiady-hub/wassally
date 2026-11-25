@@ -255,18 +255,6 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Text(
-                'مفيش دفع دلوقتي • الدفع عند الاستلام',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.muted,
-                  fontSize: AppTypography.caption,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
             FilledButton.icon(
               key: const Key('quick-submit'),
               style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
