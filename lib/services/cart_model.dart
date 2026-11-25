@@ -29,6 +29,8 @@ class CartModel extends ChangeNotifier {
   }
 
   void setArea(String name, double newFee) {
+    // Re-selecting the same area must not unlock a previously sent cart.
+    if (area == name && fee == newFee) return;
     area = name;
     fee = newFee;
     _submittedOrderId = null;
@@ -36,6 +38,8 @@ class CartModel extends ChangeNotifier {
   }
 
   void setPromo(String code, double percent) {
+    // A repeated coupon validation is not a new order.
+    if (promoCode == code && promoPercent == percent) return;
     promoCode = code;
     promoPercent = percent;
     _submittedOrderId = null;
