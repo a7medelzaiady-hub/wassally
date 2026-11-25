@@ -75,7 +75,7 @@ void main() {
     // حالة قديمة من قبل المقدم الاختياري: بتتعامل كشراء.
     expect(_order({'status': 'awaiting_advance'}).step, QuickCourierStep.purchasing);
     expect(_order({'status': 'purchasing'}).step, QuickCourierStep.purchasing);
-    expect(_order({'status': 'summary_pending'}).step, QuickCourierStep.waitCustomer);
+    expect(_order({'status': 'summary_pending'}).step, QuickCourierStep.deliver);
     expect(_order({'status': 'summary_approved'}).step, QuickCourierStep.deliver);
     expect(_order({'status': 'delivered'}).step, QuickCourierStep.delivered);
     expect(_order({'status': 'cancelled'}).step, QuickCourierStep.cancelled);
@@ -94,9 +94,9 @@ void main() {
     expect(confirmed.hasPendingAdvance, isFalse);
   });
 
-  test('رمز التسليم بعد موافقة العميل بس، وسيب الطلب قبل الشراء والتحويل بس', () {
+  test('رمز التسليم بعد تجهيز الفاتورة فقط، وسيب الطلب قبل الشراء والتحويل بس', () {
     const totals = {'purchases': 15000, 'serviceFee': 500, 'delivery': 3000, 'prepaid': 0, 'due': 18500};
-    expect(_order({'status': 'summary_pending', 'totals': totals}).canEnterPin, isFalse);
+    expect(_order({'status': 'summary_pending', 'totals': totals}).canEnterPin, isTrue);
     expect(_order({'status': 'summary_approved', 'totals': totals}).canEnterPin, isTrue);
     expect(_order({'status': 'summary_approved'}).canEnterPin, isFalse);
     expect(_order({'status': 'accepted'}).canRelease, isTrue);
