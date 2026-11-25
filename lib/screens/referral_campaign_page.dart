@@ -10,6 +10,7 @@ import '../widgets/app_ui.dart';
 import '../widgets/referral_code_card.dart';
 import '../widgets/referral_balance_tile.dart';
 import '../widgets/referral_marketer_picker.dart';
+import '../widgets/app_snack.dart';
 
 const _campaignTitle = 'شير بكودك واكسب هدايا';
 
@@ -67,13 +68,13 @@ class _ReferralCampaignPageState extends State<ReferralCampaignPage> {
       _payoutKey = null;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم تسجيل طلب الصرف للإدارة.')),
+        appSnack('تم تسجيل طلب الصرف للإدارة.'),
       );
       setState(() => _campaign = _load());
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_failureMessage(error))),
+          appSnack(_failureMessage(error)),
         );
       }
     } finally {
@@ -964,7 +965,7 @@ class _ReferralPayoutsPageState extends State<_ReferralPayoutsPage> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_failureMessage(error))),
+          appSnack(_failureMessage(error)),
         );
       }
     } finally {
@@ -1011,7 +1012,7 @@ class _ReferralPayoutsPageState extends State<_ReferralPayoutsPage> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_failureMessage(error))),
+          appSnack(_failureMessage(error)),
         );
       }
     } finally {

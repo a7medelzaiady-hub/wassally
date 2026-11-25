@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
 // ignore: prefer_const_declarations
@@ -59,7 +60,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final points = quote['points'] as int;
       if (points == 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('مفيش نقاط متاحة للطلب ده.')),
+          appSnack('مفيش نقاط متاحة للطلب ده.'),
         );
       }
       setState(() {
@@ -69,7 +70,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تحميل خصم النقاط. حاول تاني.')),
+          appSnack('تعذر تحميل خصم النقاط. حاول تاني.'),
         );
       }
     } finally {
@@ -103,14 +104,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (r == null) {
       cart.setPromo('', 0);
       messenger.showSnackBar(
-        const SnackBar(content: Text('الكود ده مش صحيح أو منتهي.')),
+        appSnack('الكود ده مش صحيح أو منتهي.'),
       );
     } else {
       cart.setPromo(r.code, r.percent);
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('تم تفعيل الخصم ${r.percent.toStringAsFixed(0)}%'),
-        ),
+        appSnack('تم تفعيل الخصم ${r.percent.toStringAsFixed(0)}%'),
       );
     }
   }
@@ -220,11 +219,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (!mounted) return;
     if (wait > Duration.zero) {
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.',
-          ),
-        ),
+        appSnack('لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.'),
       );
       return;
     }
@@ -232,9 +227,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (await DeliveryService.checkOrdersPaused()) {
       if (!mounted) return;
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
-        ),
+        appSnack('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
       );
       return;
     }
@@ -262,50 +255,40 @@ class _CheckoutPageState extends State<CheckoutPage> {
         if (!messenger.mounted) return;
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
-          const SnackBar(
-            duration: Duration(seconds: 12),
-            behavior: SnackBarBehavior.floating,
-            showCloseIcon: true,
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'تم إرسال طلبك بنجاح.',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 6),
-                Text(kDeliveryPinKeepNotice),
-              ],
-            ),
+          appSnack(
+            kDeliveryPinKeepNotice,
+            title: 'تم إرسال طلبك بنجاح',
+            kind: AppSnackKind.success,
+            duration: const Duration(seconds: 12),
+            showClose: true,
           ),
         );
       });
     } on OrderLimitException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } on StateError catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
       if (e.message.contains('تم تحديث نظام تأكيد الطلبات')) {
         UpdateService.showProtocolUpdateRequired(context);
       } else {
-        messenger.showSnackBar(SnackBar(content: Text(e.message)));
+        messenger.showSnackBar(appSnack(e.message));
       }
     } on FirebaseException catch (e) {
       debugPrint('CHECKOUT FIREBASE ERROR: code=${e.code}, message=${e.message}');
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر إرسال الطلب (${e.code}). حاول تاني أو تواصل مع الدعم.')),
+        appSnack('تعذر إرسال الطلب (${e.code}). حاول تاني أو تواصل مع الدعم.'),
       );
     } catch (e) {
       debugPrint('CHECKOUT ERROR: $e');
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر إرسال الطلب. تأكد من الاتصال وحاول تاني.')),
+        appSnack('تعذر إرسال الطلب. تأكد من الاتصال وحاول تاني.'),
       );
     }
   }
@@ -617,7 +600,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

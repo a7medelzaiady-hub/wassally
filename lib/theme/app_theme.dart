@@ -256,12 +256,23 @@ ThemeData buildAppTheme() {
         return IconThemeData(color: selected ? AppColors.purple : kMuted);
       }),
     ),
+    // إطار موحّد لكل الرسايل: كارت عائم بحواف دائرية وحد خفيف وظل.
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: AppColors.purpleDarker,
-      contentTextStyle: text.bodyMedium?.copyWith(color: Colors.white),
+      backgroundColor: const Color(0xFF2B0B4F),
+      elevation: 10,
+      insetPadding: const EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, AppSpacing.md),
+      contentTextStyle: text.bodyMedium?.copyWith(
+        color: Colors.white,
+        fontWeight: FontWeight.w700,
+        height: 1.45,
+      ),
       actionTextColor: AppColors.orangeLight,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+      closeIconColor: Colors.white70,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+      ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.orange,

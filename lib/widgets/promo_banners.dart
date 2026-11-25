@@ -203,7 +203,7 @@ class _PromoBannersState extends State<PromoBanners> {
                         s.title,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 21,
+                          fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),

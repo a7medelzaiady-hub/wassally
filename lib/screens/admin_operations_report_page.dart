@@ -170,7 +170,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   style: TextStyle(
                     color: Brand.ink,
                     fontWeight: FontWeight.w800,
-                    fontSize: 19,
+                    fontSize: 18,
                   ),
                 ),
               ],

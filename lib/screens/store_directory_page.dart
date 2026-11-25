@@ -356,17 +356,31 @@ class _StoreCard extends StatelessWidget {
                             ),
                           ),
                         const Spacer(),
+                        // عدد الأصناف مش محفوظ على مستند المحل (الأصناف في قايمة منفصلة)،
+                        // فبدل «0 منتج» الغلط بنعرض حالة المحل؛ والعدد يظهر لو معروف بس.
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: AppSpacing.md, vertical: AppSpacing.xxs + 1),
                           decoration: BoxDecoration(
-                            color: AppColors.orangeSoft,
+                            color: productCount > 0
+                                ? AppColors.orangeSoft
+                                : store.isOpen
+                                    ? AppColors.successSoft
+                                    : AppColors.surfaceAlt,
                             borderRadius: BorderRadius.circular(AppRadius.pill),
                           ),
                           child: Text(
-                            '$productCount منتج',
-                            style: const TextStyle(
-                              color: AppColors.orangeDeep,
+                            productCount > 0
+                                ? '$productCount منتج'
+                                : store.isOpen
+                                    ? 'مفتوح الآن'
+                                    : 'مغلق دلوقتي',
+                            style: TextStyle(
+                              color: productCount > 0
+                                  ? AppColors.orangeDeep
+                                  : store.isOpen
+                                      ? AppColors.success
+                                      : AppColors.muted,
                               fontWeight: FontWeight.w800,
                               fontSize: AppTypography.caption,
                             ),

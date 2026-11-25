@@ -333,7 +333,7 @@ class _SummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.bodyLarge;
     final style = strong
-        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 18)
+        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 17)
         : base?.copyWith(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

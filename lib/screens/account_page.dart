@@ -24,6 +24,7 @@ import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
 import 'legal_page.dart';
 import 'user_guide_page.dart';
+import '../widgets/app_snack.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
 
@@ -79,11 +80,11 @@ class _AccountPageState extends State<AccountPage> {
       final n = await seedDemoStores();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('تم رفع $n محلات تجريبية')));
+          .showSnackBar(appSnack('تم رفع $n محلات تجريبية'));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('فشل الرفع. تأكد إن حسابك أدمن.')),
+        appSnack('فشل الرفع. تأكد إن حسابك أدمن.'),
       );
     }
   }
@@ -196,7 +197,7 @@ class _AccountPageState extends State<AccountPage> {
       debugPrint('Sign out error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تسجيل الخروج. حاول مرة أخرى.')),
+          appSnack('تعذر تسجيل الخروج. حاول مرة أخرى.'),
         );
       }
     }
@@ -222,21 +223,15 @@ class _AccountPageState extends State<AccountPage> {
           e.code == 'web-context-canceled' ||
           e.code == 'canceled';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            cancelled
+        appSnack(cancelled
                 ? 'اتلغى حذف الحساب'
-                : 'تعذر حذف الحساب (${e.code}). جرّب تاني.',
-          ),
-        ),
+                : 'تعذر حذف الحساب (${e.code}). جرّب تاني.'),
       );
     } catch (error) {
       if (!mounted) return;
       final message = error.toString().replaceFirst('Bad state: ', '').trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message.isEmpty ? 'تعذر حذف الحساب. جرّب تاني.' : message),
-        ),
+        appSnack(message.isEmpty ? 'تعذر حذف الحساب. جرّب تاني.' : message),
       );
     }
   }
@@ -611,12 +606,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         ),
       );
       navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text('تم حفظ بياناتك')));
+      messenger.showSnackBar(appSnack('تم حفظ بياناتك'));
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر الحفظ. جرّب تاني.')),
+        appSnack('تعذر الحفظ. جرّب تاني.'),
       );
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/quick_price_guide.dart';
 import '../services/quick_price_guide_service.dart';
+import 'app_snack.dart';
 
 /// Reusable quick-order item selector. Unlisted products remain free text
 /// and are never assigned an invented approximate price.
@@ -51,7 +52,7 @@ class _QuickPricePickerState extends State<QuickPricePicker>
   void _change(QuickPriceGuide guide, QuickPriceItem item, int delta) {
     if (delta > 0 && !_quantities.containsKey(item.id) && _quantities.length >= 30) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الحد الأقصى 30 صنفًا لكل محل')),
+        appSnack('الحد الأقصى 30 صنفًا لكل محل'),
       );
       return;
     }

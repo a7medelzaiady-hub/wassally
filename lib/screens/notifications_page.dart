@@ -338,7 +338,7 @@ class _NotifHeader extends StatelessWidget {
                           'الإشعارات',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 22,
+                            fontSize: 21,
                             fontWeight: FontWeight.w800,
                           ),
                         ),

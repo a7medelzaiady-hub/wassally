@@ -59,7 +59,7 @@ class CourierOrderDetailsSheet extends StatelessWidget {
                 style: TextStyle(
                   color: Brand.ink,
                   fontWeight: FontWeight.w900,
-                  fontSize: 19,
+                  fontSize: 18,
                 ),
               ),
               const SizedBox(height: 6),

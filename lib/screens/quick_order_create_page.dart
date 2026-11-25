@@ -19,6 +19,7 @@ import '../widgets/app_ui.dart';
 import '../widgets/quick_order_promo.dart' show kQuickPhotoOrdersEnabled;
 import '../services/image_service.dart';
 import 'package:image_picker/image_picker.dart' show ImageSource;
+import '../widgets/app_snack.dart';
 
 /// طريقة إرسال الطلب السريع.
 enum QuickOrderMethod { voice, write, camera, gallery }
@@ -260,7 +261,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
 
   void _say(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
   }
 
   /// العنوان اللي هيتبعت للمندوب (بيظهر له بعد القبول بس).

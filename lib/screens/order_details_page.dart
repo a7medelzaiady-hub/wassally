@@ -20,6 +20,7 @@ import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/star_picker.dart';
+import '../widgets/app_snack.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -39,7 +40,7 @@ class OrderDetailsPage extends StatelessWidget {
       await OrderService.cancel(orderId);
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر إلغاء الطلب. جرّب تاني.')),
+        appSnack('تعذر إلغاء الطلب. جرّب تاني.'),
       );
     }
   }
@@ -58,12 +59,12 @@ class OrderDetailsPage extends StatelessWidget {
     try {
       await OrderService.deleteOrder(orderId);
       navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text('تم حذف الطلب.')));
+      messenger.showSnackBar(appSnack('تم حذف الطلب.'));
     } on StateError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر حذف الطلب. جرّب تاني.')),
+        appSnack('تعذر حذف الطلب. جرّب تاني.'),
       );
     }
   }
@@ -332,7 +333,7 @@ class _Details extends StatelessWidget {
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(err ?? 'شكراً لتقييمك! ❤️')),
+                          appSnack(err ?? 'شكراً لتقييمك! ❤️'),
                         );
                       }
                     },
@@ -390,7 +391,7 @@ class _Details extends StatelessWidget {
                   message = e is StateError ? e.message : 'تعذر تسجيل تقييم المحل. حاول مرة أخرى.';
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
               },
               child: submitting
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -438,11 +439,11 @@ class _Details extends StatelessWidget {
                       try {
                         await OrderGateway.referralRedemption(order.id, 'refund');
                         messenger.showSnackBar(
-                          const SnackBar(content: Text('تمت مراجعة استرجاع نقاط الطلب.')),
+                          appSnack('تمت مراجعة استرجاع نقاط الطلب.'),
                         );
                       } catch (_) {
                         messenger.showSnackBar(
-                          const SnackBar(content: Text('تعذر استرجاع النقاط. حاول تاني.')),
+                          appSnack('تعذر استرجاع النقاط. حاول تاني.'),
                         );
                       }
                     },
@@ -484,7 +485,7 @@ class _Details extends StatelessWidget {
                         child: Text(
                           deliveryPin!.split('').join(' '),
                           style: const TextStyle(
-                            fontSize: 27,
+                            fontSize: 26,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2,
                           ),
@@ -723,7 +724,7 @@ class _Details extends StatelessWidget {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -977,7 +978,7 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
       if (mounted) {
         setState(() => _playing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية المرفقة.')),
+          appSnack('تعذر تشغيل الرسالة الصوتية المرفقة.'),
         );
       }
     }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// دليل حسابات Firestore للإدارة: الاسم، UID، والأدوار الفعلية.
 /// قراءات محدودة عند فتح الصفحة فقط، بدون مستمعات مستمرة.
@@ -197,7 +198,7 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
                                   await Clipboard.setData(ClipboardData(text: u.uid));
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('تم نسخ UID')),
+                                      appSnack('تم نسخ UID'),
                                     );
                                   }
                                 },

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../services/image_service.dart';
+import 'app_snack.dart';
 
 /// Edit the voice attached to an OPEN quick order.
 /// Returns a new Cloudinary URL, "" to remove it, or null when cancelled.
@@ -48,7 +49,7 @@ class _QuickVoiceEditSheetState extends State<QuickVoiceEditSheet> {
 
   void _say(String message) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      appSnack(message),
     );
   }
 
@@ -178,7 +179,7 @@ class _QuickVoiceEditSheetState extends State<QuickVoiceEditSheet> {
         child: Column(mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const Text('تعديل تسجيل طلبك', style: TextStyle(
-            fontSize: 20, fontWeight: FontWeight.w800,
+            fontSize: 19, fontWeight: FontWeight.w800,
           )),
           const SizedBox(height: 6),
           const Text('سجّل رسالة جديدة لحد دقيقة كاملة، أو اسمع التسجيل الحالي، أو احذفه. التعديل متاح قبل ما المندوب يقبل الطلب.'),

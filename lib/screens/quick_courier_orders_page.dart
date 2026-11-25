@@ -33,7 +33,7 @@ class _QuickCourierEntryState extends State<QuickCourierEntry> {
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: Brand.green,
-                textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               icon: const Icon(Icons.flash_on, size: 26),
               label: const Text('الطلبات السريعة'),
@@ -266,7 +266,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                 backgroundColor: Brand.green.withValues(alpha: 0.12),
                 child: Text(
                   '${order.stores.length}',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.green),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Brand.green),
                 ),
               ),
               const SizedBox(width: 14),

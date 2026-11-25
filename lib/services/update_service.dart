@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import 'notification_service.dart';
 import 'play_update.dart';
+import '../widgets/app_snack.dart';
 
 /// فحص وجود إصدار أحدث من التطبيق.
 ///
@@ -193,7 +194,7 @@ class UpdateService {
     }
     if (!opened) {
       NotificationService.messengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('تعذر فتح رابط التحديث')),
+        appSnack('تعذر فتح رابط التحديث'),
       );
     }
   }

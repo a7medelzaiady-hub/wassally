@@ -10,6 +10,7 @@ import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/quick_voice_edit_sheet.dart';
+import '../widgets/app_snack.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -54,7 +55,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       }
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر تشغيل التسجيل الصوتي.')));
+        appSnack('تعذر تشغيل التسجيل الصوتي.'));
     }
   }
 
