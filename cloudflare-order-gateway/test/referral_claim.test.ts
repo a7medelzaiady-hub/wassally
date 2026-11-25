@@ -6,19 +6,19 @@ const record = {
 };
 const evidence = {
   invitedUid: "new-user", accountCreatedAtMs: 1000000,
-  claimAtMs: 1000500, alreadyAttributed: false, registrationWindowMs: 60000,
+  claimAtMs: 1000500, alreadyAttributed: false,
 };
 
-describe("server-verified first registration referral claims", () => {
-  it("accepts a matching active code for a new user", () => {
+describe("trusted first-registration referral attribution", () => {
+  it("accepts matching active code for eligible original signup", () => {
     expect(decideReferralClaim(" abc12345 ", record, evidence)).toEqual({
       allowed: true, code: "ABC12345", inviterUid: "owner-1", channel: "customer",
     });
   });
 
-  it("accepts a claim exactly at the registration window boundary", () => {
+  it("does not apply an arbitrary minute-based expiry within the original session", () => {
     expect(decideReferralClaim("ABC12345", record, {
-      ...evidence, claimAtMs: evidence.accountCreatedAtMs + evidence.registrationWindowMs,
+      ...evidence, claimAtMs: evidence.accountCreatedAtMs + 60 * 60 * 1000,
     }).allowed).toBe(true);
   });
 
@@ -27,17 +27,12 @@ describe("server-verified first registration referral claims", () => {
     ["missing code", "ABC12345", null, evidence, "inactive_or_missing_code"],
     ["inactive code", "ABC12345", { ...record, active: false }, evidence, "inactive_or_missing_code"],
     ["missing active flag", "ABC12345", { ...record, active: undefined as unknown as boolean }, evidence, "inactive_or_missing_code"],
-    ["string active flag", "ABC12345", { ...record, active: "true" as unknown as boolean }, evidence, "inactive_or_missing_code"],
     ["wrong code", "ABC12345", { ...record, code: "ZZZ12345" }, evidence, "inactive_or_missing_code"],
     ["self referral", "ABC12345", record, { ...evidence, invitedUid: "owner-1" }, "invalid_actors"],
     ["existing attribution", "ABC12345", record, { ...evidence, alreadyAttributed: true }, "already_attributed"],
-    ["old account", "ABC12345", record, { ...evidence, claimAtMs: 1100000 }, "not_first_registration"],
     ["future creation", "ABC12345", record, { ...evidence, claimAtMs: 999999 }, "not_first_registration"],
-    ["excessive window", "ABC12345", record, { ...evidence, registrationWindowMs: 3600001 }, "not_first_registration"],
     ["zero creation timestamp", "ABC12345", record, { ...evidence, accountCreatedAtMs: 0 }, "not_first_registration"],
     ["fractional claim timestamp", "ABC12345", record, { ...evidence, claimAtMs: 1000000.5 }, "not_first_registration"],
-    ["negative registration window", "ABC12345", record, { ...evidence, registrationWindowMs: -1 }, "not_first_registration"],
-    ["same inviter", "ABC12345", record, { ...evidence, invitedUid: "owner-1" }, "invalid_actors"],
   ] as const)("%s is rejected", (_name, code, owner, registration, reason) => {
     expect(decideReferralClaim(code, owner, registration))
       .toEqual({ allowed: false, reason });

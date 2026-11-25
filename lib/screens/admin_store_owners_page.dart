@@ -4,6 +4,7 @@ import '../widgets/app_header.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/app_snack.dart';
 
 /// إدارة أصحاب المحلات (للمدير): ربط حساب بمحل، إيقاف/تفعيل، وحذف.
 /// بتكتب في storeOwners/{uid}، والقواعد بتسمح للمدير فقط.
@@ -40,7 +41,7 @@ class _AdminStoreOwnersPageState extends State<AdminStoreOwnersPage> {
 
   void _toast(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(m));
   }
 
   Future<void> _add() async {

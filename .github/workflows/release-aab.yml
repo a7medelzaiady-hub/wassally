@@ -8,6 +8,11 @@ on:
         required: true
         type: boolean
         default: false
+      referrals_verified:
+        description: "Confirm registration and payout on the tested Worker, and referral rewards configured by admin."
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,10 +86,15 @@ jobs:
         shell: bash
         env:
           SERVER_ORDERS_VERIFIED: ${{ inputs.server_orders_verified }}
+          REFERRALS_VERIFIED: ${{ inputs.referrals_verified }}
         run: |
           set -euo pipefail
           if [[ "$SERVER_ORDERS_VERIFIED" != "true" ]]; then
             echo "::error::Production AAB blocked. Deploy and test the Worker with a dedicated account, then enable app_info/security.serverOrders before confirming this input."
+            exit 1
+          fi
+          if [[ "$REFERRALS_VERIFIED" != "true" ]]; then
+            echo "::error::Production AAB blocked: complete the referral Worker, settings, first-order and payout smoke test before enabling the campaign."
             exit 1
           fi
 
@@ -101,11 +111,15 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Validate enabled referral entry points
+        run: flutter test --dart-define=WASALLY_REFERRAL_REGISTRATION=true test/brand_and_referral_preview_test.dart
+
       - name: Build signed Play App Bundle
         run: |
           flutter build appbundle --release \
             --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
-            --dart-define=WASALLY_SERVER_ORDERS=true
+            --dart-define=WASALLY_SERVER_ORDERS=true \
+            --dart-define=WASALLY_REFERRAL_REGISTRATION=true
 
       - name: Verify AAB exists and is a valid ZIP archive
         shell: bash

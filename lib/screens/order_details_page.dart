@@ -20,6 +20,7 @@ import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/star_picker.dart';
+import '../widgets/app_snack.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -39,7 +40,7 @@ class OrderDetailsPage extends StatelessWidget {
       await OrderService.cancel(orderId);
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر إلغاء الطلب. جرّب تاني.')),
+        appSnack('تعذر إلغاء الطلب. جرّب تاني.'),
       );
     }
   }
@@ -58,12 +59,12 @@ class OrderDetailsPage extends StatelessWidget {
     try {
       await OrderService.deleteOrder(orderId);
       navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text('تم حذف الطلب.')));
+      messenger.showSnackBar(appSnack('تم حذف الطلب.'));
     } on StateError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر حذف الطلب. جرّب تاني.')),
+        appSnack('تعذر حذف الطلب. جرّب تاني.'),
       );
     }
   }
@@ -332,7 +333,7 @@ class _Details extends StatelessWidget {
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(err ?? 'شكراً لتقييمك! ❤️')),
+                          appSnack(err ?? 'شكراً لتقييمك! ❤️'),
                         );
                       }
                     },
@@ -390,7 +391,7 @@ class _Details extends StatelessWidget {
                   message = e is StateError ? e.message : 'تعذر تسجيل تقييم المحل. حاول مرة أخرى.';
                 }
                 if (ctx.mounted) Navigator.pop(ctx);
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
               },
               child: submitting
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -411,10 +412,10 @@ class _Details extends StatelessWidget {
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
             children: [
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,7 +429,7 @@ class _Details extends StatelessWidget {
                   formatDateTime(order.createdAt!),
                   style: text.bodySmall?.copyWith(color: kMuted),
                 ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 9),
               if (order.status == OrderStatus.cancelled) ...[
                 _CancelledBanner(status: order.status),
                 if (order.referralDiscountMinor > 0)
@@ -438,11 +439,11 @@ class _Details extends StatelessWidget {
                       try {
                         await OrderGateway.referralRedemption(order.id, 'refund');
                         messenger.showSnackBar(
-                          const SnackBar(content: Text('تمت مراجعة استرجاع نقاط الطلب.')),
+                          appSnack('تمت مراجعة استرجاع نقاط الطلب.'),
                         );
                       } catch (_) {
                         messenger.showSnackBar(
-                          const SnackBar(content: Text('تعذر استرجاع النقاط. حاول تاني.')),
+                          appSnack('تعذر استرجاع النقاط. حاول تاني.'),
                         );
                       }
                     },
@@ -454,53 +455,56 @@ class _Details extends StatelessWidget {
           ),
         ),
 
-        // 🔐 رمز التسليم جوه الصفحة (مش شريط ثابت) عشان ما يغطيش أزرار تعديل/إلغاء الطلب.
+        // رمز التسليم واضح ومضغوط؛ لا نطلب أي قراءة جديدة.
         if (showPin) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFEAF7EF),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: kSuccess),
             ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'رمز التسليم: قوله للمندوب بعد ما تستلم طلبك وتراجعه.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 6),
-                if (deliveryPin != null)
-                  Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: Text(
-                      deliveryPin!.split('').join(' '),
-                      style: const TextStyle(
-                        fontSize: 30,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 4,
+                Row(
+                  children: [
+                    Icon(Icons.shield_outlined, size: 22, color: kSuccess),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'رمز التسليم',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                       ),
                     ),
-                  )
-                else if (pinLoading)
-                  const SizedBox(
-                    height: 28,
-                    width: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.5),
-                  )
-                else if (pinMessage != null) ...[
-                  Text(pinMessage!, textAlign: TextAlign.center),
-                  TextButton(onPressed: onRetryPin, child: const Text('حاول تاني')),
-                ],
-                const SizedBox(height: 4),
-                const Text(
-                  'ما تديش الرمز لحد قبل ما تستلم الطلب.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 11.5),
+                    if (deliveryPin != null)
+                      Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          deliveryPin!.split('').join(' '),
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      )
+                    else if (pinLoading)
+                      const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      )
+                    else if (pinMessage != null)
+                      TextButton(onPressed: onRetryPin, child: const Text('إعادة المحاولة')),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  pinMessage ?? 'قوله للمندوب بعد ما تستلم طلبك وتراجعه فقط.',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -508,7 +512,7 @@ class _Details extends StatelessWidget {
         ],
 
         if (order.activeDeliveryIssueId.isNotEmpty || order.lastDeliveryIssueId.isNotEmpty) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _CustomerReturnReason(
             key: ValueKey((
               order.activeDeliveryIssueId,
@@ -523,7 +527,7 @@ class _Details extends StatelessWidget {
         // 🛵 كارت المندوب مع التقييم
         if (order.courierName.isNotEmpty &&
             order.status != OrderStatus.cancelled) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _DriverCardForCustomer(
             driverName: order.courierName,
             driverPhone: order.courierPhone,
@@ -534,7 +538,7 @@ class _Details extends StatelessWidget {
         ],
 
         if (order.status == OrderStatus.delivered && order.storeId.isNotEmpty && order.courierName.isEmpty) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(14),
             decoration: _card,
@@ -551,9 +555,9 @@ class _Details extends StatelessWidget {
             ),
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -562,7 +566,7 @@ class _Details extends StatelessWidget {
                 'المنتجات',
                 style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 5),
               for (final item in order.items)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
@@ -573,7 +577,7 @@ class _Details extends StatelessWidget {
                     ],
                   ),
                 ),
-              const Divider(height: 22),
+              const Divider(height: 14),
               _line('المجموع', formatPrice(order.subtotal)),
               const SizedBox(height: 4),
               _line('رسوم التوصيل', formatPrice(order.courierFee)),
@@ -583,19 +587,19 @@ class _Details extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               if (order.referralDiscountMinor > 0)
-                _line('خصم نقاط الإحالة',
+                _line('خصم نقاط الدعوات',
                     '- ${formatPrice(order.referralDiscountMinor / 100)}'),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
             ],
           ),
         ),
         if (order.specialRequest != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           _CustomerSpecialRequestCard(request: order.specialRequest!),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -604,7 +608,7 @@ class _Details extends StatelessWidget {
                 'بيانات التوصيل',
                 style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               if (order.address.isNotEmpty)
                 _info(Icons.location_on_outlined, order.address),
               if (order.phone.isNotEmpty)
@@ -621,7 +625,7 @@ class _Details extends StatelessWidget {
         if (order.customerConfirmedAt != null &&
             order.deliveryMode == 'external' &&
             order.status == OrderStatus.onTheWay) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           const Text(
             'تم تأكيد استلامك. الطلب في انتظار تأكيد المحل استلام النقدية من المندوب.',
             style: TextStyle(fontWeight: FontWeight.w700),
@@ -638,7 +642,7 @@ class _Details extends StatelessWidget {
               ),
             ),
           if (order.hasUnavailableItems && order.status == OrderStatus.newOrder) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -664,8 +668,9 @@ class _Details extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           FilledButton.icon(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
             onPressed: onEdit,
             icon: const Icon(Icons.edit_outlined, size: 18),
             label: Text(
@@ -680,7 +685,7 @@ class _Details extends StatelessWidget {
               Expanded(
                 child: OutlinedButton(
                   onPressed: onCancel,
-                  style: OutlinedButton.styleFrom(foregroundColor: kDanger),
+                  style: OutlinedButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(0, 46)),
                   child: const Text('إلغاء الطلب'),
                 ),
               ),
@@ -690,7 +695,7 @@ class _Details extends StatelessWidget {
                   onPressed: onDelete,
                   icon: const Icon(Icons.delete_outline, size: 18),
                   label: const Text('حذف الطلب'),
-                  style: OutlinedButton.styleFrom(foregroundColor: kDanger),
+                  style: OutlinedButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(0, 46)),
                 ),
               ),
             ],
@@ -719,7 +724,7 @@ class _Details extends StatelessWidget {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -872,92 +877,63 @@ class _Timeline extends StatelessWidget {
   final OrderStatus current;
   const _Timeline({required this.current});
 
+  static const _shortLabels = ['استلام', 'تجهيز', 'في الطريق', 'توصيل'];
+
   @override
   Widget build(BuildContext context) {
     final steps = OrderStatus.timeline;
     final currentIndex = steps.indexOf(current);
-
-    return Column(
-      children: [
-        for (var i = 0; i < steps.length; i++)
-          _TimelineStep(
-            step: steps[i],
-            reached: i <= currentIndex,
-            active: i == currentIndex,
-            isLast: i == steps.length - 1,
-            lineReached: i < currentIndex,
-          ),
-      ],
-    );
-  }
-}
-
-class _TimelineStep extends StatelessWidget {
-  final OrderStatus step;
-  final bool reached;
-  final bool active;
-  final bool isLast;
-  final bool lineReached;
-
-  const _TimelineStep({
-    required this.step,
-    required this.reached,
-    required this.active,
-    required this.isLast,
-    required this.lineReached,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IntrinsicHeight(
+    return Semantics(
+      label: 'حالة الطلب: ' + current.label,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            width: 30,
-            child: Column(
-              children: [
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    color: reached ? kPrimary : Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: reached ? kPrimary : kLine,
-                      width: 2,
+          for (var i = 0; i < steps.length; i++) ...[
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 27,
+                    height: 27,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: i <= currentIndex ? kPrimary : Colors.white,
+                      border: Border.all(
+                        color: i <= currentIndex ? kPrimary : kLine,
+                        width: 2,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      i < currentIndex ? Icons.check_rounded : steps[i].icon,
+                      size: 15,
+                      color: i <= currentIndex ? Colors.white : kMuted,
                     ),
                   ),
-                  child: Icon(
-                    reached ? Icons.check : step.icon,
-                    size: 16,
-                    color: reached ? Colors.white : kMuted,
-                  ),
-                ),
-                if (!isLast)
-                  Expanded(
-                    child: Container(
-                      width: 3,
-                      margin: const EdgeInsets.symmetric(vertical: 2),
-                      color: lineReached ? kPrimary : kLine,
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _shortLabels[i],
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: i == currentIndex ? FontWeight.w800 : FontWeight.w600,
+                        color: i <= currentIndex ? kInk : kMuted,
+                      ),
                     ),
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(top: 4, bottom: isLast ? 0 : 18),
-              child: Text(
-                step.label,
-                style: TextStyle(
-                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-                  color: reached ? kInk : kMuted,
-                ),
+                ],
               ),
             ),
-          ),
+            if (i < steps.length - 1)
+              Container(
+                width: 7,
+                height: 2,
+                margin: const EdgeInsets.only(bottom: 20),
+                color: i < currentIndex ? kPrimary : kLine,
+              ),
+          ],
         ],
       ),
     );
@@ -1002,7 +978,7 @@ class _CustomerSpecialRequestCardState extends State<_CustomerSpecialRequestCard
       if (mounted) {
         setState(() => _playing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية المرفقة.')),
+          appSnack('تعذر تشغيل الرسالة الصوتية المرفقة.'),
         );
       }
     }

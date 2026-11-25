@@ -6,6 +6,7 @@ import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// من نحن
 class AboutPage extends StatelessWidget {
@@ -78,7 +79,7 @@ class AboutPage extends StatelessWidget {
                       Text(
                         'وصلي',
                         style: TextStyle(
-                          fontSize: 30,
+                          fontSize: 29,
                           fontWeight: FontWeight.w800,
                           color: Colors.white,
                         ),
@@ -154,7 +155,7 @@ Future<void> openWasallyWhatsApp(String message) async {
   } catch (_) {}
   if (!opened) {
     NotificationService.messengerKey.currentState?.showSnackBar(
-      const SnackBar(content: Text('تعذر فتح واتساب. تأكد إنه متثبّت على جهازك.')),
+      appSnack('تعذر فتح واتساب. تأكد إنه متثبّت على جهازك.'),
     );
   }
 }

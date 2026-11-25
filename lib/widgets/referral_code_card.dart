@@ -2,17 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/referral.dart';
+import 'app_snack.dart';
 
 /// Presentation-only referral card. Parent must supply a server-issued code.
 /// No reads, listeners, claims, balance changes, or reward grants are made here.
 class ReferralCodeCard extends StatelessWidget {
   final String? serverIssuedCode;
   final VoidCallback? onShare;
+  /// Whether the Worker is actively awarding successful referrals.
+  final bool rewardsEnabled;
 
   const ReferralCodeCard({
     super.key,
     required this.serverIssuedCode,
     this.onShare,
+    this.rewardsEnabled = true,
   });
 
   @override
@@ -45,7 +49,7 @@ class ReferralCodeCard extends StatelessWidget {
                       await Clipboard.setData(ClipboardData(text: code));
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم نسخ كود الدعوة')),
+                          appSnack('تم نسخ كود الدعوة'),
                         );
                       }
                     },
@@ -64,8 +68,10 @@ class ReferralCodeCard extends StatelessWidget {
               const Text('كود الدعوة غير متاح حاليًا',
                   textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            const Text(
-              'المكافآت بتتحسب بعد أول طلب ناجح، حسب شروط البرنامج.',
+            Text(
+              rewardsEnabled
+                  ? 'المكافآت بتتحسب بعد أول طلب ناجح، حسب شروط البرنامج.'
+                  : 'المكافآت لسه مش مفعّلة. تقدر تنسخ الكود، لكن مش هتتحسب أي مكافأة قبل تشغيل البرنامج رسميًا.',
               textAlign: TextAlign.center,
             ),
           ],

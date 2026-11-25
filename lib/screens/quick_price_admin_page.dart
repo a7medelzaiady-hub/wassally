@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/quick_price_guide.dart';
 import '../services/quick_price_guide_service.dart';
+import '../widgets/app_snack.dart';
 
 /// Admin-only editor. Firestore rules remain the authorization boundary.
 /// Call from an existing admin-only navigation route.
@@ -53,7 +54,7 @@ class _QuickPriceAdminPageState extends State<QuickPriceAdminPage> {
     if (name.isEmpty || unit.isEmpty || value == null || !value.isFinite ||
         value < 0 || value > 100000 || _items.length >= 200) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('راجع الاسم والوحدة والسعر (بحد أقصى 200 صنف)')),
+        appSnack('راجع الاسم والوحدة والسعر (بحد أقصى 200 صنف)'),
       );
       return;
     }
@@ -144,12 +145,12 @@ class _QuickPriceAdminPageState extends State<QuickPriceAdminPage> {
       await QuickPriceGuideService.refresh();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حفظ قائمة الأسعار')),
+        appSnack('تم حفظ قائمة الأسعار'),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر الحفظ. تأكد من صلاحية الإدارة والاتصال')),
+        appSnack('تعذر الحفظ. تأكد من صلاحية الإدارة والاتصال'),
       );
     } finally {
       if (mounted) setState(() => _saving = false);

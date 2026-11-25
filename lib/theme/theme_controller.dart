@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'brand.dart';
 
-/// بيحمّل ويحفظ السمة اللي المستخدم اختارها (على الموبايل نفسه).
+/// يثبت هوية وصّلي الكحلي والبرتقالي على الأجهزة القديمة والجديدة.
 class ThemeController extends ChangeNotifier {
   ThemeController._();
   static final ThemeController instance = ThemeController._();
@@ -16,16 +16,17 @@ class ThemeController extends ChangeNotifier {
   Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // Apply the requested green branding to existing installs too.
-      Brand.palette = AppPalette.green;
-      await prefs.setString(_key, AppPalette.green.id);
+      // Keep the approved navy-and-orange Wasally identity on upgrades too.
+      Brand.palette = AppPalette.wasally;
+      await prefs.setString(_key, AppPalette.wasally.id);
     } catch (_) {
       // لو فشلت القراءة بنكمّل بالسمة الافتراضية.
     }
   }
 
   Future<void> select(AppPalette p) async {
-    if (Brand.palette.id == p.id) return;
+    // Other palettes are legacy data, not a user-facing customization.
+    if (p.id != AppPalette.wasally.id || Brand.palette.id == p.id) return;
     Brand.palette = p;
     notifyListeners();
     try {

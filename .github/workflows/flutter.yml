@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       server_orders:
-        description: Use the Worker order gateway in the test APK
+        description: Use the verified Worker order gateway and correct fee preview in manual APK
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build:
@@ -67,6 +67,10 @@ jobs:
     # 6. تشغيل الاختبارات الآلية
     - name: Run tests
       run: time flutter test
+
+    # Exercise both the hidden-production default and enabled referral preview UI.
+    - name: Validate referral preview (login, admin and brand)
+      run: flutter test --dart-define=WASALLY_REFERRAL_REGISTRATION=true test/brand_and_referral_preview_test.dart
 
     # Compile-time canary only: verify the app recognizes the secure Worker order mode.
     - name: Test serverOrders-enabled gateway configuration
@@ -126,7 +130,8 @@ jobs:
           echo "Android build attempt ${attempt}/3"
           if flutter build apk --debug \
             --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
-            --dart-define=WASALLY_SERVER_ORDERS="$WASALLY_SERVER_ORDERS"; then
+            --dart-define=WASALLY_SERVER_ORDERS="$WASALLY_SERVER_ORDERS" \
+            --dart-define=WASALLY_REFERRAL_REGISTRATION=true; then
             exit 0
           fi
           if [ "$attempt" -lt 3 ]; then

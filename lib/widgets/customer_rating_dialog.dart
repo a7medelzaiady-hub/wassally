@@ -75,7 +75,7 @@ Future<CustomerRatingInput?> showCustomerRatingDialog(
                 ),
                 const Text(
                   'التقييم لا يفرض عقوبة تلقائية؛ الإدارة تراجع الوقائع عند الحاجة.',
-                  style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
               ],
             ),

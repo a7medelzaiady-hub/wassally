@@ -20,8 +20,6 @@ export interface RegistrationEvidence {
   claimAtMs: number;
   /** Set by Worker from Auth/Firestore, not the app. */
   alreadyAttributed: boolean;
-  /** This is a new registration claim, not a later login. */
-  registrationWindowMs: number;
 }
 
 export type ReferralClaimDecision =
@@ -51,11 +49,8 @@ export function decideReferralClaim(
   if (evidence.alreadyAttributed) return { allowed: false, reason: "already_attributed" };
   if (!Number.isSafeInteger(evidence.accountCreatedAtMs) ||
       !Number.isSafeInteger(evidence.claimAtMs) ||
-      !Number.isSafeInteger(evidence.registrationWindowMs) ||
-      evidence.accountCreatedAtMs <= 0 || evidence.registrationWindowMs <= 0 ||
-      evidence.registrationWindowMs > 3600000 ||
-      evidence.claimAtMs < evidence.accountCreatedAtMs ||
-      evidence.claimAtMs - evidence.accountCreatedAtMs > evidence.registrationWindowMs) {
+      evidence.accountCreatedAtMs <= 0 ||
+      evidence.claimAtMs < evidence.accountCreatedAtMs) {
     return { allowed: false, reason: "not_first_registration" };
   }
   return { allowed: true, code, inviterUid: record.inviterUid, channel: record.channel };

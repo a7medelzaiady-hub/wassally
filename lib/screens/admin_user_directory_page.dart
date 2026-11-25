@@ -2,7 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/app_tokens.dart';
+import '../widgets/app_ui.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// دليل حسابات Firestore للإدارة: الاسم، UID، والأدوار الفعلية.
 /// قراءات محدودة عند فتح الصفحة فقط، بدون مستمعات مستمرة.
@@ -117,9 +120,8 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
                   controller: _search,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search_rounded),
                     hintText: 'ابحث بالاسم أو UID أو الصلاحية',
-                    border: OutlineInputBorder(),
                   ),
                 ),
               ),
@@ -137,44 +139,72 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
                       u.roles.join(' ').contains(query)).toList();
                   if (users.isEmpty) return const Center(child: Text('مفيش نتائج مطابقة.'));
                   return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, AppSpacing.xxl),
                     itemCount: users.length,
                     itemBuilder: (context, index) {
                       final u = users[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(u.name, style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              Wrap(spacing: 6, runSpacing: 4, children: [
-                                for (final role in u.roles) Chip(label: Text(role)),
-                              ]),
-                              const SizedBox(height: 4),
-                              Row(children: [
-                                Expanded(
-                                  child: SelectableText(u.uid, textDirection: TextDirection.ltr,
-                                      style: Theme.of(context).textTheme.bodySmall),
+                      // كارت مضغوط: الاسم + صلاحيات صغيرة في سطر واحد + UID.
+                      return AppCard(
+                        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        padding: const EdgeInsetsDirectional.fromSTEB(
+                            AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: AppColors.purpleSoft,
+                                child: Text(
+                                  u.name.trim().isEmpty ? '؟' : u.name.trim().characters.first.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: AppColors.purple,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
-                                IconButton(
-                                  tooltip: 'نسخ UID',
-                                  icon: const Icon(Icons.copy_outlined),
-                                  onPressed: () async {
-                                    await Clipboard.setData(ClipboardData(text: u.uid));
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('تم نسخ UID')),
-                                      );
-                                    }
-                                  },
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.sectionTitle),
+                              ),
+                            ]),
+                            const SizedBox(height: AppSpacing.sm),
+                            Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+                              for (final role in u.roles)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md, vertical: AppSpacing.xxs),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.purpleSoft,
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                  ),
+                                  child: Text(role, style: const TextStyle(
+                                    color: AppColors.purple,
+                                    fontSize: AppTypography.label,
+                                    fontWeight: FontWeight.w800,
+                                  )),
                                 ),
-                              ]),
-                            ],
-                          ),
+                            ]),
+                            Row(children: [
+                              Expanded(
+                                child: SelectableText(u.uid, textDirection: TextDirection.ltr,
+                                    style: AppTypography.secondary.copyWith(fontSize: AppTypography.label)),
+                              ),
+                              IconButton(
+                                tooltip: 'نسخ UID',
+                                icon: const Icon(Icons.copy_rounded, size: 20),
+                                onPressed: () async {
+                                  await Clipboard.setData(ClipboardData(text: u.uid));
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      appSnack('تم نسخ UID'),
+                                    );
+                                  }
+                                },
+                              ),
+                            ]),
+                          ],
                         ),
                       );
                     },

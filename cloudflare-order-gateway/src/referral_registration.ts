@@ -47,7 +47,6 @@ export async function registerReferral(
       invitedUid: uid,
       accountCreatedAtMs: createdAtMs,
       claimAtMs: now,
-      registrationWindowMs: 300_000,
       alreadyAttributed: false,
     });
     if (!claim.allowed) return false;

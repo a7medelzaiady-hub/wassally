@@ -2,12 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../legal/legal_content.dart';
-import '../models/referral.dart';
 import '../services/auth_service.dart';
-import '../services/order_gateway.dart';
 import '../services/e2e_support.dart';
 import 'legal_page.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_snack.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,59 +17,11 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
-  String? _referralCode;
-
-  Future<void> _editReferralCode() async {
-    var input = _referralCode ?? '';
-    final form = GlobalKey<FormState>();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('كود الإحالة'),
-        content: Form(
-          key: form,
-          child: TextFormField(
-            initialValue: input,
-            autofocus: true,
-            textDirection: TextDirection.ltr,
-            textCapitalization: TextCapitalization.characters,
-            maxLength: 12,
-            decoration: const InputDecoration(labelText: 'اختياري عند التسجيل الأول'),
-            onChanged: (value) => input = value,
-            validator: (value) {
-              final code = normalizeReferralCode(value ?? '');
-              return code.isEmpty || isReferralCodeFormatValid(code)
-                  ? null
-                  : 'اكتب من ٦ إلى ١٢ حرفًا إنجليزيًا أو رقمًا.';
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (form.currentState!.validate()) {
-                Navigator.pop(context, normalizeReferralCode(input));
-              }
-            },
-            child: const Text('تم'),
-          ),
-        ],
-      ),
-    );
-    if (mounted && code != null) {
-      setState(() => _referralCode = code.isEmpty ? null : code);
-    }
-  }
-
   Future<void> _signIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
     try {
-      await AuthService.signInWithGoogle(referralCode: _referralCode);
+      await AuthService.signInWithGoogle();
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in failed: ${e.code} | ${e.message}');
       if (mounted) {
@@ -84,13 +35,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'عملية تسجيل الدخول ما اكتملتش. جرّب تاني.'
                     : 'تعذر تسجيل الدخول (${e.code}). حاول تاني.';
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+            .showSnackBar(appSnack(msg));
       }
     } catch (e) {
       debugPrint('Google sign-in failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تسجيل الدخول. حاول تاني.')),
+          appSnack('تعذر تسجيل الدخول. حاول تاني.'),
         );
       }
     } finally {
@@ -107,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     final text = loginTheme.textTheme;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const ink = Color(0xFF0E0E10);
+    final ink = kInk; // Navy identity shared with welcome, staff and admin.
 
     return Theme(
       data: loginTheme,
@@ -170,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'وصلي',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -184,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'اطلب أي حاجة\n',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -193,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'وهتوصلك ',
                           style: TextStyle(
                             color: kPrimary,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -202,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'في ثواني',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -243,13 +194,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('المتابعة بحساب جوجل'),
                           ),
                   ),
-                  if (OrderGateway.referralCampaignEnabled)
-                    TextButton(
-                      onPressed: _isLoading ? null : _editReferralCode,
-                      child: Text(_referralCode == null
-                          ? 'عندي كود إحالة'
-                          : 'كود الإحالة: $_referralCode'),
-                    ),
                   if (E2eSupport.enabled) ...[
                     const SizedBox(height: 10),
                     for (final r in const [
@@ -287,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Text(
                         ' و',
-                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 12),
                       ),
                       _LegalLink(
                         label: 'سياسة الخصوصية',
@@ -327,7 +271,7 @@ class _LegalLink extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 11.5),
+              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 12),
         ),
       ),
     );

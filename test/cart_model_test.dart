@@ -54,6 +54,40 @@ void main() {
       expect(cart.total, 0);
     });
 
+    test('السلة بتفضل بعد إرسال ناجح وبتمنع التكرار لحد اختيار العميل', () {
+      cart.add(falafel, storeId: 'a', storeName: 'مطعم');
+      cart.markSubmitted('order_123');
+      expect(cart.items, contains(falafel));
+      expect(cart.submittedOrderId, 'order_123');
+      final saved = cart.snapshot();
+      final restored = CartModel()..restore(saved);
+      expect(restored.submittedOrderId, 'order_123');
+      expect(restored.qtyOf(falafel), 1);
+      restored.beginNewOrder();
+      expect(restored.submittedOrderId, isNull);
+      expect(restored.qtyOf(falafel), 1);
+      restored.markSubmitted('order_456');
+      restored.add(falafel, storeId: 'a', storeName: 'مطعم');
+      expect(restored.submittedOrderId, isNull);
+    });
+
+    test('اختيار نفس المنطقة أو نفس الكوبون لا يسمح بإعادة إرسال طلب ناجح', () {
+      cart.add(falafel, storeId: 'a', storeName: 'مطعم');
+      cart.setArea('وسط البلد', 20);
+      cart.setPromo('SAVE', 10);
+      cart.markSubmitted('order_123');
+
+      cart.setArea('وسط البلد', 20);
+      cart.setPromo('SAVE', 10);
+      expect(cart.submittedOrderId, 'order_123');
+
+      cart.setArea('منطقة أخرى', 25);
+      expect(cart.submittedOrderId, isNull);
+      cart.markSubmitted('order_456');
+      cart.setPromo('NEW', 5);
+      expect(cart.submittedOrderId, isNull);
+    });
+
     test('بتبلّغ المستمعين عند التغيير', () {
       var calls = 0;
       cart.addListener(() => calls++);

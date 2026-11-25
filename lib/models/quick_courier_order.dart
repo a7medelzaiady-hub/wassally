@@ -109,6 +109,10 @@ class QuickCourierOrder {
   final String area;
   final String notes;
   final List<QuickStoreRequest> stores;
+
+  /// صور «صوّر طلبك» اللي العميل رفعها (بتتمسح بعد التسليم).
+  final List<String> customerImages;
+  final bool hasCustomerVoice;
   final int? approxTotalPiastres;
   final int prepaidThresholdPiastres;
   final int maximumAdvancePiastres;
@@ -134,6 +138,8 @@ class QuickCourierOrder {
     this.area = '',
     this.notes = '',
     this.stores = const [],
+    this.customerImages = const [],
+    this.hasCustomerVoice = false,
     this.approxTotalPiastres,
     this.prepaidThresholdPiastres = 20000,
     this.maximumAdvancePiastres = 100000,
@@ -157,6 +163,7 @@ class QuickCourierOrder {
     final policy = _map(m['policy']);
     final advance = _map(m['advance']);
     final rawStores = m['stores'];
+    final rawImages = m['customerImages'];
     final rawReceipts = m['receipts'];
     return QuickCourierOrder(
       id: id,
@@ -165,6 +172,10 @@ class QuickCourierOrder {
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
       notes: _str(m['notes']),
+      hasCustomerVoice: m['hasCustomerVoice'] == true,
+      customerImages: rawImages is List
+          ? [for (final u in rawImages) if (u is String && u.startsWith('https://')) u]
+          : const [],
       stores: [
         if (rawStores is List)
           for (final s in rawStores)
@@ -213,7 +224,7 @@ class QuickCourierOrder {
         'accepted' => QuickCourierStep.estimate,
         // awaiting_advance حالة قديمة (قبل المقدم الاختياري)؛ بنعاملها كشراء.
         'purchasing' || 'awaiting_advance' => QuickCourierStep.purchasing,
-        'summary_pending' => QuickCourierStep.waitCustomer,
+        'summary_pending' => QuickCourierStep.deliver, // old summaries: no customer bill approval needed
         'summary_approved' => QuickCourierStep.deliver,
         'delivered' => QuickCourierStep.delivered,
         _ => QuickCourierStep.cancelled,
@@ -230,11 +241,19 @@ class QuickCourierOrder {
   /// المندوب يقدر يسيب الطلب قبل الشراء وقبل أي تحويل من العميل بس (نفس شرط الـWorker).
   bool get canRelease => status == 'accepted' && advanceSentAt == null;
 
+  /// Explains an empty quick-order receipt instead of presenting an empty
+  /// details screen. Items can be written freely or priced in a store group.
+  bool get hasCustomerRequest =>
+      customerImages.isNotEmpty || hasCustomerVoice || notes.trim().isNotEmpty ||
+      stores.any((s) =>
+          s.items.trim().isNotEmpty ||
+          s.pricedItems.any((line) => line.name.trim().isNotEmpty));
+
   /// العميل قال إنه حوّل مقدم (اختياري) ولسه المندوب ما أكدش استلامه.
   bool get hasPendingAdvance => advanceSentAt != null && advanceConfirmedAt == null;
 
-  /// رمز التسليم يتكتب بس بعد موافقة العميل على الكشف.
-  bool get canEnterPin => status == 'summary_approved' && totals != null;
+  /// رمز التسليم متاح بعد تجهيز الحساب النهائي، بلا موافقة مسبقة على الفاتورة.
+  bool get canEnterPin => (status == 'summary_approved' || status == 'summary_pending') && totals != null;
 
   int get receiptsTotalPiastres => receipts.fold(0, (sum, r) => sum + r.amountPiastres);
 

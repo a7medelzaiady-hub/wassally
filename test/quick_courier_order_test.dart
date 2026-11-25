@@ -53,13 +53,31 @@ void main() {
     expect(fromWorker.approxTotalPiastres, 15000);
   });
 
+  test('تفاصيل الطلب السريع لا تظهر فاتورة خالية بلا تنبيه', () {
+    expect(_order().hasCustomerRequest, isTrue);
+    expect(_order({'stores': <Object>[], 'notes': ''}).hasCustomerRequest, isFalse);
+    expect(_order({'stores': <Object>[], 'notes': '', 'hasCustomerVoice': true}).hasCustomerRequest, isTrue);
+    expect(_order({'stores': <Object>[], 'notes': '', 'customerImages': ['https://res.cloudinary.com/demo/image/upload/x.jpg']}).hasCustomerRequest, isTrue);
+    expect(_order({
+      'stores': [{'name': 'سوبرماركت', 'items': '   ', 'pricedItems': <Object>[]}],
+      'notes': '   ',
+    }).hasCustomerRequest, isFalse);
+    expect(_order({'stores': <Object>[], 'notes': 'من غير شطة'}).hasCustomerRequest, isTrue);
+    expect(_order({
+      'stores': [{'name': '', 'items': '', 'pricedItems': [
+        {'name': 'عيش', 'qty': 2, 'unitPricePiastres': 300},
+      ]}],
+      'notes': '',
+    }).hasCustomerRequest, isTrue);
+  });
+
   test('كل حالة بتودّي لخطوة واحدة واضحة', () {
     expect(_order().step, QuickCourierStep.available);
     expect(_order({'status': 'accepted'}).step, QuickCourierStep.estimate);
     // حالة قديمة من قبل المقدم الاختياري: بتتعامل كشراء.
     expect(_order({'status': 'awaiting_advance'}).step, QuickCourierStep.purchasing);
     expect(_order({'status': 'purchasing'}).step, QuickCourierStep.purchasing);
-    expect(_order({'status': 'summary_pending'}).step, QuickCourierStep.waitCustomer);
+    expect(_order({'status': 'summary_pending'}).step, QuickCourierStep.deliver);
     expect(_order({'status': 'summary_approved'}).step, QuickCourierStep.deliver);
     expect(_order({'status': 'delivered'}).step, QuickCourierStep.delivered);
     expect(_order({'status': 'cancelled'}).step, QuickCourierStep.cancelled);
@@ -78,9 +96,9 @@ void main() {
     expect(confirmed.hasPendingAdvance, isFalse);
   });
 
-  test('رمز التسليم بعد موافقة العميل بس، وسيب الطلب قبل الشراء والتحويل بس', () {
+  test('رمز التسليم بعد تجهيز الفاتورة فقط، وسيب الطلب قبل الشراء والتحويل بس', () {
     const totals = {'purchases': 15000, 'serviceFee': 500, 'delivery': 3000, 'prepaid': 0, 'due': 18500};
-    expect(_order({'status': 'summary_pending', 'totals': totals}).canEnterPin, isFalse);
+    expect(_order({'status': 'summary_pending', 'totals': totals}).canEnterPin, isTrue);
     expect(_order({'status': 'summary_approved', 'totals': totals}).canEnterPin, isTrue);
     expect(_order({'status': 'summary_approved'}).canEnterPin, isFalse);
     expect(_order({'status': 'accepted'}).canRelease, isTrue);
@@ -147,5 +165,19 @@ void main() {
     expect(formatPiastres(15000), '150 ج');
     expect(formatPiastres(1250), '12.50 ج');
     expect(formatPiastres(-500), '-5 ج');
+  });
+
+  test('صور «صوّر طلبك» بتتقري للمندوب، وروابط غير https بتتشال', () {
+    final order = QuickCourierOrder.fromMap('cust1_abcdefghijklmnop', _base({
+      'customerImages': [
+        'https://res.cloudinary.com/x/image/upload/v1/special_requests/h/quick/a.jpg',
+        'http://insecure.example/a.jpg',
+        42,
+      ],
+    }));
+    expect(order.customerImages, [
+      'https://res.cloudinary.com/x/image/upload/v1/special_requests/h/quick/a.jpg',
+    ]);
+    expect(QuickCourierOrder.fromMap('cust1_abcdefghijklmnop', _base()).customerImages, isEmpty);
   });
 }

@@ -1,11 +1,16 @@
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
+import '../theme/app_tokens.dart';
 import '../theme/brand.dart';
 import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_ui.dart';
+import '../widgets/quick_voice_edit_sheet.dart';
+import '../widgets/app_snack.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -21,11 +26,37 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String? _pin;
   String? _error;
   bool _busy = false;
+  final _voicePlayer = audio.AudioPlayer();
+  bool _playingVoice = false;
+  String _customerVoiceUrl = '';
 
   @override
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _voicePlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleVoice(String url) async {
+    try {
+      if (_playingVoice) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _playingVoice = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.UrlSource(url));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _playingVoice = true);
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        appSnack('تعذر تشغيل التسجيل الصوتي.'));
+    }
   }
 
   Future<void> _refresh() async {
@@ -39,8 +70,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!doc.exists || doc.data()?['userId'] != user.uid) {
         throw StateError('الطلب غير متاح');
       }
+      String voiceUrl = '';
+      if (doc.data()?['hasCustomerVoice'] == true) {
+        final contact = await FirebaseFirestore.instance.collection('quick_orders')
+            .doc(widget.orderId).collection('private').doc('contact').get();
+        voiceUrl = (contact.data()?['customerVoiceUrl'] ?? '').toString();
+      }
       if (!mounted) return;
-      setState(() { _order = doc.data(); _pin = null; });
+      setState(() { _order = doc.data(); _customerVoiceUrl = voiceUrl; _pin = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -59,7 +96,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!mounted) return;
       final updated = result['order'];
       if (updated is Map) {
-        setState(() { _order = Map<String, dynamic>.from(updated); _error = null; });
+        setState(() {
+          _order = Map<String, dynamic>.from(updated);
+          if (action == 'edit-voice') {
+            _customerVoiceUrl = (body['customerVoiceUrl'] ?? '').toString();
+            _playingVoice = false;
+          }
+          _error = null;
+        });
       } else {
         setState(() { _busy = false; });
         await _refresh();
@@ -137,6 +181,19 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     if (mounted && updated != null) await _act('edit', updated);
   }
 
+  Future<void> _editVoice() async {
+    if (_busy || _order?['status'] != 'open') return;
+    final url = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => QuickVoiceEditSheet(currentUrl: _customerVoiceUrl),
+    );
+    if (!mounted || url == null) return;
+    await _voicePlayer.stop();
+    if (!mounted) return;
+    await _act('edit-voice', {'customerVoiceUrl': url});
+  }
+
   Future<void> _cancel() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -187,16 +244,6 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     ),
   );
 
-  Widget _section(String title, List<Widget> children) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _receiptDivider(),
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6),
-      ...children,
-    ],
-  );
-
   Widget _amount(String label, Object? value, {bool emphasis = false}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -218,6 +265,82 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         ),
       );
 
+  Widget _card({Key? key, required String title, IconData? icon, required List<Widget> children}) =>
+      AppCard(
+        key: key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppSectionHeader(title: title, icon: icon),
+            const SizedBox(height: AppSpacing.sm),
+            ...children,
+          ],
+        ),
+      );
+
+  static List<String> _itemLines(String text) => text
+      .split(RegExp(r'[\n،,]+'))
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
+
+  Widget _itemRow(String name, {String? qty}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              constraints: const BoxConstraints(minWidth: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                qty == null ? '•' : '$qty×',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: AppTypography.label,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.purple,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: Text(name, style: AppTypography.bodyText)),
+          ],
+        ),
+      );
+
+  void _openReceipt(String url) => showDialog<void>(
+        context: context,
+        builder: (dialog) => Dialog(
+          insetPadding: const EdgeInsets.all(AppSpacing.lg),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(children: [
+            InteractiveViewer(
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Padding(
+                  padding: EdgeInsets.all(AppSpacing.xxl),
+                  child: Text('تعذر تحميل صورة الفاتورة'),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              top: 4,
+              end: 4,
+              child: IconButton.filledTonal(
+                tooltip: 'إغلاق',
+                onPressed: () => Navigator.pop(dialog),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ]),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
@@ -233,70 +356,129 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         delivered || status == 'summary_pending' || status == 'summary_approved';
     final due = (totals['due'] as num?) ?? 0;
     final area = (order?['area'] ?? '').toString().trim();
+    final receiptImages = [
+      for (final raw in receipts)
+        if (raw is Map && raw['imageUrl'] is String) raw,
+    ];
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
         actions: [IconButton(onPressed: _busy ? null : _refresh,
-          icon: const Icon(Icons.refresh), tooltip: 'تحديث')]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
-        if (_busy) const LinearProgressIndicator(),
-        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (order == null)
-          Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
-        else ...[
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Brand.palette.line),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.receipt_long_outlined, color: Brand.green),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        quickOrderStatusLabel(status),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+          icon: const Icon(Icons.refresh_rounded), tooltip: 'تحديث')]),
+      body: RefreshIndicator(
+        color: AppColors.purple,
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: AppSpacing.pagePadding.copyWith(top: AppSpacing.lg),
+          children: [
+            if (_busy) ...[
+              const LinearProgressIndicator(color: AppColors.purple),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            if (_error != null) AppNotice(_error!, type: AppNoticeType.error),
+            if (order == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+                child: Text(
+                  _error != null
+                      ? 'تعذر تحميل الطلب. اسحب لأسفل أو اضغط تحديث لإعادة المحاولة.'
+                      : 'جارٍ تحميل الطلب...',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.secondary,
                 ),
-                if (area.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text('الحي: $area', style: TextStyle(color: Brand.palette.muted)),
-                ],
-                _section('محتويات الطلب', [
-                  if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
+              )
+            else ...[
+              _StatusHeader(status: status, area: area),
+              const SizedBox(height: AppSpacing.md),
+              if ((status == 'summary_pending' || status == 'summary_approved') && (_pin == null || _pin!.isEmpty))
+                const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
+              _card(
+                title: 'محتويات الطلب',
+                icon: Icons.shopping_basket_outlined,
+                children: [
+                  if (stores.isEmpty)
+                    const Text('لم تُحدد محلات أو أصناف في الطلب.', style: AppTypography.secondary),
                   for (final raw in stores)
                     if (raw is Map) ...[
-                      const SizedBox(height: 4),
-                      Text((raw['name'] ?? '').toString().trim().isEmpty
-                          ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                      if ((raw['items'] ?? '').toString().trim().isNotEmpty)
-                        Text((raw['items'] ?? '').toString()),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        (raw['name'] ?? '').toString().trim().isEmpty
+                            ? 'محل يختاره المندوب'
+                            : (raw['name'] ?? '').toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: AppTypography.body,
+                          color: AppColors.purple,
+                        ),
+                      ),
+                      for (final line in _itemLines((raw['items'] ?? '').toString()))
+                        _itemRow(line),
                       if (raw['pricedItems'] is List)
                         for (final line in raw['pricedItems'] as List)
                           if (line is Map)
-                            Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+                            _itemRow('${line['name'] ?? 'صنف'}', qty: '${line['qty'] ?? 1}'),
                     ],
-                  if (notes.isNotEmpty) Text('ملاحظات: $notes'),
+                  if (notes.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text('ملاحظات: $notes', style: AppTypography.secondary),
+                  ],
                   if (!hasFinalBill) ...[
-                    const SizedBox(height: 8),
+                    _receiptDivider(),
                     if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
                       _amount('التقدير', order['approxTotalPiastres']),
-                    Text('الحساب بيتحدد بعد الشراء.',
-                      style: TextStyle(color: Brand.palette.muted)),
+                    const Text('الحساب بيتحدد بعد الشراء، وبيتفق عليه المندوب معاك في التليفون.',
+                        style: AppTypography.secondary),
                   ],
-                ]),
-                if (hasFinalBill) ...[
-                  _section('الحساب النهائي', [
+                ],
+              ),
+              if (_customerVoiceUrl.isNotEmpty)
+                _card(
+                  key: const Key('quick-customer-voice'),
+                  title: 'تسجيل طلبك الصوتي',
+                  icon: Icons.mic_outlined,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _toggleVoice(_customerVoiceUrl),
+                      icon: Icon(_playingVoice ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+                      label: Text(_playingVoice ? 'إيقاف التسجيل' : 'اسمع تسجيل طلبك'),
+                    ),
+                    const Text('التسجيل بيتحذف تلقائيًا بعد استلام الطلب برمز التسليم.',
+                        style: AppTypography.secondary),
+                  ],
+                ),
+              if (order['customerImages'] is List &&
+                  (order['customerImages'] as List).isNotEmpty)
+                _card(
+                  key: const Key('quick-customer-images'),
+                  title: 'صور طلبك',
+                  icon: Icons.photo_camera_outlined,
+                  children: [
+                    Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
+                      for (final url in (order['customerImages'] as List).whereType<String>())
+                        InkWell(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          onTap: () => _openReceipt(url),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            child: Image.network(url, width: 90, height: 90, fit: BoxFit.cover,
+                                cacheWidth: 270,
+                                errorBuilder: (_, _, _) => const SizedBox(
+                                    width: 90, height: 90, child: Icon(Icons.broken_image_outlined))),
+                          ),
+                        ),
+                    ]),
+                    const SizedBox(height: AppSpacing.xs),
+                    const Text('الصور بتتمسح تلقائيًا بعد ما تستلم طلبك.',
+                        style: AppTypography.secondary),
+                  ],
+                ),
+              if (hasFinalBill)
+                _card(
+                  key: const Key('quick-final-bill'),
+                  title: 'الحساب النهائي',
+                  icon: Icons.receipt_long_outlined,
+                  children: [
                     _amount('الفواتير', totals['purchases']),
                     _amount('أجرة التوصيل', totals['delivery']),
                     _amount('رسوم وصّلي', totals['serviceFee']),
@@ -310,60 +492,302 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                       due.abs(),
                       emphasis: true,
                     ),
-                  ]),
-                  if (receipts.isNotEmpty)
-                    _section('الفواتير', [
-                      for (final raw in receipts)
-                        if (raw is Map && raw['imageUrl'] is String) ...[
-                          _amount('فاتورة', raw['amountPiastres']),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              raw['imageUrl'] as String,
-                              height: 180,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) =>
-                                  const Text('تعذر تحميل صورة الفاتورة'),
+                  ],
+                ),
+              if (hasFinalBill && receiptImages.isNotEmpty)
+                _card(
+                  title: 'صور الفواتير',
+                  icon: Icons.photo_library_outlined,
+                  children: [
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: AppSpacing.sm,
+                      crossAxisSpacing: AppSpacing.sm,
+                      childAspectRatio: 0.82,
+                      children: [
+                        for (final raw in receiptImages)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            onTap: () => _openReceipt(raw['imageUrl'] as String),
+                            child: Container(
+                              clipBehavior: Clip.antiAlias,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceAlt,
+                                borderRadius: BorderRadius.circular(AppRadius.md),
+                                border: Border.all(color: AppColors.line),
+                              ),
+                              child: Column(children: [
+                                Expanded(
+                                  child: Image.network(
+                                    raw['imageUrl'] as String,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 420,
+                                    errorBuilder: (_, _, _) => const Center(
+                                      child: Icon(Icons.broken_image_outlined,
+                                          color: AppColors.muted),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: double.infinity,
+                                  color: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                                  child: Text(
+                                    _money(raw['amountPiastres']),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: AppTypography.bodySmall,
+                                      color: AppColors.orangeDeep,
+                                    ),
+                                  ),
+                                ),
+                              ]),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                        ],
-                    ]),
+                      ],
+                    ),
+                  ],
+                ),
+              // الحساب للعلم فقط؛ العميل يؤكد الاستلام بالرمز بعد وصول الطلب.
+              if (status == 'summary_pending' || status == 'summary_approved') ...[
+                if (_pin != null && _pin!.isNotEmpty)
+                  _PinCard(pin: _pin!)
+                else
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _showPin,
+                    icon: const Icon(Icons.pin_outlined),
+                    label: const Text('إظهار رمز التسليم'),
+                  ),
+              ],
+              if (status == 'open') ...[
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _edit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('تعديل الطلب'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                OutlinedButton.icon(
+                  key: const Key('quick-edit-voice'),
+                  onPressed: _busy ? null : _editVoice,
+                  icon: const Icon(Icons.mic_outlined),
+                  label: Text(_customerVoiceUrl.isNotEmpty
+                      ? 'تعديل التسجيل الصوتي' : 'إضافة تسجيل صوتي'),
+                ),
+              ],
+              if (status == 'open' || status == 'accepted')
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                  onPressed: _busy ? null : _cancel,
+                  child: const Text('إلغاء الطلب'),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// رأس الحالة بأسلوب تطبيقات التوصيل: الحالة بخط واضح، سطر يشرح المطلوب،
+/// وشريط تقدم مقسّم لمراحل الطلب.
+class _StatusHeader extends StatelessWidget {
+  const _StatusHeader({required this.status, required this.area});
+
+  final String status;
+  final String area;
+
+  static const _steps = <String>[
+    'بانتظار مندوب',
+    'المندوب استلم',
+    'بيشتري طلبك',
+    'الحساب',
+    'تم التسليم',
+  ];
+
+  /// رقم الخطوة الحالية (0..4)، أو -1 لو الطلب ملغي.
+  static int stepOf(String status) => switch (status) {
+        'open' => 0,
+        'accepted' || 'assigned' || 'awaiting_advance' => 1,
+        'shopping' || 'purchasing' => 2,
+        'summary_pending' || 'summary_approved' => 3,
+        'delivered' => 4,
+        'cancelled' || 'canceled' => -1,
+        _ => 0,
+      };
+
+  static String hintOf(String status) => switch (status) {
+        'open' => 'بندوّر لك على مندوب معتمد قريب منك.',
+        'accepted' || 'assigned' => 'المندوب هيكلمك يتفق معاك على الطلب والتوصيل.',
+        'awaiting_advance' => 'في انتظار تأكيد المبلغ المقدم.',
+        'shopping' || 'purchasing' => 'المندوب بيشتري طلباتك دلوقتي.',
+        'summary_pending' => 'راجع الحساب واستلم طلبك برمز التسليم عند وصول المندوب.',
+        'summary_approved' => 'ادّي رمز التسليم للمندوب لما توصلك الطلبات.',
+        'delivered' => 'تم التسليم. شكرًا لاستخدامك وصّلي!',
+        'cancelled' || 'canceled' => 'الطلب ده اتلغى.',
+        _ => 'بنتابع طلبك.',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final current = stepOf(status);
+    final cancelled = current < 0;
+    final done = current == _steps.length - 1;
+    final accent = cancelled
+        ? AppColors.danger
+        : done
+            ? AppColors.success
+            : AppColors.purple;
+    return AppCard(
+      key: const Key('quick-status-header'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  cancelled
+                      ? Icons.cancel_outlined
+                      : done
+                          ? Icons.check_circle_rounded
+                          : Icons.delivery_dining_rounded,
+                  color: accent,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      quickOrderStatusLabel(status),
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: AppTypography.title,
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(hintOf(status), style: AppTypography.secondary),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!cancelled) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                for (var i = 0; i < _steps.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 4),
+                  Expanded(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 250),
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: i <= current ? accent : AppColors.line,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
-          ),
-          const SizedBox(height: 10),
-          if (status == 'open')
-            OutlinedButton(
-              onPressed: _busy ? null : _edit,
-              child: const Text('تعديل الطلب'),
+            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                Text(
+                  _steps[current],
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: AppTypography.caption,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  'خطوة ${current + 1} من ${_steps.length}',
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: AppTypography.caption,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-          if (status == 'open' || status == 'accepted')
-            TextButton(
-              onPressed: _busy ? null : _cancel,
-              child: const Text('إلغاء الطلب'),
-            ),
-          if (status == 'summary_pending') ...[
-            const SizedBox(height: 12),
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act('approve-summary', {
-                'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
-              }),
-              child: const Text('موافق على الحساب النهائي')),
-            OutlinedButton(onPressed: _busy ? null : () => _act('reject-summary'),
-              child: const Text('مش موافق — راجع الحساب مع المندوب')),
           ],
-          if (status == 'summary_approved') ...[
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : _showPin,
-              child: const Text('إظهار رمز التسليم')),
-            if (_pin != null && _pin!.isNotEmpty)
-              SelectableText(_pin!, style: Theme.of(context).textTheme.headlineMedium),
+          if (area.isNotEmpty) ...[
+            const Divider(height: AppSpacing.xxl),
+            Row(children: [
+              const Icon(Icons.location_on_outlined, size: 20, color: AppColors.muted),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text('التوصيل إلى: $area',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.inkSoft,
+                      fontSize: AppTypography.bodySmall,
+                      fontWeight: FontWeight.w700,
+                    )),
+              ),
+            ]),
           ],
         ],
-      ]),
+      ),
     );
   }
+}
+
+class _PinCard extends StatelessWidget {
+  const _PinCard({required this.pin});
+
+  final String pin;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('quick-pin-card'),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          border: Border.all(color: AppColors.orange, width: 1.6),
+        ),
+        child: Column(children: [
+          const Text('رمز التسليم', style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.sm),
+          SelectableText(
+            pin,
+            textDirection: TextDirection.ltr,
+            style: const TextStyle(
+              fontSize: 40,
+              letterSpacing: 10,
+              fontWeight: FontWeight.w900,
+              color: AppColors.purple,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'ادّي الرمز للمندوب بعد ما تستلم طلبك بس.',
+            textAlign: TextAlign.center,
+            style: AppTypography.secondary,
+          ),
+        ]),
+      );
 }
 
 
