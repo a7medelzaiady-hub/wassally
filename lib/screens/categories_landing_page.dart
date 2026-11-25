@@ -26,13 +26,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
-    shellTab.value = tab;
-    setState(() => _entered = true);
     if (destination != null) {
+      // Leaving a service must return to the entry cards, not skip them.
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
       );
+      return;
     }
+    shellTab.value = tab;
+    setState(() => _entered = true);
   }
 
   Widget get _dashboard => widget.dashboard ?? const MainShell();
@@ -50,8 +52,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
     );
   }
 
-  Widget _hero() => Container(
-    height: 236,
+  Widget _hero({double height = 236}) => Container(
+    height: height,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(26),
@@ -129,9 +131,11 @@ class _CustomerEntryState extends State<CustomerEntry> {
     required IconData icon,
     required Rect art,
     required VoidCallback onTap,
+    double height = 146,
+    double gap = 14,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(bottom: gap),
       child: Material(
         elevation: 5,
         shadowColor: Brand.palette.ink.withValues(alpha: 0.15),
@@ -144,38 +148,22 @@ class _CustomerEntryState extends State<CustomerEntry> {
         child: InkWell(
           onTap: onTap,
           child: SizedBox(
-            height: 146,
+            height: height,
             child: Row(
               textDirection: TextDirection.ltr,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Art and copy touch directly: no white fade or spacer
+                // masking the photographed half of the card.
                 Expanded(
-                  flex: 5,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _EntryArtwork(art),
-                      const Positioned(
-                        top: 0,
-                        bottom: 0,
-                        right: 0,
-                        width: 40,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.white, Colors.transparent],
-                              begin: Alignment.centerRight,
-                              end: Alignment.centerLeft,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: SizedBox.expand(
+                    key: ValueKey<String>('entry-art-$title'),
+                    child: _EntryArtwork(art),
                   ),
                 ),
                 Expanded(
-                  flex: 6,
                   child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 2, 8),
+                    padding: const EdgeInsetsDirectional.fromSTEB(6, 8, 0, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -261,20 +249,27 @@ class _CustomerEntryState extends State<CustomerEntry> {
     if (_entered) return _dashboard;
 
     final isCustomer = widget.dashboard == null;
+    // Keep the welcome cards readable on smaller Android screens.
+    final compact = MediaQuery.sizeOf(context).height < 800;
+    final heroHeight = compact ? 188.0 : 236.0;
+    final cardHeight = compact ? 134.0 : 146.0;
+    final cardGap = compact ? 9.0 : 14.0;
     return Scaffold(
       backgroundColor: Brand.bg,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
           children: [
-            _hero(),
-            const SizedBox(height: 16),
+            _hero(height: heroHeight),
+            SizedBox(height: compact ? 9 : 16),
             _serviceCard(
               title: 'خدمة وصّلي ع السريع',
               subtitle: 'سجل اللى عاوزه ونوصلهولك بسرعة',
               action: 'اطلب الآن',
               icon: Icons.bolt_rounded,
               art: const Rect.fromLTWH(20, 541, 303, 195),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const QuickOrderCreatePage()),
             ),
             _serviceCard(
@@ -283,6 +278,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
               action: 'شاهد العروض',
               icon: Icons.local_offer_rounded,
               art: const Rect.fromLTWH(22, 796, 295, 173),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const HomePage(offersOnly: true)),
             ),
             _serviceCard(
@@ -291,6 +288,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
               action: 'استعرض المحلات',
               icon: Icons.storefront_rounded,
               art: const Rect.fromLTWH(22, 1026, 305, 174),
+              height: cardHeight,
+              gap: cardGap,
               onTap: () => _enter(const StoreDirectoryPage()),
             ),
             if (!isCustomer) ...[
@@ -315,15 +314,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
             borderRadius: BorderRadius.circular(30),
             child: Row(
               children: [
-                if (isCustomer)
-                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
-                else
-                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
+                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
                 if (isCustomer)
                   _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
                 else
                   _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
-                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
+                if (isCustomer)
+                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
+                else
+                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
                 _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
               ],
             ),

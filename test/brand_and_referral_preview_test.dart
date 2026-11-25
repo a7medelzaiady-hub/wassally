@@ -57,7 +57,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.text('إدارة الإحالات'),
+      find.text('إدارة الدعوات'),
       OrderGateway.referralCampaignEnabled ? findsOneWidget : findsNothing,
     );
     expect(tester.takeException(), isNull);

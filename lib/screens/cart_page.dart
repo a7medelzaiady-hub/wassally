@@ -260,13 +260,50 @@ class _CartBody extends StatelessWidget {
                   strong: true,
                 ),
                 const SizedBox(height: 14),
+                if (cart.submittedOrderId != null) ...[
+                  Container(
+                    key: const Key('submitted-cart-notice'),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'طلبك اتبعت بنجاح. الأصناف لسه محفوظة في السلة، '
+                      'ومش هيتبعت نفس الطلب مرتين.',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: const Key('cart-reorder-explicit'),
+                    onPressed: () async {
+                      final ok = await confirmDialog(
+                        context,
+                        title: 'طلب جديد بنفس الأصناف',
+                        message: 'هتبدأ طلب جديد بنفس محتويات السلة. '
+                            'تأكد إنك مش بتكرر الطلب اللي بعتّه.',
+                        confirmLabel: 'ابدأ طلب جديد',
+                      );
+                      if (ok) cart.beginNewOrder();
+                    },
+                    icon: const Icon(Icons.replay_rounded),
+                    label: const Text('طلب جديد بنفس الأصناف'),
+                  ),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: cart.items.isEmpty ? null : () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const CheckoutPage()),
-                    ),
-                    child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
+                    onPressed: cart.items.isEmpty || cart.submittedOrderId != null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const CheckoutPage()),
+                          ),
+                    child: Text(cart.items.isEmpty
+                        ? 'ضيف منتجًا أولًا'
+                        : cart.submittedOrderId != null
+                            ? 'تم إرسال الطلب'
+                            : 'كمّل الطلب'),
                   ),
                 ),
               ],
@@ -336,7 +373,7 @@ class MyCartsBanner extends StatelessWidget {
                 Expanded(
                   child: Text(
                     restored > 0
-                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتتحفظ 3 أيام). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
+                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
                         : others == 1
                             ? 'عندك سلة تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.'
                             : 'عندك $others سلال تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.',

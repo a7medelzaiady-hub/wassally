@@ -43,6 +43,7 @@ class AuthService {
   static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
       _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
+      await carts.attachAfterSignIn();
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -50,6 +51,7 @@ class AuthService {
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
         _onGoogleLogin(await _nativeGoogleSignIn());
+        await carts.attachAfterSignIn();
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -69,6 +71,7 @@ class AuthService {
       }
     }
     _onGoogleLogin(await _providerSignInWithRetry());
+    await carts.attachAfterSignIn();
   }
 
   static Future<UserCredential> _nativeGoogleSignIn() async {
@@ -122,7 +125,7 @@ class AuthService {
     if (context != null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
-    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
+    await carts.detachForSignOut(); // لا تمسح سلة الحساب، فقط افصلها من الذاكرة.
     shellTab.value = 0;
     await WasallyImageCache.clear();
     // لازم قبل الخروج، لأن مسح توكن الجهاز بيحتاج المستخدم لسه مسجّل.
@@ -164,7 +167,8 @@ class AuthService {
     // On any failure the account remains available and app listeners stay active.
     await OrderGateway.deleteAccount(idToken: idToken);
     await NotificationService.dispose();
-    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
+    carts.clearAll(); // حذف الحساب: امسح سلال الحساب المحفوظة.
+    await carts.flush();
     shellTab.value = 0;
     await WasallyImageCache.clear();
     await FirebaseAuth.instance.signOut();

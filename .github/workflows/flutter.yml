@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       server_orders:
-        description: Use the Worker order gateway in the test APK
+        description: Use the verified Worker order gateway and correct fee preview in manual APK
         type: boolean
-        default: false
+        default: true
 
 jobs:
   build:

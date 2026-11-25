@@ -8,6 +8,7 @@ import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
+import '../services/update_service.dart';
 import '../services/order_gateway.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
@@ -333,7 +334,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
     } on StateError catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (e.message.contains('تم تحديث نظام تأكيد الطلبات')) {
+        UpdateService.showProtocolUpdateRequired(context);
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } on FirebaseException catch (e) {
       debugPrint('CHECKOUT FIREBASE ERROR: code=${e.code}, message=${e.message}');
       if (!mounted) return;

@@ -114,16 +114,16 @@ class AppPalette {
 
   static const wasally = AppPalette(
     id: 'wasally',
-    name: 'وصّلي الأصلي',
+    name: 'وصّلي - البرتقالي والبنفسجي',
     primary: Color(0xFFFF7900),
     primaryDark: Color(0xFFE65F00),
     primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF102344),
-    accentDeep: Color(0xFF08182F),
-    bg: Color(0xFFF5F6FA),
-    ink: Color(0xFF102344),
-    muted: Color(0xFF69758B),
-    line: Color(0xFFE0E5ED),
+    accent: Color(0xFF6530A5),
+    accentDeep: Color(0xFF38156D),
+    bg: Color(0xFFF7F7FA),
+    ink: Color(0xFF2A1947),
+    muted: Color(0xFF756783),
+    line: Color(0xFFE6E1F0),
     soft: Color(0xFFFFE9D5),
   );
 

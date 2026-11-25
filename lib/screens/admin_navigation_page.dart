@@ -35,7 +35,7 @@ class AdminNavigationPage extends StatelessWidget {
       (title: 'إدارة المناديب', subtitle: 'الحسابات والصلاحيات', icon: Icons.delivery_dining_outlined, page: const AdminRolesPage()),
       (title: 'أصحاب المحلات', subtitle: 'الربط وإدارة الحسابات', icon: Icons.manage_accounts_outlined, page: const AdminStoreOwnersPage()),
       if (OrderGateway.referralCampaignEnabled)
-        (title: 'إدارة الإحالات', subtitle: 'أكواد المسوقين والمكافآت', icon: Icons.card_giftcard, page: const AdminReferralCampaignPage()),
+        (title: 'إدارة الدعوات', subtitle: 'أكواد المسوقين والمكافآت', icon: Icons.card_giftcard, page: const AdminReferralCampaignPage()),
       (title: 'إعدادات التشغيل', subtitle: 'إعدادات التطبيق والخدمة', icon: Icons.tune_rounded, page: const AdminToolsPage()),
       (title: 'ترتيب المناديب', subtitle: 'متابعة أداء المناديب', icon: Icons.leaderboard_outlined, page: const AdminCouriersBoardPage()),
       (title: 'تقرير التشغيل', subtitle: 'إحصائيات وتقارير', icon: Icons.assessment_outlined, page: const AdminOperationsReportPage()),
