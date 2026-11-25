@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../widgets/app_header.dart';
 
 import '../services/admin_inbox_counts.dart';
@@ -58,18 +59,19 @@ class AdminInboxPage extends StatelessWidget {
           title: const Text('الطلبات والرسائل'),
           actions: const [HomeActionButton()],
           bottom: TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            // Tabs sit on the purple app bar.
+            isScrollable: false,
+            labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+            labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            // Show all four tabs without off-screen navigation.
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: AppColors.orange,
             dividerColor: Colors.transparent,
             tabs: [
-              Tab(child: _CountLabel('طلبات الانضمام', (c) => c.joinRequests)),
-              const Tab(text: 'تقديمات المناديب'),
-              const Tab(text: 'تقييم العملاء'),
-              Tab(child: _CountLabel('تعذر التسليم', (c) => c.deliveryIssues)),
+              Tab(child: _CountLabel('انضمام', (c) => c.joinRequests)),
+              const Tab(text: 'مناديب'),
+              const Tab(text: 'تقييمات'),
+              Tab(child: _CountLabel('التسليم', (c) => c.deliveryIssues)),
             ],
           ),
         ),
@@ -170,7 +172,7 @@ class _RequestsTabState extends State<_RequestsTab> {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length + (_hasMore ? 1 : 0),
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) => i == docs.length
               ? TextButton(
                   onPressed: _loadingMore ? null : () => _loadMore(snap.data!.docs),
@@ -583,7 +585,7 @@ class _ApplicantsTabState extends State<_ApplicantsTab> {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length + (_hasMore ? 1 : 0),
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
           itemBuilder: (_, i) => i == docs.length
               ? TextButton(
                   onPressed: _loadingMore ? null : () => _loadMore(snap.data!.docs),
@@ -790,11 +792,12 @@ class _CustomerRatingsTab extends StatelessWidget {
             return ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: docs.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, index) {
                 final doc = docs[index];
                 final customerId = (doc.data()['customerId'] ?? '').toString();
                 return _CustomerReviewCard(
+                  key: ValueKey(doc.id),
                   doc: doc,
                   isRestricted: restricted.contains(customerId),
                   lowRatingOrderCount: lowRatingOrdersByCustomer[customerId]?.length ?? 0,
@@ -813,6 +816,7 @@ class _CustomerReviewCard extends StatefulWidget {
   final bool isRestricted;
   final int lowRatingOrderCount;
   const _CustomerReviewCard({
+    super.key,
     required this.doc,
     required this.isRestricted,
     required this.lowRatingOrderCount,
@@ -824,6 +828,20 @@ class _CustomerReviewCard extends StatefulWidget {
 
 class _CustomerReviewCardState extends State<_CustomerReviewCard> {
   bool _busy = false;
+  bool _expanded = false;
+  Future<DocumentSnapshot<Map<String, dynamic>>>? _orderInfo;
+
+  void _expand(bool expanded, String orderId) {
+    setState(() {
+      _expanded = expanded;
+      if (expanded && _orderInfo == null && orderId.isNotEmpty) {
+        // One read on deliberate expansion, and no per-card listener.
+        _orderInfo = FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+      }
+    });
+  }
+
+
 
   Future<void> _moderate(String reviewId, {required bool exclude}) async {
     final controller = TextEditingController(
@@ -1031,39 +1049,36 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
     final moderationStatus = (data['moderationStatus'] ?? '').toString();
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kLine),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        childrenPadding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+        onExpansionChanged: (expanded) => _expand(expanded, orderId),
+        leading: Icon(Icons.star_rounded, color: rating <= 2 ? kDanger : kPrimary),
+        title: Text(
+          'تقييم العميل: $rating / 5${moderationStatus == 'excluded' ? ' • مستبعد' : ''}',
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        subtitle: Text(
+          '$role • $reason${_date(data['createdAt']).isEmpty ? '' : ' • ${_date(data['createdAt'])}'}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: kMuted, fontSize: 12),
+        ),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'تقييم العميل: $rating / 5',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-              ),
-              Chip(
-                label: Text(role),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          Text('العميل: $customerId', style: const TextStyle(fontSize: 12)),
-          Text('الطلب: $orderId', style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 6),
-          Text('السبب: $reason'),
+          if (_expanded)
+            _OrderParticipants(order: _orderInfo, orderId: orderId, customerId: customerId),
           if (comment.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text('ملاحظة: $comment'),
           ],
-          const SizedBox(height: 4),
-          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 12)),
           if (moderationStatus == 'excluded') ...[
             const SizedBox(height: 8),
             const Text(
@@ -1206,8 +1221,8 @@ class _DeliveryIssuesTab extends StatelessWidget {
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 12),
-          itemBuilder: (_, index) => _DeliveryIssueCard(doc: docs[index]),
+          separatorBuilder: (_, _) => const SizedBox(height: 8),
+          itemBuilder: (_, index) => _DeliveryIssueCard(key: ValueKey(docs[index].id), doc: docs[index]),
         );
       },
     );
@@ -1216,7 +1231,7 @@ class _DeliveryIssuesTab extends StatelessWidget {
 
 class _DeliveryIssueCard extends StatefulWidget {
   final _Doc doc;
-  const _DeliveryIssueCard({required this.doc});
+  const _DeliveryIssueCard({super.key, required this.doc});
 
   @override
   State<_DeliveryIssueCard> createState() => _DeliveryIssueCardState();
@@ -1224,6 +1239,20 @@ class _DeliveryIssueCard extends StatefulWidget {
 
 class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
   bool _busy = false;
+  bool _expanded = false;
+  Future<DocumentSnapshot<Map<String, dynamic>>>? _orderInfo;
+
+  void _expand(bool expanded, String orderId) {
+    setState(() {
+      _expanded = expanded;
+      if (expanded && _orderInfo == null && orderId.isNotEmpty) {
+        // One read on deliberate expansion, and no per-card listener.
+        _orderInfo = FirebaseFirestore.instance.collection('orders').doc(orderId).get();
+      }
+    });
+  }
+
+
 
   Future<void> _decide(String status) async {
     final orderId = (widget.doc.data()['orderId'] ?? '').toString();
@@ -1281,36 +1310,38 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
     final customerId = (data['customerId'] ?? '').toString();
     final note = (data['note'] ?? '').toString();
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kLine),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        childrenPadding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+        onExpansionChanged: (expanded) => _expand(expanded, orderId),
+        leading: Icon(Icons.report_problem_outlined, color: kPrimary),
+        title: Text(
+          'تعذر التسليم • $reason',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${_DeliveryIssuesTab._statuses[status] ?? status}${_date(data['createdAt']).isEmpty ? '' : ' • ${_date(data['createdAt'])}'}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: kMuted, fontSize: 12),
+        ),
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'بلاغ تعذر التسليم',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                ),
-              ),
-              Chip(
-                label: Text(_DeliveryIssuesTab._statuses[status] ?? status),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          Text('الطلب: $orderId', style: const TextStyle(fontSize: 12)),
-          Text('المندوب: $courierId', style: const TextStyle(fontSize: 12)),
-          Text('العميل: $customerId', style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 6),
-          Text('السبب: $reason'),
+          if (_expanded)
+            _OrderParticipants(
+              order: _orderInfo, orderId: orderId,
+              customerId: customerId, courierId: courierId,
+            ),
           if (note.isNotEmpty) Text('ملاحظة المندوب: $note'),
-          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 12)),
           if (status == 'open' || status == 'in_review') ...[
             const Divider(height: 18),
             Wrap(
@@ -1358,6 +1389,85 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+/// قراءة واحدة عند فتح التفاصيل؛ لا نعرض المعرّفات في البطاقات.
+class _OrderParticipants extends StatelessWidget {
+  const _OrderParticipants({
+    required this.order,
+    required this.orderId,
+    required this.customerId,
+    this.courierId = '',
+  });
+  final Future<DocumentSnapshot<Map<String, dynamic>>>? order;
+  final String orderId;
+  final String customerId;
+  final String courierId;
+
+  static String _label(Object? preferred, Object? old) {
+    final value = (preferred ?? '').toString().trim();
+    if (value.isNotEmpty) return value;
+    final fallback = (old ?? '').toString().trim();
+    return fallback.isEmpty ? 'الاسم غير متاح' : fallback;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget line(IconData icon, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: kMuted),
+          const SizedBox(width: 6),
+          Expanded(child: Text(value, maxLines: 2, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+    );
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: order,
+      builder: (context, snapshot) {
+        final details = snapshot.data?.data();
+        final validCustomer = details != null &&
+            (details['userId'] ?? '').toString() == customerId;
+        final validCourier = details != null &&
+            (details['courierId'] ?? '').toString() == courierId;
+        final storeName = (details?['storeName'] ?? '').toString().trim();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (snapshot.connectionState == ConnectionState.waiting)
+              const LinearProgressIndicator(minHeight: 2)
+            else if (snapshot.hasError)
+              Text('تعذر تحميل الأسماء', style: TextStyle(color: kMuted, fontSize: 12)),
+            if (customerId.isNotEmpty)
+              line(Icons.person_outline,
+                'العميل: ${validCustomer ? _label(details['customerName'], details['userName']) : 'الاسم غير متاح'}'),
+            if (courierId.isNotEmpty)
+              line(Icons.delivery_dining_outlined,
+                'المندوب: ${validCourier ? _label(details['courierName'], null) : 'الاسم غير متاح'}'),
+            if (storeName.isNotEmpty)
+              line(Icons.storefront_outlined, 'المحل: $storeName'),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: orderId.isEmpty ? null : () async {
+                  await Clipboard.setData(ClipboardData(text: orderId));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('تم نسخ مرجع الطلب')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('نسخ مرجع الطلب'),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
