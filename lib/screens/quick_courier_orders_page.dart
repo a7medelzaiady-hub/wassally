@@ -236,6 +236,18 @@ class QuickOrderSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final named = order.stores.map((s) => s.name).where((n) => n.isNotEmpty).toList();
+    // Reuse the order summary already loaded for the list; no extra reads or
+    // private/contact lookup before accepting the quick order.
+    final requests = <String>[
+      for (final store in order.stores)
+        if (store.items.trim().isNotEmpty)
+          store.items.trim()
+        else if (store.pricedItems.isNotEmpty)
+          store.pricedItems
+              .map((item) => '${item.qty} × ${item.name}')
+              .join('، '),
+    ];
+    final preview = requests.take(2).join('، ');
     final approx = order.approxTotalPiastres;
     return Material(
       color: Colors.white,
@@ -270,6 +282,18 @@ class QuickOrderSummaryCard extends StatelessWidget {
                     ),
                     if (named.isNotEmpty)
                       Text(named.join(' • '), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (preview.isNotEmpty)
+                      Text(
+                        'المطلوب: $preview',
+                        key: const Key('quick-order-item-preview'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                        ),
+                      ),
                     if (order.area.isNotEmpty)
                       Text('📍 منطقة العميل: ${order.area}',
                         maxLines: 2, overflow: TextOverflow.ellipsis,
