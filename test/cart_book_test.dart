@@ -146,8 +146,19 @@ void main() {
       // المحل المعروف بس عليه «إضافة منتجات من نفس المحل».
       expect(find.byKey(const Key('cart-add-more-g')), findsOneWidget);
       expect(find.byKey(const Key('cart-add-more-p')), findsNothing);
+      // The shop-another-store button is below two full cart cards on a
+      // phone-sized viewport. Scroll before asserting: ListView lazily builds
+      // children and a missing offscreen widget is not a missing feature.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('carts-shop-other')),
+        180,
+      );
       expect(find.byKey(const Key('carts-shop-other')), findsOneWidget);
 
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('cart-delete-g')),
+        -180,
+      );
       await tester.ensureVisible(find.byKey(const Key('cart-delete-g')));
       await tester.tap(find.byKey(const Key('cart-delete-g')));
       await tester.pumpAndSettle();
