@@ -114,6 +114,22 @@ void main() {
     );
   });
 
+  testWidgets('quick order create voice', (tester) async {
+    await shoot(
+      tester,
+      'quick_create_voice_390x844',
+      const QuickOrderCreatePage(prefillFromAccount: false, initialMethod: QuickOrderMethod.voice),
+    );
+  });
+
+  testWidgets('quick order create write', (tester) async {
+    await shoot(
+      tester,
+      'quick_create_write_390x844',
+      const QuickOrderCreatePage(prefillFromAccount: false, initialMethod: QuickOrderMethod.write),
+    );
+  });
+
   testWidgets('quick order create scrolled', (tester) async {
     await shoot(
       tester,

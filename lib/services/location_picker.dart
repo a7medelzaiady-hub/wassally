@@ -8,6 +8,26 @@ import '../theme/brand.dart';
 import 'performance_monitor.dart';
 import 'saved_address.dart';
 
+/// موقع اتحدد بالـGPS: الإحداثيات + الحي + العنوان المقروء.
+class PickedLocation {
+  const PickedLocation({
+    required this.lat,
+    required this.lng,
+    required this.area,
+    required this.address,
+  });
+
+  final double lat;
+  final double lng;
+
+  /// الحي/المدينة (ممكن يبقى فاضي لو الخريطة مرجعتش اسم).
+  final String area;
+  final String address;
+
+  /// «31.05123, 30.12345» — المندوب يفتحها على الخريطة بالظبط.
+  String get coordinates => '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}';
+}
+
 /// اختيار عنوان التوصيل (من الرئيسية أو من صفحة ما بعد الدخول).
 /// نفس السلوك السابق بالظبط: موافقة قبل الموقع، كتابة يدوية، وحفظ في الحساب.
 class DeliveryLocationPicker {
@@ -72,14 +92,16 @@ class DeliveryLocationPicker {
     return ok ?? false;
   }
 
-  static Future<void> _useGps(BuildContext context) async {
-    if (!await _confirmLocationUse(context) || !context.mounted) return;
+  /// يحدد موقع الجهاز مرة واحدة (بعد موافقة واضحة) ويرجّع الحي والعنوان.
+  /// null لو العميل رفض أو الموقع مش متاح (بيظهر له السبب).
+  static Future<PickedLocation?> locate(BuildContext context) async {
+    if (!await _confirmLocationUse(context) || !context.mounted) return null;
     _toast(context, 'جاري تحديد موقعك...');
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         if (context.mounted) _toast(context, 'فعّل خدمة الموقع (GPS) من الإعدادات');
         await Geolocator.openLocationSettings();
-        return;
+        return null;
       }
 
       var perm = await Geolocator.checkPermission();
@@ -88,12 +110,12 @@ class DeliveryLocationPicker {
       }
       if (perm == LocationPermission.denied) {
         if (context.mounted) _toast(context, 'محتاجين إذن الموقع عشان نحدد مكانك');
-        return;
+        return null;
       }
       if (perm == LocationPermission.deniedForever) {
         if (context.mounted) _toast(context, 'إذن الموقع مرفوض. فعّله من إعدادات التطبيق');
         await Geolocator.openAppSettings();
-        return;
+        return null;
       }
 
       final pos = await PerformanceMonitor.trace(
@@ -107,6 +129,7 @@ class DeliveryLocationPicker {
 
       var text =
           '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
+      var area = '';
       try {
         final marks = await PerformanceMonitor.trace(
           'map_reverse_geocode',
@@ -114,23 +137,35 @@ class DeliveryLocationPicker {
         );
         if (marks.isNotEmpty) {
           final m = marks.first;
+          String clean(String? v) => (v ?? '').trim();
           final parts = [
             m.street,
             m.subLocality,
             m.locality,
             m.administrativeArea,
-          ].where((e) => e != null && e.trim().isNotEmpty).toList();
+          ].map(clean).where((e) => e.isNotEmpty).toList();
           if (parts.isNotEmpty) text = parts.join('، ');
+          area = [clean(m.subLocality), clean(m.locality)]
+              .where((e) => e.isNotEmpty)
+              .join('، ');
+          if (area.isEmpty) area = clean(m.administrativeArea);
         }
       } catch (e) {
         debugPrint('Reverse geocoding error: $e');
       }
-
-      if (context.mounted) await _saveAddress(context, text, lat: pos.latitude, lng: pos.longitude);
+      if (area.length > 60) area = area.substring(0, 60);
+      return PickedLocation(lat: pos.latitude, lng: pos.longitude, area: area, address: text);
     } catch (e) {
       debugPrint('GPS error: $e');
       if (context.mounted) _toast(context, 'تعذر تحديد الموقع، جرّب تاني أو اكتب العنوان بنفسك');
+      return null;
     }
+  }
+
+  static Future<void> _useGps(BuildContext context) async {
+    final picked = await locate(context);
+    if (picked == null || !context.mounted) return;
+    await _saveAddress(context, picked.address, lat: picked.lat, lng: picked.lng);
   }
 
   /// شيت اختيار عنوان التوصيل: موقعي الحالي (GPS) أو كتابة العنوان.
