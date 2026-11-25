@@ -1079,8 +1079,6 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
             const SizedBox(height: 4),
             Text('ملاحظة: $comment'),
           ],
-          const SizedBox(height: 4),
-          Text(_date(data['createdAt']), style: TextStyle(color: kMuted, fontSize: 12)),
           if (moderationStatus == 'excluded') ...[
             const SizedBox(height: 8),
             const Text(
@@ -1446,10 +1444,10 @@ class _OrderParticipants extends StatelessWidget {
               Text('تعذر تحميل الأسماء', style: TextStyle(color: kMuted, fontSize: 12)),
             if (customerId.isNotEmpty)
               line(Icons.person_outline,
-                'العميل: ${validCustomer ? _label(details['customerName'], details['userName']) : 'الاسم غير متاح'}'),
+                'العميل: ${validCustomer ? _label(details?['customerName'], details?['userName']) : 'الاسم غير متاح'}'),
             if (courierId.isNotEmpty)
               line(Icons.delivery_dining_outlined,
-                'المندوب: ${validCourier ? _label(details['courierName'], null) : 'الاسم غير متاح'}'),
+                'المندوب: ${validCourier ? _label(details?['courierName'], null) : 'الاسم غير متاح'}'),
             if (storeName.isNotEmpty)
               line(Icons.storefront_outlined, 'المحل: $storeName'),
             Align(
