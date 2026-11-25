@@ -7,6 +7,7 @@ import '../services/order_gateway.dart';
 import '../models/referral_admin_choices.dart';
 import '../widgets/referral_code_card.dart';
 import '../widgets/referral_balance_tile.dart';
+import '../widgets/referral_marketer_picker.dart';
 
 const _campaignTitle = 'شير بكودك واكسب هدايا';
 
@@ -168,6 +169,7 @@ class AdminReferralCampaignPage extends StatefulWidget {
 
 class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
   final _uid = TextEditingController();
+  String? _selectedMarketer;
   bool _loading = false;
   String? _code;
   String? _error;
@@ -176,6 +178,35 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
   void dispose() {
     _uid.dispose();
     super.dispose();
+  }
+
+  Future<List<ReferralMarketerChoice>> _loadMarketers() async {
+    // Explicit admin action only. One bounded fetch; never a live listener.
+    // Firestore rules permit /users listing only for administrators.
+    final snap = await FirebaseFirestore.instance.collection('users')
+        .limit(80).get();
+    return referralMarketerChoices([
+      for (final doc in snap.docs) {'uid': doc.id, ...doc.data()},
+    ]);
+  }
+
+  Future<void> _pickMarketer() async {
+    if (_loading) return;
+    final picked = await showModalBottomSheet<ReferralMarketerChoice>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.75,
+        child: ReferralMarketerPicker(accounts: _loadMarketers()),
+      ),
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      _uid.text = picked.uid;
+      _selectedMarketer = picked.label;
+      _error = null;
+      _code = null;
+    });
   }
 
   Future<void> _issue() async {
@@ -211,13 +242,28 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
         children: [
           Text('إنشاء كود للمسوّق', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
-          Text('أدخل معرّف حساب موجود. الخادم بيتحقق من صلاحية الحساب قبل إصدار الكود.',
+          Text('اختار حساب مسجّل من القائمة أو أدخل UID يدويًا. الخادم بيتحقق من هوية وصلاحية الحساب قبل إصدار الكود.',
             style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('admin-marketer-select'),
+            onPressed: _loading ? null : _pickMarketer,
+            icon: const Icon(Icons.manage_accounts_outlined),
+            label: const Text('اختار مسوّق من الحسابات'),
+          ),
+          if (_selectedMarketer != null) Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text('الحساب المحدد: $_selectedMarketer',
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
           _referralField(
             label: 'معرّف حساب المسوّق',
             child: TextField(
               controller: _uid,
               enabled: !_loading,
+              onChanged: (_) {
+                if (_selectedMarketer != null) setState(() => _selectedMarketer = null);
+              },
               textDirection: TextDirection.ltr,
               decoration: _referralInput(hint: 'UID'),
             ),
