@@ -126,7 +126,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           AppSpacing.md, top, AppSpacing.md, AppSpacing.sm + 28,
         ),
         child: Column(
-        children: [
+          children: [
           Row(
             children: [
               Expanded(child: _location()),
@@ -150,7 +150,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
             const InviteCodeField(key: Key('entry-invite-code'))
           else
             _searchBar(),
-        ],
+          ],
         ),
       ),
     );
@@ -190,7 +190,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                   ]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: AppTypography.bodySmall),
+                  style: const TextStyle(fontSize: AppTypography.bodySmall - 1),
                 ),
               ),
               const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 20),
@@ -425,7 +425,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
     return LayoutBuilder(builder: (context, box) {
       final available = box.maxHeight - gap * 4;
       var card = available / 3;
-      final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0);
+      final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
       if (card > maxCard) card = maxCard;
       final fits = card >= minCard;
       if (!fits) card = minCard;
