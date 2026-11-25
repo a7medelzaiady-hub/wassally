@@ -192,12 +192,15 @@ class _AdminReferralCampaignPageState extends State<AdminReferralCampaignPage> {
 
   Future<void> _pickMarketer() async {
     if (_loading) return;
+    // Capture one Future before building the sheet so keyboard/view rebuilds
+    // do not repeat the bounded Firestore read.
+    final accounts = _loadMarketers();
     final picked = await showModalBottomSheet<ReferralMarketerChoice>(
       context: context,
       isScrollControlled: true,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.75,
-        child: ReferralMarketerPicker(accounts: _loadMarketers()),
+        child: ReferralMarketerPicker(accounts: accounts),
       ),
     );
     if (!mounted || picked == null) return;
