@@ -74,7 +74,7 @@ class QuickOrderPromo extends StatelessWidget {
                 ),
                 Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(
-                      AppSpacing.lg, AppSpacing.lg, box.maxWidth * 0.30, AppSpacing.lg),
+                      AppSpacing.lg, AppSpacing.lg, box.maxWidth * 0.34, AppSpacing.lg),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
