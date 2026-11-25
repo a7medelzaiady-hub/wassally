@@ -71,6 +71,23 @@ void main() {
       expect(restored.submittedOrderId, isNull);
     });
 
+    test('اختيار نفس المنطقة أو نفس الكوبون لا يسمح بإعادة إرسال طلب ناجح', () {
+      cart.add(falafel, storeId: 'a', storeName: 'مطعم');
+      cart.setArea('وسط البلد', 20);
+      cart.setPromo('SAVE', 10);
+      cart.markSubmitted('order_123');
+
+      cart.setArea('وسط البلد', 20);
+      cart.setPromo('SAVE', 10);
+      expect(cart.submittedOrderId, 'order_123');
+
+      cart.setArea('منطقة أخرى', 25);
+      expect(cart.submittedOrderId, isNull);
+      cart.markSubmitted('order_456');
+      cart.setPromo('NEW', 5);
+      expect(cart.submittedOrderId, isNull);
+    });
+
     test('بتبلّغ المستمعين عند التغيير', () {
       var calls = 0;
       cart.addListener(() => calls++);
