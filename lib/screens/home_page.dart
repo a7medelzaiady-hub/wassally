@@ -1182,13 +1182,18 @@ class _HomePageState extends State<HomePage>
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: QuickOrderPromo(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const QuickOrderCreatePage(),
-                      ),
-                    ),
-                  ),
+                  child: Builder(builder: (context) {
+                    void open() => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const QuickOrderCreatePage(),
+                          ),
+                        );
+                    // إعلانات متحركة؛ أي إعلان جديد يتضاف للقائمة دي.
+                    return PromoCarousel(slides: [
+                      QuickOrderPromo(onTap: open),
+                      if (kQuickPhotoOrdersEnabled) PhotoOrderPromo(onTap: open),
+                    ]);
+                  }),
                 ),
               ),
 

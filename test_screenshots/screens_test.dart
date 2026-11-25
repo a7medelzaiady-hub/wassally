@@ -2,6 +2,7 @@ import 'package:city_store/screens/admin_navigation_page.dart';
 import 'package:city_store/screens/cart_page.dart';
 import 'package:city_store/screens/categories_landing_page.dart';
 import 'package:city_store/screens/user_guide_page.dart';
+import 'package:city_store/screens/onboarding_page.dart';
 import 'package:city_store/screens/quick_order_create_page.dart';
 import 'package:city_store/screens/store_directory_page.dart';
 import 'package:city_store/services/catalog_sync.dart';
@@ -150,7 +151,9 @@ void main() {
       'home_promo_carousel_390',
       Scaffold(
         body: ListView(padding: const EdgeInsets.all(16), children: [
-          QuickOrderPromo(onTap: () {}),
+          PromoCarousel(autoPlay: false, slides: [QuickOrderPromo(onTap: () {}), PhotoOrderPromo(onTap: () {})]),
+          const SizedBox(height: 12),
+          SizedBox(height: 270, child: PhotoOrderPromo(onTap: () {})),
           const SizedBox(height: 18),
           OfferCarousel(autoPlay: false, loadImages: false, slides: [
             OfferSlide(name: 'خيار', storeName: 'فواكه وخضروات', price: 13.5, oldPrice: 15, onTap: () {}),
@@ -158,7 +161,18 @@ void main() {
           ]),
         ]),
       ),
-      size: const Size(390, 640),
+      size: const Size(390, 900),
     );
   });
+
+  for (var i = 0; i < 3; i++) {
+    testWidgets('onboarding step $i', (tester) async {
+      await shoot(tester, 'onboarding_${i + 1}_390x844', OnboardingPage(onDone: () {}), before: (tester) async {
+        for (var k = 0; k < i; k++) {
+          await tester.tap(find.byKey(const Key('onboarding-next')));
+          await tester.pumpAndSettle();
+        }
+      });
+    });
+  }
 }
