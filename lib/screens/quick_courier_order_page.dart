@@ -315,6 +315,15 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         const SizedBox(height: 4),
         Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
       ],
+      if (o.stores.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'العميل لسه ما حددش أصناف أو محلات. راجع تفاصيل الطلب معاه بعد القبول.',
+            key: Key('quick-request-empty'),
+            style: TextStyle(fontWeight: FontWeight.w700, height: 1.45),
+          ),
+        ),
       for (final (index, store) in o.stores.indexed) ...[
         _requestDivider(),
         Text(
@@ -357,10 +366,23 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         if (store.items.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              store.items.trim(),
-              style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('المطلوب من المحل',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+                Text(
+                  store.items.trim(),
+                  style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
+          ),
+        if (store.items.trim().isEmpty && store.pricedItems.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('مفيش أصناف مكتوبة للمحل ده. اسأل العميل عن التفاصيل بعد القبول.',
+              style: TextStyle(color: Colors.black54, height: 1.4)),
           ),
       ],
       if (o.notes.isNotEmpty) ...[
@@ -379,7 +401,18 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   Widget _contactCard(QuickCourierOrder o) {
     final c = _contact;
-    if (!o.canSeeContact) return const SizedBox.shrink();
+    if (!o.canSeeContact) {
+      if (o.step == QuickCourierStep.available) {
+        return _card(children: const [
+          Text(
+            'العنوان التفصيلي ورقم هاتف العميل هيظهروا بعد قبول الطلب فقط.',
+            key: Key('quick-private-after-accept'),
+            style: TextStyle(fontWeight: FontWeight.w700, height: 1.4),
+          ),
+        ]);
+      }
+      return const SizedBox.shrink();
+    }
     if (c == null) {
       return _card(children: [
         const Text('بيانات التواصل غير متاحة حاليًا.'),
