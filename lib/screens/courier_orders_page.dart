@@ -16,6 +16,7 @@ import '../utils/format.dart';
 import '../utils/maps.dart';
 import '../widgets/customer_rating_dialog.dart';
 import '../widgets/courier_order_receipt.dart';
+import '../widgets/courier_order_details_sheet.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
@@ -575,6 +576,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   // والقواعد بتسمح بيها للمندوب المكلّف بالطلب وهو لسه جاري.
   OrderContact? _contact;
   bool _contactFailed = false;
+  final ValueNotifier<bool> _detailContactAllowed = ValueNotifier(false);
 
   AppOrder get _o => widget.order.withContact(_contact);
 
@@ -600,6 +602,8 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         oldWidget.order.customerConfirmedAt != widget.order.customerConfirmedAt ||
         oldWidget.order.courierId != widget.order.courierId) {
       _contactRequest++;
+      // Hide any PII shown in an open details sheet immediately.
+      _detailContactAllowed.value = false;
       _contact = null;
       _contactFailed = false;
       if (_canSeeContact) _loadContact();
@@ -617,6 +621,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
       if (mounted && request == _contactRequest && _canSeeContact) {
         setState(() => _contact = contact);
+        _detailContactAllowed.value = contact != null && _canSeeContact;
       }
     } catch (error) {
       debugPrint('Courier contact load failed: $error');
@@ -624,6 +629,44 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         setState(() => _contactFailed = true);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _detailContactAllowed.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openDetails() async {
+    // Contact is always loaded by the existing card. Never fetch private
+    // contact on opening details or expose PII for a finished/unassigned order.
+    _detailContactAllowed.value = _canSeeContact && _contact != null;
+    final contact = _detailContactAllowed.value ? _contact : null;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.84,
+        child: CourierOrderDetailsSheet(
+          order: widget.order,
+          orderNumber: _courierOrderNumber(widget.order.id),
+          contact: contact,
+          canSeePrivateContact: _detailContactAllowed,
+          onOpenMap: () {
+            if (!_canSeeContact) return;
+            Navigator.of(sheetContext).pop();
+            _openMap();
+          },
+          onCall: () {
+            if (!_canSeeContact) return;
+            Navigator.of(sheetContext).pop();
+            _call();
+          },
+        ),
+      ),
+    );
   }
 
   /// التسليم بقى برمز من 4 أرقام بياخده المندوب من العميل، والـWorker هو اللي بيتحقق.
@@ -1104,6 +1147,17 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               if (o.courierAt != null)
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
+          ),
+          // Clear details action for every assigned/current/history order.
+          // The inline receipt remains first and readable without a tap.
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: OutlinedButton.icon(
+              key: Key('courier-order-details-${o.id}'),
+              onPressed: _openDetails,
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('تفاصيل الطلب'),
+            ),
           ),
           // محتوى طلب العميل هو أول معلومة يحتاجها المندوب.
           // الفاتورة واضحة من غير ضغطة إضافية ولا استعلامات Firestore.
