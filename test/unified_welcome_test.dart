@@ -30,13 +30,14 @@ Future<void> _pumpEntry(
 }
 
 void main() {
-  testWidgets('صفحة ما بعد الدخول: هيدر وبانر وثلاثة كروت بدون overflow',
+  testWidgets('صفحة ما بعد الدخول: هيدر مموج وثلاثة كروت بدون overflow',
       (tester) async {
     await _pumpEntry(tester);
 
     expect(find.byKey(const Key('entry-location')), findsOneWidget);
     expect(find.byKey(const Key('entry-search')), findsOneWidget);
-    expect(find.byKey(const Key('entry-banner')), findsOneWidget);
+    expect(find.byKey(const Key('entry-banner')), findsNothing);
+    expect(find.byKey(const Key('entry-header-wave')), findsOneWidget);
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
@@ -93,12 +94,12 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('على موبايل عادي البانر والكروت الثلاثة ظاهرين بدون تمرير',
+  testWidgets('على موبايل عادي الكروت الثلاثة ظاهرة بدون تمرير',
       (tester) async {
     for (final size in const [Size(390, 844), Size(412, 915), Size(360, 780)]) {
       await _pumpEntry(tester, size: size);
       final navTop = tester.getTopLeft(find.text('الرئيسية')).dy - 20;
-      expect(tester.getRect(find.byKey(const Key('entry-banner'))).top, greaterThan(0));
+      expect(find.byKey(const Key('entry-banner')), findsNothing);
       for (final label in ['خدمة وصّلي ع السريع', 'تصفح العروض', 'تصفح المحلات']) {
         final card = tester.getRect(find.byKey(ValueKey<String>('entry-card-$label')));
         expect(card.bottom, lessThanOrEqualTo(navTop), reason: '$label on $size');
