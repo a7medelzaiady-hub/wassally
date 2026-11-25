@@ -49,6 +49,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     }
     if (_phone.text.trim().isEmpty) _phone.text = profile.phone;
     if (_address.text.trim().isEmpty) _address.text = profile.address;
+    // البيانات المحفوظة بتظهر كملخص، و«تعديل» يفتح الحقول.
+    setState(() => _contactCollapsed = _contactComplete);
   }
 
   @override
@@ -125,6 +127,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
 
   // ───────────────────────── الواجهة ─────────────────────────
 
+  bool _contactCollapsed = false;
+  bool _showNotes = false;
+
+  bool get _contactComplete =>
+      _name.text.trim().isNotEmpty &&
+      _phone.text.trim().isNotEmpty &&
+      _address.text.trim().isNotEmpty;
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.bg,
@@ -136,38 +146,171 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           AppSpacing.page, AppSpacing.lg, AppSpacing.page, AppSpacing.xxl),
       children: [
         const _QuickIntro(),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
+        _heading('إيه اللي محتاجه؟', 'من محل واحد أو أكتر، أو سيب المندوب يختار.'),
         for (final store in _stores) _storeFields(store),
         if (_stores.length < 10)
-          OutlinedButton.icon(
-            key: const Key('quick-add-store'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: AppColors.purple, width: 1.2),
-              backgroundColor: AppColors.purpleSoft.withValues(alpha: 0.5),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const Key('quick-add-store'),
+              onPressed: _submitting
+                  ? null
+                  : () => setState(() => _stores.add(_QuickStoreDraft())),
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              label: const Text('أضف محل تاني'),
             ),
-            onPressed: _submitting
-                ? null
-                : () => setState(() => _stores.add(_QuickStoreDraft())),
-            icon: const Icon(Icons.add_business_outlined),
-            label: const Text('أضف محل تاني'),
           ),
         const SizedBox(height: AppSpacing.lg),
-        _section(
-          step: _stores.length > 1 ? null : 2,
-          title: 'عنوان التوصيل',
-          icon: Icons.location_on_outlined,
+        _heading('التوصيل إلى', null),
+        _deliveryCard(),
+        const SizedBox(height: AppSpacing.md),
+        if (!_showNotes)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              key: const Key('quick-add-note'),
+              onPressed: () => setState(() => _showNotes = true),
+              icon: const Icon(Icons.sticky_note_2_outlined),
+              label: const Text('أضف ملاحظة للمندوب'),
+            ),
+          )
+        else
+          TextField(
+            controller: _notes,
+            minLines: 2,
+            maxLines: 4,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'ملاحظات للمندوب (اختياري)',
+              hintText: 'مثال: لو الصنف مش موجود كلمني الأول',
+              prefixIcon: Icon(Icons.sticky_note_2_outlined),
+            ),
+          ),
+        const SizedBox(height: AppSpacing.lg),
+        const _FeesNote(),
+      ],
+    ),
+    // الزر ثابت تحت ويستخبى ورا الكيبورد بدل ما ياكل مساحة الكتابة.
+    bottomNavigationBar: SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.page, AppSpacing.sm, AppSpacing.page, AppSpacing.md),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Color(0x141E1638), blurRadius: 12, offset: Offset(0, -3))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _area,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'المدينة والحي',
-                hintText: 'مثال: بيلا، حي المحطة',
-                prefixIcon: Icon(Icons.map_outlined),
-                helperText: 'الحي بس بيظهر للمندوب قبل ما يقبل الطلب.',
-                helperMaxLines: 2,
+            const Padding(
+              padding: EdgeInsets.only(bottom: AppSpacing.xs),
+              child: Text(
+                'مفيش دفع دلوقتي • بتدفع عند الاستلام بعد ما توافق على الحساب',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: AppTypography.caption,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
+            FilledButton.icon(
+              key: const Key('quick-submit'),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+              onPressed: _submitting ? null : _submit,
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                    )
+                  : const Icon(Icons.send_rounded),
+              label: Text(_submitting ? 'جارٍ الإرسال...' : 'اطلب دلوقتي'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _heading(String title, String? subtitle) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: AppTypography.sectionTitle.copyWith(fontSize: AppTypography.title)),
+            if (subtitle != null) Text(subtitle, style: AppTypography.secondary),
+          ],
+        ),
+      );
+
+  /// العنوان وبيانات التواصل: ملخص سطرين لو البيانات محفوظة، و«تعديل» يفتح الحقول.
+  Widget _deliveryCard() {
+    final showFields = !_contactCollapsed;
+    return AppCard(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _area,
+            textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(
+              labelText: 'المدينة والحي',
+              hintText: 'مثال: بيلا، حي المحطة',
+              prefixIcon: Icon(Icons.location_on_outlined),
+              helperText: 'الحي بس بيظهر للمندوب قبل ما يقبل الطلب.',
+              helperMaxLines: 2,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (!showFields)
+            Row(
+              key: const Key('quick-contact-summary'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(color: AppColors.purpleSoft, shape: BoxShape.circle),
+                  child: const Icon(Icons.person_outline_rounded, color: AppColors.purple),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Flexible(
+                          child: Text(
+                            '${_name.text.trim()} • ${_phone.text.trim()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: AppTypography.bodySmall,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        const _PrivacyBadge(),
+                      ]),
+                      const SizedBox(height: 2),
+                      Text(_address.text.trim(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: AppTypography.secondary),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _contactCollapsed = false),
+                  child: const Text('تعديل'),
+                ),
+              ],
+            )
+          else ...[
             TextField(
               controller: _address,
               textInputAction: TextInputAction.next,
@@ -179,133 +322,85 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
                 prefixIcon: Icon(Icons.home_outlined),
               ),
             ),
-          ],
-        ),
-        _section(
-          step: _stores.length > 1 ? null : 3,
-          title: 'بيانات التواصل',
-          icon: Icons.call_outlined,
-          trailing: const _PrivacyBadge(),
-          children: [
-            TextField(
-              controller: _name,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: 'اسمك',
-                prefixIcon: Icon(Icons.person_outline_rounded),
+            const SizedBox(height: AppSpacing.md),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _name,
+                  textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                    labelText: 'اسمك',
+                    prefixIcon: Icon(Icons.person_outline_rounded),
+                  ),
+                ),
               ),
-            ),
+            ]),
+            const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _phone,
               keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.next,
+              textInputAction: TextInputAction.done,
               textDirection: TextDirection.ltr,
               decoration: const InputDecoration(
                 labelText: 'رقم الموبايل',
                 hintText: '01xxxxxxxxx',
                 prefixIcon: Icon(Icons.phone_iphone_rounded),
-              ),
-            ),
-            TextField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'ملاحظات للمندوب (اختياري)',
-                hintText: 'مثال: لو الصنف مش موجود كلمني الأول',
-                prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                suffixIcon: Padding(
+                  padding: EdgeInsets.all(AppSpacing.sm),
+                  child: _PrivacyBadge(),
+                ),
               ),
             ),
           ],
-        ),
-        const _FeesNote(),
-      ],
-    ),
-    // الزر ثابت تحت ويستخبى ورا الكيبورد بدل ما ياكل مساحة الكتابة.
-    bottomNavigationBar: SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.md),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: AppColors.line)),
-        ),
-        child: FilledButton.icon(
-          key: const Key('quick-submit'),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-          onPressed: _submitting ? null : _submit,
-          icon: _submitting
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
-                )
-              : const Icon(Icons.send_rounded),
-          label: Text(_submitting ? 'جارٍ الإرسال...' : 'إرسال الطلب السريع'),
-        ),
-      ),
-    ),
-  );
-
-  Widget _section({
-    Key? key,
-    int? step,
-    required String title,
-    required IconData icon,
-    Widget? trailing,
-    required List<Widget> children,
-  }) => AppCard(
-    key: key,
-    elevated: true,
-    margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppSectionHeader(title: title, icon: icon, step: step, trailing: trailing),
-        for (final child in children) ...[
-          const SizedBox(height: AppSpacing.md),
-          child,
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
-  Widget _storeFields(_QuickStoreDraft store) => _section(
-    key: ObjectKey(store),
-    step: _stores.length == 1 ? 1 : null,
-    title: _stores.length == 1
-        ? 'اكتب طلباتك'
-        : 'مشتريات المحل ${_stores.indexOf(store) + 1}',
-    icon: Icons.shopping_basket_outlined,
-    trailing: _stores.length > 1
-        ? IconButton(
-            tooltip: 'احذف المحل ده',
-            color: AppColors.danger,
-            onPressed:
-                _submitting ? null : () => setState(() => _stores.remove(store)),
-            icon: const Icon(Icons.delete_outline_rounded),
-          )
-        : null,
-    children: [
-      TextFormField(
-        initialValue: store.name,
-        enabled: !_submitting,
-        maxLength: 60,
-        onChanged: (value) => store.name = value,
-        decoration: const InputDecoration(
-          labelText: 'اسم المحل (اختياري)',
-          hintText: 'سيبه فاضي لو المندوب هيختار',
-          prefixIcon: Icon(Icons.storefront_outlined),
-          counterText: '',
-        ),
+  Widget _storeFields(_QuickStoreDraft store) {
+    final index = _stores.indexOf(store);
+    return AppCard(
+      key: ObjectKey(store),
+      elevated: true,
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(
+              child: TextFormField(
+                initialValue: store.name,
+                enabled: !_submitting,
+                maxLength: 60,
+                onChanged: (value) => store.name = value,
+                decoration: InputDecoration(
+                  labelText: _stores.length == 1
+                      ? 'اسم المحل (اختياري)'
+                      : 'المحل ${index + 1} (اختياري)',
+                  hintText: 'سيبه فاضي لو المندوب هيختار',
+                  prefixIcon: const Icon(Icons.storefront_outlined),
+                  counterText: '',
+                ),
+              ),
+            ),
+            if (_stores.length > 1)
+              IconButton(
+                tooltip: 'احذف المحل ده',
+                color: AppColors.danger,
+                onPressed:
+                    _submitting ? null : () => setState(() => _stores.remove(store)),
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+          ]),
+          const SizedBox(height: AppSpacing.md),
+          QuickPricePicker(
+            onChanged: (items) => store.items = items,
+            onUnlistedChanged: (text) => store.unlisted = text,
+          ),
+        ],
       ),
-      QuickPricePicker(
-        onChanged: (items) => store.items = items,
-        onUnlistedChanged: (text) => store.unlisted = text,
-      ),
-    ],
-  );
+    );
+  }
 }
 
 /// شرح مختصر للخدمة وخطواتها، من غير إطالة.

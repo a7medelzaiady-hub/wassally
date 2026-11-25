@@ -4,6 +4,7 @@ import '../services/navigation.dart';
 import '../services/saved_address.dart';
 import '../services/location_picker.dart';
 import '../theme/app_tokens.dart';
+import '../services/cart_book.dart';
 import '../services/order_gateway.dart';
 import '../widgets/curved_nav_bar.dart';
 import '../widgets/invite_code_field.dart';
@@ -584,25 +585,44 @@ class _CustomerEntryState extends State<CustomerEntry> {
     });
   }
 
-  Widget _staffNav() => CurvedNavBar(
-        index: 2,
-        onTap: (i) {
-          switch (i) {
-            case 1:
-              _openNotifications();
-            case 3:
-              _enter(const _StandaloneAccount());
-            default:
-              // لوحتي والرئيسية: لوحة الدور (نفس السلوك السابق).
-              _enter();
-          }
-        },
-        items: const [
-          AppNavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard_rounded, label: 'لوحتي'),
-          AppNavItem(icon: Icons.notifications_none_rounded, selectedIcon: Icons.notifications_rounded, label: 'الإشعارات'),
-          AppNavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'الرئيسية'),
-          AppNavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'حسابي'),
-        ],
+  void _openShell(int tab) {
+    shellTab.value = tab;
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MainShell()));
+  }
+
+  /// نفس شكل شريط العميل (السلة الكبيرة في النص)، و«لوحتي» مكان «طلباتي».
+  Widget _staffNav() => ListenableBuilder(
+        listenable: carts,
+        builder: (context, _) => CurvedNavBar(
+          index: 0,
+          centerIndex: 2,
+          onTap: (i) {
+            switch (i) {
+              case 0:
+                _openShell(0);
+              case 1:
+                _enter();
+              case 2:
+                _openShell(1);
+              case 3:
+                _openNotifications();
+              default:
+                _enter(const _StandaloneAccount());
+            }
+          },
+          items: [
+            const AppNavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'الرئيسية'),
+            const AppNavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard_rounded, label: 'لوحتي'),
+            AppNavItem(
+              icon: Icons.shopping_cart_outlined,
+              selectedIcon: Icons.shopping_cart_rounded,
+              label: 'السلة',
+              badge: carts.totalItems,
+            ),
+            const AppNavItem(icon: Icons.notifications_none_rounded, selectedIcon: Icons.notifications_rounded, label: 'الإشعارات'),
+            const AppNavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'حسابي'),
+          ],
+        ),
       );
 
   @override
