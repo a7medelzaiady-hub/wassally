@@ -121,6 +121,30 @@ void main() {
     expect(find.text('متاح للقبول'), findsOneWidget);
   });
 
+  testWidgets('تفاصيل الطلب السريع غير المكتمل تعرض حالة مفهومة بلا بيانات عميل',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final backend = _FakeBackend(_doc('open', {
+      'stores': <Object>[],
+      'notes': '',
+    }));
+    await tester.pumpWidget(
+      MaterialApp(home: QuickCourierOrderPage(orderId: _id, backend: backend)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-request-number')), findsOneWidget);
+    expect(find.byKey(const Key('quick-request-empty')), findsOneWidget);
+    expect(find.textContaining('راجع الطلب'), findsOneWidget);
+    expect(find.byKey(const Key('quick-accept')), findsOneWidget);
+    expect(find.byKey(const Key('quick-call')), findsNothing);
+    expect(find.text('شارع التحرير 10'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
