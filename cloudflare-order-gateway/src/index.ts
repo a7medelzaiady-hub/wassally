@@ -3513,6 +3513,41 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
   if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
   const order = decodeFields(doc.fields ?? {});
   const actor = await resolveQuickActor(env, token, uid, order);
+  let voiceDoc: FirestoreDoc | null = null;
+  let voiceCleanup: string[] = [];
+  let voiceFolder = "";
+  if (action === "edit-voice") {
+    // Never load another customer's private voice URL.
+    if (order.userId !== uid || actor.role !== "customer") {
+      throw new HttpError(403, "لا تملك صلاحية تعديل الصوت.", "forbidden");
+    }
+    if (order.status !== "open") {
+      throw new HttpError(409, "تعديل الصوت متاح قبل قبول المندوب فقط.", "edit_after_accept");
+    }
+    if (!Object.prototype.hasOwnProperty.call(body, "customerVoiceUrl")) {
+      throw new HttpError(400, "حدد التسجيل الجديد أو احذف التسجيل.", "invalid_voice");
+    }
+    voiceFolder = (await quickRequestFolder(uid)) + "/voice";
+    try {
+      body.customerVoiceUrl = validateQuickVoice(body.customerVoiceUrl,
+        (url) => isOwnQuickVoice(url, voiceFolder, env.CLOUDINARY_CLOUD_NAME));
+    } catch (error) { quickError(error); }
+    voiceDoc = await getDocument(env, `${orderPath}/private/contact`, token);
+    if (!voiceDoc) throw new HttpError(503, "بيانات الطلب الخاصة غير متاحة.");
+    const contact = decodeFields(voiceDoc.fields ?? {});
+    const previousVoice = quickCustomerVoice(contact);
+    const nextVoice = String(body.customerVoiceUrl);
+    voiceCleanup = [
+      ...new Set([
+        ...(Array.isArray(contact.customerVoicesPendingCleanup)
+          ? contact.customerVoicesPendingCleanup.filter((u): u is string => typeof u === "string")
+          : []),
+        ...(typeof contact.customerVoicePendingCleanup === "string" &&
+            contact.customerVoicePendingCleanup ? [contact.customerVoicePendingCleanup] : []),
+        ...(previousVoice && previousVoice !== nextVoice ? [previousVoice] : []),
+      ]),
+    ].filter((url) => isOwnQuickVoice(url, voiceFolder, env.CLOUDINARY_CLOUD_NAME));
+  }
   let patch: JsonMap;
   try {
     patch = applyQuickAction(order, action, actor, body, {
@@ -3523,11 +3558,51 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
   } catch (error) {
     quickError(error);
   }
-  await commitOrConflict(env, token, [{
+  const writes: unknown[] = [{
     update: { name: doc.name, fields: encodeFields(patch!) },
     updateMask: { fieldPaths: Object.keys(patch!) },
     currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
-  }]);
+  }];
+  if (voiceDoc) {
+    const voicePatch = {
+      customerVoiceUrl: String(body.customerVoiceUrl),
+      customerVoicesPendingCleanup: voiceCleanup,
+      customerVoicePendingCleanup: "",
+    };
+    writes.push({
+      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
+      updateMask: { fieldPaths: Object.keys(voicePatch) },
+      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
+    });
+  }
+  await commitOrConflict(env, token, writes);
+  // Delete replaced recordings only *after* the atomic Firestore update succeeds.
+  // If Cloudinary fails, the private contact retains cleanup URLs for PIN delivery.
+  if (voiceDoc && voiceCleanup.length) {
+    const removed: string[] = [];
+    for (const url of voiceCleanup) {
+      if (await destroyQuickVoice(env, url, voiceFolder)) removed.push(url);
+    }
+    if (removed.length) {
+      try {
+        const latest = await getDocument(env, `${orderPath}/private/contact`, token);
+        if (latest) {
+          const privateNow = decodeFields(latest.fields ?? {});
+          const pending = Array.isArray(privateNow.customerVoicesPendingCleanup)
+            ? privateNow.customerVoicesPendingCleanup.filter((v): v is string => typeof v === "string")
+            : [];
+          const remaining = pending.filter((v) => !removed.includes(v));
+          if (remaining.length !== pending.length) {
+            await commitOrConflict(env, token, [{
+              update: { name: latest.name, fields: encodeFields({ customerVoicesPendingCleanup: remaining }) },
+              updateMask: { fieldPaths: ["customerVoicesPendingCleanup"] },
+              currentDocument: latest.updateTime ? { updateTime: latest.updateTime } : { exists: true },
+            }]);
+          }
+        }
+      } catch { /* The retained pending list can be retried at delivery. */ }
+    }
+  }
   const customerTitle = quickCustomerUpdates[action] ??
     (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
   const courierTitle = quickCourierUpdates[action];
