@@ -60,7 +60,7 @@ void main() {
     expect(find.text('فاتورة طلب العميل'), findsOneWidget);
     expect(find.text('عيش بلدي'), findsOneWidget);
     expect(find.text('4 ×'), findsOneWidget);
-    expect(find.text('70 ج.م'), findsOneWidget);
+    expect(find.textContaining('المطلوب تحصيله: 70 ج.م'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
