@@ -56,6 +56,8 @@ void main() {
   test('تفاصيل الطلب السريع لا تظهر فاتورة خالية بلا تنبيه', () {
     expect(_order().hasCustomerRequest, isTrue);
     expect(_order({'stores': <Object>[], 'notes': ''}).hasCustomerRequest, isFalse);
+    expect(_order({'stores': <Object>[], 'notes': '', 'customerVoiceUrl': 'https://res.cloudinary.com/g3n5pdfz/video/upload/special_requests/hash/quick/voice/a.m4a'}).hasCustomerRequest, isTrue);
+    expect(_order({'stores': <Object>[], 'notes': '', 'customerImages': ['https://res.cloudinary.com/demo/image/upload/x.jpg']}).hasCustomerRequest, isTrue);
     expect(_order({
       'stores': [{'name': 'سوبرماركت', 'items': '   ', 'pricedItems': <Object>[]}],
       'notes': '   ',
