@@ -427,21 +427,25 @@ class _CustomerEntryState extends State<CustomerEntry> {
                               ),
                             ],
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                action,
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: AppTypography.label,
-                                  fontWeight: FontWeight.w900,
+                          // يفضل في سطر واحد كامل من غير «...» حتى في الشاشات الضيقة.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  action,
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: AppTypography.label,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 2),
-                              const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 18),
-                            ],
+                                const SizedBox(width: 2),
+                                const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 18),
+                              ],
+                            ),
                           ),
                         ),
                       ],
