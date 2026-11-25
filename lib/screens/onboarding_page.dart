@@ -248,7 +248,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
                       child: const Text('تخطي'),
                     ),
                     Expanded(
-                      child: Column(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Row(
@@ -279,12 +281,14 @@ class _OnboardingPageState extends State<OnboardingPage> {
                           ),
                         ],
                       ),
+                      ),
                     ),
                     FilledButton(
                       key: const Key('onboarding-next'),
                       onPressed: _next,
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size(120, 50),
+                        minimumSize: const Size(104, 48),
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                         shape: const StadiumBorder(),
                       ),
                       child: Text(last ? 'يلا نبدأ' : 'التالي'),
