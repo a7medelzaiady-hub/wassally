@@ -296,6 +296,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   );
 
   Widget _requestCard(QuickCourierOrder o) {
+    final hasRequestedItems = o.stores.any(
+      (store) => store.items.trim().isNotEmpty || store.pricedItems.isNotEmpty,
+    );
     return _card(receipt: true, children: [
       Row(
         children: [
@@ -311,6 +314,33 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       ),
       const SizedBox(height: 4),
       Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      if (o.step == QuickCourierStep.available)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب متاح للقبول. العنوان التفصيلي ورقم العميل يظهروا بعد تعيينك عليه بس.',
+            key: Key('quick-before-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        )
+      else if (o.isActive)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب مُسند ليك. راجع المشتريات وكمّل الخطوة الموضحة تحت الفاتورة.',
+            key: Key('quick-after-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      if (!hasRequestedItems && o.notes.trim().isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 10),
+          child: Text(
+            'مفيش أصناف أو تفاصيل مشتريات ظاهرة في الطلب ده. اسحب لتحديث التفاصيل، ولو فضلت فاضية تواصل مع الدعم قبل الشراء.',
+            key: Key('quick-request-empty-warning'),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+        ),
       if (o.area.isNotEmpty) ...[
         const SizedBox(height: 4),
         Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
