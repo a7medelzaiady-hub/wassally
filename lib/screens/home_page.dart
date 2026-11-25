@@ -609,7 +609,7 @@ class _HomePageState extends State<HomePage>
     return ClipPath(
       clipper: _WaveBottomClipper(),
       child: Container(
-      color: Brand.green,
+      color: AppColors.purpleDeep,
       padding: EdgeInsets.fromLTRB(16, top + 6, 16, 22),
       child: Column(
         children: [
@@ -1287,7 +1287,7 @@ class _HomePageState extends State<HomePage>
                 left: 0,
                 right: 0,
                 height: MediaQuery.paddingOf(context).top,
-                child: ColoredBox(color: Brand.green),
+                child: const ColoredBox(color: AppColors.purpleDeep),
               ),
             ],
           );

@@ -156,11 +156,9 @@ class Brand {
   static Color get bg => palette.bg;
   static Color get ink => palette.ink;
 
+  /// هيدر الصفحات: البنفسجي الملكي (هوية وصّلي) في كل التطبيق.
   static LinearGradient get headerGradient => LinearGradient(
-    colors: [
-      palette.primary,
-      Color.lerp(palette.primary, palette.primaryDark, 0.6)!,
-    ],
+    colors: [palette.accentDeep, palette.accent],
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
   );
