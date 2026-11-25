@@ -583,7 +583,7 @@ class _Details extends StatelessWidget {
               ],
               const SizedBox(height: 8),
               if (order.referralDiscountMinor > 0)
-                _line('خصم نقاط الإحالة',
+                _line('خصم نقاط الدعوات',
                     '- ${formatPrice(order.referralDiscountMinor / 100)}'),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
             ],
