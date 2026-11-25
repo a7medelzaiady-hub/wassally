@@ -235,7 +235,7 @@ describe("final summary for display only", () => {
     expect(code(() => step(s, "approve-summary", quickCourier, { expectedSummaryRevision: s.summaryRevision })))
       .toBe("403:forbidden");
     expect(code(() => step(s, "approve-summary", customer, { expectedSummaryRevision: 99 }))).toBe("409:stale_summary");
-    const a = approved(s);
+    const a = step(s, "approve-summary", customer, { expectedSummaryRevision: s.summaryRevision });
     expect(a.status).toBe("summary_approved");
     expect(a.summaryApprovedAt).toEqual(now);
   });
@@ -248,7 +248,8 @@ describe("final summary for display only", () => {
     // لو تم رفض كشف قديم، المندوب يعدّل ويبعت كشف جديد برقم مراجعة أعلى.
     const again = step(addReceipt(r, 500, 5), "submit-summary", quickCourier, { deliveryPiastres: 3000 });
     expect(again.summaryRevision).toBe(2);
-    expect(code(() => step(again, "approve-summary", customer, { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
+    expect(code(() => step({ ...again, status: "summary_pending" }, "approve-summary", customer,
+      { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
   });
   it("the approved statement is locked: no reopening, no new receipts or summary", () => {
     const a = approved();
