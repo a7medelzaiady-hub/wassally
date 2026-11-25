@@ -660,6 +660,8 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
           order: widget.order,
           orderNumber: _courierOrderNumber(widget.order.id),
           contact: contact,
+          // Re-read the cached contact if it arrived while this sheet was open.
+          contactProvider: () => _canSeeContact ? _contact : null,
           canSeePrivateContact: _detailContactAllowed,
           onOpenMap: () {
             if (!_canSeeContact) return;

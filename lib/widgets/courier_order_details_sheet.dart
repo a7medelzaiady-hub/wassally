@@ -17,6 +17,8 @@ class CourierOrderDetailsSheet extends StatelessWidget {
   final AppOrder order;
   final String orderNumber;
   final OrderContact? contact;
+  /// Reads the parent's cached contact on notifier changes; never fetches data.
+  final OrderContact? Function()? contactProvider;
   final ValueListenable<bool> canSeePrivateContact;
   final VoidCallback? onOpenMap;
   final VoidCallback? onCall;
@@ -26,6 +28,7 @@ class CourierOrderDetailsSheet extends StatelessWidget {
     required this.order,
     required this.orderNumber,
     required this.contact,
+    this.contactProvider,
     required this.canSeePrivateContact,
     this.onOpenMap,
     this.onCall,
@@ -91,7 +94,9 @@ class CourierOrderDetailsSheet extends StatelessWidget {
                       style: TextStyle(color: Colors.black54),
                     );
                   }
-                  final c = contact;
+                  final c = contactProvider != null
+                      ? contactProvider!()
+                      : contact;
                   if (c == null) {
                     return const Text('جارٍ تحميل بيانات العميل أو تعذر الوصول إليها.');
                   }

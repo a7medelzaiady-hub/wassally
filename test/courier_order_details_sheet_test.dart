@@ -23,7 +23,10 @@ AppOrder _sampleOrder() => AppOrder(
       area: 'وسط البلد',
     );
 
-Widget _screen(ValueNotifier<bool> access, {OrderContact? contact}) {
+Widget _screen(ValueNotifier<bool> access, {
+  OrderContact? contact,
+  OrderContact? Function()? contactProvider,
+}) {
   return MaterialApp(
     theme: buildAppTheme(),
     home: Scaffold(
@@ -33,6 +36,7 @@ Widget _screen(ValueNotifier<bool> access, {OrderContact? contact}) {
           order: _sampleOrder(),
           orderNumber: '100042',
           contact: contact,
+          contactProvider: contactProvider,
           canSeePrivateContact: access,
           onOpenMap: () {},
           onCall: () {},
@@ -61,6 +65,28 @@ void main() {
     expect(find.text('عيش بلدي'), findsOneWidget);
     expect(find.text('4 ×'), findsOneWidget);
     expect(find.textContaining('المطلوب تحصيله: 70 ج.م'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('تفاصيل مفتوحة قبل تحميل العنوان تتحدث تلقائيًا وتخفيه بعد الإلغاء',
+      (tester) async {
+    final access = ValueNotifier(false);
+    addTearDown(access.dispose);
+    OrderContact? latest;
+    await tester.pumpWidget(_screen(access, contactProvider: () => latest));
+    await tester.pump();
+    expect(find.byKey(const Key('courier-private-hidden')), findsOneWidget);
+    latest = const OrderContact(address: 'عنوان ظهر بعد التحميل', phone: '01000001111');
+    access.value = true;
+    await tester.pump();
+    await tester.scrollUntilVisible(find.byKey(const Key('courier-details-map')), 150);
+    expect(find.textContaining('عنوان ظهر بعد التحميل'), findsOneWidget);
+    expect(find.textContaining('01000001111'), findsOneWidget);
+    access.value = false;
+    latest = null;
+    await tester.pump();
+    expect(find.textContaining('عنوان ظهر بعد التحميل'), findsNothing);
+    expect(find.textContaining('01000001111'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
