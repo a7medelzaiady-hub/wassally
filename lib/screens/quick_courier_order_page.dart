@@ -124,6 +124,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _call() async {
+    // A cached phone is never sufficient after the server revokes assignment.
+    if (_order?.canSeeContact != true) return;
     final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
     // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
@@ -313,6 +315,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ],
       ),
       const SizedBox(height: 4),
+      Text(
+        'طلب رقم ${o.id.length > 8 ? o.id.substring(o.id.length - 8) : o.id}',
+        key: const Key('quick-request-number'),
+        style: TextStyle(color: Brand.ink, fontWeight: FontWeight.w700),
+      ),
       Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
       if (o.area.isNotEmpty) ...[
         const SizedBox(height: 4),
