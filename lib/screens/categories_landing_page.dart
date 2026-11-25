@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
+import '../widgets/cached_net_image.dart';
 import '../theme/brand.dart';
 import 'account_page.dart';
 import 'home_page.dart';
@@ -9,13 +10,29 @@ import 'notifications_page.dart';
 import 'quick_order_create_page.dart';
 import 'store_directory_page.dart';
 
+/// Photo by Vitaly Gariev on Unsplash (free Unsplash license).
+/// https://unsplash.com/photos/a-woman-smiling-while-talking-on-a-cell-phone-3KgSopqBgYI
+/// A customer talking on the phone, not a delivery courier or food stock photo.
+const kEntryHeroPhoneImageUrl =
+    'https://images.unsplash.com/photo-1758876201450-cf77ab8b95bc'
+    '?auto=format&fit=crop&crop=faces&w=540&h=500&q=80';
+
 /// A single signed-in landing experience for every role.
 /// Other roles keep their own dashboard and permissions behind the "لوحتي" entry.
 class CustomerEntry extends StatefulWidget {
-  const CustomerEntry({super.key, this.dashboard, this.dashboardLabel});
+  const CustomerEntry({
+    super.key,
+    this.dashboard,
+    this.dashboardLabel,
+    this.loadHeroPhoto = true,
+  });
 
   final Widget? dashboard;
   final String? dashboardLabel;
+
+  /// Set false in deterministic widget tests; production always loads the
+  /// licensed portrait with the existing disk cache and an offline fallback.
+  final bool loadHeroPhoto;
 
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
@@ -66,11 +83,26 @@ class _CustomerEntryState extends State<CustomerEntry> {
     child: Stack(
       children: [
         Positioned(
-          left: -4,
-          bottom: -4,
-          width: 190,
-          height: 146,
-          child: const _EntryArtwork(Rect.fromLTWH(12, 311, 310, 207)),
+          left: 0,
+          bottom: 8,
+          width: height < 200 ? 144 : 188,
+          height: height < 200 ? 124 : 160,
+          child: ClipRRect(
+            key: const Key('entry-hero-phone-photo'),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(22),
+              bottomRight: Radius.circular(12),
+            ),
+            child: widget.loadHeroPhoto
+                ? CachedNetImage(
+                    key: const Key('entry-hero-phone-network'),
+                    url: kEntryHeroPhoneImageUrl,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 540,
+                    errorWidget: _phonePhotoFallback(),
+                  )
+                : _phonePhotoFallback(),
+          ),
         ),
         Positioned(
           left: 0,
@@ -98,19 +130,23 @@ class _CustomerEntryState extends State<CustomerEntry> {
           child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
         ),
         Positioned(
-          top: 111,
-          right: 18,
-          left: 160,
+          top: height < 200 ? 100 : 111,
+          right: 12,
+          left: height < 200 ? 152 : 194,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('كل اللي بتحبه...', maxLines: 1,
-                style: TextStyle(color: Colors.white, fontSize: 19,
-                    fontWeight: FontWeight.w900)),
+              Text('كل اللي بتحبه...', maxLines: 2,
+                style: TextStyle(color: Colors.white,
+                    fontSize: height < 200 ? 16 : 19,
+                    height: 1.10, fontWeight: FontWeight.w900)),
               RichText(
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 text: TextSpan(
-                  style: const TextStyle(fontFamily: 'Tajawal',
-                    color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  style: TextStyle(fontFamily: 'Tajawal',
+                    color: Colors.white, fontSize: height < 200 ? 15 : 18,
+                    fontWeight: FontWeight.w800),
                   children: [
                     TextSpan(text: 'يوصلك ', style: TextStyle(color: Brand.palette.primaryLight)),
                     const TextSpan(text: 'لحد باب بيتك'),
@@ -123,6 +159,17 @@ class _CustomerEntryState extends State<CustomerEntry> {
       ],
     ),
   );
+
+  Widget _phonePhotoFallback() => ColoredBox(
+        color: Brand.palette.accentDeep,
+        child: const Center(
+          child: Icon(
+            Icons.phone_in_talk_rounded,
+            color: Colors.white,
+            size: 46,
+          ),
+        ),
+      );
 
   Widget _serviceCard({
     required String title,
@@ -314,15 +361,17 @@ class _CustomerEntryState extends State<CustomerEntry> {
             borderRadius: BorderRadius.circular(30),
             child: Row(
               children: [
-                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
-                if (isCustomer)
-                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
-                else
-                  _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
+                // Approved order: cart in the old Home position, Home in
+                // the old cart position. Actions keep their original routes.
                 if (isCustomer)
                   _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
                 else
                   _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
+                if (isCustomer)
+                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
+                else
+                  _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
+                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
                 _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
               ],
             ),
