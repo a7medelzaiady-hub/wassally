@@ -767,7 +767,7 @@ class _StorePageState extends State<StorePage> {
           Text(
             store.name,
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 21,
               fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),
@@ -1715,7 +1715,7 @@ class _ProductRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1791,8 +1791,8 @@ class _ProductRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             SizedBox(
-              width: 104,
-              height: 104,
+              width: 92,
+              height: 92,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [

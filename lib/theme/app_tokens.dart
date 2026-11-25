@@ -126,9 +126,11 @@ class AppTypography {
     height: 1.2,
   );
 
-  /// يحترم تكبير الخط من إعدادات الهاتف بدون ما يكسر التخطيطات.
-  static const double minTextScale = 1.0;
-  static const double maxTextScale = 1.3;
+  /// حجم الخط ثابت ومتناسق زي التطبيقات المشهورة: بيصغر شوية مع إعداد
+  /// خط صغير في الهاتف، ومش بيكبر عن المقاسات المعتمدة فوق (التكبير
+  /// الكبير كان بيضخم الكروت والنصوص).
+  static const double minTextScale = 0.9;
+  static const double maxTextScale = 1.0;
 }
 
 class AppShadows {
