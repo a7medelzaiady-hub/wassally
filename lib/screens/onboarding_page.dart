@@ -106,7 +106,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
     if (widget.onDone != null) {
       widget.onDone!();
     } else {
-      Navigator.of(context).maybePop();
+      // pop مش maybePop: الـPopScope بتاع الجولة بيمنع maybePop.
+      Navigator.of(context).pop();
     }
   }
 

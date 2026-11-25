@@ -70,4 +70,31 @@ void main() {
     }
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('«تخطي» بيقفل صفحة الجولة فعلًا لما تتفتح كصفحة', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(MaterialApp(
+      theme: buildAppTheme(),
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                fullscreenDialog: true,
+                builder: (_) => const OnboardingPage(),
+              )),
+              child: const Text('افتح'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('افتح'));
+    await tester.pumpAndSettle();
+    expect(find.text('١/٣'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('onboarding-skip')));
+    await tester.pumpAndSettle();
+    expect(find.text('١/٣'), findsNothing);
+    expect(find.text('افتح'), findsOneWidget);
+  });
 }
