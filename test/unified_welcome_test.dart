@@ -70,13 +70,13 @@ void main() {
   testWidgets('الشريط زي المرجع: السلة كبيرة في النص', (tester) async {
     await _pumpEntry(tester);
     final x = {
-      for (final l in ['الرئيسية', 'طلباتي', 'السلة', 'الإشعارات', 'حسابي'])
+      for (final l in ['الرئيسية', 'طلباتي', 'السلة', 'المحلات', 'حسابي'])
         l: tester.getCenter(find.text(l)).dx,
     };
     expect(x['الرئيسية']!, greaterThan(x['طلباتي']!));
     expect(x['طلباتي']!, greaterThan(x['السلة']!));
-    expect(x['السلة']!, greaterThan(x['الإشعارات']!));
-    expect(x['الإشعارات']!, greaterThan(x['حسابي']!));
+    expect(x['السلة']!, greaterThan(x['المحلات']!));
+    expect(x['المحلات']!, greaterThan(x['حسابي']!));
     // The cart is the raised button in the middle of the bar.
     final cart = tester.getRect(find.byKey(const ValueKey('nav-السلة')));
     expect(cart.center.dx, closeTo(195, 2));

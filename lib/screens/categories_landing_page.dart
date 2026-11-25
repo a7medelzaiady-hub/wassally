@@ -266,36 +266,31 @@ class _CustomerEntryState extends State<CustomerEntry> {
           splashColor: AppColors.purple.withValues(alpha: 0.08),
           highlightColor: AppColors.purple.withValues(alpha: 0.04),
           child: LayoutBuilder(builder: (context, box) {
-            final artWidth = box.maxWidth * 0.52;
+            final artWidth = box.maxWidth * 0.74;
             return Stack(
               children: [
-                // الصورة + تلاشي ناعم للأبيض ناحية النص.
+                // الصورة نفسها بتذوب في الأبيض تدريجيًا (شفافية مش طبقة بيضا)،
+                // فمفيش حد/هامش ظاهر بين الصورة والكارت.
                 Positioned(
                   left: 0,
                   top: 0,
                   bottom: 0,
                   width: artWidth,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.asset(
-                        asset,
-                        key: ValueKey<String>('entry-art-$title'),
-                        fit: BoxFit.cover,
-                        alignment: Alignment.centerLeft,
-                        excludeFromSemantics: true,
-                      ),
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            stops: [0.0, 0.62, 1.0],
-                            colors: [Color(0x00FFFFFF), Color(0x00FFFFFF), Colors.white],
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      stops: [0.0, 0.42, 0.68, 0.92],
+                      colors: [Colors.black, Colors.black, Color(0x66000000), Color(0x00000000)],
+                    ).createShader(rect),
+                    child: Image.asset(
+                      asset,
+                      key: ValueKey<String>('entry-art-$title'),
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerLeft,
+                      excludeFromSemantics: true,
+                    ),
                   ),
                 ),
                 PositionedDirectional(
@@ -464,7 +459,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
               case 2:
                 _openShell(1);
               case 3:
-                _openNotifications();
+                _enter(const StoreDirectoryPage());
               default:
                 _enter(const _StandaloneAccount());
             }
@@ -478,7 +473,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
               label: 'السلة',
               badge: carts.totalItems,
             ),
-            const AppNavItem(icon: Icons.notifications_none_rounded, selectedIcon: Icons.notifications_rounded, label: 'الإشعارات'),
+            const AppNavItem(icon: Icons.storefront_outlined, selectedIcon: Icons.storefront_rounded, label: 'المحلات'),
             const AppNavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'حسابي'),
           ],
         ),

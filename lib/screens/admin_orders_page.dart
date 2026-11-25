@@ -8,6 +8,8 @@ import 'referral_campaign_page.dart';
 import '../models/order.dart';
 import 'admin_navigation_page.dart';
 import '../services/price_check.dart';
+import '../services/catalog_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/order_contact_service.dart';
 import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
@@ -45,10 +47,28 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
   /// تنبيه مرة واحدة في الجلسة لما المدير يفتح التطبيق وفيه حاجات محتاجة مراجعة.
   static bool _inboxAlertShown = false;
 
+  /// عناوين المحلات (قراءة واحدة محفوظة في الكاش) عشان كارت الطلب يكتب «محل X وعنوانه».
+  Map<String, String> _storeAddresses = const {};
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _alertInbox());
+    _loadStoreAddresses();
+  }
+
+  Future<void> _loadStoreAddresses() async {
+    try {
+      final snap = await CatalogService.get(
+        FirebaseFirestore.instance.collection('stores'),
+        'admin_store_addresses',
+      );
+      final map = <String, String>{
+        for (final d in snap.docs)
+          d.id: (d.data()['address'] ?? d.data()['locationAddress'] ?? '').toString().trim(),
+      };
+      if (mounted) setState(() => _storeAddresses = map);
+    } catch (_) {}
   }
 
   Future<void> _alertInbox() async {
@@ -281,6 +301,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                         ),
                         child: _AdminOrderCard(
                           order: shown[i],
+                          storeAddress: _storeAddresses[shown[i].storeId] ?? '',
                           onTap: () => _openManage(shown[i]),
                         ),
                       );
@@ -329,25 +350,68 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+/// «محل فواكه وخضروات» بدل «فواكه وخضروات» (من غير تكرار لو الاسم فيه نوع المكان).
+String storeTitle(String name) {
+  final n = name.trim();
+  if (n.isEmpty) return 'محل';
+  const kinds = ['محل', 'مطعم', 'صيدلية', 'سوبر', 'ماركت', 'هايبر', 'كافيه', 'مخبز', 'فرن', 'مكتبة', 'معرض'];
+  return kinds.any(n.startsWith) ? n : 'محل $n';
+}
+
+/// أول جزء من العنوان (الحي غالبًا) لو الطلب قديم ومفيهوش «area».
+String _shortPlace(String address) {
+  final a = address.trim();
+  if (a.isEmpty) return '';
+  final first = a.split(RegExp(r'[،,\n]')).first.trim();
+  return first.length > 30 ? '${first.substring(0, 30)}…' : first;
+}
+
+/// سطر صغير بأيقونة: «من» المحل و«إلى» الوجهة.
+class _RouteLine extends StatelessWidget {
+  const _RouteLine({required this.icon, required this.color, required this.text, this.strong = false});
+
+  final IconData icon;
+  final Color color;
+  final String text;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Icon(icon, size: 15, color: color),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: AppTypography.label,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+              color: strong ? AppColors.inkSoft : AppColors.muted,
+            ),
+          ),
+        ),
+      ]);
+}
+
 class _AdminOrderCard extends StatelessWidget {
   final AppOrder order;
+  final String storeAddress;
   final VoidCallback onTap;
-  const _AdminOrderCard({required this.order, required this.onTap});
+  const _AdminOrderCard({required this.order, required this.onTap, this.storeAddress = ''});
 
   @override
   Widget build(BuildContext context) {
     final color = order.status.color;
     final unassigned = order.courierName.isEmpty;
-    final customer = order.displayCustomer.isEmpty
-        ? 'عميل'
-        : order.displayCustomer;
     final timer = orderTotalTimer(
       createdAt: order.createdAt,
       deliveredAt: order.deliveredAt,
       delivered: order.status == OrderStatus.delivered,
       cancelled: order.status == OrderStatus.cancelled,
     );
-    final place = order.area.isNotEmpty ? order.area : '';
+    // الوجهة: الحي بس في القايمة، والتفاصيل (الاسم/الموبايل/العنوان) جوه الطلب.
+    final destination = order.area.isNotEmpty ? order.area : _shortPlace(order.address);
 
     // كارت طلب مضغوط زي تطبيقات التوصيل: المحل والمبلغ، العميل والمنطقة،
     // ثم الوقت والحالة والمندوب. الكارت كله بيفتح التفاصيل.
@@ -376,7 +440,7 @@ class _AdminOrderCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              order.storeName.isEmpty ? 'محل' : order.storeName,
+                              storeTitle(order.storeName),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -397,12 +461,18 @@ class _AdminOrderCard extends StatelessWidget {
                           ),
                         ],
                       ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      _RouteLine(
+                        icon: Icons.storefront_rounded,
+                        color: AppColors.purple,
+                        text: storeAddress.isEmpty ? 'عنوان المحل مش متسجل' : storeAddress,
+                      ),
                       const SizedBox(height: 2),
-                      Text(
-                        place.isEmpty ? customer : '$customer • $place',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.secondary.copyWith(fontSize: AppTypography.label),
+                      _RouteLine(
+                        icon: Icons.location_on_rounded,
+                        color: AppColors.orange,
+                        text: destination.isEmpty ? 'الوجهة في التفاصيل' : 'إلى: $destination',
+                        strong: true,
                       ),
                       if (order.deliveryPinLockedAt != null &&
                           order.status == OrderStatus.onTheWay &&
@@ -949,7 +1019,7 @@ class _ManageSheetState extends State<_ManageSheet> {
         onTap: (_busy || !enabled) ? null : () => _changeStatus(s),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
@@ -960,8 +1030,8 @@ class _ManageSheetState extends State<_ManageSheet> {
           child: Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: s.color.withValues(alpha: selected ? 0.22 : 0.12),
@@ -994,31 +1064,38 @@ class _ManageSheetState extends State<_ManageSheet> {
     );
   }
 
-  Widget _stepRow(String label, bool done) => Padding(
-    padding: const EdgeInsets.only(top: 6),
-    child: Row(
-      children: [
-        Icon(
-          done ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-          size: 18,
-          color: done ? kSuccess : kMuted,
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w700,
-            color: done ? kSuccess : Brand.ink,
+  Widget _stepRow(String label, bool done) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: done ? AppColors.successSoft : AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
+          child: Column(children: [
+            Icon(
+              done ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+              size: 18,
+              color: done ? AppColors.success : AppColors.muted,
+            ),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: AppTypography.caption,
+                  fontWeight: FontWeight.w800,
+                  color: done ? AppColors.success : AppColors.inkSoft,
+                ),
+              ),
+            ),
+          ]),
         ),
-      ],
-    ),
-  );
+      );
 
   /// خطوات تجهيز الطلب + آخر رسالة + اللي باقي.
   Widget _stepsCard() {
-    final rem = _remaining;
     final cancelled = _o.status == OrderStatus.cancelled;
     if (!cancelled && !adminPrepStepsApply(_o)) {
       // بعد خروج الطلب للتوصيل: مفيش خطوات تجهيز، بنعرض بس رسالة آخر إجراء/الخطأ.
@@ -1077,21 +1154,14 @@ class _ManageSheetState extends State<_ManageSheet> {
               ),
             )
           else if (adminPrepStepsApply(_o)) ...[
-            _stepRow('اعتماد السعر', _o.isVerified),
-            _stepRow('تغيير الحالة', _o.status != OrderStatus.newOrder),
-            _stepRow('تعيين مندوب', _o.courierId.isNotEmpty),
-            if (rem.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'باقي: ${rem.join('، ')}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Brand.goldDeep,
-                  ),
-                ),
-              ),
+            const SizedBox(height: AppSpacing.xs),
+            Row(children: [
+              _stepRow('اعتماد السعر', _o.isVerified),
+              const SizedBox(width: AppSpacing.xs),
+              _stepRow('تغيير الحالة', _o.status != OrderStatus.newOrder),
+              const SizedBox(width: AppSpacing.xs),
+              _stepRow('تعيين مندوب', _o.courierId.isNotEmpty),
+            ]),
           ],
         ],
       ),
@@ -1105,7 +1175,7 @@ class _ManageSheetState extends State<_ManageSheet> {
           width: 4,
           height: 18,
           decoration: BoxDecoration(
-            color: Brand.gold,
+            color: AppColors.purple,
             borderRadius: BorderRadius.circular(4),
           ),
         ),
@@ -1113,7 +1183,7 @@ class _ManageSheetState extends State<_ManageSheet> {
         Text(
           title,
           style: TextStyle(
-            fontSize: 16,
+            fontSize: 15,
             fontWeight: FontWeight.w800,
             color: Brand.ink,
           ),
@@ -1122,10 +1192,174 @@ class _ManageSheetState extends State<_ManageSheet> {
     );
   }
 
+  Future<void> _call(String phone) async {
+    final p = phone.trim();
+    if (p.isEmpty) return;
+    try {
+      await launchUrl(Uri(scheme: 'tel', path: p));
+    } catch (_) {}
+  }
+
+  Widget _routeStop({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String title,
+    List<String> lines = const [],
+    String phone = '',
+  }) =>
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+            child: Icon(icon, size: 19, color: color),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: AppTypography.caption, fontWeight: FontWeight.w700, color: AppColors.muted)),
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: AppTypography.body, fontWeight: FontWeight.w800, color: AppColors.ink, height: 1.3)),
+                for (final line in lines)
+                  if (line.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(line,
+                          style: const TextStyle(fontSize: AppTypography.label, color: AppColors.inkSoft, height: 1.4)),
+                    ),
+              ],
+            ),
+          ),
+          if (phone.trim().isNotEmpty)
+            IconButton.filledTonal(
+              tooltip: 'اتصال',
+              onPressed: () => _call(phone),
+              icon: const Icon(Icons.call_rounded, size: 20),
+            ),
+        ],
+      );
+
+  /// من فين لفين: المحل وعنوانه ← وجهة العميل (الحي، وبعده الاسم والموبايل والعنوان).
+  Widget _routeCard(AppOrder o) {
+    final c = _contact;
+    final hasContact = c != null && !c.isEmpty;
+    final storeAddress = _storeAddress == null
+        ? 'جاري تحميل العنوان...'
+        : (_storeAddress!.isEmpty ? 'عنوان المحل مش متسجل' : _storeAddress!);
+    final area = o.area.isNotEmpty ? o.area : _shortPlace(hasContact ? c.address : o.address);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _routeStop(
+            icon: Icons.storefront_rounded,
+            color: AppColors.purple,
+            label: 'من',
+            title: storeTitle(o.storeName),
+            lines: [storeAddress],
+          ),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 17),
+            child: Container(width: 2, height: 16, color: AppColors.line),
+          ),
+          _routeStop(
+            icon: Icons.location_on_rounded,
+            color: AppColors.orange,
+            label: 'إلى',
+            title: area.isEmpty ? (hasContact ? c.name : 'العميل') : area,
+            lines: hasContact
+                ? [
+                    '${c.name} • ${c.phone}',
+                    c.address,
+                    if (c.courierNotes.isNotEmpty) 'للمندوب: ${c.courierNotes}',
+                  ]
+                : const ['بيانات العميل بتتحمل...'],
+            phone: hasContact ? c.phone : '',
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// الأصناف بأسعارها والإجمالي في كارت واحد مرتب.
+  Widget _itemsCard(AppOrder o) => Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('الأصناف (${o.items.length})',
+                style: const TextStyle(
+                    fontSize: AppTypography.label, fontWeight: FontWeight.w800, color: AppColors.muted)),
+            const SizedBox(height: AppSpacing.xs),
+            for (final line in o.items)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.purpleSoft,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Text('${line.qty}×',
+                        style: const TextStyle(
+                            fontSize: AppTypography.label, fontWeight: FontWeight.w900, color: AppColors.purple)),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      line.options.isEmpty ? line.name : '${line.name} (${line.options.join('، ')})',
+                      style: const TextStyle(
+                          fontSize: AppTypography.bodySmall, fontWeight: FontWeight.w700, color: AppColors.ink),
+                    ),
+                  ),
+                  Text(formatPrice(line.total),
+                      style: const TextStyle(
+                          fontSize: AppTypography.label, fontWeight: FontWeight.w700, color: AppColors.inkSoft)),
+                ]),
+              ),
+            if (o.notes.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text('ملاحظات: ${o.notes}',
+                  style: const TextStyle(fontSize: AppTypography.label, color: AppColors.muted, height: 1.4)),
+            ],
+            const Divider(height: AppSpacing.lg),
+            Row(children: [
+              const Expanded(
+                child: Text('الإجمالي • كاش عند الاستلام',
+                    style: TextStyle(
+                        fontSize: AppTypography.label, fontWeight: FontWeight.w700, color: AppColors.muted)),
+              ),
+              Text(formatPrice(o.payable),
+                  style: const TextStyle(
+                      fontSize: AppTypography.titleSmall, fontWeight: FontWeight.w900, color: AppColors.orangeDeep)),
+            ]),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final o = _o;
-    final summary = o.items.map((e) => '${e.name} × ${e.qty}').join('، ');
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
@@ -1154,7 +1388,7 @@ class _ManageSheetState extends State<_ManageSheet> {
               Text(
                 'تفاصيل الطلب',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 17,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -1164,79 +1398,10 @@ class _ManageSheetState extends State<_ManageSheet> {
             ],
           ),
           _PhaseTimes(order: o),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Brand.bg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: kLine),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  summary,
-                  style: TextStyle(
-                    fontSize: 14,
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
-                    color: Brand.ink,
-                  ),
-                ),
-                Text('عنوان المحل: ${_storeAddress == null ? 'جاري التحميل...' : (_storeAddress!.isEmpty ? 'غير مسجل' : _storeAddress!)}'),
-                if (_contact != null && !_contact!.isEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'العميل: ${_contact!.name}\n'
-                    'الهاتف: ${_contact!.phone}\n'
-                    'العنوان: ${_contact!.address}'
-                    '${_contact!.courierNotes.isEmpty ? '' : '\nللمندوب: ${_contact!.courierNotes}'}',
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      height: 1.5,
-                      fontWeight: FontWeight.w700,
-                      color: Brand.ink,
-                    ),
-                  ),
-                ],
-                if (o.notes.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'ملاحظات: ${o.notes}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: kMuted,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Text(
-                      'الإجمالي (كاش عند الاستلام)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: kMuted,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      formatPrice(o.payable),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Brand.goldDeep,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          const SizedBox(height: AppSpacing.md),
+          _routeCard(o),
+          const SizedBox(height: AppSpacing.sm),
+          _itemsCard(o),
           _stepsCard(),
           _priceCard(),
           if (_o.referralDiscountMinor > 0 &&
