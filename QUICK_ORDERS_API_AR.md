@@ -10,13 +10,12 @@
 - التطبيق بيثبت حاجتين بس:
   1. **المقدم اختياري تمامًا** مهما كان تقدير المشتريات. المندوب يدفع من جيبه، والعميل ممكن يحوّل مقدم بالاتفاق.
   2. **كشف نهائي واحد للعرض فقط**؛ العميل لا يحتاج للموافقة عليه، ويؤكد استلام الطلب برمز التسليم: مجموع الفواتير + أجرة التوصيل + رسوم وصّلي − المقدم.
-- المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة).
+- المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة). العميل يقدر يكتب أو يصوّر أو يسجّل طلبه بصوت قصير.
 
 ## ما تغيّر عن النسخة 1
 
 - اتشال: `propose`، `approve`، `lock-receipts`، `quote`، حالة `receipts_locked`، وتعديل العميل بعد القبول.
-- اتضاف: `start-purchase`، `submit-summary`، `approve-summary`، `reject-summary`،
-  وحالتين `summary_pending` و`summary_approved`.
+- اتضاف: `start-purchase`، `submit-summary`. أمر `submit-summary` يجهّز حسابًا نهائيًا للعرض وينقل الطلب مباشرة إلى `summary_approved` (جاهز للتسليم). `approve-summary` و`reject-summary` متاحان لتوافق الطلبات القديمة بحالة `summary_pending` فقط؛ لا يظهران في واجهة العميل الجديدة.
 - `receipt`: اسم المحل **اختياري**، والمطلوب صورة + مبلغ.
 - رمز التسليم يظهر للعميل **بعد تجهيز الكشف النهائي مباشرة**، دون موافقة على الفاتورة.
 
@@ -55,8 +54,8 @@ advance: { amountPiastres, reference, sentAt, confirmedAt }
 receipts: [{ storeName, amountPiastres, imageUrl, uploadedAt }]   // storeName ممكن يبقى ""
 deliveryPiastres                     // أجرة التوصيل اللي كتبها المندوب في الكشف
 totals: { purchases, serviceFee, delivery, prepaid, due }         // due سالب = المندوب يرجّع للعميل
-summaryRevision, summarySubmittedAt, summaryApprovedAt
-summaryRejectedAt, summaryRejectReason, summaryRejections
+summaryRevision, summarySubmittedAt, summaryApprovedAt  // الأخير محفوظ للتوافق مع الطلبات القديمة
+summaryRejectedAt, summaryRejectReason, summaryRejections  // حقول قديمة
 overEstimatePiastres                 // للإدارة: الزيادة عن التقدير
 deliveredAt, deliveredBy, courierOwedPiastres, collectedPiastres
 cancelledAt, cancelledBy (customer|admin), cancelReason, advanceRefundDue
@@ -64,7 +63,7 @@ deliveryPinLockedAt
 rev                                   // يزيد مع كل كتابة
 ```
 
-`quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes? }` — صاحب الطلب والإدارة،
+`quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes?, customerVoiceUrl? }` — صاحب الطلب والإدارة،
 والمندوب المعيّن من `accepted` حتى `summary_approved`.
 
 ## الأسعار التقريبية (للعرض بس)
