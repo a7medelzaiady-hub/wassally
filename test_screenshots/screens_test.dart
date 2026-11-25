@@ -1,4 +1,7 @@
+import 'package:city_store/screens/admin_navigation_page.dart';
+import 'package:city_store/screens/cart_page.dart';
 import 'package:city_store/screens/categories_landing_page.dart';
+import 'package:city_store/screens/user_guide_page.dart';
 import 'package:city_store/screens/quick_order_create_page.dart';
 import 'package:city_store/screens/store_directory_page.dart';
 import 'package:city_store/services/catalog_sync.dart';
@@ -118,5 +121,24 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       },
     );
+  });
+
+  testWidgets('cart empty tab', (tester) async {
+    await shoot(tester, 'cart_empty_390x844', const Scaffold(
+      body: CartPage(),
+      bottomNavigationBar: CustomerBottomNav(currentTab: 1),
+    ));
+  });
+
+  testWidgets('cart empty inner', (tester) async {
+    await shoot(tester, 'cart_inner_390x844', const Scaffold(body: CartPage(showBackButton: true)));
+  });
+
+  testWidgets('user guide', (tester) async {
+    await shoot(tester, 'user_guide_390x844', const UserGuidePage());
+  });
+
+  testWidgets('admin tools', (tester) async {
+    await shoot(tester, 'admin_tools_390x844', const AdminNavigationPage());
   });
 }
