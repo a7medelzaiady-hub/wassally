@@ -255,7 +255,9 @@ class OrderService {
             .collection('app_info')
             .doc('security')
             .get(const GetOptions(source: Source.server));
-        return security.data()?['serverOrders'] == true;
+        return ServerOrdersGate.verifiedFlag(
+          security.data()?['serverOrders'],
+        );
       },
     );
     // Do not silently charge a service fee absent from an older APK's cart.
@@ -565,7 +567,9 @@ class OrderService {
             .collection('app_info')
             .doc('security')
             .get(const GetOptions(source: Source.server));
-        return security.data()?['serverOrders'] == true;
+        return ServerOrdersGate.verifiedFlag(
+          security.data()?['serverOrders'],
+        );
       },
     );
     if (serverOrders && !OrderGateway.serverOrdersEnabled) {

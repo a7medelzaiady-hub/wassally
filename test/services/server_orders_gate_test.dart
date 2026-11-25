@@ -34,6 +34,27 @@ void main() {
     expect(enabled, isFalse);
   });
 
+  test('Missing or malformed security doc does not authorize legacy writes',
+      () async {
+    for (final malformed in <Object?>[null, 'false', 0, <String, dynamic>{}]) {
+      final verified = ServerOrdersGate.verifiedFlag(malformed);
+      expect(verified, isNull);
+      await expectLater(
+        ServerOrdersGate.resolve(
+          clientWorkerEnabled: false,
+          readServerMode: () async => verified,
+        ),
+        throwsA(isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('سلتك محفوظة'),
+        )),
+      );
+    }
+    expect(ServerOrdersGate.verifiedFlag(false), isFalse);
+    expect(ServerOrdersGate.verifiedFlag(true), isTrue);
+  });
+
   test('Offline or denied security gate fails closed without fake update prompt',
       () async {
     var reads = 0;
