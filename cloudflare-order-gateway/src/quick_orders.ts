@@ -251,7 +251,8 @@ export function newQuickOrder(input: {
     stores: input.stores,
     // صور «صوّر طلبك» (Cloudinary). بتتمسح مراجعها وملفاتها عند التسليم.
     customerImages: input.customerImages ?? [],
-    customerVoiceUrl: input.customerVoiceUrl ?? "",
+    // الصوت في private/contact بس لحماية خصوصية محتواه قبل قبول المندوب.
+    hasCustomerVoice: Boolean(input.customerVoiceUrl),
     approxTotalPiastres: quickApproxTotal(input.stores),
     status: "open",
     courierId: "",
@@ -572,7 +573,7 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
     collectedPiastres: numOrNull(totals.due) ?? 0,
     // صور العميل بتتشال من الطلب لحظة تأكيد الاستلام (والملفات بتتمسح من Cloudinary).
     customerImages: [],
-    customerVoiceUrl: "",
+    hasCustomerVoice: false,
     rev: (numOrNull(order.rev) ?? 0) + 1,
   };
 }
@@ -583,7 +584,7 @@ export function quickCustomerImages(order: JsonMap): string[] {
   return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
 }
 
-/** رابط صوت العميل اللي يتم مسحه من Cloudinary بمجرد التسليم. */
+/** رابط صوت العميل من private/contact، لا من الطلب العام. */
 export function quickCustomerVoice(order: JsonMap): string {
   return typeof order.customerVoiceUrl === "string" ? order.customerVoiceUrl : "";
 }
