@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
 import '../widgets/home_top_ads.dart'
-    show kTopAdPlacement, kTopAdAspectRatio, kTourPlacement, kTourAspectRatio;
+    show kTopAdPlacement, kTopAdAspectRatio, kTourPlacement;
 
 import '../services/catalog_service.dart';
 import '../services/image_service.dart';
