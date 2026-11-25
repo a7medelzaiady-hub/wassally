@@ -62,6 +62,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/images/
+    - assets/images/entry/
 
   # خط Tajawal متضمّن في التطبيق (بيتحمّل وقت البناء في GitHub Actions من مستودع Google Fonts الرسمي).
   fonts:
