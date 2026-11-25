@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/app_snack.dart';
 
 String _err(Object e) => e is FirebaseException
     ? (e.code == 'permission-denied'
@@ -21,7 +22,7 @@ String _err(Object e) => e is FirebaseException
 
 void _say(BuildContext c, String m) {
   if (!c.mounted) return;
-  ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(m)));
+  ScaffoldMessenger.of(c).showSnackBar(appSnack(m));
 }
 
 /// مركز إعدادات التشغيل للأدمن: مناطق التوصيل، كوبونات الخصم، والمشرفين.
@@ -145,7 +146,7 @@ class _HighlightsRefreshCardState extends State<_HighlightsRefreshCard> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر التحديث: ${_err(e)}')),
+          appSnack('تعذر التحديث: ${_err(e)}'),
         );
       }
     } finally {

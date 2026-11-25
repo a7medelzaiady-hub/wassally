@@ -73,8 +73,7 @@ function submitted(delivery = 3000, receipts = [15000]): Doc {
   return step(o, "submit-summary", quickCourier, { deliveryPiastres: delivery });
 }
 
-const approved = (o = submitted()) =>
-  step(o, "approve-summary", customer, { expectedSummaryRevision: o.summaryRevision });
+const approved = (o = submitted()) => o; // summary ready automatically, no customer approval
 
 describe("quick settings", () => {
   it("is always on by default; only enabled: false switches it off", () => {
@@ -204,10 +203,10 @@ describe("receipts: photo + amount only", () => {
   });
 });
 
-describe("final summary and customer approval", () => {
+describe("final summary for display only", () => {
   it("courier enters one delivery number; the app computes one statement", () => {
     const s = submitted(3000, [15000]);
-    expect(s.status).toBe("summary_pending");
+    expect(s.status).toBe("summary_approved");
     expect(s.totals).toEqual({ purchases: 15000, serviceFee: 500, delivery: 3000, prepaid: 0, due: 18500 });
     expect(code(() => step(started(), "submit-summary", quickCourier, { deliveryPiastres: 3000 }))).toBe("409:no_receipts");
     const o = addReceipt(started(), 100);
@@ -232,24 +231,25 @@ describe("final summary and customer approval", () => {
     expect(code(() => addReceipt(approved(s), 1, 9))).toBe("409:invalid_state");
   });
   it("customer approves only the statement they saw; courier cannot approve", () => {
-    const s = submitted();
+    const s: Doc = { ...submitted(), status: "summary_pending" }; // legacy only
     expect(code(() => step(s, "approve-summary", quickCourier, { expectedSummaryRevision: s.summaryRevision })))
       .toBe("403:forbidden");
     expect(code(() => step(s, "approve-summary", customer, { expectedSummaryRevision: 99 }))).toBe("409:stale_summary");
-    const a = approved(s);
+    const a = step(s, "approve-summary", customer, { expectedSummaryRevision: s.summaryRevision });
     expect(a.status).toBe("summary_approved");
     expect(a.summaryApprovedAt).toEqual(now);
   });
   it("rejection = no delivery: back to the courier with the statement cleared", () => {
-    const r = step(submitted(), "reject-summary", customer, { reason: "الحساب مش مظبوط" });
+    const r = step({ ...submitted(), status: "summary_pending" }, "reject-summary", customer, { reason: "الحساب مش مظبوط" });
     expect(r.status).toBe("purchasing");
     expect(r.totals).toBe(null);
     expect(r.summaryRejections).toBe(1);
     expect(quickDeliveryBlocker(r, "cour1")).not.toBe(null);
-    // المندوب يعدّل ويبعت كشف جديد برقم مراجعة أعلى، والعميل لازم يوافق عليه هو.
+    // لو تم رفض كشف قديم، المندوب يعدّل ويبعت كشف جديد برقم مراجعة أعلى.
     const again = step(addReceipt(r, 500, 5), "submit-summary", quickCourier, { deliveryPiastres: 3000 });
     expect(again.summaryRevision).toBe(2);
-    expect(code(() => step(again, "approve-summary", customer, { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
+    expect(code(() => step({ ...again, status: "summary_pending" }, "approve-summary", customer,
+      { expectedSummaryRevision: 1 }))).toBe("409:stale_summary");
   });
   it("the approved statement is locked: no reopening, no new receipts or summary", () => {
     const a = approved();
@@ -295,9 +295,9 @@ describe("editing, cancelling and releasing", () => {
 });
 
 describe("delivery gate", () => {
-  it("PIN delivery only after the customer approved the statement", () => {
+  it("PIN delivery as soon as the final statement is ready", () => {
     expect(quickDeliveryBlocker(started(), "cour1")).not.toBe(null);
-    expect(quickDeliveryBlocker(submitted(), "cour1")).not.toBe(null);
+    expect(quickDeliveryBlocker(submitted(), "cour1")).toBe(null);
     const a = approved();
     expect(quickDeliveryBlocker(a, "cour2")).not.toBe(null);
     expect(quickDeliveryBlocker(a, "cour1")).toBe(null);
@@ -376,7 +376,7 @@ describe("display-only approximate price guide", () => {
     const s = step(addReceipt(o, 9000), "submit-summary", quickCourier, { deliveryPiastres: 2000 });
     expect((s.totals as Doc).purchases).toBe(9000);
   });
-  it("full journey: accept → estimate → advance → receipts → statement → approval → delivery", () => {
+  it("full journey: accept → estimate → advance → receipts → statement → PIN delivery", () => {
     let o = step(fresh(), "accept", quickCourier);
     o = step(o, "start-purchase", quickCourier, { estimatedPurchasesPiastres: 50000 });
     expect(o.status).toBe("purchasing");
@@ -385,8 +385,7 @@ describe("display-only approximate price guide", () => {
     o = addReceipt(o, 30000, 1);
     o = addReceipt(o, 22000, 2);
     o = step(o, "submit-summary", quickCourier, { deliveryPiastres: 4000 });
-    expect(quickDeliveryBlocker(o, "cour1")).not.toBe(null);
-    o = step(o, "approve-summary", customer, { expectedSummaryRevision: o.summaryRevision });
+    expect(quickDeliveryBlocker(o, "cour1")).toBe(null);
     expect(o.totals).toEqual({ purchases: 52000, serviceFee: 1040, delivery: 4000, prepaid: 50000, due: 7040 });
     expect(quickDeliveryBlocker(o, "cour1")).toBe(null);
     const done = { ...o, ...quickDeliveredPatch(o, "cour1", now) };

@@ -1,3 +1,12 @@
+import { quoteReferralPoints } from "./referral_points";
+import { commissionAmounts } from "./referral_commission";
+import { buildAdminReferralSettingsWrite } from "./referral_admin_settings";
+import { parseReferralSettings } from "./referral_settings";
+import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout";
+import { getOrIssueReferralCode } from "./referral_campaign";
+import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
+import { registerReferral } from "./referral_registration";
+import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
   OrderGroupError,
@@ -11,7 +20,11 @@ import {
   QuickRuleError,
   applyQuickAction,
   newQuickOrder,
+  quickCustomerImages,
+  quickCustomerVoice,
   quickDeliveredPatch,
+  validateQuickImages,
+  validateQuickVoice,
   quickDeliveryBlocker,
   resolveQuickSettings,
   validateQuickNotes,
@@ -21,6 +34,8 @@ import {
 
 interface Env {
   FIREBASE_PROJECT_ID: string;
+  REFERRAL_REGISTRATION_ENABLED?: string;
+  REFERRAL_DELIVERY_ENABLED?: string;
   FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   ALLOWED_ORIGINS?: string;
@@ -115,6 +130,8 @@ async function assertAppCheck(request: Request, env: Env): Promise<void> {
 }
 const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
+  createdAtMs: number;
+  lastLoginAtMs: number;
   validSince: number;
   disabled: boolean;
 }>();
@@ -408,7 +425,7 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean }>;
+      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string; lastLoginAt?: string }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
@@ -419,7 +436,13 @@ async function assertFirebaseUserActive(
     if (!Number.isFinite(validSince)) {
       throw new HttpError(503, "تعذر التحقق من صلاحية جلسة الحساب. حاول مرة أخرى.");
     }
-    state = { checkedAt: now, validSince, disabled: user.disabled === true };
+    state = {
+      checkedAt: now,
+      validSince,
+      disabled: user.disabled === true,
+      createdAtMs: Number(user.createdAt),
+      lastLoginAtMs: Number(user.lastLoginAt),
+    };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
       const oldestUid = firebaseUserStateCache.keys().next().value;
@@ -432,7 +455,7 @@ async function assertFirebaseUserActive(
   }
 }
 
-async function verifyCustomer(request: Request, env: Env): Promise<string> {
+async function verifyCustomer(request: Request, env: Env, firstRegistration = false): Promise<string> {
   await assertAppCheck(request, env);
   const auth = request.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -451,6 +474,18 @@ async function verifyCustomer(request: Request, env: Env): Promise<string> {
     throw new HttpError(401, "يلزم تسجيل الدخول بحساب جوجل صالح.");
   }
   await assertFirebaseUserActive(env, payload.sub, Number(payload.auth_time));
+  if (firstRegistration) {
+    const state = firebaseUserStateCache.get(payload.sub);
+    const createdAtMs = state?.createdAtMs ?? 0;
+    const authTimeMs = Number(payload.auth_time) * 1000;
+    const lastLoginAtMs = state?.lastLoginAtMs ?? 0;
+    // A code may be entered only during the *original Google registration
+    // session*. Later Google sign-ins cannot claim, regardless of order
+    // history or elapsed time. Firebase Auth metadata is authoritative.
+    if (!isOriginalRegistrationSession(createdAtMs, lastLoginAtMs, authTimeMs)) {
+      throw new HttpError(403, "كود الدعوة متاح عند إنشاء حساب جديد فقط.");
+    }
+  }
   return payload.sub;
 }
 
@@ -1394,7 +1429,48 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const discount = 0;
   const normalizedPromo = "";
   const serviceFee = serviceFeeFor(subtotal - discount);
-  const total = money(subtotal + deliveryFee - discount + serviceFee);
+  const requestedPoints = input.referralPoints ?? 0;
+  if (!Number.isSafeInteger(requestedPoints) || requestedPoints < 0) {
+    throw new HttpError(400, "عدد نقاط الإحالة غير صالح.");
+  }
+  let referralDiscountMinor = 0;
+  let pointWrites: unknown[] = [];
+  if (requestedPoints > 0) {
+    if (env.REFERRAL_REGISTRATION_ENABLED !== "true" ||
+        env.REFERRAL_DELIVERY_ENABLED !== "true") {
+      throw new HttpError(409, "استخدام نقاط الإحالة غير متاح حاليًا.");
+    }
+    const [settings, balance] = await Promise.all([
+      getDocument(env, "app_info/referral_config", token),
+      getDocument(env, `referral_balances/${uid}`, token),
+    ]);
+    const policy = settings && parseReferralSettings(decodeFields(settings.fields ?? {})).redemption;
+    const quote = quoteReferralPoints(
+      policy || undefined,
+      balance ? decodeFields(balance.fields ?? {}).points : undefined,
+      Math.round(subtotal * 100),
+    );
+    if (requestedPoints !== quote.points || !settings?.updateTime || !balance?.updateTime ||
+        input.expectedReferralDiscountMinor !== quote.discountMinor) {
+      throw new HttpError(409, "خصم النقاط اتغير. احسبه من جديد قبل تأكيد الطلب.");
+    }
+    referralDiscountMinor = quote.discountMinor;
+    pointWrites = [
+      { verify: settings.name, currentDocument: { updateTime: settings.updateTime } },
+      referralPointsBalanceWrite(env, uid, -requestedPoints, balance.updateTime),
+      {
+        update: {
+          name: firestoreDocumentName(env, `referral_redemptions/${orderId}`),
+          fields: encodeFields({
+            storeId, points: requestedPoints, discountMinor: referralDiscountMinor,
+            status: "reserved",
+          }),
+        },
+        currentDocument: { exists: false },
+      },
+    ];
+  }
+  const total = money(subtotal + deliveryFee - discount + serviceFee - referralDiscountMinor / 100);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1428,6 +1504,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     serviceFee,
     total,
     paymentMethod: "cash",
+    ...(referralDiscountMinor > 0 ? { referralDiscountMinor } : {}),
     status: "new",
     ...(orderArea ? { area: orderArea } : {}),
     ...(normalizedPromo && discount > 0 ? { promoCode: normalizedPromo, discount } : {}),
@@ -1438,6 +1515,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   }
 
   const writes = [
+    ...pointWrites,
     {
       update: {
         name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${orderPath}`,
@@ -1565,7 +1643,11 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
   }
   // الطلبات القديمة (قبل رسوم الخدمة) بتفضل من غير رسوم حتى بعد التعديل.
   const serviceFee = typeof order.serviceFee === "number" ? serviceFeeFor(subtotal - discount) : 0;
-  const total = money(subtotal + deliveryFee - discount + serviceFee);
+  const referralDiscountMinor = Number(order.referralDiscountMinor ?? 0);
+  if (Math.round(subtotal * 100) < referralDiscountMinor) {
+    throw new HttpError(409, "قيمة الأصناف بعد التعديل أقل من خصم النقاط المحجوز.");
+  }
+  const total = money(subtotal + deliveryFee - discount + serviceFee - referralDiscountMinor / 100);
   if (total <= 0 || total > 100000) throw new HttpError(409, "إجمالي الطلب بعد التعديل غير صالح.");
   const expectedTotal = Number(input.expectedTotal);
   if (!Number.isFinite(expectedTotal) || Math.abs(expectedTotal - total) >= 0.01) {
@@ -1695,6 +1777,81 @@ export async function cloudinarySpecialRequestFolder(uid: string): Promise<strin
   const hash = Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0")).join("");
   return `special_requests/${hash}`;
+}
+
+/** مجلد صور «صوّر طلبك» للعميل: جوه مجلد طلباته الخاصة، فحذف الحساب بيمسحه كمان. */
+export async function quickRequestFolder(uid: string): Promise<string> {
+  return `${await cloudinarySpecialRequestFolder(uid)}/quick`;
+}
+
+/** صورة «صوّر طلبك» صالحة ومن مجلد العميل نفسه. */
+export function isOwnQuickImage(url: string, folder: string, cloudName?: string): boolean {
+  if (!isCloudinaryImageUrl(url)) return false;
+  if (cloudName && !new URL(url).pathname.startsWith(`/${cloudName}/image/upload/`)) return false;
+  return cloudinaryPublicIdFromUrl(url).startsWith(folder + "/");
+}
+
+/** مسح صور «صوّر طلبك» من Cloudinary (بعد التسليم). بترجع الصور اللي ما اتمسحتش. */
+/** فيديو m4a واحد من العميل، محفوظ في مسار غير قابل لحقن رابط طرف آخر. */
+export function isOwnQuickVoice(url: string, folder: string, cloudName?: string): boolean {
+  if (!isCloudinaryVoiceUrl(url)) return false;
+  if (cloudName && !new URL(url).pathname.startsWith(`/${cloudName}/video/upload/`)) return false;
+  return cloudinaryPublicIdFromUrl(url).startsWith(folder + "/");
+}
+
+/** حذف الملفات الصوتية من التخزين الفعلي، مش مجرد إزالة رابط Firestore. */
+export async function destroyQuickVoice(env: Env, url: string, folder: string): Promise<boolean> {
+  if (!url) return true;
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET ||
+      !isOwnQuickVoice(url, folder, env.CLOUDINARY_CLOUD_NAME)) return false;
+  try {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const params = { invalidate: "true", public_id: cloudinaryPublicIdFromUrl(url), timestamp };
+    const signature = await cloudinarySignature(params, env.CLOUDINARY_API_SECRET);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(params)) form.append(key, value);
+    form.append("api_key", env.CLOUDINARY_API_KEY);
+    form.append("signature", signature);
+    const deleted = await fetch(`https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/video/destroy`,
+      { method: "POST", body: form });
+    const result = deleted.ok ? await deleted.json() as { result?: string } : {};
+    return ["ok", "not found"].includes(String(result.result ?? ""));
+  } catch { return false; }
+}
+
+export async function destroyQuickImages(env: Env, urls: string[], folder: string): Promise<string[]> {
+  const failed: string[] = [];
+  if (!urls.length) return failed;
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) return urls;
+  for (const url of urls) {
+    const publicId = cloudinaryPublicIdFromUrl(url);
+    if (!isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME) || !publicId) {
+      failed.push(url);
+      continue;
+    }
+    try {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = await cloudinarySignature(
+        { invalidate: "true", public_id: publicId, timestamp },
+        env.CLOUDINARY_API_SECRET,
+      );
+      const form = new FormData();
+      form.append("public_id", publicId);
+      form.append("timestamp", timestamp);
+      form.append("invalidate", "true");
+      form.append("api_key", env.CLOUDINARY_API_KEY);
+      form.append("signature", signature);
+      const deleted = await fetch(
+        `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/destroy`,
+        { method: "POST", body: form },
+      );
+      const result = deleted.ok ? await deleted.json() as { result?: string } : {};
+      if (!["ok", "not found"].includes(String(result.result ?? ""))) failed.push(url);
+    } catch {
+      failed.push(url);
+    }
+  }
+  return failed;
 }
 
 export async function deleteCloudinarySpecialRequestAssets(env: Env, uid: string): Promise<void> {
@@ -1833,11 +1990,28 @@ async function uploadCloudinaryImage(request: Request, env: Env): Promise<Respon
   if (!isUploadSizeAllowed(file.size)) {
     throw new HttpError(413, "حجم الصورة يجب ألا يتجاوز 5MB.");
   }
-  if (!["stores", "products", "banners", "special_requests", "quick_receipts"].includes(folder)) {
+  if (!["stores", "products", "banners", "special_requests", "quick_receipts", "quick_requests", "quick_voices"].includes(folder)) {
     throw new HttpError(400, "مجلد الصور غير مسموح.");
   }
   if (storeId.length > 100 || (storeId && !/^[A-Za-z0-9_-]+$/.test(storeId))) {
     throw new HttpError(400, "معرّف المحل غير صالح.");
+  }
+
+  // «صوّر طلبك»: أي عميل مسجّل يرفع صور ورقة طلباته في مجلده هو بس،
+  // من غير أي قراءة من Firestore. الصور بتتربط بالطلب عند إنشائه.
+  if (folder === "quick_voices") {
+    if (file.size > MAX_VOICE_UPLOAD_BYTES) throw new HttpError(413, "التسجيل الصوتي أكبر من 1MB.");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const audio = detectAudioContent(bytes);
+    if (!audio) throw new HttpError(415, "صيغة الصوت غير مدعومة. سجل بصيغة m4a.");
+    return await signedCloudinaryImageUpload(env, bytes, audio,
+      `${await quickRequestFolder(uid)}/voice`, "video");
+  }
+  if (folder === "quick_requests") {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const image = detectImageContent(bytes);
+    if (!image) throw new HttpError(415, "صيغة الصورة غير مدعومة. استخدم JPG أو PNG أو WEBP.");
+    return await signedCloudinaryImageUpload(env, bytes, image, await quickRequestFolder(uid));
   }
 
   const token = await googleAccessToken(env);
@@ -2057,7 +2231,7 @@ async function cleanupOrderAttachmentsFor(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let headers: Headers;
     try {
       headers = corsHeaders(request, env);
@@ -2069,6 +2243,100 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
       return response({ ok: true, service: "wasally-order-gateway" }, 200, headers);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/campaign") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "حملة الإحالات غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralCampaign(request, env, ctx), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر فتح حملة الإحالات.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/settings") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "حملة الإحالات غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralSettings(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تحديث إعدادات الإحالات.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/points/quote") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true" ||
+          env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "خصم نقاط الإحالة غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralPointsQuote(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر حساب خصم نقاط الإحالة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/redemption") {
+      try {
+        return response(await referralRedemption(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تحديث تسوية خصم النقاط.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/commissions") {
+      if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "تسوية خصم الإحالة غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await settleReferralCommission(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر تسجيل تسوية العمولة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/payouts") {
+      if (env.REFERRAL_DELIVERY_ENABLED !== "true") {
+        return response({ error: "صرف مكافآت الإحالات غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        return response(await referralPayout(request, env), 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : error instanceof ReferralPayoutConflict
+          ? new HttpError(409, "مفيش رصيد متاح أو فيه طلب صرف جاري بالفعل. حدّث الصفحة.")
+          : new HttpError(503, "تعذر تحديث طلب صرف المكافأة.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/registration") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "التسجيل بكود الإحالة غير متاح حاليًا." }, 404, headers);
+      }
+      try {
+        const uid = await verifyCustomer(request, env, true);
+        const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-registration:" + uid });
+        if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+        const body = await request.json().catch(() => null) as { code?: unknown } | null;
+        if (typeof body?.code !== "string" || body.code.length > 32) {
+          throw new HttpError(400, "اكتب كود إحالة صحيح.");
+        }
+        const token = await googleAccessToken(env);
+        const accepted = await registerReferral({
+          projectId: env.FIREBASE_PROJECT_ID,
+          token,
+          uid,
+          code: body.code,
+          createdAtMs: firebaseUserStateCache.get(uid)?.createdAtMs ?? 0,
+          now: Date.now(),
+        }, fetch);
+        if (!accepted) throw new HttpError(409, "كود الإحالة غير متاح لهذا التسجيل.");
+        return response({ accepted: true }, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر حفظ كود الإحالة حاليًا.");
+        return response({ error: e.message }, e.status, headers);
+      }
     }
     if (request.method === "POST" && url.pathname === "/v1/account/delete") {
       try {
@@ -2105,7 +2373,7 @@ export default {
     const isCleanup = cleanupOrderId.length > 0 && !cleanupOrderId.includes("/");
     if (request.method === "POST" && url.pathname === "/v1/order-events") {
       try {
-        const result = await notifyOrderEvent(request, env);
+        const result = await notifyOrderEvent(request, env, ctx);
         return response(result, 200, headers);
       } catch (error) {
         const e = error instanceof HttpError ? error : new HttpError(500, "تعذر إرسال إشعار الطلب.");
@@ -2125,7 +2393,7 @@ export default {
     }
     if (url.pathname === "/v1/quick" || url.pathname.startsWith("/v1/quick/")) {
       try {
-        const result = await routeQuick(request, env, url.pathname) ?? response({ error: "Not found." }, 404);
+        const result = await routeQuick(request, env, url.pathname, ctx) ?? response({ error: "Not found." }, 404);
         const mergedHeaders = new Headers(result.headers);
         headers.forEach((value, key) => mergedHeaders.set(key, value));
         return new Response(await result.text(), { status: result.status, headers: mergedHeaders });
@@ -2145,7 +2413,7 @@ export default {
         const result = pinMatch[2] === "delivery-pin" && request.method === "GET"
           ? await getDeliveryPin(request, env, id)
           : pinMatch[2] === "deliver" && request.method === "POST"
-            ? await deliverWithPin(request, env, id)
+            ? await deliverWithPin(request, env, id, ctx)
             : response({ error: "Not found." }, 404);
         const mergedHeaders = new Headers(result.headers);
         headers.forEach((value, key) => mergedHeaders.set(key, value));
@@ -2271,7 +2539,360 @@ async function getDeliveryPin(request: Request, env: Env, orderId: string): Prom
 }
 
 /** المندوب يأكد التسليم بالرمز. 5 محاولات غلط = الرمز يتقفل والإدارة تقرر. */
-async function deliverWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+function referralPointsBalanceWrite(env: Env, uid: string, points: number, updateTime?: string) {
+  return {
+    transform: {
+      document: firestoreDocumentName(env, `referral_balances/${uid}`),
+      fieldTransforms: [{ fieldPath: "points", increment: { integerValue: String(points) } }],
+    },
+    ...(updateTime ? { currentDocument: { updateTime } } : {}),
+  };
+}
+
+async function refundReferralOrder(
+  env: Env, token: string, orderId: string, orderDoc: FirestoreDoc,
+) {
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (order.status !== "cancelled" || !orderDoc.updateTime ||
+      !order.referralDiscountMinor || order.userDeleted === true) return;
+  const doc = await getDocument(env, `referral_redemptions/${orderId}`, token);
+  if (!doc?.updateTime) return;
+  const data = decodeFields(doc.fields ?? {});
+  if (data.status !== "reserved") return;
+  if (typeof order.userId !== "string" || data.discountMinor !== order.referralDiscountMinor ||
+      typeof data.points !== "number" || !Number.isSafeInteger(data.points) || data.points < 1) {
+    throw new Error("invalid points reservation");
+  }
+  await commitOrConflict(env, token, [
+    { verify: orderDoc.name, currentDocument: { updateTime: orderDoc.updateTime } },
+    referralPointsBalanceWrite(env, order.userId, data.points),
+    {
+      update: { name: doc.name, fields: encodeFields({ status: "refunded" }) },
+      updateMask: { fieldPaths: ["status"] },
+      currentDocument: { updateTime: doc.updateTime },
+    },
+  ]);
+}
+
+async function referralRedemption(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-redemption:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { orderId, action, reference } = await readJsonBody(request);
+  if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
+      !["refund", "claim", "paid"].includes(String(action))) {
+    throw new HttpError(400, "راجع رقم الطلب والإجراء.");
+  }
+  const token = await googleAccessToken(env);
+  const orderDoc = await getDocument(env, `orders/${orderId}`, token);
+  if (!orderDoc?.updateTime) throw new HttpError(404, "الطلب غير موجود.");
+  const order = decodeFields(orderDoc.fields ?? {});
+  if (action === "refund") {
+    if (order.userId !== uid && !await getDocument(env, `admins/${uid}`, token)) {
+      throw new HttpError(403, "الطلب لا يخص حسابك.");
+    }
+    if (order.status !== "cancelled") throw new HttpError(409, "الطلب غير ملغي.");
+    await refundReferralOrder(env, token, orderId, orderDoc);
+    return { processed: true };
+  }
+  if (!await getDocument(env, `admins/${uid}`, token)) {
+    throw new HttpError(403, "تسوية خصم النقاط من صلاحيات الإدارة.");
+  }
+  if (order.status !== "delivered" || !order.referralDiscountMinor) {
+    throw new HttpError(409, "التسوية متاحة لطلب بنقاط تم تسليمه.");
+  }
+  const doc = await getDocument(env, `referral_redemptions/${orderId}`, token);
+  if (!doc?.updateTime) throw new HttpError(404, "سجل الخصم غير موجود.");
+  const data = decodeFields(doc.fields ?? {});
+  if (data.storeId !== order.storeId || data.discountMinor !== order.referralDiscountMinor) {
+    throw new HttpError(409, "بيانات التسوية غير متطابقة.");
+  }
+  const result = { storeId: data.storeId, discountMinor: data.discountMinor };
+  if (action === "paid" && (typeof reference !== "string" ||
+      reference.trim().length < 5 || reference.length > 120)) {
+    throw new HttpError(400, "اكتب مرجع التحويل اليدوي.");
+  }
+  if (data.status === "paid") {
+    if (action === "paid" && data.processingBy === uid && data.reference === String(reference).trim()) {
+      return { ...result, status: "paid" };
+    }
+    throw new HttpError(409, "التسوية مسددة بالفعل.");
+  }
+  if (data.status === "processing" && data.processingBy !== uid) {
+    throw new HttpError(409, "مسؤول آخر بيتابع التسوية.");
+  }
+  if (action === "claim" && data.status === "processing") return { ...result, status: "processing" };
+  if ((action === "claim" && data.status !== "reserved") ||
+      (action === "paid" && data.status !== "processing")) {
+    throw new HttpError(409, "حالة التسوية لا تسمح بالإجراء.");
+  }
+
+  const changes = action === "claim"
+    ? { status: "processing", processingBy: uid }
+    : { status: "paid", reference: String(reference).trim(), paidAt: new Date() };
+  await commitOrConflict(env, token, [
+    { verify: orderDoc.name, currentDocument: { updateTime: orderDoc.updateTime } },
+    {
+      update: { name: doc.name, fields: encodeFields(changes) },
+      updateMask: { fieldPaths: Object.keys(changes) },
+      currentDocument: { updateTime: doc.updateTime },
+    },
+  ]);
+  return { ...result, status: changes.status };
+}
+
+async function referralPointsQuote(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-points:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { itemsSubtotalMinor } = await readJsonBody(request);
+  if (typeof itemsSubtotalMinor !== "number" || !Number.isSafeInteger(itemsSubtotalMinor) ||
+      itemsSubtotalMinor < 0 || itemsSubtotalMinor > 10_000_000) {
+    throw new HttpError(400, "راجع قيمة الأصناف.");
+  }
+  const token = await googleAccessToken(env);
+  const [config, balance] = await Promise.all([
+    getDocument(env, "app_info/referral_config", token),
+    getDocument(env, `referral_balances/${uid}`, token),
+  ]);
+  const policy = config ? parseReferralSettings(decodeFields(config.fields ?? {})).redemption : undefined;
+  return quoteReferralPoints(
+    policy, balance ? decodeFields(balance.fields ?? {}).points : undefined, itemsSubtotalMinor,
+  );
+}
+
+async function settleReferralCommission(request: Request, env: Env): Promise<JsonMap> {
+  const adminUid = await verifyCustomer(request, env);
+  const safeId = /^[A-Za-z0-9_-]{1,128}$/;
+  if (!safeId.test(adminUid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-commission:" + adminUid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const token = await googleAccessToken(env);
+  if (!await getDocument(env, `admins/${adminUid}`, token)) {
+    throw new HttpError(403, "تسجيل تسوية العمولة من صلاحيات الإدارة.");
+  }
+
+  const { ownerUid, storeId, reference, dueMinor } = await readJsonBody(request);
+  if (typeof ownerUid !== "string" || !safeId.test(ownerUid) ||
+      typeof storeId !== "string" || !safeId.test(storeId) ||
+      typeof reference !== "string" || !/^[A-Za-z0-9_-]{4,64}$/.test(reference) ||
+      typeof dueMinor !== "number" || !Number.isSafeInteger(dueMinor) ||
+      dueMinor < 1 || dueMinor > 10_000_000) {
+    throw new HttpError(400, "راجع بيانات المحل ومرجع العمولة والمبلغ بالقروش.");
+  }
+
+  const settlementPath = `referral_commission_settlements/${storeId.length}-${storeId}-${reference}`;
+  const previous = await getDocument(env, settlementPath, token);
+  if (previous) {
+    const saved = decodeFields(previous.fields ?? {});
+    if (saved.ownerUid !== ownerUid || saved.dueMinor !== dueMinor) {
+      throw new HttpError(409, "مرجع العمولة اتسجل بالفعل ببيانات مختلفة.");
+    }
+    return { dueMinor, discountMinor: saved.discountMinor, payableMinor: saved.payableMinor };
+  }
+
+  const balancePath = `referral_balances/${ownerUid}`;
+  const [mapping, balance] = await Promise.all([
+    getDocument(env, `storeOwners/${ownerUid}`, token),
+    getDocument(env, balancePath, token),
+  ]);
+  const owner = mapping ? decodeFields(mapping.fields ?? {}) : null;
+  if (!mapping?.updateTime || owner?.storeId !== storeId || owner.active === false) {
+    throw new HttpError(409, "الحساب مش صاحب المحل المحدد.");
+  }
+  if (balance && !balance.updateTime) throw new HttpError(503, "تعذر تأكيد إصدار الرصيد.");
+  const amounts = commissionAmounts(
+    dueMinor, balance ? decodeFields(balance.fields ?? {}).commissionDiscountMinor : undefined,
+  );
+  await commitOrConflict(env, token, [
+    {
+      verify: mapping.name,
+      currentDocument: { updateTime: mapping.updateTime },
+    },
+    {
+      update: {
+        name: firestoreDocumentName(env, settlementPath),
+        fields: encodeFields({ ...amounts, ownerUid, storeId, reference, adminUid }),
+      },
+      updateTransforms: [{ fieldPath: "settledAt", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    },
+    ...(amounts.discountMinor > 0 ? [{
+      transform: {
+        document: firestoreDocumentName(env, balancePath),
+        fieldTransforms: [{
+          fieldPath: "commissionDiscountMinor",
+          increment: { integerValue: String(-amounts.discountMinor) },
+        }],
+      },
+      currentDocument: { updateTime: balance!.updateTime },
+    }] : []),
+  ]);
+  return amounts;
+}
+
+async function referralPayout(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,96}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-payout:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { action, requestId, payoutId, reference } = await readJsonBody(request);
+  const token = await googleAccessToken(env);
+  if (action === "request") {
+    if (typeof requestId !== "string" || !/^[a-f0-9]{24}$/.test(requestId)) {
+      throw new HttpError(400, "بيانات طلب الصرف غير صالحة.");
+    }
+    return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+      kind: "request", uid, requestId,
+    }, fetch);
+  }
+  if (!await getDocument(env, `admins/${uid}`, token)) throw new HttpError(403, "الإجراء من صلاحيات الإدارة.");
+  if (action === "list") {
+    const query = await fetch(`${firestoreDocumentsUrl(env)}:runQuery`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId: "referral_payouts" }],
+        where: { fieldFilter: {
+          field: { fieldPath: "status" }, op: "IN",
+          value: { arrayValue: { values: [{ stringValue: "pending" }, { stringValue: "processing" }] } },
+        } },
+        limit: 50,
+      } }),
+    });
+    if (!query.ok) throw new HttpError(503, "تعذر تحميل طلبات الصرف.");
+    const rows = await query.json() as Array<{ document?: FirestoreDoc }>;
+    return { pending: rows.flatMap(({ document }) => document ? [{
+      id: document.name.split("/").at(-1),
+      ...decodeFields(document.fields ?? {}),
+      canResolve: decodeFields(document.fields ?? {}).processingBy === uid,
+    }] : []) };
+  }
+  if (typeof payoutId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(payoutId)) {
+    throw new HttpError(400, "طلب الصرف غير صالح.");
+  }
+  if (action === "claim") {
+    return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+      kind: "claim", payoutId, adminUid: uid,
+    }, fetch);
+  }
+  if ((action !== "paid" && action !== "rejected") ||
+      typeof reference !== "string" || reference.trim().length < 5 || reference.length > 120) {
+    throw new HttpError(400, "اكتب رقم مرجع التحويل أو سبب الرفض.");
+  }
+  return updateReferralPayout(env.FIREBASE_PROJECT_ID, token, {
+    kind: action, payoutId, reference: reference.trim(), adminUid: uid,
+  }, fetch);
+}
+
+async function referralSettings(request: Request, env: Env): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-settings:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const token = await googleAccessToken(env);
+  if (!await getDocument(env, `admins/${uid}`, token)) throw new HttpError(403, "الإعدادات من صلاحيات الإدارة.");
+  const { settings } = await readJsonBody(request);
+  const doc = await getDocument(env, "app_info/referral_config", token);
+  const current = doc ? parseReferralSettings(decodeFields(doc.fields ?? {})) : null;
+  if (settings === undefined) return { settings: current };
+  let parsed;
+  try {
+    parsed = parseReferralSettings(settings);
+  } catch {
+    throw new HttpError(400, "راجع قيم المكافآت وحدودها.");
+  }
+  const version = current?.version ?? 0;
+  if (parsed.version !== version + 1) throw new HttpError(409, "الإعدادات اتغيرت. حدّث الصفحة وحاول تاني.");
+  if (doc && !doc.updateTime) throw new HttpError(503, "تعذر تأكيد إصدار إعدادات الإحالات.");
+  const write = buildAdminReferralSettingsWrite(
+    firestoreDocumentName(env, "").slice(0, -1), parsed, version, doc?.updateTime ?? null,
+  );
+  const commit = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ writes: [write] }),
+  });
+  if (commit.status === 409 || commit.status === 412) {
+    throw new HttpError(409, "الإعدادات اتغيرت. حدّث الصفحة وحاول تاني.");
+  }
+  if (!commit.ok) throw new HttpError(503, "تعذر حفظ إعدادات الإحالات.");
+  return { settings: parsed };
+}
+
+async function referralCampaign(request: Request, env: Env, ctx?: ExecutionContext): Promise<JsonMap> {
+  const uid = await verifyCustomer(request, env);
+  const safeId = /^[A-Za-z0-9_-]{1,128}$/;
+  if (!safeId.test(uid)) throw new HttpError(400, "الحساب غير صالح.");
+  const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-campaign:" + uid });
+  if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
+  const { channel, marketerUid } = await readJsonBody(request);
+  if (channel !== "customer" && channel !== "store_owner" && channel !== "marketer") {
+    throw new HttpError(400, "نوع كود الإحالة غير صالح.");
+  }
+  const token = await googleAccessToken(env);
+  let codeOwnerUid = uid;
+  let storeId: string | undefined;
+  if (channel === "marketer") {
+    if (typeof marketerUid !== "string" || !safeId.test(marketerUid)) {
+      throw new HttpError(400, "اكتب معرّف حساب المسوّق.");
+    }
+    if (!await getDocument(env, `admins/${uid}`, token)) {
+      throw new HttpError(403, "إصدار أكواد المسوقين من صلاحيات الإدارة.");
+    }
+    if (!await getDocument(env, `users/${marketerUid}`, token)) {
+      throw new HttpError(404, "حساب المسوّق غير موجود.");
+    }
+    codeOwnerUid = marketerUid;
+  } else if (channel === "store_owner") {
+    const mapping = await getDocument(env, `storeOwners/${uid}`, token);
+    const owner = mapping && decodeFields(mapping.fields ?? {});
+    if (owner?.active === false || typeof owner?.storeId !== "string" || !safeId.test(owner.storeId)) {
+      throw new HttpError(403, "الكود متاح لأصحاب المحلات المعتمدة.");
+    }
+    storeId = owner.storeId;
+    const storeDoc = await getDocument(env, `stores/${storeId}`, token);
+    const store = storeDoc && decodeFields(storeDoc.fields ?? {});
+    if (store?.approved !== true || store.active !== true) {
+      throw new HttpError(403, "الكود متاح بعد اعتماد المحل وتفعيله.");
+    }
+  }
+  const code = await getOrIssueReferralCode(env.FIREBASE_PROJECT_ID, token, {
+    uid: codeOwnerUid, issuerUid: uid, channel,
+  }, fetch);
+  if (channel === "marketer") return { code, rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED === "true" };
+  // An invited user or owner can recover from a missed or interrupted delivery callback.
+  scheduleReferralDelivery(env, ctx, token, { userId: uid, storeId });
+  const [balance, marketerCode] = await Promise.all([
+    getDocument(env, `referral_balances/${uid}`, token),
+    getDocument(env, `referral_marketer_codes/${uid}`, token),
+  ]);
+  return {
+    code,
+    balance: balance ? decodeFields(balance.fields ?? {}) : {},
+    marketerCode: marketerCode ? decodeFields(marketerCode.fields ?? {}).code : null,
+    rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED === "true",
+  };
+}
+
+function scheduleReferralDelivery(env: Env, ctx: ExecutionContext | undefined, token: string, order: JsonMap): void {
+  if (env.REFERRAL_DELIVERY_ENABLED !== "true" || !ctx) return;
+  const jobs = [];
+  if (typeof order.userId === "string") {
+    jobs.push(settleCustomerDelivery(env.FIREBASE_PROJECT_ID, token, order.userId, fetch));
+  }
+  if (typeof order.storeId === "string") {
+    jobs.push(settleStoreDelivery(env.FIREBASE_PROJECT_ID, token, order.storeId, fetch));
+  }
+  ctx.waitUntil(Promise.allSettled(jobs).then((results) => {
+    if (results.some((result) => result.status === "rejected")) {
+      console.error("Referral settlement failed after delivery");
+    }
+  }));
+}
+
+async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?: ExecutionContext): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
   let body: any;
@@ -2360,6 +2981,7 @@ async function deliverWithPin(request: Request, env: Env, orderId: string): Prom
   }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  if (update.status === "delivered") scheduleReferralDelivery(env, ctx, token, order);
   // مرفقات الطلب الخاص كانت بتتمسح لما العميل يدوس تأكيد الاستلام؛ دلوقتي بعد الرمز الصحيح.
   // محاولة واحدة، وفشلها ما يأثرش على التسليم (العميل لما يفتح الطلب بيعيد المحاولة).
   if (hasPendingAttachments(order) && typeof order.userId === "string") {
@@ -2487,7 +3109,7 @@ function recentOrderEvent(date: unknown): date is Date {
     date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
 }
 
-async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
+async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionContext): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
   const { orderId, event, status } = await readJsonBody(request);
@@ -2527,8 +3149,16 @@ async function notifyOrderEvent(request: Request, env: Env): Promise<JsonMap> {
     key = `status_${status}`;
     customerTitle = orderPushTitles[status as keyof typeof orderPushTitles];
     if (status === "on_the_way") storeTitle = "المندوب استلم طلبًا من المحل";
-    if (status === "delivered") storeTitle = "تم تسليم طلب من المحل";
+    if (status === "delivered") {
+      storeTitle = "تم تسليم طلب من المحل";
+      scheduleReferralDelivery(env, ctx, token, order);
+    }
     if (status === "cancelled") {
+      try {
+        await refundReferralOrder(env, token, orderId, orderDoc);
+      } catch {
+        console.error("Referral refund requires retry");
+      }
       storeTitle = "تم إلغاء طلب من المحل";
       courierTitle = "تم إلغاء طلب توصيل";
     }
@@ -2627,11 +3257,12 @@ async function signedCloudinaryImageUpload(
   bytes: Uint8Array<ArrayBuffer>,
   detected: { format: string; mime: string },
   folder: string,
+  resourceType: "image" | "video" = "image",
 ): Promise<Response> {
   const timestamp = Math.floor(Date.now() / 1000);
   const publicId = crypto.randomUUID();
   const signedParams = {
-    allowed_formats: "jpg,jpeg,png,webp",
+    allowed_formats: resourceType === "video" ? "m4a,aac,mp4" : "jpg,jpeg,png,webp",
     folder,
     overwrite: "false",
     public_id: publicId,
@@ -2646,7 +3277,7 @@ async function signedCloudinaryImageUpload(
   for (const [key, value] of Object.entries(signedParams)) upload.append(key, value);
   upload.append("signature", signature);
   const uploaded = await fetch(
-    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`,
     { method: "POST", body: upload },
   );
   if (!uploaded.ok) {
@@ -2658,7 +3289,7 @@ async function signedCloudinaryImageUpload(
   let parsedUrl: URL;
   try { parsedUrl = new URL(secureUrl); } catch { throw new HttpError(502, "خدمة الصور لم ترجع رابطًا صالحًا."); }
   if (parsedUrl.protocol !== "https:" || parsedUrl.hostname !== "res.cloudinary.com" ||
-      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/image/upload/`)) {
+      !parsedUrl.pathname.startsWith(`/${env.CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/`)) {
     throw new HttpError(502, "خدمة الصور لم ترجع رابطًا آمنًا.");
   }
   return response({ url: secureUrl });
@@ -2740,7 +3371,7 @@ const quickCustomerUpdates: Readonly<Record<string, string>> = {
   accept: "مندوب قبل طلبك السريع",
   release: "طلبك السريع بيدوّر على مندوب تاني",
   "advance-received": "المندوب أكّد استلام المقدم",
-  "submit-summary": "كشف حساب طلبك السريع جاهز للمراجعة",
+  "submit-summary": "كشف طلبك السريع جاهز — استلم طلبك بالرمز",
 };
 
 const quickCourierUpdates: Readonly<Record<string, string>> = {
@@ -2768,9 +3399,14 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
   if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
     throw new HttpError(400, "راجع الاسم والمنطقة.");
   }
-  let stores, notes;
+  let stores, notes, customerImages: string[] = [], customerVoiceUrl = "";
   try {
-    stores = validateQuickStores(input.stores);
+    const folder = await quickRequestFolder(uid);
+    customerImages = validateQuickImages(input.customerImages,
+      (url) => isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME));
+    customerVoiceUrl = validateQuickVoice(input.customerVoiceUrl,
+      (url) => isOwnQuickVoice(url, folder + "/voice", env.CLOUDINARY_CLOUD_NAME));
+    stores = validateQuickStores(input.stores, customerImages.length > 0 || !!customerVoiceUrl);
     notes = validateQuickNotes(input.notes);
   } catch (error) {
     quickError(error);
@@ -2810,7 +3446,9 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
     throw new HttpError(429, `وصلت للحد اليومي للطلبات السريعة (${settings.maxPerDay}). جرّب بكرة.`, DAILY_LIMIT_CODE);
   }
 
-  const order = newQuickOrder({ uid, customerFirstName, area, notes: notes!, stores: stores!, settings });
+  const order = newQuickOrder({
+    uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages, customerVoiceUrl,
+  });
   await commitOrConflict(env, token, [
     {
       update: { name: docName(env, orderPath), fields: encodeFields(order) },
@@ -2818,7 +3456,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
       currentDocument: { exists: false },
     },
     {
-      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields(contact) },
+      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields({ ...contact, customerVoiceUrl }) },
       currentDocument: { exists: false },
     },
     {
@@ -2875,6 +3513,41 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
   if (!doc) throw new HttpError(404, "الطلب غير موجود.", "not_found");
   const order = decodeFields(doc.fields ?? {});
   const actor = await resolveQuickActor(env, token, uid, order);
+  let voiceDoc: FirestoreDoc | null = null;
+  let voiceCleanup: string[] = [];
+  let voiceFolder = "";
+  if (action === "edit-voice") {
+    // Never load another customer's private voice URL.
+    if (order.userId !== uid || actor.role !== "customer") {
+      throw new HttpError(403, "لا تملك صلاحية تعديل الصوت.", "forbidden");
+    }
+    if (order.status !== "open") {
+      throw new HttpError(409, "تعديل الصوت متاح قبل قبول المندوب فقط.", "edit_after_accept");
+    }
+    if (!Object.prototype.hasOwnProperty.call(body, "customerVoiceUrl")) {
+      throw new HttpError(400, "حدد التسجيل الجديد أو احذف التسجيل.", "invalid_voice");
+    }
+    voiceFolder = (await quickRequestFolder(uid)) + "/voice";
+    try {
+      body.customerVoiceUrl = validateQuickVoice(body.customerVoiceUrl,
+        (url) => isOwnQuickVoice(url, voiceFolder, env.CLOUDINARY_CLOUD_NAME));
+    } catch (error) { quickError(error); }
+    voiceDoc = await getDocument(env, `${orderPath}/private/contact`, token);
+    if (!voiceDoc) throw new HttpError(503, "بيانات الطلب الخاصة غير متاحة.");
+    const contact = decodeFields(voiceDoc.fields ?? {});
+    const previousVoice = quickCustomerVoice(contact);
+    const nextVoice = String(body.customerVoiceUrl);
+    voiceCleanup = [
+      ...new Set([
+        ...(Array.isArray(contact.customerVoicesPendingCleanup)
+          ? contact.customerVoicesPendingCleanup.filter((u): u is string => typeof u === "string")
+          : []),
+        ...(typeof contact.customerVoicePendingCleanup === "string" &&
+            contact.customerVoicePendingCleanup ? [contact.customerVoicePendingCleanup] : []),
+        ...(previousVoice && previousVoice !== nextVoice ? [previousVoice] : []),
+      ]),
+    ].filter((url) => isOwnQuickVoice(url, voiceFolder, env.CLOUDINARY_CLOUD_NAME));
+  }
   let patch: JsonMap;
   try {
     patch = applyQuickAction(order, action, actor, body, {
@@ -2885,11 +3558,51 @@ async function quickOrderAction(request: Request, env: Env, orderId: string, act
   } catch (error) {
     quickError(error);
   }
-  await commitOrConflict(env, token, [{
+  const writes: unknown[] = [{
     update: { name: doc.name, fields: encodeFields(patch!) },
     updateMask: { fieldPaths: Object.keys(patch!) },
     currentDocument: doc.updateTime ? { updateTime: doc.updateTime } : { exists: true },
-  }]);
+  }];
+  if (voiceDoc) {
+    const voicePatch = {
+      customerVoiceUrl: String(body.customerVoiceUrl),
+      customerVoicesPendingCleanup: voiceCleanup,
+      customerVoicePendingCleanup: "",
+    };
+    writes.push({
+      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
+      updateMask: { fieldPaths: Object.keys(voicePatch) },
+      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
+    });
+  }
+  await commitOrConflict(env, token, writes);
+  // Delete replaced recordings only *after* the atomic Firestore update succeeds.
+  // If Cloudinary fails, the private contact retains cleanup URLs for PIN delivery.
+  if (voiceDoc && voiceCleanup.length) {
+    const removed: string[] = [];
+    for (const url of voiceCleanup) {
+      if (await destroyQuickVoice(env, url, voiceFolder)) removed.push(url);
+    }
+    if (removed.length) {
+      try {
+        const latest = await getDocument(env, `${orderPath}/private/contact`, token);
+        if (latest) {
+          const privateNow = decodeFields(latest.fields ?? {});
+          const pending = Array.isArray(privateNow.customerVoicesPendingCleanup)
+            ? privateNow.customerVoicesPendingCleanup.filter((v): v is string => typeof v === "string")
+            : [];
+          const remaining = pending.filter((v) => !removed.includes(v));
+          if (remaining.length !== pending.length) {
+            await commitOrConflict(env, token, [{
+              update: { name: latest.name, fields: encodeFields({ customerVoicesPendingCleanup: remaining }) },
+              updateMask: { fieldPaths: ["customerVoicesPendingCleanup"] },
+              currentDocument: latest.updateTime ? { updateTime: latest.updateTime } : { exists: true },
+            }]);
+          }
+        }
+      } catch { /* The retained pending list can be retried at delivery. */ }
+    }
+  }
   const customerTitle = quickCustomerUpdates[action] ??
     (action === "cancel" && actor.role === "admin" ? "تم إلغاء طلبك السريع" : undefined);
   const courierTitle = quickCourierUpdates[action];
@@ -2915,13 +3628,13 @@ async function getQuickDeliveryPin(request: Request, env: Env, orderId: string):
   const order = decodeFields(doc.fields ?? {});
   if (order.userId !== uid) throw new HttpError(403, "لا تملك صلاحية على هذا الطلب.");
   if (!QUICK_PIN_STATUSES.includes(String(order.status))) {
-    throw new HttpError(409, "الرمز بيظهر بعد قبول المندوب وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
+    throw new HttpError(409, "الرمز بيظهر بعد تجهيز الكشف النهائي وبيقفل بعد التسليم أو الإلغاء.", "pin_not_available");
   }
   return response({ pin: await deriveDeliveryPin("quick:" + orderId, env.DELIVERY_PIN_SECRET) });
 }
 
 /** POST /v1/quick/{orderId}/deliver — المندوب يأكد التسليم برمز العميل. 5 محاولات غلط = قفل. */
-async function deliverQuickWithPin(request: Request, env: Env, orderId: string): Promise<Response> {
+async function deliverQuickWithPin(request: Request, env: Env, orderId: string, ctx?: ExecutionContext): Promise<Response> {
   const uid = await verifyCustomer(request, env);
   if (!env.DELIVERY_PIN_SECRET) throw new HttpError(503, PIN_DISABLED, "pin_disabled");
   if (!QUICK_ID.test(orderId)) throw new HttpError(400, "معرّف الطلب غير صالح.");
@@ -2976,13 +3689,54 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
   }
 
   const patch = quickDeliveredPatch(order, uid, new Date());
+  // الصور في الطلب العام؛ الصوت في private/contact فقط. حذف المراجع يتم مع التسليم.
+  const images = quickCustomerImages(order);
+  const voicePath = `${orderPath}/private/contact`;
+  const voiceDoc = await getDocument(env, voicePath, token);
+  const contact = voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {};
+  const voice = quickCustomerVoice(contact);
+  const pendingVoices = [
+    ...new Set([
+      ...(Array.isArray(contact.customerVoicesPendingCleanup)
+        ? contact.customerVoicesPendingCleanup.filter((v): v is string => typeof v === "string")
+        : []),
+      ...(typeof contact.customerVoicePendingCleanup === "string" &&
+          contact.customerVoicePendingCleanup ? [contact.customerVoicePendingCleanup] : []),
+      ...(voice ? [voice] : []),
+    ]),
+  ];
+  const imagesFolder = (images.length || pendingVoices.length)
+    ? await quickRequestFolder(String(order.userId ?? "")) : "";
+  const undeleted = await destroyQuickImages(env, images, imagesFolder);
+  const voiceFolder = imagesFolder + "/voice";
+  const failedVoices: string[] = [];
+  for (const url of pendingVoices) {
+    if (!await destroyQuickVoice(env, url, voiceFolder)) failedVoices.push(url);
+  }
+  if (undeleted.length) {
+    // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
+    patch.customerImagesPendingCleanup = undeleted;
+  }
   const writes: unknown[] = [{
     update: { name: docName(env, orderPath), fields: encodeFields(patch) },
     updateMask: { fieldPaths: Object.keys(patch) },
     currentDocument: orderPrecondition,
   }];
+  if (voiceDoc) {
+    const voicePatch = {
+      customerVoiceUrl: "",
+      customerVoicePendingCleanup: "",
+      customerVoicesPendingCleanup: failedVoices,
+    };
+    writes.push({
+      update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
+      updateMask: { fieldPaths: Object.keys(voicePatch) },
+      currentDocument: voiceDoc.updateTime ? { updateTime: voiceDoc.updateTime } : { exists: true },
+    });
+  }
   if (attemptsDoc) writes.push({ delete: docName(env, attemptsPath), currentDocument: attemptsPrecondition });
   await commitOrConflict(env, token, writes);
+  scheduleReferralDelivery(env, ctx, token, { userId: order.userId });
   await notifyOrderParticipant(
     env, token, order.userId, orderId, "quick_customer_update", "تم تسليم طلبك السريع",
   );
@@ -2990,7 +3744,7 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string):
 }
 
 /** توجيه مسارات /v1/quick. بيرجع null لو المسار مش تبع الخدمة. */
-async function routeQuick(request: Request, env: Env, pathname: string): Promise<Response | null> {
+async function routeQuick(request: Request, env: Env, pathname: string, ctx?: ExecutionContext): Promise<Response | null> {
   if (pathname === "/v1/quick") {
     return request.method === "POST" ? await createQuickOrder(request, env) : response({ error: "Not found." }, 404);
   }
@@ -3002,6 +3756,6 @@ async function routeQuick(request: Request, env: Env, pathname: string): Promise
     return request.method === "GET" ? await getQuickDeliveryPin(request, env, orderId) : response({ error: "Not found." }, 404);
   }
   if (request.method !== "POST") return response({ error: "Not found." }, 404);
-  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId);
+  if (action === "deliver") return await deliverQuickWithPin(request, env, orderId, ctx);
   return await quickOrderAction(request, env, orderId, action);
 }

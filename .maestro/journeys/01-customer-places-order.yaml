@@ -1,0 +1,48 @@
+appId: com.wassally.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible: "دخول تجريبي: عميل"
+    timeout: 60000
+- tapOn: "دخول تجريبي: عميل"
+- runFlow: _dismiss-prompts.yaml
+# الجولة التعريفية بتظهر أول مرة للعميل؛ «تخطي» بيوصل لصفحة الكروت.
+- runFlow: _skip-tour.yaml
+- runFlow: _dismiss-prompts.yaml
+- extendedWaitUntil:
+    visible: ".*ابحث عن محل أو ماركت.*"
+    timeout: 90000
+# الكارت الثالث قد يكون تحت حافة الشاشة على الهواتف الأقصر.
+- scrollUntilVisible:
+    element:
+      text: "(?s).*تصفح المحلات.*"
+    direction: DOWN
+    timeout: 30000
+- tapOn: "(?s).*تصفح المحلات.*"
+- runFlow: _dismiss-prompts.yaml
+- extendedWaitUntil:
+    visible: ".*متجر الاختبار.*"
+    timeout: 90000
+- tapOn: ".*متجر الاختبار.*"
+- extendedWaitUntil:
+    visible: ".*منتج تجريبي.*"
+    timeout: 60000
+- tapOn: ".*إضافة منتج تجريبي.*"
+- extendedWaitUntil:
+    visible: ".*عرض السلة.*"
+    timeout: 30000
+- tapOn: ".*عرض السلة.*"
+- tapOn: "كمّل الطلب"
+- extendedWaitUntil:
+    visible: "منطقة التوصيل"
+    timeout: 30000
+- tapOn: "منطقة التوصيل"
+- tapOn: ".*منطقة الاختبار.*"
+- tapOn: "تأكيد الطلب"
+- tapOn: "أيوه، ابعت الطلب"
+- extendedWaitUntil:
+    visible: ".*(تابع طلبي|تم إرسال طلبك).*"
+    timeout: 60000

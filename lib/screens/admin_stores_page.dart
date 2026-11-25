@@ -17,6 +17,7 @@ import '../widgets/app_image.dart';
 import '../widgets/category_tile.dart';
 import '../widgets/dialogs.dart';
 import '../services/store_fee_service.dart';
+import '../widgets/app_snack.dart';
 
 /// أسماء مختصرة للأنواع الطويلة.
 typedef _Json = Map<String, dynamic>;
@@ -112,7 +113,7 @@ final CollectionReference<_Json> _stores = FirebaseFirestore.instance
 void _toast(BuildContext context, String message) {
   if (!context.mounted) return;
 
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
 }
 
 String _errorText(Object error) {
@@ -174,9 +175,11 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
   Future<void> _toggle(String id, bool active) async {
     try {
       final storeRef = _stores.doc(id);
+      var firstActivation = false;
       if (active) {
         final store = await storeRef.get();
         final data = store.data() ?? {};
+        firstActivation = data['firstActivatedAt'] == null;
         if (data['approved'] == false) {
           _say('لازم تعتمد طلب المحل الأول من طلبات الانضمام.');
           return;
@@ -195,6 +198,7 @@ class _AdminStoresPageState extends State<AdminStoresPage> {
       await storeRef.update({
         'active': active,
         if (active) 'approved': true,
+        if (firstActivation) 'firstActivatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../models/order.dart';
 import '../services/order_service.dart';
+import '../services/wasally_service_fee.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// تعديل الطلب قبل استلام المندوب: في حالتي new وpreparing طالما courierId فارغ.
 /// القواعد (firestore.rules) هي اللي بتمنع التعديل لو الحالة اتغيّرت.
@@ -62,7 +64,14 @@ class _EditOrderPageState extends State<EditOrderPage> {
     return d >= _subtotal ? 0 : d;
   }
 
-  double get _total => _subtotal + widget.order.deliveryFee - _discount;
+  double get _total {
+    final order = widget.order;
+    final fee = order.serviceFee == null
+        ? 0.0
+        : WasallyServiceFee.forItems(_subtotal - _discount);
+    return _subtotal + order.deliveryFee - _discount + fee -
+        order.referralDiscountMinor / 100;
+  }
 
   void _setQty(int index, int qty) {
     if (qty < 0 || qty > kMaxLineQty) return;
@@ -84,21 +93,21 @@ class _EditOrderPageState extends State<EditOrderPage> {
         notes: _notes.text.trim(),
         courierNotes: _courierNotes.text.trim(),
       );
-      messenger.showSnackBar(const SnackBar(content: Text('تم تعديل الطلب.')));
+      messenger.showSnackBar(appSnack('تم تعديل الطلب.'));
       navigator.pop();
     } on OrderLimitException catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } on StateError catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تعديل الطلب (${e.runtimeType}).')),
+        appSnack('تعذر تعديل الطلب (${e.runtimeType}).'),
       );
     }
   }
@@ -138,7 +147,7 @@ class _EditOrderPageState extends State<EditOrderPage> {
                     'الإجمالي: ${formatPrice(_total)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 17,
+                      fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 20),

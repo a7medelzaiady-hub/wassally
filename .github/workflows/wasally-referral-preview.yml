@@ -1,0 +1,116 @@
+name: Wasally Referral & Brand Android Preview
+
+# One APK from the merged main branch, without enabling cash payouts or serverOrders.
+# Adding/updating this workflow on main triggers the preview exactly once.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/wasally-referral-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wasally-referral-brand-preview
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    name: Build signed debug preview (referrals visible)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check UI and compile-time campaign
+        run: |
+          flutter analyze --no-fatal-infos
+          flutter test --dart-define=WASALLY_REFERRAL_REGISTRATION=true test/brand_and_referral_preview_test.dart
+
+      - name: Restore registered debug signing key
+        id: debug-key
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.android/debug.keystore
+          key: wasally-android-debug-keystore-v1
+
+      - name: Generate debug signing key if the cache is empty
+        if: steps.debug-key.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Save first generated signing key
+        if: steps.debug-key.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.android/debug.keystore
+          key: wasally-android-debug-keystore-v1
+
+      - name: Verify signing key is registered for Google sign-in
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA1="$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey \
+            | sed -n 's/^[[:space:]]*SHA1: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          python3 - "$SHA1" <<'PY'
+          import json, sys
+          sha1 = sys.argv[1]
+          with open("android/app/google-services.json", encoding="utf-8") as f:
+              config = json.load(f)
+          registered = {
+              entry.get("android_info", {}).get("certificate_hash", "").lower()
+              for client in config.get("client", [])
+              if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+              for entry in client.get("oauth_client", [])
+              if entry.get("client_type") == 1
+          }
+          if sha1 not in registered:
+              raise SystemExit("Signing certificate is not registered in Firebase. Keep the previous APK and register this SHA-1 before building a login-ready preview.")
+          print("Debug signing certificate matches Firebase OAuth registration.")
+          PY
+
+      - name: Build referral and navy-orange debug APK
+        run: |
+          flutter build apk --debug \
+            --dart-define=WASALLY_REFERRAL_REGISTRATION=true \
+            --dart-define=WASALLY_SERVER_ORDERS=true \
+            --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev
+
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-debug.apk
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasally-referral-brand-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

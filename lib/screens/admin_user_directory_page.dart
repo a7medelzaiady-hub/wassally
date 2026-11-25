@@ -2,7 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/app_tokens.dart';
+import '../widgets/app_ui.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// دليل حسابات Firestore للإدارة: الاسم، UID، والأدوار الفعلية.
 /// قراءات محدودة عند فتح الصفحة فقط، بدون مستمعات مستمرة.
@@ -15,15 +18,26 @@ class AdminUserDirectoryPage extends StatefulWidget {
 
 class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
   final _search = TextEditingController();
-  late final Future<_DirectoryData> _data = _load();
+  late Future<_DirectoryData> _data = _load();
 
   Future<_DirectoryData> _load() async {
     final db = FirebaseFirestore.instance;
+    Future<QuerySnapshot<Map<String, dynamic>>> readCollection(
+      String collection,
+      String label,
+    ) async {
+      try {
+        return await db.collection(collection).limit(200).get();
+      } on FirebaseException catch (error) {
+        throw _DirectoryLoadFailure(label, error.code);
+      }
+    }
+
     final results = await Future.wait([
-      db.collection('users').limit(200).get(),
-      db.collection('couriers').limit(200).get(),
-      db.collection('storeOwners').limit(200).get(),
-      db.collection('admins').limit(200).get(),
+      readCollection('users', 'المستخدمين'),
+      readCollection('couriers', 'المناديب'),
+      readCollection('storeOwners', 'أصحاب المحلات'),
+      readCollection('admins', 'المديرين'),
     ]);
     final couriers = results[1].docs.map((d) => d.id).toSet();
     final owners = results[2].docs.map((d) => d.id).toSet();
@@ -75,7 +89,27 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
         future: _data,
         builder: (context, snap) {
           if (snap.hasError) {
-            return const Center(child: Text('تعذر تحميل المستخدمين. تأكد من صلاحية الإدارة ونشر القواعد.'));
+            final error = snap.error;
+            final message = error is _DirectoryLoadFailure
+                ? 'تعذر تحميل قائمة ${error.label} (${error.code}).'
+                : 'تعذر تحميل دليل المستخدمين.';
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(message, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _data = _load()),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('إعادة المحاولة'),
+                    ),
+                  ],
+                ),
+              ),
+            );
           }
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           return Column(
@@ -86,9 +120,8 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
                   controller: _search,
                   onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search_rounded),
                     hintText: 'ابحث بالاسم أو UID أو الصلاحية',
-                    border: OutlineInputBorder(),
                   ),
                 ),
               ),
@@ -106,44 +139,72 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
                       u.roles.join(' ').contains(query)).toList();
                   if (users.isEmpty) return const Center(child: Text('مفيش نتائج مطابقة.'));
                   return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, AppSpacing.xxl),
                     itemCount: users.length,
                     itemBuilder: (context, index) {
                       final u = users[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(u.name, style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 6),
-                              Wrap(spacing: 6, runSpacing: 4, children: [
-                                for (final role in u.roles) Chip(label: Text(role)),
-                              ]),
-                              const SizedBox(height: 4),
-                              Row(children: [
-                                Expanded(
-                                  child: SelectableText(u.uid, textDirection: TextDirection.ltr,
-                                      style: Theme.of(context).textTheme.bodySmall),
+                      // كارت مضغوط: الاسم + صلاحيات صغيرة في سطر واحد + UID.
+                      return AppCard(
+                        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                        padding: const EdgeInsetsDirectional.fromSTEB(
+                            AppSpacing.lg, AppSpacing.md, AppSpacing.xs, AppSpacing.xs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: AppColors.purpleSoft,
+                                child: Text(
+                                  u.name.trim().isEmpty ? '؟' : u.name.trim().characters.first.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: AppColors.purple,
+                                    fontWeight: FontWeight.w900,
+                                  ),
                                 ),
-                                IconButton(
-                                  tooltip: 'نسخ UID',
-                                  icon: const Icon(Icons.copy_outlined),
-                                  onPressed: () async {
-                                    await Clipboard.setData(ClipboardData(text: u.uid));
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('تم نسخ UID')),
-                                      );
-                                    }
-                                  },
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.sectionTitle),
+                              ),
+                            ]),
+                            const SizedBox(height: AppSpacing.sm),
+                            Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+                              for (final role in u.roles)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.md, vertical: AppSpacing.xxs),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.purpleSoft,
+                                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                                  ),
+                                  child: Text(role, style: const TextStyle(
+                                    color: AppColors.purple,
+                                    fontSize: AppTypography.label,
+                                    fontWeight: FontWeight.w800,
+                                  )),
                                 ),
-                              ]),
-                            ],
-                          ),
+                            ]),
+                            Row(children: [
+                              Expanded(
+                                child: SelectableText(u.uid, textDirection: TextDirection.ltr,
+                                    style: AppTypography.secondary.copyWith(fontSize: AppTypography.label)),
+                              ),
+                              IconButton(
+                                tooltip: 'نسخ UID',
+                                icon: const Icon(Icons.copy_rounded, size: 20),
+                                onPressed: () async {
+                                  await Clipboard.setData(ClipboardData(text: u.uid));
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      appSnack('تم نسخ UID'),
+                                    );
+                                  }
+                                },
+                              ),
+                            ]),
+                          ],
                         ),
                       );
                     },
@@ -169,4 +230,11 @@ class _DirectoryData {
   final List<_UserEntry> users;
   final bool limited;
   _DirectoryData(this.users, this.limited);
+}
+
+class _DirectoryLoadFailure implements Exception {
+  const _DirectoryLoadFailure(this.label, this.code);
+
+  final String label;
+  final String code;
 }

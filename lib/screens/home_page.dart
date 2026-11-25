@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,38 +17,27 @@ import '../services/read_meter.dart';
 import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
-import '../services/performance_monitor.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
-import '../widgets/category_tile.dart';
 import '../widgets/promo_banners.dart';
+import '../widgets/home_category_grid.dart';
+import '../widgets/curved_nav_bar.dart';
+import '../widgets/offer_carousel.dart';
+import '../widgets/home_top_ads.dart';
 import 'notifications_page.dart';
+import '../services/saved_address.dart';
+import '../services/location_picker.dart';
+import '../widgets/notification_bell.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
 import '../widgets/cached_net_image.dart';
-
-const Map<String, String> kCategoryPhotos = {
-  'مطاعم': 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=700&q=70',
-  'سوبرماركت': 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=700&q=70',
-  'ورد': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
-  // اسم القسم الفعلي في المحلات «ورد وهدايا»؛ المفتاح القديم «ورد» ما كانش بيطابقه فالصورة ما كانتش بتظهر.
-  'ورد وهدايا': 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=700&q=70',
-  // الصور التالية لم أتحقق من روابطها (لا يوجد اتصال بالإنترنت أثناء الكتابة). لو رابط ما فتحش
-  // بيظهر الإيموجي الملوّن بدل الصورة، وتقدر تبدّله من Firestore (app_info/category_images) من غير نشر تحديث.
-  'بقالة': 'https://images.unsplash.com/photo-1604719312566-8912e9227c6a?auto=format&fit=crop&w=700&q=70',
-  'خضار وفاكهة': 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=700&q=70',
-  'لحوم ودواجن': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=700&q=70',
-  'مخبوزات وحلويات': 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=700&q=70',
-  'محمصات وعطارة': 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&w=700&q=70',
-  'كافيه ومشروبات': 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=700&q=70',
-  'صيدليات': 'https://images.unsplash.com/photo-1576602976047-174e57a47881?auto=format&fit=crop&w=700&q=70',
-};
+import '../widgets/app_snack.dart';
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {
@@ -69,7 +56,9 @@ class _StoreItem {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.offersOnly = false});
+
+  final bool offersOnly;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -77,8 +66,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  // العنوان المحفوظ للعميل.
-  String _address = '';
+  // العنوان المحفوظ للعميل (مشترك مع صفحة الترحيب: قراءة واحدة).
+  String _address = SavedAddress.value.value;
+
+  static const double _bellSize = kMinTapTarget;
 
 
   // الإشعارات.
@@ -113,6 +104,7 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
+    if (widget.offersOnly) return;
 
     // القسم اللي العميل اختاره من شاشة الأقسام بعد الدخول: نفتح محلاته على طول.
     final req = homeCategoryRequest.value;
@@ -133,7 +125,8 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
-    _loadSavedAddress();
+    SavedAddress.value.addListener(_onSavedAddress);
+    SavedAddress.load();
     _initNotifications();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -143,6 +136,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    SavedAddress.value.removeListener(_onSavedAddress);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -165,212 +159,27 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  void _openStore(Store s) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => StorePage(store: s)));
+  void _openStore(Store s, {String? focusProduct}) {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => StorePage(store: s, focusProduct: focusProduct)));
   }
 
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+      ..showSnackBar(appSnack(msg));
   }
 
   // ───────────────────────── الموقع ─────────────────────────
 
-  Future<void> _loadSavedAddress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final a = (doc.data()?['address'] ?? '').toString();
-      if (mounted && a.isNotEmpty) setState(() => _address = a);
-    } catch (e) {
-      debugPrint('Load address error: $e');
-    }
+  void _onSavedAddress() {
+    final a = SavedAddress.value.value;
+    if (mounted && a.isNotEmpty && a != _address) setState(() => _address = a);
   }
 
-  Future<void> _saveAddress(String address, {double? lat, double? lng}) async {
-    if (mounted) setState(() => _address = address);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'address': address,
-        'lat': ?lat,
-        'lng': ?lng,
-      }, SetOptions(merge: true));
-      _toast('تم حفظ موقعك');
-    } catch (e) {
-      debugPrint('Save address error: $e');
-      _toast('تعذر حفظ العنوان');
-    }
-  }
-
-  /// شرح واضح قبل طلب إذن الموقع (متطلب سياسة جوجل بلاي: طلب الإذن في سياقه).
-  Future<bool> _confirmLocationUse() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'استخدام موقعك',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هنستخدم موقع جهازك مرة واحدة بس عشان نحدد عنوان التوصيل، '
-            'ونحفظ العنوان في حسابك لتسهيل طلباتك الجاية. '
-            'مش بنتتبع موقعك في الخلفية، وتقدر تكتب عنوانك بنفسك بدل كده.',
-            style: TextStyle(height: 1.6),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('اكتب العنوان بنفسي'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('متابعة'),
-            ),
-          ],
-        ),
-      ),
-    );
-    return ok ?? false;
-  }
-
-  Future<void> _useGps() async {
-    if (!await _confirmLocationUse() || !mounted) return;
-    _toast('جاري تحديد موقعك...');
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        _toast('فعّل خدمة الموقع (GPS) من الإعدادات');
-        await Geolocator.openLocationSettings();
-        return;
-      }
-
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied) {
-        _toast('محتاجين إذن الموقع عشان نحدد مكانك');
-        return;
-      }
-      if (perm == LocationPermission.deniedForever) {
-        _toast('إذن الموقع مرفوض. فعّله من إعدادات التطبيق');
-        await Geolocator.openAppSettings();
-        return;
-      }
-
-      final pos = await PerformanceMonitor.trace(
-        'map_gps_location',
-        () => Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
-        ),
-      );
-
-      var text =
-          '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
-      try {
-        final marks = await PerformanceMonitor.trace(
-          'map_reverse_geocode',
-          () => placemarkFromCoordinates(pos.latitude, pos.longitude),
-        );
-        if (marks.isNotEmpty) {
-          final m = marks.first;
-          final parts = [
-            m.street,
-            m.subLocality,
-            m.locality,
-            m.administrativeArea,
-          ].where((e) => e != null && e.trim().isNotEmpty).toList();
-          if (parts.isNotEmpty) text = parts.join('، ');
-        }
-      } catch (e) {
-        debugPrint('Reverse geocoding error: $e');
-      }
-
-      await _saveAddress(text, lat: pos.latitude, lng: pos.longitude);
-    } catch (e) {
-      debugPrint('GPS error: $e');
-      _toast('تعذر تحديد الموقع، جرّب تاني أو اكتب العنوان بنفسك');
-    }
-  }
-
-  void _pickLocation() {
-    final ctrl = TextEditingController(text: _address);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          MediaQuery.viewInsetsOf(ctx).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'اختر موقع التوصيل',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _useGps();
-              },
-              icon: const Icon(Icons.my_location_rounded),
-              label: const Text('استخدم موقعي الحالي'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'أو اكتب عنوانك (الحي، الشارع، علامة مميزة)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () {
-                final t = ctrl.text.trim();
-                if (t.isEmpty) return;
-                Navigator.of(ctx).pop();
-                _saveAddress(t);
-              },
-              child: const Text('حفظ العنوان'),
-            ),
-          ],
-        ),
-      ),
-    ).whenComplete(ctrl.dispose);
-  }
+  /// نفس اختيار العنوان المستخدم في صفحة ما بعد الدخول.
+  void _pickLocation() => DeliveryLocationPicker.open(context);
 
   // ───────────────────────── الإشعارات ─────────────────────────
 
@@ -546,10 +355,9 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _openNotifications() async {
     // افتح الصفحة فورًا؛ أي مزامنة للتوكن/الـ topics تتم في الخلفية
-    // علشان تعليق الشبكة أو FCM ما يوقفش الزر.
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    // علشان تعليق الشبكة أو FCM ما يوقفش الزر. الضغط المتكرر يفتحها مرة واحدة.
     unawaited(_syncNotificationsInBackground());
+    await pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
   }
 
   Future<void> _syncNotificationsInBackground() async {
@@ -603,70 +411,20 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _bell() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openNotifications,
-            child: SizedBox(
-              width: 38,
-              height: 38,
-              child: AnimatedBuilder(
-                animation: _bellCtrl,
-                builder: (context, child) {
-                  // هزة يمين وشمال وتخفت تدريجيًا
-                  final t = _bellCtrl.value;
-                  final angle = math.sin(t * math.pi * 6) * 0.35 * (1 - t);
-                  return Transform.rotate(
-                    angle: angle,
-                    alignment: Alignment.topCenter,
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  color: Brand.green,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -5,
-          left: -5,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _unreadStream,
-            builder: (context, snap) {
-              if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
-              final n = snap.data?.docs.length ?? 0;
-              if (n == 0) return const SizedBox.shrink();
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: Text(
-                  n > 9 ? '9+' : '$n',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _unreadStream,
+      builder: (context, snap) {
+        if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
+        return NotificationBell(
+          count: snap.data?.docs.length ?? 0,
+          shake: _bellCtrl,
+          size: _bellSize,
+          onTap: _openNotifications,
+        );
+      },
     );
   }
+
 
   // ───────────────────────── الهيدر ─────────────────────────
 
@@ -677,7 +435,7 @@ class _HomePageState extends State<HomePage>
     return ClipPath(
       clipper: _WaveBottomClipper(),
       child: Container(
-      color: Brand.green,
+      color: AppColors.purpleDeep,
       padding: EdgeInsets.fromLTRB(16, top + 6, 16, 22),
       child: Column(
         children: [
@@ -767,37 +525,138 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // ───────────────────────── الأقسام ─────────────────────────
+  List<_StoreItem> _parse(List<CatalogDoc> docs) {
+    final stores = <_StoreItem>[];
+    for (final doc in docs) {
+      try {
+        final data = doc.data();
+        final store = Store.fromMap(doc.id, data);
+        if (store.active) stores.add(_StoreItem(store, data));
+      } catch (e) {
+        debugPrint('Error parsing store document ${doc.id}: $e');
+      }
+    }
+    stores.sort((a, b) => a.store.order.compareTo(b.store.order));
+    return stores;
+  }
 
-  Widget _categoriesRow(Map<String, String> categoryImages) {
-    final tiles = <CategoryInfo>[kAllCategory, ...kCategories];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: LayoutBuilder(
-        builder: (context, c) {
-          const gap = 10.0;
-          // 4 في الصف، صورة واسم تحتها بدون إطار.
-          final w = (c.maxWidth - gap * 3) / 4 - 0.5;
-          return Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: [
-              for (final info in tiles)
-                SizedBox(
-                  width: w,
-                  child: _CategoryTile(
-                    label: info.category,
-                    imageUrl: info.category == 'الكل'
-                        ? ''
-                        : (kCategoryPhotos[info.category] ??
-                              categoryImages[info.category] ??
-                              ''),
-                    isAll: info.category == 'الكل',
-                    onTap: () => _openDirectory(
-                      info.category == 'الكل' ? null : info.category,
+  Widget _offersPage() {
+    final stores = _storesFuture;
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      bottomNavigationBar: const CustomerPageNav(),
+      body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
+        future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
+        builder: (context, snapshot) {
+          final offers = snapshot.data;
+          final Widget content;
+          if (snapshot.hasError) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('تعذر تحميل العروض.', style: AppTypography.secondary)),
+            );
+          } else if (offers == null) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          } else if (offers.isEmpty) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('مفيش عروض متاحة دلوقتي.', style: AppTypography.secondary)),
+            );
+          } else {
+            content = SliverPadding(
+              padding: AppSpacing.pagePadding,
+              sliver: SliverLayoutBuilder(builder: (context, constraints) {
+                const gap = AppSpacing.md;
+                final width = constraints.crossAxisExtent;
+                final columns = width >= 600 ? 3 : 2;
+                final cardWidth = (width - gap * (columns - 1)) / columns;
+                final imageHeight = cardWidth * 0.8;
+                final scaler = MediaQuery.textScalerOf(context);
+                final textHeight = scaler.scale(15) * 1.3 +
+                    scaler.scale(13) * 1.4 +
+                    scaler.scale(16) * 1.4 +
+                    40;
+                return SliverGrid(
+                  key: const Key('offers-grid'),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    mainAxisExtent: imageHeight + textHeight,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _offerCard(
+                      offers[i],
+                      offer: true,
+                      width: null,
+                      imageHeight: imageHeight,
                     ),
+                    childCount: offers.length,
+                  ),
+                );
+              }),
+            );
+          }
+          return CustomScrollView(
+            slivers: [
+              // هيدر بصورة للعروض (نفس صورة كارت العروض في صفحة الترحيب).
+              SliverAppBar(
+                key: const Key('offers-hero'),
+                pinned: true,
+                expandedHeight: 190,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  title: const Text(
+                    'تصفح العروض',
+                    style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/entry_offers.jpg',
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerLeft,
+                        excludeFromSemantics: true,
+                      ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x55000000), Color(0x00000000), Color(0xCC4A0C80)],
+                            stops: [0, 0.4, 1],
+                          ),
+                        ),
+                      ),
+                      if (offers != null && offers.isNotEmpty)
+                        PositionedDirectional(
+                          start: AppSpacing.lg,
+                          bottom: 52,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.orange,
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(
+                              '${offers.length} عرض متاح دلوقتي',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+              ),
+              content,
             ],
           );
         },
@@ -805,39 +664,47 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // ───────────────────────── تحليل البيانات ─────────────────────────
-
-  ({List<_StoreItem> stores, Map<String, String> categoryImages}) _parse(
-    List<CatalogDoc> docs,
-  ) {
-    final stores = <_StoreItem>[];
-    final categoryImages = <String, String>{};
-    for (final doc in docs) {
-      try {
-        final data = doc.data();
-        final store = Store.fromMap(doc.id, data);
-
-        if (!store.active) continue;
-        final item = _StoreItem(store, data);
-        stores.add(item);
-        if (store.category.isNotEmpty && item.image.isNotEmpty) {
-          categoryImages.putIfAbsent(store.category, () => item.image);
-        }
-      } catch (e) {
-        debugPrint('Error parsing store document ${doc.id}: $e');
-      }
-    }
-    stores.sort((a, b) => a.store.order.compareTo(b.store.order));
-    return (stores: stores, categoryImages: categoryImages);
-  }
 
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
 
+  /// عروض الجلسة: الرئيسية وصفحة العروض بيستخدموا نفس النتيجة لمدة قصيرة
+  /// بدل ما كل صفحة تعيد التحميل (أسرع وقراءات أقل).
+  static Future<List<(_StoreItem, Map<String, dynamic>)>>? _sharedOffers;
+  static DateTime? _sharedOffersAt;
+
   Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
     List<_StoreItem> stores,
+  ) {
+    final at = _sharedOffersAt;
+    final cached = _sharedOffers;
+    if (cached != null &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(minutes: 5)) {
+      return cached;
+    }
+    _sharedOffersAt = DateTime.now();
+    final future = _scanOffers(stores);
+    _sharedOffers = future;
+    future.catchError((Object _) {
+      _sharedOffers = null;
+      return const <(_StoreItem, Map<String, dynamic>)>[];
+    });
+    return future;
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _scanOffers(
+    List<_StoreItem> stores,
+  ) async {
+    // كل المحلات بالتوازي بدل واحد ورا التاني (نفس عدد القراءات، وقت أقل بكتير).
+    final perStore = await Future.wait(stores.map(_storeOffers));
+    return [for (final list in perStore) ...list];
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _storeOffers(
+    _StoreItem store,
   ) async {
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
-    for (final store in stores) {
+    {
       var hasCatalog = false;
       // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
       // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
@@ -914,6 +781,12 @@ class _HomePageState extends State<HomePage>
     return offers;
   }
 
+  static double _discountOf(Map<String, dynamic> m) {
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+    return old > price && old > 0 ? 1 - price / old : 0;
+  }
+
   Widget _highlights(
     List<_StoreItem> all,
     Future<List<(_StoreItem, Map<String, dynamic>)>> offersFuture,
@@ -939,7 +812,32 @@ class _HomePageState extends State<HomePage>
             builder: (context, snapshot) {
               final offers = snapshot.data ?? const <(_StoreItem, Map<String, dynamic>)>[];
               if (offers.isEmpty) return const SizedBox.shrink();
-              return _hlRow('عروض وخصومات', offers, offer: true);
+              // الأكتر خصمًا الأول في البانرات المتحركة.
+              final featured = [...offers]..sort((a, b) => _discountOf(b.$2).compareTo(_discountOf(a.$2)));
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _hlRow('عروض وخصومات', offers, offer: true),
+                  // بانرات متحركة لعروض الأصناف بين العروض والأكثر مبيعًا.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: OfferCarousel(slides: [
+                      for (final (store, item) in featured.take(6))
+                        OfferSlide(
+                          name: (item['name'] ?? '').toString(),
+                          storeName: store.store.name,
+                          price: (item['price'] as num?)?.toDouble() ?? 0,
+                          oldPrice: (item['oldPrice'] as num?)?.toDouble() ?? 0,
+                          offerText: (item['offerText'] ?? '').toString().trim(),
+                          image: (item['image'] ?? '').toString(),
+                          // صورة العرض بتفتح الصنف نفسه جوه المحل.
+                          onTap: () => _openStore(store.store,
+                              focusProduct: (item['name'] ?? '').toString()),
+                        ),
+                    ]),
+                  ),
+                ],
+              );
             },
           ),
           if (best.isNotEmpty) _hlRow('الأكثر مبيعًا', best),
@@ -955,14 +853,14 @@ class _HomePageState extends State<HomePage>
   }) {
     // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
     return Container(
-      margin: const EdgeInsets.only(top: 18),
-      padding: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
                 Icon(
@@ -975,7 +873,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 17,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
@@ -1000,7 +898,12 @@ class _HomePageState extends State<HomePage>
   }
 
   /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
-  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+  Widget _offerCard(
+    (_StoreItem, Map<String, dynamic>) entry, {
+    bool offer = false,
+    double? width = 232,
+    double imageHeight = 130,
+  }) {
     final (s, m) = entry;
     final price = (m['price'] as num?)?.toDouble() ?? 0;
     final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
@@ -1011,14 +914,14 @@ class _HomePageState extends State<HomePage>
         ? 'خصم ${((1 - price / old) * 100).round()}%'
         : offerText;
     final fallback = Container(
-      decoration: BoxDecoration(gradient: Brand.softGradient),
+      color: AppColors.surfaceAlt,
       alignment: Alignment.center,
-      child: Icon(s.store.icon, color: Colors.white70, size: 40),
+      child: const Icon(Icons.shopping_bag_outlined, color: AppColors.muted, size: 40),
     );
     return GestureDetector(
-      onTap: () => _openStore(s.store),
+      onTap: () => _openStore(s.store, focusProduct: (m['name'] ?? '').toString()),
       child: Container(
-        width: 232,
+        width: width,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1031,7 +934,7 @@ class _HomePageState extends State<HomePage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 130,
+              height: imageHeight,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1050,15 +953,15 @@ class _HomePageState extends State<HomePage>
                         constraints: const BoxConstraints(maxWidth: 150),
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD6F24B),
+                          color: Brand.palette.soft,
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Text(
                           badge,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF1B1D22),
+                          style: TextStyle(
+                            color: Brand.ink,
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1132,10 +1035,10 @@ class _HomePageState extends State<HomePage>
                     children: [
                       Text(
                         formatPrice(price),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.green,
+                        style: const TextStyle(
+                          fontSize: AppTypography.price - 1,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeDeep,
                         ),
                       ),
                       if (offer && hasDiscount) ...[
@@ -1167,7 +1070,7 @@ class _HomePageState extends State<HomePage>
     final shown = all.take(14).toList();
     if (shown.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1179,7 +1082,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     'محلات مميزة',
                     style: TextStyle(
-                      fontSize: 19,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
@@ -1237,7 +1140,7 @@ class _HomePageState extends State<HomePage>
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
@@ -1258,6 +1161,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.offersOnly) return _offersPage();
     return Container(
       color: Colors.white,
       child: FutureBuilder<List<CatalogDoc>>(
@@ -1269,10 +1173,7 @@ class _HomePageState extends State<HomePage>
             debugPrint('Firestore Error Details: ${snapshot.error}');
           }
 
-          final parsed = snapshot.hasData
-              ? _parse(snapshot.data!)
-              : (stores: <_StoreItem>[], categoryImages: <String, String>{});
-          final all = parsed.stores;
+          final all = snapshot.hasData ? _parse(snapshot.data!) : <_StoreItem>[];
 
           final scroll = CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -1280,61 +1181,36 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // الطلبات السريعة منفصلة عن سلة المحل الواحد.
+              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها.
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF087B58),
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(56),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  // بوسترات الإدارة (مكان «إعلان أعلى الرئيسية») متحركة،
+                  // وإعلان «وصّلي ع السريع» المدمج لو مفيش بوسترات.
+                  child: HomeTopAds(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
                       ),
-                    ),
-                    icon: const Icon(Icons.delivery_dining_outlined),
-                    label: const Text('طلباتك على السريع'),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const QuickOrderCreatePage()),
                     ),
                   ),
                 ),
               ),
 
-              // الصفحة الرئيسية: محلات مميزة، البنرات، الأقسام، العروض، الأكثر مبيعًا.
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),
 
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 18),
+                  padding: EdgeInsets.only(top: 12),
                   child: PromoBanners(),
                 ),
               ),
 
+              // Four real-photo cards in each row. Browse-stores and
+              // browse-offers entry cards remain unchanged.
               SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'تصفّح الأقسام',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Brand.ink),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _openDirectory,
-                        child: const Text('كل المحلات'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              SliverToBoxAdapter(
-                child: _categoriesRow(parsed.categoryImages),
+                child: HomeCategoryGrid(onSelected: (id) => _openDirectory(id)),
               ),
 
               if (!loading && !hasError)
@@ -1357,7 +1233,7 @@ class _HomePageState extends State<HomePage>
                   child: TextButton.icon(
                     onPressed: _retry,
                     icon: const Icon(Icons.refresh),
-                    label: const Text('إعادة تحميل العروض والأقسام'),
+                    label: const Text('إعادة تحميل المحلات والعروض'),
                   ),
                 ),
 
@@ -1373,105 +1249,11 @@ class _HomePageState extends State<HomePage>
                 left: 0,
                 right: 0,
                 height: MediaQuery.paddingOf(context).top,
-                child: ColoredBox(color: Brand.green),
+                child: const ColoredBox(color: AppColors.purpleDeep),
               ),
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-/// مربع قسم بصورة حقيقية على خلفية بيج، زي تطبيقات التوصيل الكبيرة.
-class _CategoryTile extends StatelessWidget {
-  final String label;
-  final String imageUrl;
-  final bool isAll;
-  final VoidCallback onTap;
-  const _CategoryTile({
-    required this.label,
-    required this.imageUrl,
-    required this.isAll,
-    required this.onTap,
-  });
-
-  /// أيقونة ملوّنة لكل قسم لما مفيش صورة (بتظهر مظبوطة على الموبايل والويب).
-  static String _emojiFor(String label) {
-    if (label == 'الكل') return '🛍️';
-    const map = <String, String>{
-      'مطاعم': '🍔',
-      'سوبرماركت': '🛒',
-      'بقالة': '🧺',
-      'خضار وفاكهة': '🥬',
-      'لحوم ودواجن': '🥩',
-      'مخبوزات وحلويات': '🥐',
-      'محمصات وعطارة': '🌰',
-      'كافيه ومشروبات': '☕',
-      'ورد وهدايا': '💐',
-      'أخرى': '📦',
-    };
-    final exact = map[label];
-    if (exact != null) return exact;
-    // احتياطي لو اسم القسم اتغيّر شوية.
-    if (label.contains('مطعم') || label.contains('وجبات')) return '🍔';
-    if (label.contains('خضار') || label.contains('فاكه')) return '🥬';
-    if (label.contains('لحوم') || label.contains('دواجن')) return '🥩';
-    if (label.contains('مخبوز') || label.contains('حلوي')) return '🥐';
-    if (label.contains('كافيه') || label.contains('مشروب')) return '☕';
-    if (label.contains('ورد') || label.contains('هدا')) return '💐';
-    if (label.contains('عطار') || label.contains('محمص')) return '🌰';
-    if (label.contains('صيدل')) return '💊';
-    if (label.contains('ماركت') || label.contains('بقال')) return '🛒';
-    return '📦';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AspectRatio(
-            aspectRatio: 1,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: isAll || imageUrl.isEmpty
-                  ? _emojiBox()
-                  : CachedNetImage(
-                      url: thumb(imageUrl, w: 360),
-                      memCacheWidth: 360,
-                      errorWidget: _emojiBox(),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              height: 1.25,
-              color: Brand.ink,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _emojiBox() {
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(gradient: Brand.softGradient),
-      child: Text(
-        _emojiFor(label),
-        style: const TextStyle(fontSize: 34, height: 1.1),
       ),
     );
   }

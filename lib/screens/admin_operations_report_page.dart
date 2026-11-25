@@ -170,7 +170,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   style: TextStyle(
                     color: Brand.ink,
                     fontWeight: FontWeight.w800,
-                    fontSize: 19,
+                    fontSize: 18,
                   ),
                 ),
               ],
@@ -234,7 +234,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                     Text(
                       '$error',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: kMuted, fontSize: 11),
+                      style: TextStyle(color: kMuted, fontSize: 12),
                     ),
                     TextButton(
                       onPressed: _refresh,
@@ -297,7 +297,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   'الأرقام المالية محسوبة من الطلبات المسلّمة وسجلات التوريد. '
                   'التقرير لا يغيّر الطلبات أو الأرصدة، ولا يعرض بيانات تواصل العملاء. '
                   'لا يحسب التأخير آليًا لعدم اعتماد مهلة تشغيلية (SLA) حتى الآن.',
-                  style: TextStyle(color: kMuted, fontSize: 11.5),
+                  style: TextStyle(color: kMuted, fontSize: 12),
                 ),
               ],
             ),

@@ -8,11 +8,14 @@ import '../services/delivery_service.dart';
 import '../services/promo_service.dart';
 import '../services/navigation.dart';
 import '../services/order_service.dart';
+import '../services/update_service.dart';
+import '../services/order_gateway.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_snack.dart';
 
 /// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
 // ignore: prefer_const_declarations
@@ -37,6 +40,43 @@ class _CheckoutPageState extends State<CheckoutPage> {
   final _promo = TextEditingController();
   bool _submitting = false;
   bool _checkingPromo = false;
+  bool _quotingPoints = false;
+  int _referralPoints = 0;
+  int _referralDiscountMinor = 0;
+
+  Future<void> _applyReferralPoints() async {
+    if (_quotingPoints || _submitting) return;
+    if (_referralPoints > 0) {
+      setState(() {
+        _referralPoints = 0;
+        _referralDiscountMinor = 0;
+      });
+      return;
+    }
+    setState(() => _quotingPoints = true);
+    try {
+      final quote = await OrderGateway.quoteReferralPoints((cart.subtotal * 100).round());
+      if (!mounted) return;
+      final points = quote['points'] as int;
+      if (points == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          appSnack('مفيش نقاط متاحة للطلب ده.'),
+        );
+      }
+      setState(() {
+        _referralPoints = points;
+        _referralDiscountMinor = quote['discountMinor'] as int;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          appSnack('تعذر تحميل خصم النقاط. حاول تاني.'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _quotingPoints = false);
+    }
+  }
   List<DeliveryArea> _areas = const [];
 
   @override
@@ -64,14 +104,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (r == null) {
       cart.setPromo('', 0);
       messenger.showSnackBar(
-        const SnackBar(content: Text('الكود ده مش صحيح أو منتهي.')),
+        appSnack('الكود ده مش صحيح أو منتهي.'),
       );
     } else {
       cart.setPromo(r.code, r.percent);
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('تم تفعيل الخصم ${r.percent.toStringAsFixed(0)}%'),
-        ),
+        appSnack('تم تفعيل الخصم ${r.percent.toStringAsFixed(0)}%'),
       );
     }
   }
@@ -173,7 +211,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 
   Future<void> _submit() async {
-    if (_submitting) return;
+    if (_submitting || _quotingPoints) return;
     if (!(_form.currentState?.validate() ?? false)) return;
 
     final messenger = ScaffoldMessenger.of(context);
@@ -181,11 +219,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (!mounted) return;
     if (wait > Duration.zero) {
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.',
-          ),
-        ),
+        appSnack('لسه مبعوت لك طلب من شوية. استنى ${wait.inSeconds + 1} ثانية وابعت تاني.'),
       );
       return;
     }
@@ -193,17 +227,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (await DeliveryService.checkOrdersPaused()) {
       if (!mounted) return;
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
-        ),
+        appSnack('استقبال الطلبات متوقف مؤقتًا. جرّب بعد شوية.'),
       );
       return;
     }
     if (!mounted) return;
 
     setState(() => _submitting = true);
-    final navigator = Navigator.of(context);
-
     try {
       await OrderService.placeOrder(
         cart: cart,
@@ -212,101 +242,53 @@ class _CheckoutPageState extends State<CheckoutPage> {
         address: _address.text.trim(),
         notes: _notes.text.trim(),
         courierNotes: _courierNotes.text.trim(),
+        referralPoints: _referralPoints,
+        referralDiscountMinor: _referralDiscountMinor,
       );
 
-
-      navigator.popUntil((route) => route.isFirst);
-      shellTab.value = 2;
-      final dialogContext = navigator.context;
-      if (dialogContext.mounted) {
-        showDialog<void>(
-          context: dialogContext,
-          builder: (ctx) => Directionality(
-            textDirection: TextDirection.rtl,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              title: const Text(
-                'تم إرسال طلبك',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'هنبدأ نجهّزه حالًا. تابع حالة طلبك ومعرفة الديليفري وصل لفين من صفحة «طلباتي».',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(height: 1.5),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: kPrimary.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: kPrimary.withValues(alpha: 0.4)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.pin_outlined, size: 20),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            kDeliveryPinKeepNotice,
-                            style: TextStyle(height: 1.45, fontSize: 13, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              actionsAlignment: MainAxisAlignment.center,
-              actions: [
-                FilledButton(
-                  onPressed: () {
-                    shellTab.value = 2; // طلباتي
-                    Navigator.pop(ctx);
-                  },
-                  style: FilledButton.styleFrom(
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                  ),
-                  child: const Text('تابع طلبي'),
-                ),
-              ],
-            ),
+      // Only navigate after the Worker/Firestore confirms successful creation.
+      // The entry screen may still be the root (e.g. checkout via "Browse stores"),
+      // so selecting shellTab alone would leave the customer on entry cards.
+      if (!mounted) return;
+      openCustomerTab(context, 2); // طلباتي
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!messenger.mounted) return;
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          appSnack(
+            kDeliveryPinKeepNotice,
+            title: 'تم إرسال طلبك بنجاح',
+            kind: AppSnackKind.success,
+            duration: const Duration(seconds: 12),
+            showClose: true,
           ),
         );
-      } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('تم إرسال طلبك. تابعه من صفحة طلباتي.')),
-        );
-      }
+      });
     } on OrderLimitException catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } on StateError catch (e) {
       if (!mounted) return;
       setState(() => _submitting = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (e.message.contains('تم تحديث نظام تأكيد الطلبات')) {
+        UpdateService.showProtocolUpdateRequired(context);
+      } else {
+        messenger.showSnackBar(appSnack(e.message));
+      }
     } on FirebaseException catch (e) {
       debugPrint('CHECKOUT FIREBASE ERROR: code=${e.code}, message=${e.message}');
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر إرسال الطلب (${e.code}). حاول تاني أو تواصل مع الدعم.')),
+        appSnack('تعذر إرسال الطلب (${e.code}). حاول تاني أو تواصل مع الدعم.'),
       );
     } catch (e) {
       debugPrint('CHECKOUT ERROR: $e');
       if (!mounted) return;
       setState(() => _submitting = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر إرسال الطلب. تأكد من الاتصال وحاول تاني.')),
+        appSnack('تعذر إرسال الطلب. تأكد من الاتصال وحاول تاني.'),
       );
     }
   }
@@ -565,9 +547,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             ),
                           ],
                           const SizedBox(height: 8),
+                          if (OrderGateway.referralCampaignEnabled &&
+                              OrderGateway.serverOrdersEnabled)
+                            TextButton(
+                              onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
+                              child: Text(_referralPoints > 0
+                                  ? 'إلغاء استخدام النقاط'
+                                  : 'استخدم نقاط الدعوات'),
+                            ),
+                          if (_referralPoints > 0)
+                            _line('خصم $_referralPoints نقطة',
+                                '- ${formatPrice(_referralDiscountMinor / 100)}'),
                           _line(
                             'الإجمالي',
-                            formatPrice(cart.total),
+                            formatPrice(cart.total - _referralDiscountMinor / 100),
                             strong: true,
                           ),
                         ],
@@ -607,7 +600,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 17)
+        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
         : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,

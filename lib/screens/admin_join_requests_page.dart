@@ -5,6 +5,7 @@ import '../widgets/app_header.dart';
 import '../services/role_request_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_snack.dart';
 
 /// مراجعة طلبات الانضمام. صلاحية القراءة والقرار محمية أيضًا بقواعد Firestore.
 class AdminJoinRequestsPage extends StatefulWidget {
@@ -19,7 +20,7 @@ class _AdminJoinRequestsPageState extends State<AdminJoinRequestsPage> {
 
   void _message(String value) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(value));
   }
 
   Future<void> _approve(QueryDocumentSnapshot<Map<String, dynamic>> request) async {
@@ -149,7 +150,7 @@ class _AdminJoinRequestsPageState extends State<AdminJoinRequestsPage> {
                           child: Icon(isStore ? Icons.storefront : Icons.delivery_dining, color: kPrimary),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17))),
+                        Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
                         Chip(label: Text(type?.label ?? 'طلب غير معروف')),
                       ]),
                       const SizedBox(height: 10),

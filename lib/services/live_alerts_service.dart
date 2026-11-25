@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import 'notification_service.dart';
 import 'read_meter.dart';
+import '../widgets/app_snack.dart';
 
 /// تنبيهات لحظية للمندوب من غير Cloud Functions (شغّالة على الخطة المجانية).
 ///
@@ -158,17 +159,11 @@ class LiveAlerts {
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
+        appSnack(
+          preview.isEmpty ? title : preview,
+          title: preview.isEmpty ? null : title,
+          kind: AppSnackKind.info,
           duration: const Duration(seconds: 8),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-              if (preview.isNotEmpty) Text(preview),
-            ],
-          ),
         ),
       );
     _beep();

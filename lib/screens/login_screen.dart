@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../legal/legal_content.dart';
 import '../services/auth_service.dart';
+import '../services/e2e_support.dart';
 import 'legal_page.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_snack.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,7 +17,6 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
-
   Future<void> _signIn() async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
@@ -34,13 +35,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? 'عملية تسجيل الدخول ما اكتملتش. جرّب تاني.'
                     : 'تعذر تسجيل الدخول (${e.code}). حاول تاني.';
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
+            .showSnackBar(appSnack(msg));
       }
     } catch (e) {
       debugPrint('Google sign-in failed: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تسجيل الدخول. حاول تاني.')),
+          appSnack('تعذر تسجيل الدخول. حاول تاني.'),
         );
       }
     } finally {
@@ -57,7 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
     final text = loginTheme.textTheme;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
-    const ink = Color(0xFF0E0E10);
+    final ink = kInk; // Navy identity shared with welcome, staff and admin.
 
     return Theme(
       data: loginTheme,
@@ -120,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         'وصلي',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -134,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'اطلب أي حاجة\n',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -143,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'وهتوصلك ',
                           style: TextStyle(
                             color: kPrimary,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -152,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           text: 'في ثواني',
                           style: TextStyle(
                             color: Colors.white70,
-                            fontSize: 26,
+                            fontSize: 25,
                             height: 1.4,
                             fontWeight: FontWeight.w700,
                           ),
@@ -193,6 +194,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('المتابعة بحساب جوجل'),
                           ),
                   ),
+                  if (E2eSupport.enabled) ...[
+                    const SizedBox(height: 10),
+                    for (final r in const [
+                      ('customer', 'عميل'),
+                      ('owner', 'صاحب محل'),
+                      ('courier', 'مندوب'),
+                    ])
+                      TextButton(
+                        onPressed: () => E2eSupport.signInAs(
+                          'sub-${r.$1}',
+                          '${r.$1}@e2e.test',
+                        ),
+                        child: Text(
+                          'دخول تجريبي: ${r.$2}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 14),
                   Wrap(
                     alignment: WrapAlignment.center,
@@ -212,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Text(
                         ' و',
-                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 12),
                       ),
                       _LegalLink(
                         label: 'سياسة الخصوصية',
@@ -252,7 +271,7 @@ class _LegalLink extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 11.5),
+              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 12),
         ),
       ),
     );

@@ -1,0 +1,109 @@
+name: Wasally Quick Voice APK Preview
+
+on:
+  push:
+    branches:
+      - feat/quick-voice-pin-delivery-20261125
+    paths:
+      - .github/workflows/apk-test-voice.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Restore stable debug keystore
+        uses: actions/cache/restore@v4
+        id: android-debug-key
+        with:
+          path: ~/.android/debug.keystore
+          key: wasally-android-debug-keystore-v1
+
+      - name: Require a previously tested stable signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$HOME/.android/debug.keystore" || {
+            echo "::error::Saved stable debug keystore is unavailable. Cannot build an update-compatible APK."
+            exit 1
+          }
+
+      - name: Free disk space for Android SDK
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
+          sudo rm -rf /usr/local/lib/android/sdk/system-images
+          sudo apt-get clean
+          df -h /
+
+      - name: Build installable preview APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if flutter build apk --debug \
+              --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
+              --dart-define=WASALLY_SERVER_ORDERS=true \
+              --dart-define=WASALLY_REFERRAL_REGISTRATION=true; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep "$((attempt * 20))"
+          done
+
+      - name: Verify APK and Google sign-in certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-debug.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify "$APK"
+          APK_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          python3 - "$APK_SHA1" <<'PY'
+          import json, sys
+          sha1 = sys.argv[1].lower()
+          with open("android/app/google-services.json", encoding="utf-8") as f:
+              config = json.load(f)
+          registered = {
+              oauth.get("android_info", {}).get("certificate_hash", "").lower()
+              for client in config.get("client", [])
+              if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+              for oauth in client.get("oauth_client", [])
+              if oauth.get("client_type") == 1
+          }
+          if sha1 not in registered:
+              print("ERROR: Debug APK signer is not registered for Google sign-in.")
+              raise SystemExit(1)
+          print("APK signing matches configured Google sign-in SHA-1.")
+          PY
+          sha256sum "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasally-quick-voice-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

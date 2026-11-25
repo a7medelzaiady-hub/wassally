@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,6 +11,7 @@ import '../theme/brand.dart';
 import '../utils/dialog_controllers.dart';
 import '../utils/maps.dart';
 import 'quick_courier_orders_page.dart' show quickStepLabel;
+import '../widgets/app_snack.dart';
 
 /// رحلة المندوب في طلب سريع: زرار واحد كبير لكل خطوة، وأقل كتابة ممكنة (أرقام وصور بس).
 /// كل الكتابة عن طريق الـWorker، والطلب بيتحدث من رده. مفيش مستمعات؛ زرار «تحديث» بقراءة واحدة.
@@ -37,6 +39,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   final _estimateCtrl = TextEditingController();
   final _deliveryCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
+  final _voicePlayer = audio.AudioPlayer();
+  bool _voicePlaying = false;
 
   @override
   void initState() {
@@ -52,6 +56,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     _estimateCtrl.dispose();
     _deliveryCtrl.dispose();
     _pinCtrl.dispose();
+    _voicePlayer.dispose();
     super.dispose();
   }
 
@@ -119,11 +124,28 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     }
   }
 
+  Future<void> _toggleCustomerVoice(String url) async {
+    if (_order?.canSeeContact != true) return;
+    try {
+      if (_voicePlaying) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _voicePlaying = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.UrlSource(url));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _voicePlaying = true);
+      }
+    } catch (_) { _toast('تعذر تشغيل التسجيل الصوتي.'); }
+  }
+
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
   }
 
   Future<void> _call() async {
+    // Never dial a cached phone after the server revoked the assignment.
+    if (_order?.canSeeContact != true) return;
     final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
     // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
@@ -204,15 +226,15 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
   // ───────────── واجهة ─────────────
 
-  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Color? color, Key? key}) {
+  Widget _bigButton(String label, IconData icon, VoidCallback? onPressed, {Key? key}) {
     return SizedBox(
       width: double.infinity,
       height: 60,
       child: FilledButton.icon(
         key: key,
         style: FilledButton.styleFrom(
-          backgroundColor: color ?? Brand.green,
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          backgroundColor: Brand.green,
+          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         onPressed: _busy ? null : onPressed,
@@ -222,13 +244,20 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     );
   }
 
-  Widget _card({required List<Widget> children}) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+  Widget _card({required List<Widget> children, bool receipt = false}) => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: receipt ? const Color(0xFFFFFEF8) : Colors.white,
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(color: kLine),
+          boxShadow: [
+            BoxShadow(
+              color: Brand.ink.withValues(alpha: 0.10),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
       );
@@ -254,7 +283,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ),
       );
 
-  Widget _totalsCard(QuickTotalsView t, {String title = 'الكشف'}) {
+  Widget _totalsCard(
+    QuickTotalsView t, {
+    String title = 'الحساب النهائي',
+    bool delivered = false,
+  }) {
     return _card(children: [
       Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       const SizedBox(height: 6),
@@ -264,46 +297,187 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       if (t.prepaid > 0) _row('المقدم المحوّل', '- ${formatPiastres(t.prepaid)}'),
       const Divider(),
       t.due >= 0
-          ? _row('تحصّل من العميل', formatPiastres(t.due), bold: true)
-          : _row('ترجّع للعميل', formatPiastres(-t.due), bold: true),
+          ? _row(delivered ? 'المبلغ عند التسليم' : 'تحصّل من العميل',
+              formatPiastres(t.due), bold: true)
+          : _row(delivered ? 'الرد عند التسليم' : 'ترجّع للعميل',
+              formatPiastres(-t.due), bold: true),
     ]);
   }
 
+  Widget _requestDivider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          for (var i = 0; i < (constraints.maxWidth / 8).floor(); i++)
+            SizedBox(width: 4, height: 1, child: ColoredBox(color: kMuted)),
+        ],
+      ),
+    ),
+  );
+
   Widget _requestCard(QuickCourierOrder o) {
-    return _card(children: [
-      Text('طلب ${o.customerFirstName.isEmpty ? 'العميل' : o.customerFirstName}',
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
-      if (o.area.isNotEmpty)
-        Text('📍 منطقة العميل: ${o.area}', style: TextStyle(color: kMuted)),
-      if (!o.canSeeContact)
-        Text('العنوان التفصيلي ورقم الهاتف يظهران بعد قبول الطلب فقط.',
-            style: TextStyle(color: kMuted, fontSize: 12)),
-      for (final s in o.stores) ...[
-        const SizedBox(height: 10),
-        Row(children: [
-          Icon(Icons.storefront, color: Brand.green),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(s.name.isEmpty ? 'أي محل قريب' : s.name,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+    return _card(receipt: true, children: [
+      Row(
+        children: [
+          Icon(Icons.receipt_long_rounded, color: Brand.green, size: 30),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'فاتورة مشتريات العميل',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
           ),
-        ]),
-        for (final p in s.pricedItems)
-          _row('• ${p.name} × ${p.qty}', 'تقريبًا ${formatPiastres(p.subtotalPiastres)}'),
-        if (s.items.isNotEmpty) Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(s.items, style: const TextStyle(fontSize: 15, height: 1.5)),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      if (o.step == QuickCourierStep.available)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب متاح للقبول. العنوان التفصيلي ورقم العميل يظهروا بعد تعيينك عليه بس.',
+            key: Key('quick-before-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        )
+      else if (o.isActive)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            'الطلب مُسند ليك. راجع المشتريات وكمّل الخطوة الموضحة تحت الفاتورة.',
+            key: Key('quick-after-assignment-note'),
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      if (!o.hasCustomerRequest)
+        const Padding(
+          padding: EdgeInsets.only(top: 10),
+          child: Text(
+            'مفيش أصناف أو تفاصيل مشتريات ظاهرة في الطلب ده. اسحب لتحديث التفاصيل، ولو فضلت فاضية تواصل مع الدعم قبل الشراء.',
+            key: Key('quick-request-empty-warning'),
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+        ),
+      if (o.area.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
+      ],
+      if (!o.canSeeContact)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            'العنوان ورقم التليفون بيظهروا بعد قبول الطلب فقط.',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
+        ),
+      if ((_contact?.voiceUrl ?? '').isNotEmpty && o.canSeeContact) ...[
+        _requestDivider(),
+        OutlinedButton.icon(
+          key: const Key('quick-courier-customer-voice'),
+          onPressed: () => _toggleCustomerVoice(_contact!.voiceUrl),
+          icon: Icon(_voicePlaying ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+          label: Text(_voicePlaying ? 'إيقاف صوت طلب العميل' : 'اسمع طلب العميل الصوتي'),
         ),
       ],
+      // صور «صوّر طلبك»: في أول المحتوى وبتتكبّر بالضغط.
+      if (o.customerImages.isNotEmpty) ...[
+        _requestDivider(),
+        const Text('صور طلب العميل',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            key: const Key('quick-courier-customer-images'),
+            scrollDirection: Axis.horizontal,
+            itemCount: o.customerImages.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final url = o.customerImages[i];
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => Dialog(
+                    clipBehavior: Clip.antiAlias,
+                    child: InteractiveViewer(
+                      maxScale: 5,
+                      child: Image.network(url, fit: BoxFit.contain),
+                    ),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(url, width: 100, height: 120, fit: BoxFit.cover,
+                      cacheWidth: 300,
+                      errorBuilder: (_, _, _) => const SizedBox(
+                          width: 100, child: Icon(Icons.broken_image_outlined))),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+      for (final (index, store) in o.stores.indexed) ...[
+        _requestDivider(),
+        Text(
+          store.name.isEmpty
+              ? (o.stores.length > 1 ? 'محل ${index + 1} · أي محل قريب' : 'أي محل قريب')
+              : store.name,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+        ),
+        if (store.pricedItems.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(child: Text('الصنف', style: TextStyle(color: kMuted))),
+              Text('الكمية', style: TextStyle(color: kMuted)),
+            ],
+          ),
+          for (final item in store.pricedItems)
+            Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.name, style: const TextStyle(fontSize: 16, height: 1.4)),
+                        Text('تقريبًا ${formatPiastres(item.subtotalPiastres)}',
+                            style: TextStyle(color: kMuted)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('${item.qty}',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
+        ],
+        if (store.items.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              store.items.trim(),
+              style: const TextStyle(fontSize: 16, height: 1.45, fontWeight: FontWeight.w600),
+            ),
+          ),
+      ],
       if (o.notes.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Text('ملاحظات: ${o.notes}', style: TextStyle(color: kMuted)),
+        _requestDivider(),
+        const Text('ملاحظات العميل', style: TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(o.notes),
       ],
       if ((o.approxTotalPiastres ?? 0) > 0) ...[
-        const Divider(height: 24),
+        _requestDivider(),
         _row('الإجمالي التقريبي', formatPiastres(o.approxTotalPiastres!), bold: true),
-        Text('الأسعار تقريبية وقد تزيد أو تقل حسب المحل. الحساب النهائي من الفواتير.',
-            style: TextStyle(color: kMuted, fontSize: 12.5)),
+        Text('الحساب النهائي من الفواتير.', style: TextStyle(color: kMuted)),
       ],
     ]);
   }
@@ -327,25 +501,38 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         child: Text(c.address, style: const TextStyle(height: 1.5)),
       ),
       if (c.address.isEmpty) const Text('العنوان التفصيلي غير متاح'),
-      if (c.address.isNotEmpty)
-        OutlinedButton.icon(
-          onPressed: _busy
-              ? null
-              : () async {
-                  try {
-                    final opened = await openInMaps(c.address);
-                    if (!opened && mounted) _toast('تعذر فتح الخريطة.');
-                  } catch (_) {
-                    if (mounted) _toast('تعذر فتح الخريطة.');
-                  }
-                },
-          icon: const Icon(Icons.map_outlined),
-          label: const Text('افتح الخريطة'),
-        ),
       if (c.notes.isNotEmpty) Text(c.notes, style: TextStyle(color: kMuted)),
-      const SizedBox(height: 10),
-      _bigButton('اتصل بالعميل', Icons.call, c.phone.isEmpty ? null : _call,
-          color: const Color(0xFF2563EB), key: const Key('quick-call')),
+      if (c.address.isNotEmpty || c.phone.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            if (c.phone.isNotEmpty)
+              FilledButton.icon(
+                key: const Key('quick-call'),
+                onPressed: _busy ? null : _call,
+                icon: const Icon(Icons.call_rounded, size: 22),
+                label: const Text('اتصل بالعميل'),
+              ),
+            if (c.address.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        try {
+                          final opened = await openInMaps(c.address);
+                          if (!opened && mounted) _toast('تعذر فتح الخريطة.');
+                        } catch (_) {
+                          if (mounted) _toast('تعذر فتح الخريطة.');
+                        }
+                      },
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('افتح الخريطة'),
+              ),
+          ],
+        ),
+      ],
     ]);
   }
 
@@ -402,7 +589,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                 final amount = await _askAmount('المبلغ اللي وصلك فعلًا كام جنيه؟', initial: o.advanceAmountPiastres);
                 if (amount == null) return;
                 await _act('advance-received', {'amountPiastres': amount}, 'اتسجل المقدم');
-              }, color: const Color(0xFF2563EB), key: const Key('quick-advance-received')),
+              }, key: const Key('quick-advance-received')),
             ]),
           if (o.advanceConfirmedAt != null)
             _card(children: [
@@ -425,7 +612,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                       errorBuilder: (_, _, _) => const Icon(Icons.receipt_long, size: 40)),
                 ),
                 title: Text(formatPiastres(o.receipts[i].amountPiastres),
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                 trailing: IconButton(
                   tooltip: 'شيل الفاتورة',
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -452,11 +639,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           ]),
           if (preview != null && o.receipts.isNotEmpty && !deliveryTooHigh) _totalsCard(preview, title: 'الكشف اللي هيوصل للعميل'),
           _bigButton(
-            'ابعت الكشف للعميل',
+            'جهّز الحساب النهائي والتسليم',
             Icons.send,
             o.receipts.isEmpty || delivery == null || deliveryTooHigh
                 ? null
-                : () => _act('submit-summary', {'deliveryPiastres': delivery}, 'الكشف وصل للعميل'),
+                : () => _act('submit-summary', {'deliveryPiastres': delivery}, 'الحساب جاهز، سلّم بالرمز'),
             key: const Key('quick-submit-summary'),
           ),
         ];
@@ -467,7 +654,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           _card(children: const [
             Icon(Icons.hourglass_top, size: 40),
             SizedBox(height: 8),
-            Text('مستني العميل يوافق على الكشف. ممنوع التسليم قبل موافقته.',
+            Text('الحساب النهائي جاهز. اتصل بالعميل واستلم رمز التسليم عند وصول الطلب.',
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 16, height: 1.5)),
           ]),
           _bigButton('تحديث', Icons.refresh, _refresh, key: const Key('quick-refresh')),
@@ -476,7 +663,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       case QuickCourierStep.deliver:
         final pin = DeliveryPinService.normalize(_pinCtrl.text);
         return [
-          if (o.totals != null) _totalsCard(o.totals!, title: 'العميل وافق على الكشف ✅'),
+          if (o.totals != null) _totalsCard(o.totals!, title: 'الحساب النهائي'),
           _card(children: [
             const Text('اطلب من العميل رمز التسليم (4 أرقام):',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
@@ -488,7 +675,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
               textAlign: TextAlign.center,
               maxLength: 4,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
-              style: const TextStyle(fontSize: 30, letterSpacing: 12, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 29, letterSpacing: 12, fontWeight: FontWeight.w900),
               decoration: const InputDecoration(counterText: '', border: OutlineInputBorder()),
             ),
           ]),
@@ -504,18 +691,20 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
 
       case QuickCourierStep.delivered:
         return [
-          if (o.totals != null) _totalsCard(o.totals!),
           _card(children: const [
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
-            Text('الطلب اتسلّم', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
+            SizedBox(height: 8),
+            Text('الطلب اتسلّم', textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ]),
+          if (o.totals != null) _totalsCard(o.totals!, delivered: true),
         ];
 
       case QuickCourierStep.cancelled:
         return [
           _card(children: const [
             Icon(Icons.cancel, size: 48, color: Colors.red),
-            Text('الطلب ده اتلغى', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text('الطلب ده اتلغى', textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ]),
         ];
     }
@@ -528,10 +717,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(o == null ? 'طلب سريع' : quickStepLabel(o.step)),
+          title: const Text('تفاصيل الطلب السريع'),
           actions: [
             if (o != null && o.canRelease)
               TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: _busy
                     ? null
                     : () async {
@@ -577,10 +767,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                   child: Center(child: Text('جاري تحميل تفاصيل الطلب...')),
                 ),
               if (o != null) ...[
-                if (o.step == QuickCourierStep.available) _requestCard(o),
+                _requestCard(o),
                 _contactCard(o),
                 ..._stepWidgets(o),
-                if (o.step != QuickCourierStep.available) _requestCard(o),
               ],
             ],
           ),
@@ -604,7 +793,7 @@ class _MoneyField extends StatelessWidget {
       autofocus: autofocus,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+      style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
       onChanged: onChanged == null ? null : (_) => onChanged!(),
       decoration: const InputDecoration(
         suffixText: 'جنيه',

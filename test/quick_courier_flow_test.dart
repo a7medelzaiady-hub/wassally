@@ -76,9 +76,17 @@ Future<void> _pumpPage(WidgetTester tester, _FakeBackend backend) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> _tap(WidgetTester tester, Key key) async {
-  await tester.ensureVisible(find.byKey(key));
+Future<void> _show(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    180,
+    scrollable: find.byType(Scrollable).first,
+  );
   await tester.pumpAndSettle();
+}
+
+Future<void> _tap(WidgetTester tester, Key key) async {
+  await _show(tester, find.byKey(key));
   await tester.tap(find.byKey(key));
   await tester.pumpAndSettle();
 }
@@ -111,6 +119,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('المتاحة (1)'), findsOneWidget);
     expect(find.text('متاح للقبول'), findsOneWidget);
+  });
+
+  testWidgets('بطاقة الطلب السريع تعرض مشتريات العميل دون كشف العنوان', (tester) async {
+    final backend = _FakeBackend(_doc('open', {
+      'stores': [
+        {'name': 'الخير', 'items': 'عيش بلدي 5 أرغفة، زيت كيلو'},
+      ],
+      'notes': 'من غير شطة',
+    }));
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(backend: backend),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-order-request-preview')), findsOneWidget);
+    expect(find.textContaining('عيش بلدي 5 أرغفة'), findsOneWidget);
+    expect(find.textContaining('من غير شطة'), findsOneWidget);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
@@ -158,19 +186,52 @@ void main() {
     expect(find.text('تعذر فتح الخريطة.'), findsOneWidget);
   });
 
+  testWidgets('الطلب السريع يوضح وضع التعيين ولا يكشف بيانات قبل القبول',
+      (tester) async {
+    final backend = _FakeBackend(_doc('open'));
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-before-assignment-note')), findsOneWidget);
+    expect(find.byKey(const Key('quick-after-assignment-note')), findsNothing);
+    expect(find.textContaining('عنوان سري'), findsNothing);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    // Updating a real order through the Worker must change the copy.
+    backend.next = (_, _) => _doc('accepted');
+    await _tap(tester, const Key('quick-accept'));
+    expect(find.byKey(const Key('quick-before-assignment-note')), findsNothing);
+    expect(find.byKey(const Key('quick-after-assignment-note')), findsOneWidget);
+    expect(find.byKey(const Key('quick-call')), findsOneWidget);
+  });
+
+  testWidgets('طلب سريع ناقص تفاصيل المشتريات يعرض تحذير واضح بدل فاتورة فاضية',
+      (tester) async {
+    final backend = _FakeBackend(_doc('open', {
+      'stores': <Object>[],
+      'notes': '',
+    }));
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-request-empty-warning')), findsOneWidget);
+    expect(find.byKey(const Key('quick-accept')), findsOneWidget);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('التقدير: المندوب يبدأ الشراء على طول مهما كان المبلغ (مفيش حد 200)', (tester) async {
     final backend = _FakeBackend(_doc('accepted'))..next = (_, _) => _doc('purchasing');
     await _pumpPage(tester, backend);
+    await _show(tester, find.byKey(const Key('quick-start')));
     expect(_enabled(tester, const Key('quick-start')), isFalse);
 
     final field = find.descendant(of: find.byKey(const Key('quick-estimate')), matching: find.byType(TextField));
+    await _show(tester, field);
     await tester.enterText(field, '٢٥٠٠');
     await tester.pumpAndSettle();
     expect(find.text('اطلب المقدم'), findsNothing);
+    await _show(tester, find.byKey(const Key('quick-start')));
     expect(find.text('ابدأ الشراء'), findsOneWidget);
     await _tap(tester, const Key('quick-start'));
     expect(backend.calls.single.key, 'start-purchase');
     expect(backend.calls.single.value['estimatedPurchasesPiastres'], 250000);
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
   });
 
@@ -180,6 +241,7 @@ void main() {
     }));
     await _pumpPage(tester, backend);
     expect(find.byKey(const Key('quick-advance-received')), findsOneWidget);
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
     expect(_enabled(tester, const Key('quick-receipt')), isTrue);
   });
@@ -191,9 +253,16 @@ void main() {
 
   testWidgets('الشراء: إرسال الكشف مقفول من غير فواتير', (tester) async {
     await _pumpPage(tester, _FakeBackend(_doc('purchasing')));
+    await _show(tester, find.byKey(const Key('quick-receipt')));
     expect(find.byKey(const Key('quick-receipt')), findsOneWidget);
-    await tester.enterText(find.descendant(of: find.byKey(const Key('quick-delivery')), matching: find.byType(TextField)), '30');
+    final deliveryField = find.descendant(
+      of: find.byKey(const Key('quick-delivery')),
+      matching: find.byType(TextField),
+    );
+    await _show(tester, deliveryField);
+    await tester.enterText(deliveryField, '30');
     await tester.pumpAndSettle();
+    await _show(tester, find.byKey(const Key('quick-submit-summary')));
     expect(_enabled(tester, const Key('quick-submit-summary')), isFalse);
   });
 
@@ -208,15 +277,22 @@ void main() {
     final backend = _FakeBackend(_doc('summary_approved', {'totals': _totals, 'summaryRevision': 1}))
       ..next = (_, _) => _doc('delivered', {'totals': _totals});
     await _pumpPage(tester, backend);
+    final deliveryButton = find.byKey(const Key('quick-deliver'));
+    final pinField = find.byKey(const Key('quick-pin'));
+    await _show(tester, deliveryButton);
     expect(_enabled(tester, const Key('quick-deliver')), isFalse);
-    await tester.enterText(find.byKey(const Key('quick-pin')), '١2');
+    await _show(tester, pinField);
+    await tester.enterText(pinField, '١2');
     await tester.pumpAndSettle();
+    await _show(tester, deliveryButton);
     expect(_enabled(tester, const Key('quick-deliver')), isFalse);
-    await tester.enterText(find.byKey(const Key('quick-pin')), '١2٣4');
+    await _show(tester, pinField);
+    await tester.enterText(pinField, '١2٣4');
     await tester.pumpAndSettle();
     await _tap(tester, const Key('quick-deliver'));
     expect(backend.calls.single.key, 'deliver');
     expect(backend.calls.single.value['pin'], '1234');
+    await _show(tester, find.text('الطلب اتسلّم'));
     expect(find.text('الطلب اتسلّم'), findsOneWidget);
   });
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'home_top_ads.dart' show kSpecialPlacements;
 
 import '../services/catalog_service.dart';
 import '../theme/brand.dart';
@@ -105,7 +106,11 @@ class _PromoBannersState extends State<PromoBanners> {
   List<_Slide> _slides(QuerySnapshot<Map<String, dynamic>>? snap) {
     if (snap == null) return _fallback;
     final docs =
-        snap.docs.where((d) => (d.data()['active'] as bool?) ?? true).toList()
+        snap.docs
+            .where((d) => ((d.data()['active'] as bool?) ?? true) &&
+                // بوسترات «أعلى الرئيسية» ليها مكانها لوحدها.
+                !kSpecialPlacements.contains(d.data()['placement']))
+            .toList()
           ..sort(
             (a, b) => ((a.data()['order'] as num?) ?? 0).compareTo(
               (b.data()['order'] as num?) ?? 0,
@@ -198,7 +203,7 @@ class _PromoBannersState extends State<PromoBanners> {
                         s.title,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 21,
+                          fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import '../theme/app_tokens.dart';
 
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../services/auth_service.dart';
+import '../services/order_gateway.dart';
+import 'referral_campaign_page.dart';
 import 'admin_stores_page.dart';
 import 'admin_roles_page.dart';
 import 'admin_store_owners_page.dart';
@@ -32,6 +35,8 @@ class AdminNavigationPage extends StatelessWidget {
       (title: 'المحلات والأصناف', subtitle: 'إدارة المحلات والمنتجات', icon: Icons.store_mall_directory_outlined, page: const AdminStoresPage()),
       (title: 'إدارة المناديب', subtitle: 'الحسابات والصلاحيات', icon: Icons.delivery_dining_outlined, page: const AdminRolesPage()),
       (title: 'أصحاب المحلات', subtitle: 'الربط وإدارة الحسابات', icon: Icons.manage_accounts_outlined, page: const AdminStoreOwnersPage()),
+      if (OrderGateway.referralCampaignEnabled)
+        (title: 'إدارة الدعوات', subtitle: 'أكواد المسوقين والمكافآت', icon: Icons.card_giftcard, page: const AdminReferralCampaignPage()),
       (title: 'إعدادات التشغيل', subtitle: 'إعدادات التطبيق والخدمة', icon: Icons.tune_rounded, page: const AdminToolsPage()),
       (title: 'ترتيب المناديب', subtitle: 'متابعة أداء المناديب', icon: Icons.leaderboard_outlined, page: const AdminCouriersBoardPage()),
       (title: 'تقرير التشغيل', subtitle: 'إحصائيات وتقارير', icon: Icons.assessment_outlined, page: const AdminOperationsReportPage()),
@@ -52,6 +57,11 @@ class AdminNavigationPage extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth >= 650 ? 3 : 2;
+          // Height follows the phone font size so titles never overflow.
+          final scale = MediaQuery.textScalerOf(context);
+          final extent = 12 * 2 + 8 + 34 + 10 + 4 +
+              scale.scale(15) * 1.75 * 2 +
+              scale.scale(13) * 1.5 * 2;
           return GridView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: items.length,
@@ -59,7 +69,7 @@ class AdminNavigationPage extends StatelessWidget {
               crossAxisCount: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              mainAxisExtent: 155,
+              mainAxisExtent: extent,
             ),
             itemBuilder: (context, index) {
               final item = items[index];
@@ -75,11 +85,11 @@ class AdminNavigationPage extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(item.icon, size: 34, color: const Color(0xFF087653)),
+                        Icon(item.icon, size: 34, color: AppColors.purple),
                         const SizedBox(height: 10),
                         Text(item.title, textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                         const SizedBox(height: 4),
                         Text(item.subtitle, textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis,

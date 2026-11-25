@@ -1,0 +1,58 @@
+appId: com.wassally.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible: "دخول تجريبي: مندوب"
+    timeout: 60000
+- tapOn: "دخول تجريبي: مندوب"
+- extendedWaitUntil:
+    visible: "مش دلوقتي"
+    timeout: 15000
+    optional: true
+- runFlow: _dismiss-prompts.yaml
+- runFlow: _skip-tour.yaml
+- runFlow: _dismiss-prompts.yaml
+# بعد شاشة الترحيب الموحدة، لازم ندخل لوحة الدور المخصص أولًا.
+- extendedWaitUntil:
+    visible: "لوحتي"
+    timeout: 30000
+- tapOn: "لوحتي"
+- extendedWaitUntil:
+    visible: "استلم الطلب"
+    timeout: 90000
+- tapOn: "استلم الطلب"
+- extendedWaitUntil:
+    visible: ".*طلباتي.*"
+    timeout: 30000
+- tapOn: ".*طلباتي.*"
+# الفاتورة الحرارية في بداية الكارت؛ أزرار الحركة تقع أسفل الشاشة.
+# لا نتخطى شرط جاهزية المحل؛ لو لم يؤكد الجاهزية يفشل الاختبار بحق.
+- scrollUntilVisible:
+    element:
+      text: ".*استلمت من المحل.*"
+    direction: DOWN
+    timeout: 60000
+- tapOn: ".*استلمت من المحل.*"
+# «ابدأ التوصيل» هنا زر التأكيد في نافذة «هتبدأ توصيل الطلب؟».
+- extendedWaitUntil:
+    visible: "ابدأ التوصيل"
+    timeout: 30000
+- tapOn: "ابدأ التوصيل"
+- scrollUntilVisible:
+    element:
+      text: ".*وصلت إلى عنوان العميل.*"
+    direction: DOWN
+    timeout: 60000
+- tapOn: ".*وصلت إلى عنوان العميل.*"
+# الفاتورة بقيت في أول الكارت بشكل كامل، فزر التسليم قد يكون أسفل الشاشة.
+- scrollUntilVisible:
+    element:
+      text: ".*تأكيد التسليم بالرمز.*"
+    direction: DOWN
+    timeout: 60000
+- extendedWaitUntil:
+    visible: ".*تأكيد التسليم بالرمز.*"
+    timeout: 60000

@@ -1,0 +1,130 @@
+name: Wasally Referral Safe Worker Rollout
+
+# Reconcile the first-signup invitation rules and show the true rewards rollout state.
+# This workflow only deploys tested main code after all safety checks pass.
+# Do not activate referral delivery, payouts, or financial credits here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-referrals-gateway.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-referrals-gateway.yml'
+      - 'cloudflare-order-gateway/wrangler.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-order-gateway-worker
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Typecheck, worker tests and config gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloudflare-order-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - name: Enforce code-only rollout
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^REFERRAL_REGISTRATION_ENABLED *= *"true"' wrangler.toml
+          grep -Eq '^REFERRAL_DELIVERY_ENABLED *= *"false"' wrangler.toml
+          grep -Eq '^FIREBASE_PROJECT_ID *= *"wasally-12259"' wrangler.toml
+          grep -Eq '^APP_CHECK_MODE *= *"monitor"' wrangler.toml
+          test -s src/referral_first_session.ts
+          grep -q 'isOriginalRegistrationSession' src/index.ts
+          grep -q 'rewardsEnabled: env.REFERRAL_DELIVERY_ENABLED' src/index.ts
+          echo "Only original signups can register; cash and reward settlement stay disabled."
+      - name: Check Wrangler bundle
+        run: npx wrangler deploy --dry-run
+
+  deploy-registration:
+    name: Deploy registration only, then probe live endpoint
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloudflare-order-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - name: Require existing deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Missing Cloudflare deployment credentials in GitHub. Nothing deployed."
+            exit 1
+          fi
+          err_file="$(mktemp)"
+          trap 'rm -f "$err_file"' EXIT
+          if ! list="$(npx wrangler secret list 2>"$err_file")"; then
+            echo "::error::Cannot read Worker secret inventory. No changes made."
+            exit 1
+          fi
+          for name in FIREBASE_SERVICE_ACCOUNT_EMAIL FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY CLOUDINARY_API_KEY CLOUDINARY_API_SECRET DELIVERY_PIN_SECRET; do
+            if ! grep -q "\"$name\"" <<< "$list"; then
+              echo "::error::Worker is missing prerequisite binding $name; no deployment attempted."
+              exit 1
+            fi
+          done
+      - name: Deploy only tested Worker from main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+      - name: Verify existing service and referral route
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='https://throbbing-water-4ef7.a7medelzaiady.workers.dev'
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error "$root/health" \
+              | jq -e '.ok == true and .service == "wasally-order-gateway"' >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" -eq 5 ]]; then
+              echo "::error::Health endpoint failed; check Worker deployment and rollback."
+              exit 1
+            fi
+            sleep 3
+          done
+          # With registration enabled, an unauthenticated request MUST return 401,
+          # not the old disabled-flag 404. This probe creates no referral records.
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+          code="$(curl --silent --show-error -o "$response_file" -w '%{http_code}' \
+            -X POST "$root/v1/referrals/campaign" \
+            -H 'Content-Type: application/json' \
+            -d '{"channel":"customer"}')"
+          if [[ "$code" != '401' ]]; then
+            echo "::error::Referral registration gate not live (anonymous HTTP $code; expected 401)."
+            exit 1
+          fi
+          echo "OK: tested Worker deployed, referral route enabled and rejects anonymous requests."
+          echo "First-login validation unit tests passed in verify job."
+          echo "IMPORTANT: Reward settlement and payouts are still OFF." >> "$GITHUB_STEP_SUMMARY"

@@ -8,11 +8,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
+import 'services/e2e_support.dart';
 import 'services/error_guard.dart';
-import 'services/navigation.dart' show rootNavigatorKey;
+import 'screens/main_shell.dart';
+import 'services/navigation.dart' show rootNavigatorKey, customerShellBuilder;
 import 'services/notification_service.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 import 'services/cart_book.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
@@ -26,14 +29,17 @@ Future<void> _bootstrap() async {
   await Firebase.initializeApp(
     options: isAndroid ? null : DefaultFirebaseOptions.currentPlatform,
   );
+  await E2eSupport.connectEmulators();
   // الخطوات دي مستقلة عن بعض، فبتشتغل مع بعض بدل ورا بعض (كلها لازم تخلص قبل runApp).
   await Future.wait([
     _configureCrashlytics(),
     PerformanceMonitor.configure(),
-    _activateAppCheck(),
+    if (!E2eSupport.enabled) _activateAppCheck(),
+    ThemeController.instance.load(), // هوية وصّلي الموحدة حتى بعد تحديث النسخة
     carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
   ]);
   final bootstrap = startup.elapsed;
+  customerShellBuilder = (_) => const MainShell();
   runApp(const WasallyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     PerformanceMonitor.recordStartup(PerformanceMonitor.startupMetrics(
@@ -98,9 +104,11 @@ class WasallyApp extends StatelessWidget {
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
+            // Respect the phone's font-size setting (no more forced
+            // shrinking), capped so layouts stay intact.
             textScaler: mq.textScaler.clamp(
-              minScaleFactor: 0.8,
-              maxScaleFactor: 0.88,
+              minScaleFactor: AppTypography.minTextScale,
+              maxScaleFactor: AppTypography.maxTextScale,
             ),
           ),
           child: child ?? const SizedBox.shrink(),

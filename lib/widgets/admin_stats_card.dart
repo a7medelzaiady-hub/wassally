@@ -54,7 +54,7 @@ class _AdminStatsCardState extends State<AdminStatsCard> {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -67,24 +67,28 @@ class _AdminStatsCardState extends State<AdminStatsCard> {
             children: [
               const Expanded(
                 child: Text(
-                  'إحصائيات التوصيل (كل المناديب)',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+                  'إحصائيات التوصيل',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 ),
               ),
               ChoiceChip(
+                visualDensity: VisualDensity.compact,
                 label: const Text('اليوم'),
                 selected: _today,
                 onSelected: (_) => _setPeriod(true),
               ),
               const SizedBox(width: 6),
               ChoiceChip(
+                visualDensity: VisualDensity.compact,
                 label: const Text('الإجمالي'),
                 selected: !_today,
                 onSelected: (_) => _setPeriod(false),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           FutureBuilder<DeliveryStats>(
             future: _future,
             builder: (context, snap) {

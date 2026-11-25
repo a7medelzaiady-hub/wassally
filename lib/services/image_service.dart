@@ -35,10 +35,12 @@ class ImageService {
       throw ArgumentError('مجلد غير مسموح: $folder');
     }
 
+    // البوسترات بجودة أعلى (لحد 1600) علشان تفضل واضحة على الشاشات الكبيرة.
+    final maxSide = folder == 'banners' ? 1600.0 : 1024.0;
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1024,
-      maxHeight: 1024,
+      maxWidth: maxSide,
+      maxHeight: maxSide,
       imageQuality: 80, // ضغط محلي قبل الرفع لتقليل استهلاك البيانات والمساحة
     );
     if (picked == null) return null;
@@ -71,6 +73,15 @@ class ImageService {
     );
   }
 
+  /// تسجيل صوتي واحد للطلب السريع (m4a). يُرفع للمجلد الخاص بصاحب الطلب،
+  /// ويُحذف من Cloudinary عند تأكيد التسليم بالرمز.
+  static Future<String> uploadQuickVoice(List<int> bytes) async {
+    if (bytes.isEmpty || bytes.length > 1024 * 1024) {
+      throw StateError('التسجيل الصوتي يجب ألا يتجاوز 1MB. سجل رسالة أقصر.');
+    }
+    return _upload(bytes: bytes, filename: 'quick_voice.m4a', folder: 'quick_voices');
+  }
+
   /// صورة فاتورة «طلباتك على السريع»: الكاميرا افتراضيًا، والرفع لمجلد quick_receipts للطلب ده بس.
   /// الـWorker بيرفض الرفع لو المندوب مش المعيّن أو الطلب مش «جاري الشراء».
   /// بيرجّع null لو المندوب لغى التصوير.
@@ -95,6 +106,29 @@ class ImageService {
       filename: picked.name.isEmpty ? 'receipt.jpg' : picked.name,
       folder: 'quick_receipts',
       orderId: orderId,
+    );
+  }
+
+  /// صورة «صوّر طلبك» للطلب السريع: الكاميرا أو المعرض، والرفع لمجلد العميل نفسه.
+  /// بيرجّع null لو العميل لغى الاختيار. الصور بتتمسح بعد تأكيد الاستلام.
+  static Future<String?> pickAndUploadQuickRequest({
+    ImageSource source = ImageSource.camera,
+  }) async {
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 75,
+    );
+    if (picked == null) return null;
+    final bytes = await picked.readAsBytes();
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw StateError('الصورة كبيرة (أقصى حجم 5MB)');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: picked.name.isEmpty ? 'order.jpg' : picked.name,
+      folder: 'quick_requests',
     );
   }
 
@@ -151,9 +185,18 @@ class ImageService {
 
     final result = jsonDecode(uploadResponse.body);
     final url = result is Map ? result['url'] as String? : null;
+    // special_requests supports both images and pre-existing voice notes.
+    // quick_voices must be audio in the private Cloudinary folder.
+    final cloudPath = url == null ? '' : Uri.tryParse(url)?.path ?? '';
+    final allowedResource = folder == 'quick_voices'
+        ? cloudPath.contains('/video/upload/') &&
+            cloudPath.contains('/special_requests/')
+        : folder == 'special_requests'
+            ? cloudPath.contains('/image/upload/') ||
+                cloudPath.contains('/video/upload/')
+            : cloudPath.contains('/image/upload/');
     if (url == null || !isValidImageUrl(url) ||
-        !((Uri.parse(url).host == 'res.cloudinary.com') ||
-          Uri.parse(url).host.endsWith('.res.cloudinary.com'))) {
+        Uri.parse(url).host != 'res.cloudinary.com' || !allowedResource) {
       throw StateError('خدمة الصور لم ترجع رابطًا آمنًا صالحًا.');
     }
     return url;

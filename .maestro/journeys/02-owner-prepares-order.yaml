@@ -1,0 +1,35 @@
+appId: com.wassally.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: deny
+- extendedWaitUntil:
+    visible: "دخول تجريبي: صاحب محل"
+    timeout: 60000
+- tapOn: "دخول تجريبي: صاحب محل"
+- extendedWaitUntil:
+    visible: "مش دلوقتي"
+    timeout: 15000
+    optional: true
+- runFlow: _dismiss-prompts.yaml
+- runFlow: _skip-tour.yaml
+- runFlow: _dismiss-prompts.yaml
+# بعد شاشة الترحيب الموحدة، لازم ندخل لوحة الدور المخصص أولًا.
+- extendedWaitUntil:
+    visible: "لوحتي"
+    timeout: 30000
+- tapOn: "لوحتي"
+- extendedWaitUntil:
+    visible: ".*ابدأ التجهيز.*"
+    timeout: 90000
+- tapOn: ".*ابدأ التجهيز.*"
+- tapOn: "ابدأ التجهيز"
+- extendedWaitUntil:
+    visible: ".*جاهز — إتاحة لمندوب خارجي.*"
+    timeout: 60000
+- tapOn: ".*جاهز — إتاحة لمندوب خارجي.*"
+- tapOn: "جاهز للاستلام"
+- extendedWaitUntil:
+    visible: ".*الطلب جاهز للاستلام.*"
+    timeout: 60000

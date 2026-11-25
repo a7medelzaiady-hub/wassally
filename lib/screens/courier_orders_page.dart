@@ -15,6 +15,8 @@ import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/maps.dart';
 import '../widgets/customer_rating_dialog.dart';
+import '../widgets/courier_order_receipt.dart';
+import '../widgets/courier_order_details_sheet.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
@@ -22,6 +24,7 @@ import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
 import 'quick_courier_orders_page.dart';
+import '../widgets/app_snack.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -104,7 +107,7 @@ Widget _moneyBox(String label, String value, Color color) {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 11.5, color: kMuted)),
+          Text(label, style: TextStyle(fontSize: 12, color: kMuted)),
           const SizedBox(height: 2),
           Text(
             value,
@@ -216,13 +219,13 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: kMuted, fontSize: 11),
+              style: TextStyle(color: kMuted, fontSize: 12),
             ),
           ],
         ),
       );
 
-  Widget _statsCard(int availableToday, DeliveryStats today) {
+  Widget _statsCard(int availableCount, DeliveryStats today) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
@@ -232,7 +235,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
           _stat(
             Icons.inventory_2_outlined,
             'متاحة',
-            '$availableToday',
+            '$availableCount',
             Brand.green,
           ),
           _stat(
@@ -292,14 +295,6 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                   stream: _available,
                   builder: (context, avSnap) {
                     final available = avSnap.data ?? const <AppOrder>[];
-                    final today = startOfToday();
-                    final availableToday = available
-                        .where(
-                          (o) =>
-                              o.createdAt == null ||
-                              !o.createdAt!.isBefore(today),
-                        )
-                        .length;
                     final current = mine.where(_isCurrent).toList();
                     final completed = mine
                         .where((o) =>
@@ -333,7 +328,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                 child: Center(child: CircularProgressIndicator()),
                               );
                             }
-                            return _statsCard(availableToday, statsSnap.data!);
+                            return _statsCard(available.length, statsSnap.data!);
                           },
                         ),
                         Container(
@@ -409,6 +404,20 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
   }
 }
 
+// رقم العرض ثابت للطلب حتى بعد التعيين. العمليات تستخدم معرّف المستند.
+String _courierOrderNumber(String id) {
+  var number = 0;
+  for (final unit in id.codeUnits) {
+    number = (number * 131 + unit) % 900000;
+  }
+  return (100000 + number).toString();
+}
+
+String _courierArea(AppOrder order) {
+  final area = order.area.trim();
+  return area.isEmpty ? 'المنطقة غير محددة' : area;
+}
+
 /// كارت طلب متاح: بسيط، اسم المحل والمنطقة والعمولة وزر "استلم الطلب".
 class _AvailableOrderCard extends StatefulWidget {
   final AppOrder order;
@@ -428,18 +437,16 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
     try {
       await StaffOrderService.claimOrder(widget.order);
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+        messenger.showSnackBar(appSnack('تم استلام الطلب.'));
       }
     } on FirebaseException catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text(e.code == 'permission-denied'
+        messenger.showSnackBar(appSnack(e.code == 'permission-denied'
               ? 'الطلب اتاخد من مندوب تاني.'
-              : 'تعذر الاستلام (${e.code}).'),
-        ));
+              : 'تعذر الاستلام (${e.code}).'));
       }
     } catch (e) {
-      if (mounted) messenger.showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) messenger.showSnackBar(appSnack('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -476,7 +483,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     // وجهة مختصرة فقط قبل الاستلام؛ لا نعرض عنوان العميل أو هاتفه.
                     const SizedBox(height: 5),
                     Text(
-                      'رايح: ${o.area.trim().isEmpty ? 'المنطقة غير محددة' : o.area.trim()}',
+                      _courierArea(o),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -487,8 +494,8 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'طلب #${o.id.length > 8 ? o.id.substring(0, 8) : o.id}',
-                      style: TextStyle(fontSize: 11, color: kMuted),
+                      'طلب ${_courierOrderNumber(o.id)}',
+                      style: TextStyle(fontSize: 12, color: kMuted),
                     ),
                   ],
                 ),
@@ -496,7 +503,7 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('عمولتك', style: TextStyle(fontSize: 11, color: kMuted)),
+                  Text('عمولتك', style: TextStyle(fontSize: 12, color: kMuted)),
                   Text(
                     formatPrice(o.courierFee),
                     style: TextStyle(
@@ -511,11 +518,14 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
           ),
           const SizedBox(height: 8),
           Text(
-            'محتوى الطلب: ${o.items.length} صنف • الحالة: ${o.status.label}',
+            '${o.items.length} صنف • ${o.status.label}',
             style: TextStyle(fontSize: 12, color: Brand.ink),
           ),
           const SizedBox(height: 6),
-          const Text('العنوان التفصيلي ورقم العميل يظهران في «طلباتي» بعد استلام الطلب وتعيينه لك.'),
+          Text(
+            'العنوان ورقم العميل بعد الاستلام',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
@@ -565,6 +575,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   // والقواعد بتسمح بيها للمندوب المكلّف بالطلب وهو لسه جاري.
   OrderContact? _contact;
   bool _contactFailed = false;
+  final ValueNotifier<bool> _detailContactAllowed = ValueNotifier(false);
 
   AppOrder get _o => widget.order.withContact(_contact);
 
@@ -590,6 +601,8 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         oldWidget.order.customerConfirmedAt != widget.order.customerConfirmedAt ||
         oldWidget.order.courierId != widget.order.courierId) {
       _contactRequest++;
+      // Hide any PII shown in an open details sheet immediately.
+      _detailContactAllowed.value = false;
       _contact = null;
       _contactFailed = false;
       if (_canSeeContact) _loadContact();
@@ -607,6 +620,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
       if (mounted && request == _contactRequest && _canSeeContact) {
         setState(() => _contact = contact);
+        _detailContactAllowed.value = contact != null && _canSeeContact;
       }
     } catch (error) {
       debugPrint('Courier contact load failed: $error');
@@ -614,6 +628,53 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         setState(() => _contactFailed = true);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    // The card may disappear while its bottom sheet stays mounted (for
+    // example when a courier assignment is revoked or the order leaves the
+    // current tab). Revoke visible PII *before* disposing the notifier.
+    // Otherwise the orphaned sheet could keep displaying the cached contact.
+    _contactRequest++;
+    _detailContactAllowed.value = false;
+    _contact = null;
+    _detailContactAllowed.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openDetails() async {
+    // Contact is always loaded by the existing card. Never fetch private
+    // contact on opening details or expose PII for a finished/unassigned order.
+    _detailContactAllowed.value = _canSeeContact && _contact != null;
+    final contact = _detailContactAllowed.value ? _contact : null;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.84,
+        child: CourierOrderDetailsSheet(
+          order: widget.order,
+          orderNumber: _courierOrderNumber(widget.order.id),
+          contact: contact,
+          // Re-read the cached contact if it arrived while this sheet was open.
+          contactProvider: () => _canSeeContact ? _contact : null,
+          canSeePrivateContact: _detailContactAllowed,
+          onOpenMap: () {
+            if (!_canSeeContact) return;
+            Navigator.of(sheetContext).pop();
+            _openMap();
+          },
+          onCall: () {
+            if (!_canSeeContact) return;
+            Navigator.of(sheetContext).pop();
+            _call();
+          },
+        ),
+      ),
+    );
   }
 
   /// التسليم بقى برمز من 4 أرقام بياخده المندوب من العميل، والـWorker هو اللي بيتحقق.
@@ -630,19 +691,15 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       final payable = widget.order.payable;
       final delivered = await DeliveryPinService.deliver(orderId, pin);
       if (!mounted || widget.order.id != orderId) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text(delivered
+      messenger.showSnackBar(appSnack(delivered
             ? 'تم تأكيد التسليم. حصّل ${formatPrice(payable)} من العميل.'
-            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
-      ));
+            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'));
     } on DeliveryPinError catch (e) {
-      if (mounted) messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) messenger.showSnackBar(appSnack(e.message));
     } catch (error) {
       debugPrint('Delivery PIN verification failed: $error');
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'),
-        ));
+        messenger.showSnackBar(appSnack('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -694,15 +751,15 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         'not-found' => 'الطلب لم يعد موجودًا.',
         _ => 'تعذر تحديث الطلب (${error.code}). حاول مرة أخرى.',
       };
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.showSnackBar(appSnack(message));
     } on StateError catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error.message)),
+        appSnack(error.message),
       );
     } catch (error) {
       debugPrint('Courier order status update failed: $error');
       messenger.showSnackBar(
-        const SnackBar(content: Text('حدث خطأ غير متوقع أثناء تحديث الطلب.')),
+        appSnack('حدث خطأ غير متوقع أثناء تحديث الطلب.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -723,13 +780,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       await StaffOrderService.recordCashHandedToStore(widget.order.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.')),
+          appSnack('تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تسليم النقدية.')),
+          appSnack(error is StateError ? error.message : 'تعذر تسجيل تسليم النقدية.'),
         );
       }
     } finally {
@@ -744,11 +801,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     try {
       await StaffOrderService.recordCourierArrival(widget.order.id);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل وصولك للعنوان. حاول التواصل مع العميل.')),
+        appSnack('تم تسجيل وصولك للعنوان. حاول التواصل مع العميل.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل الوصول.')),
+        appSnack(error is StateError ? error.message : 'تعذر تسجيل الوصول.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -821,7 +878,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                   ),
                   const Text(
                     'بعد تسجيل السبب تقدر ترجع الطلب للمحل مباشرة، والمحل يؤكد استلامه.',
-                    style: TextStyle(fontSize: 11.5, color: Colors.black54),
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ],
               ),
@@ -857,11 +914,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         contactAttempted: true,
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.')),
+        appSnack('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر إرسال بلاغ التسليم.')),
+        appSnack(error is StateError ? error.message : 'تعذر إرسال بلاغ التسليم.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -900,7 +957,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('تعذر استئناف التوصيل: $error')),
+                            appSnack('تعذر استئناف التوصيل: $error'),
                           );
                         } finally {
                           if (mounted) setState(() => _busy = false);
@@ -938,7 +995,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('تعذر تسجيل الإرجاع: $error')),
+                            appSnack('تعذر تسجيل الإرجاع: $error'),
                           );
                         } finally {
                           if (mounted) setState(() => _busy = false);
@@ -970,11 +1027,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     try {
       final ok = await openInMaps(_contact?.address ?? '');
       if (!ok && mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+        messenger.showSnackBar(appSnack('تعذر فتح الخريطة'));
       }
     } catch (_) {
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+        messenger.showSnackBar(appSnack('تعذر فتح الخريطة'));
       }
     }
   }
@@ -993,7 +1050,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     await Clipboard.setData(ClipboardData(text: phone));
     if (mounted && _canSeeContact) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تعذر فتح الاتصال؛ تم نسخ الرقم')));
+          .showSnackBar(appSnack('تعذر فتح الاتصال؛ تم نسخ الرقم'));
     }
   }
 
@@ -1009,7 +1066,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر التحقق من التقييم السابق: $error')),
+        appSnack('تعذر التحقق من التقييم السابق: $error'),
       );
       return;
     } finally {
@@ -1019,7 +1076,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     if (alreadyRated) {
       setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تقييم تعامل العميل على هذا الطلب من قبل.')),
+        appSnack('تم تقييم تعامل العميل على هذا الطلب من قبل.'),
       );
       return;
     }
@@ -1039,11 +1096,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
       if (mounted) setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل تقييم العميل. شكرًا لمشاركتك.')),
+        appSnack('تم تسجيل تقييم العميل. شكرًا لمشاركتك.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.')),
+        appSnack(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1063,6 +1120,10 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
   Widget build(BuildContext context) {
     final o = _o;
     final next = o.status.courierNext;
+    final statusLabel = o.status == OrderStatus.onTheWay &&
+            o.customerConfirmedAt != null
+        ? 'تم التسليم • تسوية النقدية'
+        : o.status.label;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1091,6 +1152,35 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                 OrderTimer(start: o.courierAt!, end: o.deliveredAt),
             ],
           ),
+          // Clear details action for every assigned/current/history order.
+          // The inline receipt remains first and readable without a tap.
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: OutlinedButton.icon(
+              key: Key('courier-order-details-${o.id}'),
+              onPressed: _openDetails,
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('تفاصيل الطلب'),
+            ),
+          ),
+          // محتوى طلب العميل هو أول معلومة يحتاجها المندوب.
+          // الفاتورة واضحة من غير ضغطة إضافية ولا استعلامات Firestore.
+          CourierOrderReceipt(
+            items: o.items,
+            specialRequest: o.specialRequest,
+            notes: o.notes,
+          ),
+          Text(
+            'طلب ${_courierOrderNumber(o.id)} • $statusLabel',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
+          if (o.area.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              _courierArea(o),
+              style: TextStyle(fontWeight: FontWeight.w700, color: Brand.green),
+            ),
+          ],
           const SizedBox(height: 12),
           if (_canSeeContact && _contactFailed)
             Padding(
@@ -1161,31 +1251,6 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
               _moneyBox('حصّل من العميل', formatPrice(o.payable), Brand.ink),
               const SizedBox(width: 10),
               _moneyBox('عمولتك', formatPrice(o.courierFee), Brand.green),
-            ],
-          ),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            childrenPadding: const EdgeInsets.only(bottom: 8),
-            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-            title: const Text('تفاصيل الطلب'),
-            subtitle: Text('${o.status.label} • ${o.items.length} صنف'),
-            children: [
-              Text('رقم الطلب: ${o.id}'),
-              const SizedBox(height: 6),
-              Text('حالة الطلب: ${o.status.label}'),
-              const SizedBox(height: 6),
-              Text('المطلوب تحصيله: ${formatPrice(o.payable)}'),
-              const Divider(height: 20),
-              if (o.items.isEmpty) const Text('لا توجد أصناف مسجلة'),
-              for (final item in o.items)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('${item.qty} × ${item.name}'),
-                  subtitle: item.options.isEmpty
-                      ? null
-                      : Text(item.options.join('، ')),
-                  trailing: Text(formatPrice(item.total)),
-                ),
             ],
           ),
           if (o.status == OrderStatus.onTheWay &&
@@ -1388,7 +1453,7 @@ class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
               textAlign: TextAlign.center,
               maxLength: 4,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
-              style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 25, letterSpacing: 8, fontWeight: FontWeight.w800),
               decoration: InputDecoration(counterText: '', errorText: _error),
               onSubmitted: (_) => _submit(),
             ),

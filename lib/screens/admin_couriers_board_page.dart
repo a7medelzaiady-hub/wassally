@@ -8,6 +8,7 @@ import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_snack.dart';
 
 class _Row {
   final String id;
@@ -287,7 +288,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
     if (a == null || !a.isFinite || a <= 0 || a > 1000000) {
       note.dispose();
       messenger.showSnackBar(
-        const SnackBar(content: Text('اكتب مبلغ صحيح (حتى مليون جنيه).')),
+        appSnack('اكتب مبلغ صحيح (حتى مليون جنيه).'),
       );
       return;
     }
@@ -302,12 +303,12 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
       if (!mounted) return;
       setState(() => _data = _load());
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل التسليم.')),
+        appSnack('تم تسجيل التسليم.'),
       );
     } catch (e) {
       note.dispose();
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('تعذر التسجيل: $e')));
+      messenger.showSnackBar(appSnack('تعذر التسجيل: $e'));
     }
   }
 
@@ -315,7 +316,7 @@ class _AdminCouriersBoardPageState extends State<AdminCouriersBoardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 11, color: kMuted)),
+            Text(label, style: TextStyle(fontSize: 12, color: kMuted)),
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,

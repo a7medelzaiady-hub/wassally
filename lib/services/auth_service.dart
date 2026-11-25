@@ -2,7 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import 'cart_book.dart';
 import 'navigation.dart';
@@ -19,20 +19,39 @@ class AuthService {
 
   static bool _googleInitialized = false;
 
+  /// Ephemeral invite onboarding shown only for a brand-new Google account.
+  /// No pending invitation is restored for users who registered previously.
+  static final ValueNotifier<String?> newAccountInvitation = ValueNotifier(null);
+
+  static void _onGoogleLogin(UserCredential credential) {
+    newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
+        ? credential.user?.uid
+        : null;
+  }
+
+  static void dismissNewAccountInvitation(String uid) {
+    if (newAccountInvitation.value == uid) {
+      newAccountInvitation.value = null;
+    }
+  }
+
+
   /// تسجيل الدخول بجوجل.
   /// - ويب: نافذة منبثقة.
   /// - أندرويد: نافذة جوجل الأصلية المنبثقة لاختيار الحساب، بدون متصفح خارجي وبدون
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
   static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
+      await carts.attachAfterSignIn();
       return;
     }
     if (defaultTargetPlatform == TargetPlatform.android) {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        await _nativeGoogleSignIn();
+        _onGoogleLogin(await _nativeGoogleSignIn());
+        await carts.attachAfterSignIn();
         return;
       } on GoogleSignInException catch (e) {
         debugPrint('Native Google sign-in failed: ${e.code} | ${e.description}');
@@ -51,10 +70,11 @@ class AuthService {
         );
       }
     }
-    await _providerSignInWithRetry();
+    _onGoogleLogin(await _providerSignInWithRetry());
+    await carts.attachAfterSignIn();
   }
 
-  static Future<void> _nativeGoogleSignIn() async {
+  static Future<UserCredential> _nativeGoogleSignIn() async {
     final google = GoogleSignIn.instance;
     if (!_googleInitialized) {
       await google.initialize(serverClientId: _serverClientId);
@@ -65,7 +85,7 @@ class AuthService {
     if (idToken == null) {
       throw FirebaseAuthException(code: 'missing-id-token');
     }
-    await FirebaseAuth.instance.signInWithCredential(
+    return FirebaseAuth.instance.signInWithCredential(
       GoogleAuthProvider.credential(idToken: idToken),
     );
   }
@@ -87,24 +107,25 @@ class AuthService {
   }
 
   /// الطريقة القديمة (متصفح) مع إعادة محاولة تلقائية لو رجع خطأ unknown.
-  static Future<void> _providerSignInWithRetry() async {
+  static Future<UserCredential> _providerSignInWithRetry() async {
     try {
-      await FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider());
+      return await FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider());
     } on FirebaseAuthException catch (e) {
       const transient = {'unknown', 'web-internal-error', 'internal-error'};
       if (!transient.contains(e.code)) rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      await FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider());
+      return FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider());
     }
   }
 
   /// لو اتبعت context بنقفل أي شاشات مفتوحة فوق البوابة (زي "عرض كعميل")
   /// قبل الخروج، عشان متفضلش ظاهرة بعد تسجيل الخروج.
   static Future<void> signOut([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     if (context != null) {
       Navigator.of(context).popUntil((route) => route.isFirst);
     }
-    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
+    await carts.detachForSignOut(); // لا تمسح سلة الحساب، فقط افصلها من الذاكرة.
     shellTab.value = 0;
     await WasallyImageCache.clear();
     // لازم قبل الخروج، لأن مسح توكن الجهاز بيحتاج المستخدم لسه مسجّل.
@@ -120,6 +141,7 @@ class AuthService {
 
   /// حذف الحساب نهائيًا بعد إعادة تأكيد الهوية وتنظيف البيانات عبر Worker.
   static Future<void> deleteAccount([BuildContext? context]) async {
+    newAccountInvitation.value = null;
     final initialUser = FirebaseAuth.instance.currentUser;
     if (initialUser == null) return;
     if (!OrderGateway.isConfigured) {
@@ -145,7 +167,8 @@ class AuthService {
     // On any failure the account remains available and app listeners stay active.
     await OrderGateway.deleteAccount(idToken: idToken);
     await NotificationService.dispose();
-    carts.clearAll(); // السلة الحالية وكل «سلّاتي»
+    carts.clearAll(); // حذف الحساب: امسح سلال الحساب المحفوظة.
+    await carts.flush();
     shellTab.value = 0;
     await WasallyImageCache.clear();
     await FirebaseAuth.instance.signOut();

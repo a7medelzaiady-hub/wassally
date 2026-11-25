@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/order_gateway.dart';
+import 'referral_campaign_page.dart';
 import '../data/seed_stores.dart';
 import '../legal/legal_content.dart';
 import '../models/app_role.dart';
@@ -13,6 +15,7 @@ import '../services/role_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
@@ -20,6 +23,8 @@ import 'join_request_page.dart';
 import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
 import 'legal_page.dart';
+import 'user_guide_page.dart';
+import '../widgets/app_snack.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
 
@@ -75,11 +80,11 @@ class _AccountPageState extends State<AccountPage> {
       final n = await seedDemoStores();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('تم رفع $n محلات تجريبية')));
+          .showSnackBar(appSnack('تم رفع $n محلات تجريبية'));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('فشل الرفع. تأكد إن حسابك أدمن.')),
+        appSnack('فشل الرفع. تأكد إن حسابك أدمن.'),
       );
     }
   }
@@ -192,7 +197,7 @@ class _AccountPageState extends State<AccountPage> {
       debugPrint('Sign out error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تسجيل الخروج. حاول مرة أخرى.')),
+          appSnack('تعذر تسجيل الخروج. حاول مرة أخرى.'),
         );
       }
     }
@@ -218,21 +223,15 @@ class _AccountPageState extends State<AccountPage> {
           e.code == 'web-context-canceled' ||
           e.code == 'canceled';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            cancelled
+        appSnack(cancelled
                 ? 'اتلغى حذف الحساب'
-                : 'تعذر حذف الحساب (${e.code}). جرّب تاني.',
-          ),
-        ),
+                : 'تعذر حذف الحساب (${e.code}). جرّب تاني.'),
       );
     } catch (error) {
       if (!mounted) return;
       final message = error.toString().replaceFirst('Bad state: ', '').trim();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message.isEmpty ? 'تعذر حذف الحساب. جرّب تاني.' : message),
-        ),
+        appSnack(message.isEmpty ? 'تعذر حذف الحساب. جرّب تاني.' : message),
       );
     }
   }
@@ -260,11 +259,12 @@ class _AccountPageState extends State<AccountPage> {
     return Column(
       children: [
         AppHeader(
+          gradient: Brand.headerGradient,
           child: Row(
             children: [
               CircleAvatar(
                 radius: 32,
-                backgroundColor: kPrimarySoft,
+                backgroundColor: Colors.white,
                 foregroundImage: user?.photoURL != null
                     ? NetworkImage(user!.photoURL!)
                     : null,
@@ -279,12 +279,15 @@ class _AccountPageState extends State<AccountPage> {
                       name,
                       style: text.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
                     if ((user?.email ?? '').isNotEmpty)
                       Text(
                         user!.email!,
-                        style: text.bodySmall?.copyWith(color: kMuted),
+                        style: text.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
                       ),
                   ],
                 ),
@@ -339,6 +342,8 @@ class _AccountPageState extends State<AccountPage> {
                 },
               ),
               _joinSection(_profileData),
+              if (OrderGateway.referralCampaignEnabled)
+                const ReferralCampaignLink(),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,
@@ -358,6 +363,17 @@ class _AccountPageState extends State<AccountPage> {
                 decoration: _card,
                 child: Column(
                   children: [
+                    ListTile(
+                      key: const Key('account-user-guide'),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => const UserGuidePage()),
+                      ),
+                      leading: Icon(Icons.menu_book_outlined, color: kPrimary),
+                      title: const Text('دليل المستخدم'),
+                      subtitle: const Text('طريقة الطلب والتجهيز والتوصيل'),
+                      trailing: const Icon(Icons.chevron_left),
+                    ),
+                    Divider(height: 1, color: kLine),
                     ListTile(
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const AboutPage()),
@@ -495,7 +511,7 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                   child: const Text(
                     'حذف الحساب',
-                    style: TextStyle(fontSize: 11.5),
+                    style: TextStyle(fontSize: 12),
                   ),
                 ),
               ),
@@ -590,12 +606,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         ),
       );
       navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text('تم حفظ بياناتك')));
+      messenger.showSnackBar(appSnack('تم حفظ بياناتك'));
     } catch (_) {
       if (!mounted) return;
       setState(() => _saving = false);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر الحفظ. جرّب تاني.')),
+        appSnack('تعذر الحفظ. جرّب تاني.'),
       );
     }
   }

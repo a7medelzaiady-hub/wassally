@@ -1,0 +1,95 @@
+name: Maestro Role Journeys (Emulator)
+
+# رحلات العميل والمحل والمندوب على Firebase Emulators فقط (بدون Firebase الحقيقي ولا أسرار).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".maestro/journeys/**"
+      - ".github/workflows/maestro-journeys.yml"
+      - ".github/scripts/maestro-journeys.sh"
+      - "e2e/**"
+      - "firebase.e2e.json"
+      - "firestore.rules"
+      - "lib/services/e2e_support.dart"
+      - "lib/screens/courier_orders_page.dart"
+      - "lib/widgets/courier_order_receipt.dart"
+      - "test/courier_order_receipt_test.dart"
+
+concurrency:
+  group: maestro-journeys-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Java 21 لـ Firebase Emulators، وبعدها Java 17 لبناء Android.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21'
+      - name: Remember Java 21 path
+        run: echo "JAVA21_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+      - name: Install firebase-tools (emulators)
+        working-directory: rules-tests
+        run: npm ci
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+
+      - name: Build debug APK in E2E mode (emulators only)
+        timeout-minutes: 15
+        run: flutter build apk --debug --target-platform android-x64 --dart-define=WASALLY_SERVER_ORDERS=false --dart-define=WASALLY_E2E=true
+
+      - name: Install Maestro CLI
+        timeout-minutes: 5
+        run: |
+          curl -Ls 'https://get.maestro.mobile.dev' | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Run role journeys
+        timeout-minutes: 30
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 3072M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: bash .github/scripts/maestro-journeys.sh
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-journeys-diagnostics
+          path: diagnostics-journeys/
+          if-no-files-found: warn
+          retention-days: 7

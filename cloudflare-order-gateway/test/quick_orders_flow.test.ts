@@ -17,7 +17,7 @@ vi.mock("jose", () => ({
   },
 }));
 
-import worker from "../src/index";
+import worker, { quickRequestFolder } from "../src/index";
 import { deriveDeliveryPin } from "../src/delivery_pin";
 import { newQuickOrder, resolveQuickSettings } from "../src/quick_orders";
 
@@ -189,6 +189,39 @@ describe("POST /v1/quick (create)", () => {
   });
 });
 
+describe("one-minute quick voice edits", () => {
+  it("atomically replaces the private URL and public presence without disclosing voice", async () => {
+    const voiceFolder = (await quickRequestFolder("cust1")) + "/voice";
+    const voice = `https://res.cloudinary.com/demo/video/upload/v1/${voiceFolder}/edit.m4a`;
+    firebase({
+      [`quick_orders/${ID}`]: openOrder(),
+      [`quick_orders/${ID}/private/contact`]: { userName: "Ali", phone: "01012345678", address: "حي", customerVoiceUrl: "" },
+    });
+    const res = await call("cust1", `/v1/quick/${ID}/edit-voice`, { customerVoiceUrl: voice });
+    expect(res.status).toBe(200);
+    expect(commits).toHaveLength(1);
+    const [orderWrite, contactWrite] = commits[0].writes;
+    expect(orderWrite.update.fields.hasCustomerVoice).toEqual({ booleanValue: true });
+    expect(JSON.stringify(orderWrite)).not.toContain(voice);
+    expect(contactWrite.update.fields.customerVoiceUrl).toEqual({ stringValue: voice });
+    expect(contactWrite.updateMask.fieldPaths).toContain("customerVoiceUrl");
+    expect(orderWrite.currentDocument).toEqual({ updateTime: UPDATE_TIME });
+    expect(contactWrite.currentDocument).toEqual({ updateTime: UPDATE_TIME });
+  });
+
+  it("rejects modifying someone else's voice, accepted orders, and foreign links", async () => {
+    const voiceFolder = (await quickRequestFolder("cust1")) + "/voice";
+    const voice = `https://res.cloudinary.com/demo/video/upload/v1/${voiceFolder}/edit.m4a`;
+    firebase({ [`quick_orders/${ID}`]: openOrder() });
+    expect((await call("cust2", `/v1/quick/${ID}/edit-voice`, { customerVoiceUrl: voice })).status).toBe(403);
+    expect((await call("cust1", `/v1/quick/${ID}/edit-voice`, { customerVoiceUrl: voice.replace("demo", "other") })).status).toBe(400);
+    vi.restoreAllMocks();
+    firebase({ [`quick_orders/${ID}`]: { ...openOrder(), status: "accepted" } });
+    expect((await call("cust1", `/v1/quick/${ID}/edit-voice`, { customerVoiceUrl: voice })).status).toBe(409);
+    expect(commits).toHaveLength(0);
+  });
+});
+
 describe("POST /v1/quick/:id/:action", () => {
   it("accept writes with an updateTime precondition (no double assignment)", async () => {
     firebase({
@@ -260,18 +293,17 @@ describe("quick delivery PIN", () => {
     ...over,
   });
 
-  it("no PIN and no delivery while the final statement awaits the customer's approval", async () => {
+  it("legacy pending summary supports PIN delivery without invoice approval", async () => {
     const pending = locked({ status: "summary_pending", summaryApprovedAt: null });
     firebase({ [`quick_orders/${ID}`]: pending, "couriers/cour1": { name: "Mido", active: true } });
-    expect((await call("cust1", `/v1/quick/${ID}/delivery-pin`, undefined, "GET")).status).toBe(409);
+    expect((await call("cust1", `/v1/quick/${ID}/delivery-pin`, undefined, "GET")).status).toBe(200);
     const pin = await deriveDeliveryPin("quick:" + ID, SECRET);
     const res = await call("cour1", `/v1/quick/${ID}/deliver`, { pin });
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { code: string }).code).toBe("not_deliverable");
-    expect(commits.length).toBe(0);
+    expect(res.status).toBe(200);
+    expect(commits.length).toBe(1);
   });
 
-  it("only the customer gets the PIN, after approving the statement", async () => {
+  it("only the customer gets the PIN once the final statement is ready", async () => {
     firebase({ [`quick_orders/${ID}`]: locked() });
     const res = await call("cust1", `/v1/quick/${ID}/delivery-pin`, undefined, "GET");
     expect(res.status).toBe(200);

@@ -1,0 +1,11 @@
+appId: com.wassally.app
+---
+# الجولة الإعلانية بتظهر عند فتح التطبيق (حالة نظيفة)؛ «تخطي» بيقفلها.
+- extendedWaitUntil:
+    visible: "١/٣"
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn: "تخطي"
+- extendedWaitUntil:
+    notVisible: "١/٣"
+    timeout: 15000

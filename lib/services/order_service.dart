@@ -17,6 +17,7 @@ import 'catalog_sync.dart';
 import 'order_contact_service.dart';
 import 'order_gateway.dart';
 import 'order_status_writer.dart';
+import 'server_orders_gate.dart';
 import 'performance_monitor.dart';
 import 'promo_service.dart';
 import 'user_service.dart';
@@ -63,6 +64,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) {
     final active = _activePlaceOrder;
     if (active != null) return active;
@@ -76,6 +79,8 @@ class OrderService {
         address: address,
         notes: notes,
         courierNotes: courierNotes,
+        referralPoints: referralPoints,
+        referralDiscountMinor: referralDiscountMinor,
       ),
     );
     _activePlaceOrder = pending;
@@ -130,7 +135,14 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) async {
+    // السلة المرسلة تظل ظاهرة، لكن لا يُنشأ طلب ثانٍ بنفس المحتوى
+    // إلا إذا غيّر العميل السلة أو اختار صراحة بدء طلب جديد.
+    if (cart.submittedOrderId != null) {
+      throw StateError('الطلب ده اتبعت بالفعل. لو عايز تطلب نفس الأصناف تاني، افتح السلة واختار «طلب جديد بنفس الأصناف».');
+    }
     final wait = await cooldownRemaining();
     if (wait > Duration.zero) {
       throw OrderLimitException(
@@ -144,6 +156,8 @@ class OrderService {
       address: address,
       notes: notes,
       courierNotes: courierNotes,
+      referralPoints: referralPoints,
+      referralDiscountMinor: referralDiscountMinor,
     );
     await _markOrderPlaced();
     return id;
@@ -201,7 +215,7 @@ class OrderService {
     await prefs.remove('wasally_pending_order_fingerprint_$uid');
   }
 
-  /// بتبعت الطلب وتفرّغ السلة. بترجع رقم مستند الطلب.
+  /// تبعت الطلب وتحتفظ بالسلة مع علامة نجاح تمنع الطلب المكرر.
   static Future<String> _placeOrder({
     required CartModel cart,
     required String name,
@@ -209,6 +223,8 @@ class OrderService {
     required String address,
     String notes = '',
     String courierNotes = '',
+    int referralPoints = 0,
+    int referralDiscountMinor = 0,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('لازم تسجّل دخول الأول');
@@ -230,18 +246,20 @@ class OrderService {
     // without WASALLY_SERVER_ORDERS. Match the live security gate before writing.
     // A one-shot read avoids a permanent listener and prevents permission-denied
     // from a legacy client batch when direct writes have been disabled.
-    var serverOrders = OrderGateway.serverOrdersEnabled;
-    if (!serverOrders) {
-      try {
+    final serverOrders = await ServerOrdersGate.resolve(
+      clientWorkerEnabled: OrderGateway.serverOrdersEnabled,
+      readServerMode: () async {
+        // Read the *live* server gate. A cached old false value while offline
+        // must not permit legacy writes after the server switched to Worker.
         final security = await FirebaseFirestore.instance
-            .collection('app_info').doc('security').get();
-        serverOrders = security.data()?['serverOrders'] == true;
-      } catch (_) {
-        // Fail closed: never attempt a direct write when the security gate
-        // cannot be verified. The Worker validates all order fields itself.
-        serverOrders = true;
-      }
-    }
+            .collection('app_info')
+            .doc('security')
+            .get(const GetOptions(source: Source.server));
+        return ServerOrdersGate.verifiedFlag(
+          security.data()?['serverOrders'],
+        );
+      },
+    );
     // Do not silently charge a service fee absent from an older APK's cart.
     // The customer must see the Worker-mode total before confirming.
     if (serverOrders && !OrderGateway.serverOrdersEnabled) {
@@ -357,7 +375,12 @@ class OrderService {
     };
     final orderId = await _pendingOrderId(
       uid: user.uid,
-      orderData: data,
+      // A retry must keep the same ID even if the first response was lost.
+      orderData: {
+        ...data,
+        if (referralPoints > 0) 'referralPoints': referralPoints,
+        if (referralPoints > 0) 'referralDiscountMinor': referralDiscountMinor,
+      },
       contactData: contactData,
     );
     if (kDebugMode) {
@@ -369,6 +392,9 @@ class OrderService {
     final ref = _orders.doc(orderId);
     // تجميع اختياري اختاره العميل من «سلّاتي» (بوابة الطلبات بس).
     final groupId = serverOrders ? carts.groupIdFor(storeId) : null;
+    if (referralPoints > 0 && !serverOrders) {
+      throw StateError('خصم النقاط يحتاج بوابة الطلبات.');
+    }
     if (serverOrders) {
       if (!OrderGateway.isConfigured) {
         throw StateError('بوابة الطلبات الموثوقة غير مهيأة في هذا الإصدار.');
@@ -387,7 +413,9 @@ class OrderService {
             'notes': notes,
             'area': cart.area,
             'expectedDeliveryFee': cart.effectiveFee,
-            'expectedTotal': cart.total,
+            'expectedTotal': cart.total - referralDiscountMinor / 100,
+            if (referralPoints > 0) 'referralPoints': referralPoints,
+            if (referralPoints > 0) 'expectedReferralDiscountMinor': referralDiscountMinor,
             if (cart.discount > 0) 'promoCode': cart.promoCode,
             'items': cart.items.entries
                 .map((e) => {
@@ -459,6 +487,12 @@ class OrderService {
       }
     }
 
+    // أول ما يؤكد الخادم إنشاء الطلب، احفظ حالة السلة المرسلة قبل مسح
+    // مفتاح إعادة المحاولة، لتقليل خطر إرسال نفس الأصناف مرتين بعد تعطل التطبيق.
+    if (groupId != null) carts.markGroupedOrder(storeId);
+    cart.markSubmitted(ref.id);
+    await carts.flush();
+
     unawaited(OrderGateway.notifyEvent(ref.id, 'created'));
 
     try {
@@ -475,8 +509,6 @@ class OrderService {
       );
     } catch (_) {}
 
-    if (groupId != null) carts.markGroupedOrder(storeId);
-    cart.clear();
     return ref.id;
   }
 
@@ -517,22 +549,29 @@ class OrderService {
     final serviceFee = order.serviceFee == null
         ? 0.0
         : WasallyServiceFee.forItems(subtotal - discount);
-    final total = subtotal + order.deliveryFee - discount + serviceFee;
+    final referralDiscount = order.referralDiscountMinor / 100;
+    if ((subtotal * 100).round() < order.referralDiscountMinor) {
+      throw StateError('قيمة الأصناف بعد التعديل أقل من خصم النقاط المحجوز.');
+    }
+    final total = subtotal + order.deliveryFee - discount + serviceFee - referralDiscount;
     final updatedItems = lines.map((l) => l.toMap()).toList();
 
     // Match the live Firestore gate before editing, just like order creation.
     // An older APK must not attempt a legacy batch after serverOrders is enabled.
-    var serverOrders = OrderGateway.serverOrdersEnabled;
-    if (!serverOrders) {
-      try {
+    final serverOrders = await ServerOrdersGate.resolve(
+      clientWorkerEnabled: OrderGateway.serverOrdersEnabled,
+      readServerMode: () async {
+        // Read the *live* server gate. A cached old false value while offline
+        // must not permit legacy writes after the server switched to Worker.
         final security = await FirebaseFirestore.instance
-            .collection('app_info').doc('security').get();
-        serverOrders = security.data()?['serverOrders'] == true;
-      } catch (_) {
-        // Fail closed if the security setting cannot be checked.
-        serverOrders = true;
-      }
-    }
+            .collection('app_info')
+            .doc('security')
+            .get(const GetOptions(source: Source.server));
+        return ServerOrdersGate.verifiedFlag(
+          security.data()?['serverOrders'],
+        );
+      },
+    );
     if (serverOrders && !OrderGateway.serverOrdersEnabled) {
       throw StateError(
         'تم تحديث نظام تعديل الطلبات. حدّث تطبيق وصّلي من Google Play '

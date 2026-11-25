@@ -2,16 +2,24 @@ import 'package:flutter/material.dart';
 
 import '../models/quick_price_guide.dart';
 import '../services/quick_price_guide_service.dart';
+import 'app_snack.dart';
 
 /// Reusable quick-order item selector. Unlisted products remain free text
 /// and are never assigned an invented approximate price.
 class QuickPricePicker extends StatefulWidget {
   final ValueChanged<List<QuickPriceSelection>> onChanged;
   final ValueChanged<String>? onUnlistedChanged;
+  /// خانة «اكتب طلبك» المدمجة (الصفحة الجديدة بتعرض خانتها هي).
+  final bool showFreeText;
+
+  /// خانة البحث في الدليل.
+  final bool showSearch;
   const QuickPricePicker({
     super.key,
     required this.onChanged,
     this.onUnlistedChanged,
+    this.showFreeText = true,
+    this.showSearch = true,
   });
 
   @override
@@ -25,6 +33,7 @@ class _QuickPricePickerState extends State<QuickPricePicker>
 
   final _search = TextEditingController();
   final _unlisted = TextEditingController();
+  final _orderTextFocus = FocusNode();
   final Map<String, int> _quantities = {};
   late Future<QuickPriceGuide?> _guide = QuickPriceGuideService.load();
 
@@ -36,13 +45,14 @@ class _QuickPricePickerState extends State<QuickPricePicker>
   void dispose() {
     _search.dispose();
     _unlisted.dispose();
+    _orderTextFocus.dispose();
     super.dispose();
   }
 
   void _change(QuickPriceGuide guide, QuickPriceItem item, int delta) {
     if (delta > 0 && !_quantities.containsKey(item.id) && _quantities.length >= 30) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الحد الأقصى 30 صنفًا لكل محل')),
+        appSnack('الحد الأقصى 30 صنفًا لكل محل'),
       );
       return;
     }
@@ -68,6 +78,8 @@ class _QuickPricePickerState extends State<QuickPricePicker>
       future: _guide,
       builder: (context, snapshot) {
         final guide = snapshot.data;
+        final hasItems = guide != null && guide.items.isNotEmpty;
+        final loading = snapshot.connectionState == ConnectionState.waiting;
         final query = _search.text.trim().toLowerCase();
         final matches = guide?.items.where((item) =>
           item.matchesSearch(query)).toList() ?? [];
@@ -81,24 +93,63 @@ class _QuickPricePickerState extends State<QuickPricePicker>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'ابحث عن صنف',
-                prefixIcon: Icon(Icons.search),
+            if (widget.showFreeText) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('اكتب طلبك أو امليه بصوتك',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _unlisted,
+                    focusNode: _orderTextFocus,
+                    minLines: 3,
+                    maxLines: 5,
+                    onChanged: widget.onUnlistedChanged,
+                    decoration: const InputDecoration(
+                      labelText: 'الأصناف والكميات',
+                      hintText: 'مثال: ٢ كيلو رز وكيس سكر',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _orderTextFocus.requestFocus,
+                    icon: const Icon(Icons.mic_none),
+                    label: const Text('افتح الكيبورد للإملاء'),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'اضغط علامة الميكروفون في الكيبورد، قول الصنف والكمية، وراجع الكلام قبل الإرسال.',
+                  ),
+                ],
               ),
             ),
-            if (snapshot.connectionState == ConnectionState.waiting)
+            const SizedBox(height: 12),
+            ],
+            if (hasItems && widget.showSearch)
+              TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'ابحث عن صنف',
+                  prefixIcon: Icon(Icons.search),
+                ),
+              ),
+            if (loading)
               const LinearProgressIndicator(),
-            if (snapshot.connectionState != ConnectionState.waiting &&
-                (guide == null || guide.items.isEmpty))
+            if (!loading && !hasItems)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('دليل الأسعار لسه مش متاح. تقدر تكتب الأصناف والكميات يدويًا تحت.'),
+                    const Text('دليل الأسعار مش متاح دلوقتي. تقدر تكتب طلبك عادي.'),
                     TextButton.icon(
                       onPressed: _refreshGuide,
                       icon: const Icon(Icons.refresh),
@@ -107,11 +158,10 @@ class _QuickPricePickerState extends State<QuickPricePicker>
                   ],
                 ),
               ),
-            if (guide != null && guide.items.isNotEmpty &&
-                matches.isEmpty && query.isNotEmpty)
+            if (hasItems && matches.isEmpty && query.isNotEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('الصنف مش موجود في الدليل؛ اكتبه في خانة الأصناف الأخرى.'),
+                child: Text('الصنف مش موجود في الدليل؛ اكتبه في خانة الأصناف والكميات.'),
               ),
             ...matches.take(30).map((item) {
               final count = _quantities[item.id] ?? 0;
@@ -136,22 +186,14 @@ class _QuickPricePickerState extends State<QuickPricePicker>
                 ),
               );
             }),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _unlisted,
-              maxLines: 3,
-              onChanged: widget.onUnlistedChanged,
-              decoration: const InputDecoration(
-                labelText: 'أصناف أخرى مش موجودة في القائمة',
-                hintText: 'اكتب الأصناف والكميات المطلوبة',
-                helperText: 'ممكن تملي الطلب بميكروفون لوحة المفاتيح.',
-                border: OutlineInputBorder(),
+            if (selected.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'تقدير أصناف الدليل: ${(total / 100).toStringAsFixed(2)} جنيه',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-            const SizedBox(height: 12),
-            Text('الإجمالي التقريبي: ${(total / 100).toStringAsFixed(2)} جنيه',
-              style: Theme.of(context).textTheme.titleMedium),
-            const Text(QuickPriceEstimate.disclaimer),
+              const Text(QuickPriceEstimate.disclaimer),
+            ],
           ],
         );
       },
