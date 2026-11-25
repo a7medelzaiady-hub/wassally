@@ -112,6 +112,7 @@ class QuickCourierOrder {
 
   /// صور «صوّر طلبك» اللي العميل رفعها (بتتمسح بعد التسليم).
   final List<String> customerImages;
+  final String customerVoiceUrl;
   final int? approxTotalPiastres;
   final int prepaidThresholdPiastres;
   final int maximumAdvancePiastres;
@@ -138,6 +139,7 @@ class QuickCourierOrder {
     this.notes = '',
     this.stores = const [],
     this.customerImages = const [],
+    this.customerVoiceUrl = '',
     this.approxTotalPiastres,
     this.prepaidThresholdPiastres = 20000,
     this.maximumAdvancePiastres = 100000,
@@ -170,6 +172,7 @@ class QuickCourierOrder {
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
       notes: _str(m['notes']),
+      customerVoiceUrl: _str(m['customerVoiceUrl']),
       customerImages: rawImages is List
           ? [for (final u in rawImages) if (u is String && u.startsWith('https://')) u]
           : const [],
@@ -221,7 +224,7 @@ class QuickCourierOrder {
         'accepted' => QuickCourierStep.estimate,
         // awaiting_advance حالة قديمة (قبل المقدم الاختياري)؛ بنعاملها كشراء.
         'purchasing' || 'awaiting_advance' => QuickCourierStep.purchasing,
-        'summary_pending' => QuickCourierStep.waitCustomer,
+        'summary_pending' => QuickCourierStep.deliver, // old summaries: no customer bill approval needed
         'summary_approved' => QuickCourierStep.deliver,
         'delivered' => QuickCourierStep.delivered,
         _ => QuickCourierStep.cancelled,
@@ -241,7 +244,7 @@ class QuickCourierOrder {
   /// Explains an empty quick-order receipt instead of presenting an empty
   /// details screen. Items can be written freely or priced in a store group.
   bool get hasCustomerRequest =>
-      notes.trim().isNotEmpty ||
+      customerImages.isNotEmpty || customerVoiceUrl.isNotEmpty || notes.trim().isNotEmpty ||
       stores.any((s) =>
           s.items.trim().isNotEmpty ||
           s.pricedItems.any((line) => line.name.trim().isNotEmpty));
@@ -249,8 +252,8 @@ class QuickCourierOrder {
   /// العميل قال إنه حوّل مقدم (اختياري) ولسه المندوب ما أكدش استلامه.
   bool get hasPendingAdvance => advanceSentAt != null && advanceConfirmedAt == null;
 
-  /// رمز التسليم يتكتب بس بعد موافقة العميل على الكشف.
-  bool get canEnterPin => status == 'summary_approved' && totals != null;
+  /// رمز التسليم متاح بعد تجهيز الحساب النهائي، بلا موافقة مسبقة على الفاتورة.
+  bool get canEnterPin => (status == 'summary_approved' || status == 'summary_pending') && totals != null;
 
   int get receiptsTotalPiastres => receipts.fold(0, (sum, r) => sum + r.amountPiastres);
 
