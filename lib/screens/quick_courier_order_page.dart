@@ -124,6 +124,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _call() async {
+    // Never act on a cached phone if the server revoked an assignment.
+    if (_order?.canSeeContact != true) return;
     final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
     // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
@@ -310,6 +312,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ],
       ),
       const SizedBox(height: 4),
+      Text(
+        'طلب رقم ${o.id.length > 8 ? o.id.substring(o.id.length - 8) : o.id}',
+        key: const Key('quick-request-number'),
+        style: TextStyle(color: Brand.ink, fontWeight: FontWeight.w700),
+      ),
       Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
       if (o.area.isNotEmpty) ...[
         const SizedBox(height: 4),
@@ -362,6 +369,18 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
               style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
             ),
           ),
+      ],
+      if (o.stores.every(
+            (store) => store.items.trim().isEmpty && store.pricedItems.isEmpty,
+          ) &&
+          o.notes.trim().isEmpty) ...[
+        _requestDivider(),
+        const Text(
+          'العميل لسه ما كتبش أصناف أو تفاصيل مشتريات. '
+          'راجع الطلب أو تواصل مع العميل بعد قبول الطلب فقط.',
+          key: Key('quick-request-empty'),
+          style: TextStyle(fontSize: 15, height: 1.5),
+        ),
       ],
       if (o.notes.isNotEmpty) ...[
         _requestDivider(),
