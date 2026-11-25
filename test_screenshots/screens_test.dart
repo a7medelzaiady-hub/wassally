@@ -7,6 +7,8 @@ import 'package:city_store/screens/store_directory_page.dart';
 import 'package:city_store/services/catalog_sync.dart';
 import 'package:city_store/widgets/curved_nav_bar.dart';
 import 'package:city_store/widgets/home_category_grid.dart';
+import 'package:city_store/widgets/offer_carousel.dart';
+import 'package:city_store/widgets/quick_order_promo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -140,5 +142,23 @@ void main() {
 
   testWidgets('admin tools', (tester) async {
     await shoot(tester, 'admin_tools_390x844', const AdminNavigationPage());
+  });
+
+  testWidgets('home promo and offer carousel', (tester) async {
+    await shoot(
+      tester,
+      'home_promo_carousel_390',
+      Scaffold(
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          QuickOrderPromo(onTap: () {}),
+          const SizedBox(height: 18),
+          OfferCarousel(autoPlay: false, loadImages: false, slides: [
+            OfferSlide(name: 'خيار', storeName: 'فواكه وخضروات', price: 13.5, oldPrice: 15, onTap: () {}),
+            OfferSlide(name: 'بطاطس', storeName: 'فواكه وخضروات', price: 33, offerText: 'هدية مع الطلب', onTap: () {}),
+          ]),
+        ]),
+      ),
+      size: const Size(390, 640),
+    );
   });
 }

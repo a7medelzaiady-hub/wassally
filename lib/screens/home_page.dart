@@ -26,6 +26,8 @@ import '../theme/brand.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
+import '../widgets/offer_carousel.dart';
+import '../widgets/quick_order_promo.dart';
 import 'notifications_page.dart';
 import '../services/saved_address.dart';
 import '../services/location_picker.dart';
@@ -540,64 +542,168 @@ class _HomePageState extends State<HomePage>
   Widget _offersPage() {
     final stores = _storesFuture;
     return Scaffold(
-      appBar: AppBar(title: const Text('تصفح العروض')),
+      backgroundColor: AppColors.bg,
       bottomNavigationBar: const CustomerPageNav(),
       body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
         future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('تعذر تحميل العروض.'));
-          }
           final offers = snapshot.data;
-          if (offers == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (offers.isEmpty) {
-            return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
-          }
-          // شبكة بعمودين (3 على الشاشات العريضة) بدل كروت نص عرض
-          // الشاشة ومساحة فاضية جنبها.
-          return LayoutBuilder(builder: (context, constraints) {
-            const gap = AppSpacing.md;
-            final columns = constraints.maxWidth >= 600 ? 3 : 2;
-            final cardWidth = (constraints.maxWidth - AppSpacing.page * 2 -
-                    gap * (columns - 1)) /
-                columns;
-            final imageHeight = cardWidth * 0.8;
-            final textHeight = MediaQuery.textScalerOf(context).scale(15) * 1.3 +
-                MediaQuery.textScalerOf(context).scale(13) * 1.4 +
-                MediaQuery.textScalerOf(context).scale(16) * 1.4 +
-                40;
-            return GridView.builder(
-              key: const Key('offers-grid'),
-              padding: AppSpacing.pagePadding,
-              itemCount: offers.length,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: gap,
-                mainAxisSpacing: gap,
-                mainAxisExtent: imageHeight + textHeight,
-              ),
-              itemBuilder: (_, i) => _offerCard(
-                offers[i],
-                offer: true,
-                width: null,
-                imageHeight: imageHeight,
-              ),
+          final Widget content;
+          if (snapshot.hasError) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('تعذر تحميل العروض.', style: AppTypography.secondary)),
             );
-          });
+          } else if (offers == null) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          } else if (offers.isEmpty) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('مفيش عروض متاحة دلوقتي.', style: AppTypography.secondary)),
+            );
+          } else {
+            content = SliverPadding(
+              padding: AppSpacing.pagePadding,
+              sliver: SliverLayoutBuilder(builder: (context, constraints) {
+                const gap = AppSpacing.md;
+                final width = constraints.crossAxisExtent;
+                final columns = width >= 600 ? 3 : 2;
+                final cardWidth = (width - gap * (columns - 1)) / columns;
+                final imageHeight = cardWidth * 0.8;
+                final scaler = MediaQuery.textScalerOf(context);
+                final textHeight = scaler.scale(15) * 1.3 +
+                    scaler.scale(13) * 1.4 +
+                    scaler.scale(16) * 1.4 +
+                    40;
+                return SliverGrid(
+                  key: const Key('offers-grid'),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    mainAxisExtent: imageHeight + textHeight,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _offerCard(
+                      offers[i],
+                      offer: true,
+                      width: null,
+                      imageHeight: imageHeight,
+                    ),
+                    childCount: offers.length,
+                  ),
+                );
+              }),
+            );
+          }
+          return CustomScrollView(
+            slivers: [
+              // هيدر بصورة للعروض (نفس صورة كارت العروض في صفحة الترحيب).
+              SliverAppBar(
+                key: const Key('offers-hero'),
+                pinned: true,
+                expandedHeight: 190,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  title: const Text(
+                    'تصفح العروض',
+                    style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/entry_offers.jpg',
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerLeft,
+                        excludeFromSemantics: true,
+                      ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x55000000), Color(0x00000000), Color(0xCC4A0C80)],
+                            stops: [0, 0.4, 1],
+                          ),
+                        ),
+                      ),
+                      if (offers != null && offers.isNotEmpty)
+                        PositionedDirectional(
+                          start: AppSpacing.lg,
+                          bottom: 52,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.orange,
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(
+                              '${offers.length} عرض متاح دلوقتي',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              content,
+            ],
+          );
         },
       ),
     );
   }
 
+
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
+
+  /// عروض الجلسة: الرئيسية وصفحة العروض بيستخدموا نفس النتيجة لمدة قصيرة
+  /// بدل ما كل صفحة تعيد التحميل (أسرع وقراءات أقل).
+  static Future<List<(_StoreItem, Map<String, dynamic>)>>? _sharedOffers;
+  static DateTime? _sharedOffersAt;
 
   Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
     List<_StoreItem> stores,
+  ) {
+    final at = _sharedOffersAt;
+    final cached = _sharedOffers;
+    if (cached != null &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(minutes: 5)) {
+      return cached;
+    }
+    _sharedOffersAt = DateTime.now();
+    final future = _scanOffers(stores);
+    _sharedOffers = future;
+    future.catchError((Object _) {
+      _sharedOffers = null;
+      return const <(_StoreItem, Map<String, dynamic>)>[];
+    });
+    return future;
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _scanOffers(
+    List<_StoreItem> stores,
+  ) async {
+    // كل المحلات بالتوازي بدل واحد ورا التاني (نفس عدد القراءات، وقت أقل بكتير).
+    final perStore = await Future.wait(stores.map(_storeOffers));
+    return [for (final list in perStore) ...list];
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _storeOffers(
+    _StoreItem store,
   ) async {
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
-    for (final store in stores) {
+    {
       var hasCatalog = false;
       // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
       // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
@@ -674,6 +780,12 @@ class _HomePageState extends State<HomePage>
     return offers;
   }
 
+  static double _discountOf(Map<String, dynamic> m) {
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+    return old > price && old > 0 ? 1 - price / old : 0;
+  }
+
   Widget _highlights(
     List<_StoreItem> all,
     Future<List<(_StoreItem, Map<String, dynamic>)>> offersFuture,
@@ -699,7 +811,30 @@ class _HomePageState extends State<HomePage>
             builder: (context, snapshot) {
               final offers = snapshot.data ?? const <(_StoreItem, Map<String, dynamic>)>[];
               if (offers.isEmpty) return const SizedBox.shrink();
-              return _hlRow('عروض وخصومات', offers, offer: true);
+              // الأكتر خصمًا الأول في البانرات المتحركة.
+              final featured = [...offers]..sort((a, b) => _discountOf(b.$2).compareTo(_discountOf(a.$2)));
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _hlRow('عروض وخصومات', offers, offer: true),
+                  // بانرات متحركة لعروض الأصناف بين العروض والأكثر مبيعًا.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 18),
+                    child: OfferCarousel(slides: [
+                      for (final (store, item) in featured.take(6))
+                        OfferSlide(
+                          name: (item['name'] ?? '').toString(),
+                          storeName: store.store.name,
+                          price: (item['price'] as num?)?.toDouble() ?? 0,
+                          oldPrice: (item['oldPrice'] as num?)?.toDouble() ?? 0,
+                          offerText: (item['offerText'] ?? '').toString().trim(),
+                          image: (item['image'] ?? '').toString(),
+                          onTap: () => _openStore(store.store),
+                        ),
+                    ]),
+                  ),
+                ],
+              );
             },
           ),
           if (best.isNotEmpty) _hlRow('الأكثر مبيعًا', best),
@@ -776,9 +911,9 @@ class _HomePageState extends State<HomePage>
         ? 'خصم ${((1 - price / old) * 100).round()}%'
         : offerText;
     final fallback = Container(
-      decoration: BoxDecoration(gradient: Brand.softGradient),
+      color: AppColors.surfaceAlt,
       alignment: Alignment.center,
-      child: Icon(s.store.icon, color: Colors.white70, size: 40),
+      child: const Icon(Icons.shopping_bag_outlined, color: AppColors.muted, size: 40),
     );
     return GestureDetector(
       onTap: () => _openStore(s.store),
@@ -1043,17 +1178,16 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
+              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها.
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(context).push(
+                  child: QuickOrderPromo(
+                    onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const QuickOrderCreatePage(),
                       ),
                     ),
-                    icon: const Icon(Icons.delivery_dining_outlined),
-                    label: const Text('طلباتك على السريع'),
                   ),
                 ),
               ),
