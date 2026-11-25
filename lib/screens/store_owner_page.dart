@@ -121,12 +121,12 @@ class StoreOwnerPage extends StatelessWidget {
                   delegate: _TabsDelegate(
                     MediaQuery.paddingOf(context).top,
                     TabBar(
-                      labelColor: kPrimary,
+                      labelColor: AppColors.purple,
                       unselectedLabelColor: kMuted,
-                      indicatorColor: kPrimary,
+                      indicatorColor: AppColors.orange,
                       labelStyle: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 13.5,
+                        fontSize: AppTypography.body,
                       ),
                       tabs: const [
                         Tab(text: 'الطلبات'),

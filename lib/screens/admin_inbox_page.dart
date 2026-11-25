@@ -60,6 +60,11 @@ class AdminInboxPage extends StatelessWidget {
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
+            // Tabs sit on the purple app bar.
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: AppColors.orange,
+            dividerColor: Colors.transparent,
             tabs: [
               Tab(child: _CountLabel('طلبات الانضمام', (c) => c.joinRequests)),
               const Tab(text: 'تقديمات المناديب'),

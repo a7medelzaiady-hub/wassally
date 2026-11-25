@@ -653,6 +653,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           actions: [
             if (o != null && o.canRelease)
               TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: _busy
                     ? null
                     : () async {

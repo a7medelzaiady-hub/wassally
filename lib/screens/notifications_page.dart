@@ -371,7 +371,7 @@ class _NotifHeader extends StatelessWidget {
                             children: [
                               Icon(
                                 Icons.done_all_rounded,
-                                color: Brand.gold,
+                                color: AppColors.orangeLight,
                                 size: 18,
                               ),
                               SizedBox(width: 6),
