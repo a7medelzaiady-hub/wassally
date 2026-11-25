@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -23,11 +24,36 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String? _pin;
   String? _error;
   bool _busy = false;
+  final _voicePlayer = audio.AudioPlayer();
+  bool _playingVoice = false;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _voicePlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleVoice(String url) async {
+    try {
+      if (_playingVoice) {
+        await _voicePlayer.stop();
+        if (mounted) setState(() => _playingVoice = false);
+      } else {
+        await _voicePlayer.stop();
+        await _voicePlayer.setSource(audio.UrlSource(url));
+        await _voicePlayer.resume();
+        if (mounted) setState(() => _playingVoice = true);
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تشغيل التسجيل الصوتي.')));
+    }
   }
 
   Future<void> _refresh() async {
@@ -336,9 +362,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
             else ...[
               _StatusHeader(status: status, area: area),
               const SizedBox(height: AppSpacing.md),
-              if (status == 'summary_pending')
-                const AppNotice(type: AppNoticeType.action, 'راجع الفواتير والحساب النهائي تحت، ووافق عليه علشان يظهر رمز التسليم.'),
-              if (status == 'summary_approved' && (_pin == null || _pin!.isEmpty))
+              if ((status == 'summary_pending' || status == 'summary_approved') && (_pin == null || _pin!.isEmpty))
                 const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
               _card(
                 title: 'محتويات الطلب',
@@ -379,6 +403,22 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   ],
                 ],
               ),
+              if (order['customerVoiceUrl'] is String &&
+                  (order['customerVoiceUrl'] as String).isNotEmpty)
+                _card(
+                  key: const Key('quick-customer-voice'),
+                  title: 'تسجيل طلبك الصوتي',
+                  icon: Icons.mic_outlined,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _toggleVoice(order['customerVoiceUrl'] as String),
+                      icon: Icon(_playingVoice ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+                      label: Text(_playingVoice ? 'إيقاف التسجيل' : 'اسمع تسجيل طلبك'),
+                    ),
+                    const Text('التسجيل بيتحذف تلقائيًا بعد استلام الطلب برمز التسليم.',
+                        style: AppTypography.secondary),
+                  ],
+                ),
               if (order['customerImages'] is List &&
                   (order['customerImages'] as List).isNotEmpty)
                 _card(
@@ -485,21 +525,8 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                     ),
                   ],
                 ),
-              if (status == 'summary_pending') ...[
-                FilledButton.icon(
-                  onPressed: _busy ? null : () => _act('approve-summary', {
-                    'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
-                  }),
-                  icon: const Icon(Icons.check_circle_outline_rounded),
-                  label: const Text('موافق على الحساب النهائي'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _act('reject-summary'),
-                  child: const Text('مش موافق — راجع الحساب مع المندوب'),
-                ),
-              ],
-              if (status == 'summary_approved') ...[
+              // الحساب للعلم فقط؛ العميل يؤكد الاستلام بالرمز بعد وصول الطلب.
+              if (status == 'summary_pending' || status == 'summary_approved') ...[
                 if (_pin != null && _pin!.isNotEmpty)
                   _PinCard(pin: _pin!)
                 else
@@ -563,7 +590,7 @@ class _StatusHeader extends StatelessWidget {
         'accepted' || 'assigned' => 'المندوب هيكلمك يتفق معاك على الطلب والتوصيل.',
         'awaiting_advance' => 'في انتظار تأكيد المبلغ المقدم.',
         'shopping' || 'purchasing' => 'المندوب بيشتري طلباتك دلوقتي.',
-        'summary_pending' => 'راجع الفواتير والحساب النهائي ووافق عليه.',
+        'summary_pending' => 'راجع الحساب واستلم طلبك برمز التسليم عند وصول المندوب.',
         'summary_approved' => 'ادّي رمز التسليم للمندوب لما توصلك الطلبات.',
         'delivered' => 'تم التسليم. شكرًا لاستخدامك وصّلي!',
         'cancelled' || 'canceled' => 'الطلب ده اتلغى.',
