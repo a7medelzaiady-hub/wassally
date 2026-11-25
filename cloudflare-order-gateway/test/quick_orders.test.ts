@@ -231,7 +231,7 @@ describe("final summary for display only", () => {
     expect(code(() => addReceipt(approved(s), 1, 9))).toBe("409:invalid_state");
   });
   it("customer approves only the statement they saw; courier cannot approve", () => {
-    const s = { ...submitted(), status: "summary_pending" }; // legacy only
+    const s: Doc = { ...submitted(), status: "summary_pending" }; // legacy only
     expect(code(() => step(s, "approve-summary", quickCourier, { expectedSummaryRevision: s.summaryRevision })))
       .toBe("403:forbidden");
     expect(code(() => step(s, "approve-summary", customer, { expectedSummaryRevision: 99 }))).toBe("409:stale_summary");
