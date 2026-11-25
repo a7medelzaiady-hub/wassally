@@ -38,9 +38,11 @@ describe("«صوّر طلبك» — صور الطلب السريع", () => {
     const urls = [await ownUrl("cust1", "a"), await ownUrl("cust1", "b"), await ownUrl("cust1", "c")];
     expect(validateQuickImages(urls, ok)).toEqual(urls);
     expect(validateQuickImages(undefined, ok)).toEqual([]);
-    expect(() => validateQuickImages([...urls, await ownUrl("cust1", "d")], ok)).toThrow(QuickRuleError);
+    const fourth = await ownUrl("cust1", "d");
+    const foreign = await ownUrl("cust2");
+    expect(() => validateQuickImages([...urls, fourth], ok)).toThrow(QuickRuleError);
     expect(() => validateQuickImages([urls[0], urls[0]], ok)).toThrow(QuickRuleError);
-    expect(() => validateQuickImages([await ownUrl("cust2")], ok)).toThrow(QuickRuleError);
+    expect(() => validateQuickImages([foreign], ok)).toThrow(QuickRuleError);
     expect(QUICK_MAX_CUSTOMER_IMAGES).toBe(3);
   });
 
