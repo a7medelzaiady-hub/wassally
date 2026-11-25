@@ -49,6 +49,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   String? _uploadedVoiceUrl;
   bool _recording = false;
   bool _playingVoice = false;
+  static const _maxVoiceSeconds = 60;
   int _voiceSeconds = 0;
   String? _pendingOrderId;
 
@@ -112,7 +113,11 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         final path = await _voiceRecorder.stop();
         _voiceTimer?.cancel();
         if (path == null || !await File(path).exists()) throw StateError('التسجيل لم يُحفظ.');
+        final previous = _voicePath;
         if (mounted) setState(() { _recording = false; _voicePath = path; _uploadedVoiceUrl = null; });
+        if (previous != null && previous != path) {
+          await File(previous).delete().catchError((_) => File(previous));
+        }
       } catch (e) {
         if (mounted) setState(() => _recording = false);
         _voiceMessage('تعذر حفظ التسجيل الصوتي.');
@@ -131,11 +136,16 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         encoder: AudioEncoder.aacLc, bitRate: 32000, sampleRate: 22050, numChannels: 1,
       ), path: path);
       if (!mounted) return;
-      setState(() { _recording = true; _playingVoice = false; _voiceSeconds = 0; _voicePath = null; _uploadedVoiceUrl = null; });
+      setState(() { _recording = true; _playingVoice = false; _voiceSeconds = 0; });
       _voiceTimer?.cancel();
       _voiceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (!mounted || !_recording) { timer.cancel(); return; }
-        if (_voiceSeconds >= 20) { timer.cancel(); _toggleVoice(); return; }
+        if (_voiceSeconds + 1 >= _maxVoiceSeconds) {
+          setState(() => _voiceSeconds = _maxVoiceSeconds);
+          timer.cancel();
+          _toggleVoice();
+          return;
+        }
         setState(() => _voiceSeconds++);
       });
     } catch (_) { _voiceMessage('تعذر بدء التسجيل. حاول مرة تانية.'); }
@@ -472,7 +482,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         Expanded(child: Text('أو سجّل طلبك بصوتك', style: AppTypography.sectionTitle)),
       ]),
       const SizedBox(height: 4),
-      const Text('قول اللي محتاجه في رسالة صوتية قصيرة بدل الكتابة (حتى 20 ثانية).',
+      const Text('قول اللي محتاجه بصوتك بدل الكتابة (حتى دقيقة كاملة). تقدر تسمعه وتعدّله بإعادة التسجيل قبل الإرسال.',
           style: AppTypography.secondary),
       const SizedBox(height: AppSpacing.sm),
       Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
@@ -480,8 +490,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           key: const Key('quick-voice-record'),
           onPressed: _submitting ? null : _toggleVoice,
           icon: Icon(_recording ? Icons.stop_circle_rounded : Icons.mic_rounded),
-          label: Text(_recording ? 'إيقاف التسجيل (${_voiceSeconds}s)' :
-              _voicePath == null ? 'سجّل طلبك' : 'تسجيل جديد'),
+          label: Text(_recording ? 'إيقاف التسجيل (${_voiceSeconds}s / 60s)' :
+              _voicePath == null ? 'سجّل طلبك (دقيقة)' : 'تعديل التسجيل'),
         ),
         if (_voicePath != null && !_recording) ...[
           TextButton.icon(
@@ -494,7 +504,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             tooltip: 'حذف التسجيل',
             onPressed: _submitting ? null : () async {
               await _voicePlayer.stop();
+              final path = _voicePath;
               if (mounted) setState(() { _voicePath = null; _uploadedVoiceUrl = null; _playingVoice = false; });
+              if (path != null) await File(path).delete().catchError((_) => File(path));
             },
             icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
           ),
