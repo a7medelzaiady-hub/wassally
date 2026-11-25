@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
+import '../widgets/home_top_ads.dart' show kTopAdPlacement, kTopAdAspectRatio;
 
 import '../services/catalog_service.dart';
 import '../services/image_service.dart';
@@ -36,13 +37,61 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// مكان البوستر: إعلان أعلى الرئيسية الكبير، أو شريط البوسترات العادي.
+  Future<String?> _choosePlacement() => showModalBottomSheet<String>(
+        context: context,
+        builder: (sheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Text('البوستر هيظهر فين؟',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              ),
+              ListTile(
+                key: const Key('placement-top'),
+                leading: const Icon(Icons.campaign_rounded),
+                title: const Text('إعلان أعلى الرئيسية (كبير ومتحرك)'),
+                subtitle: const Text('المقاس: 1200×800 بكسل (3:2)'),
+                onTap: () => Navigator.pop(sheet, kTopAdPlacement),
+              ),
+              ListTile(
+                key: const Key('placement-strip'),
+                leading: const Icon(Icons.view_carousel_rounded),
+                title: const Text('بوستر عادي (شريط البوسترات)'),
+                subtitle: const Text('المقاس: 1200×585 بكسل تقريبًا (عرضي)'),
+                onTap: () => Navigator.pop(sheet, 'strip'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+
+  Future<void> _setPlacement(_Doc d, String placement) async {
+    try {
+      await _banners.doc(d.id).update({'placement': placement});
+      await CatalogService.bump();
+    } catch (e) {
+      _say('تعذر التعديل: $e');
+    }
+  }
+
   Future<void> _add(int nextOrder) async {
     if (_busy) return;
+    final placement = await _choosePlacement();
+    if (placement == null || !mounted) return;
     setState(() => _busy = true);
     try {
       final url = await ImageService.pickAndUpload('banners');
       if (url != null) {
-        await _banners.add({'image': url, 'order': nextOrder, 'active': true});
+        await _banners.add({
+          'image': url,
+          'order': nextOrder,
+          'active': true,
+          'placement': placement,
+        });
         await CatalogService.bump();
         _say('تمت إضافة البوستر.');
       }
@@ -161,7 +210,8 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                     padding: EdgeInsets.all(28),
                     child: Text(
                       'مفيش بوسترات لسه.\nاضغط "إضافة بوستر" وارفع صورة.\n'
-                      'أفضل مقاس: 1200×585 تقريباً (عرضي).',
+                      'إعلان أعلى الرئيسية: 1200×800 (3:2).\n'
+                      'البوستر العادي: 1200×585 تقريباً (عرضي).',
                       textAlign: TextAlign.center,
                       style: TextStyle(height: 1.6),
                     ),
@@ -175,6 +225,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                     final m = d.data();
                     final active = (m['active'] as bool?) ?? true;
                     final url = (m['image'] ?? '').toString();
+                    final top = m['placement'] == kTopAdPlacement;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 14),
                       decoration: BoxDecoration(
@@ -194,7 +245,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                           Stack(
                             children: [
                               AspectRatio(
-                                aspectRatio: 2.05,
+                                aspectRatio: top ? kTopAdAspectRatio : 2.05,
                                 child: Opacity(
                                   opacity: active ? 1 : 0.4,
                                   child: Image.network(
@@ -226,10 +277,10 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${i + 1}',
-                                    style: TextStyle(
+                                    '${i + 1} • ${top ? 'أعلى الرئيسية' : 'شريط البوسترات'}',
+                                    style: const TextStyle(
                                       fontWeight: FontWeight.w800,
-                                      color: Brand.ink,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
@@ -286,6 +337,17 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                                   onPressed: () => _delete(d),
                                 ),
                               ],
+                            ),
+                          ),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Padding(
+                              padding: const EdgeInsetsDirectional.only(start: 8, bottom: 6),
+                              child: TextButton.icon(
+                                onPressed: () => _setPlacement(d, top ? 'strip' : kTopAdPlacement),
+                                icon: Icon(top ? Icons.view_carousel_outlined : Icons.campaign_outlined),
+                                label: Text(top ? 'انقله لشريط البوسترات' : 'انقله لأعلى الرئيسية'),
+                              ),
                             ),
                           ),
                         ],

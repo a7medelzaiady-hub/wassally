@@ -5,11 +5,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_tokens.dart';
 import '../widgets/quick_order_promo.dart' show kQuickPhotoOrdersEnabled;
 
-/// حفظ إتمام/تخطي الجولة التعريفية محليًا لكل حساب (بدون Firestore).
+/// الجولة الإعلانية بتظهر لحد مرتين في اليوم لكل حساب (محليًا، بدون Firestore).
 class OnboardingStore {
   OnboardingStore._();
 
-  static String _key(String uid) => 'onboarding_done_$uid';
+  /// أقصى عدد مرات ظهور في اليوم.
+  static const maxPerDay = 2;
+
+  static String _dayKey(DateTime now) =>
+      '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+  static String _key(String uid, DateTime now) => 'onboarding_${uid}_${_dayKey(now)}';
 
   static String? get _uid {
     try {
@@ -20,23 +26,25 @@ class OnboardingStore {
   }
 
   /// هل الجولة محتاجة تظهر للحساب الحالي؟
-  static Future<bool> shouldShow({String? uid}) async {
+  static Future<bool> shouldShow({String? uid, DateTime? now}) async {
     final id = uid ?? _uid;
     if (id == null) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_key(id)) != true;
+      return (prefs.getInt(_key(id, now ?? DateTime.now())) ?? 0) < maxPerDay;
     } catch (_) {
       return false;
     }
   }
 
-  static Future<void> markDone({String? uid}) async {
+  /// بيتسجل لما الجولة تتقفل (تخطي أو «يلا نبدأ»).
+  static Future<void> markDone({String? uid, DateTime? now}) async {
     final id = uid ?? _uid;
     if (id == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_key(id), true);
+      final key = _key(id, now ?? DateTime.now());
+      await prefs.setInt(key, (prefs.getInt(key) ?? 0) + 1);
     } catch (_) {}
   }
 }
@@ -50,7 +58,7 @@ class _Step {
   final IconData icon;
 }
 
-/// جولة تعريفية من 3 شاشات بعد أول دخول للعميل.
+/// جولة إعلانية من 3 شاشات عند فتح التطبيق (لحد مرتين في اليوم).
 /// «التالي» و«تخطي» دايمًا تحت، ومؤشر ١/٣. ما بتطلبش أي صلاحيات.
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key, this.onDone});

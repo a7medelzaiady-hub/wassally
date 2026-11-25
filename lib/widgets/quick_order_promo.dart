@@ -263,10 +263,18 @@ class PhotoOrderPromo extends StatelessWidget {
 
 /// إعلانات متحركة: بتتقلب لوحدها، والعميل يقدر يسحبها. تقبل أي عدد إعلانات.
 class PromoCarousel extends StatefulWidget {
-  const PromoCarousel({super.key, required this.slides, this.autoPlay = true});
+  const PromoCarousel({
+    super.key,
+    required this.slides,
+    this.autoPlay = true,
+    this.aspectRatio,
+  });
 
   final List<Widget> slides;
   final bool autoPlay;
+
+  /// نسبة العرض للارتفاع (مثلًا 1.5 لبوسترات 1200×800). null = المقاس المرن.
+  final double? aspectRatio;
 
   @override
   State<PromoCarousel> createState() => _PromoCarouselState();
@@ -304,7 +312,10 @@ class _PromoCarouselState extends State<PromoCarousel> {
     final slides = widget.slides;
     if (slides.isEmpty) return const SizedBox.shrink();
     return LayoutBuilder(builder: (context, box) {
-      final height = (box.maxWidth * 0.68).clamp(230.0, 320.0);
+      final ratio = widget.aspectRatio;
+      final height = ratio != null
+          ? box.maxWidth / ratio
+          : (box.maxWidth * 0.68).clamp(230.0, 320.0);
       return Column(
         key: const Key('promo-carousel'),
         children: [

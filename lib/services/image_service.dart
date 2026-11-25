@@ -35,10 +35,12 @@ class ImageService {
       throw ArgumentError('مجلد غير مسموح: $folder');
     }
 
+    // البوسترات بجودة أعلى (لحد 1600) علشان تفضل واضحة على الشاشات الكبيرة.
+    final maxSide = folder == 'banners' ? 1600.0 : 1024.0;
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      maxWidth: 1024,
-      maxHeight: 1024,
+      maxWidth: maxSide,
+      maxHeight: maxSide,
       imageQuality: 80, // ضغط محلي قبل الرفع لتقليل استهلاك البيانات والمساحة
     );
     if (picked == null) return null;
