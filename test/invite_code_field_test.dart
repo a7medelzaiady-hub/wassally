@@ -65,12 +65,9 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('entry-invite-code')), findsOneWidget);
     expect(find.byKey(const Key('entry-search')), findsNothing);
-    // The sandwich photo and the headline live in one merged banner.
-    final banner = tester.getRect(find.byKey(const Key('entry-banner')));
-    final art = tester.getRect(find.byKey(const Key('entry-banner-art')));
-    final title = tester.getRect(find.text('وصّلي...\nلحد عندي'));
-    expect(banner.contains(art.center), isTrue);
-    expect(art.right, greaterThan(title.left), reason: 'photo runs under the text');
+    expect(find.byKey(const Key('entry-header-wave')), findsOneWidget);
+    expect(find.byKey(const Key('entry-banner')), findsNothing);
+    expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
