@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'onboarding_page.dart';
+
 import '../theme/brand.dart';
 
 /// Offline help reachable from the Account screen by every signed-in role.
@@ -61,6 +63,22 @@ class UserGuidePage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
+              // إعادة عرض الجولة التعريفية يدويًا.
+              Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  key: const Key('guide-replay-tour'),
+                  leading: const Icon(Icons.play_circle_outline_rounded),
+                  title: const Text('شاهد الجولة التعريفية',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: const Text('3 شاشات سريعة عن مميزات وصّلي'),
+                  trailing: const Icon(Icons.chevron_left_rounded),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    fullscreenDialog: true,
+                    builder: (_) => const OnboardingPage(),
+                  )),
+                ),
+              ),
               for (final section in _sections)
                 Card(
                   margin: const EdgeInsets.only(bottom: 10),

@@ -12,6 +12,7 @@ import 'account_page.dart';
 import 'home_page.dart';
 import 'main_shell.dart';
 import 'notifications_page.dart';
+import 'onboarding_page.dart';
 import 'quick_order_create_page.dart';
 import 'store_directory_page.dart';
 
@@ -53,6 +54,16 @@ class _CustomerEntryState extends State<CustomerEntry> {
     customerShellAvailable.value = _isCustomer;
     enterShellRequest.addListener(_onEnterShellRequest);
     SavedAddress.load();
+    if (_isCustomer) _maybeShowTour();
+  }
+
+  /// الجولة التعريفية بعد أول دخول للعميل (مرة واحدة لكل حساب، محليًا).
+  Future<void> _maybeShowTour() async {
+    if (!await OnboardingStore.shouldShow() || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => const OnboardingPage(),
+    ));
   }
 
   @override
