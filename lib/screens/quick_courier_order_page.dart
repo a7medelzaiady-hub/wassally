@@ -296,9 +296,6 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   );
 
   Widget _requestCard(QuickCourierOrder o) {
-    final hasRequestedItems = o.stores.any(
-      (store) => store.items.trim().isNotEmpty || store.pricedItems.isNotEmpty,
-    );
     return _card(receipt: true, children: [
       Row(
         children: [
@@ -332,7 +329,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
-      if (!hasRequestedItems && o.notes.trim().isEmpty)
+      if (!o.hasCustomerRequest)
         const Padding(
           padding: EdgeInsets.only(top: 10),
           child: Text(
@@ -351,15 +348,6 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           child: Text(
             'العنوان ورقم التليفون بيظهروا بعد قبول الطلب فقط.',
             style: TextStyle(fontSize: 12, color: kMuted),
-          ),
-        ),
-      if (!o.hasCustomerRequest)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-            'الطلب بدون أصناف أو تفاصيل مكتوبة حتى الآن. راجع بيانات الطلب قبل قبوله.',
-            key: Key('quick-order-no-items'),
-            style: TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
       for (final (index, store) in o.stores.indexed) ...[
