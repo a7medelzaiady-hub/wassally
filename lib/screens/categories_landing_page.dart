@@ -61,10 +61,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
       ]),
       const SizedBox(height: 2),
       // Use the approved Wasally bag-and-speed mark, not an emoji.
-      const SizedBox(
+      SizedBox(
         height: 62,
         width: 132,
-        child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
+        child: Image.asset('assets/images/entry/wasally_logo.jpg', fit: BoxFit.contain),
       ),
     ]),
   );
@@ -80,7 +80,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
       ),
     ),
     child: Row(textDirection: TextDirection.ltr, children: [
-      Expanded(flex: 6, child: const _EntryArtwork(Rect.fromLTWH(12, 311, 310, 207))),
+      Expanded(flex: 6, child: Image.asset('assets/images/entry/hero_food.jpg', fit: BoxFit.cover)),
       Expanded(flex: 5, child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -103,7 +103,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
     required String subtitle,
     required String action,
     required IconData icon,
-    required Rect art,
+    required String art,
     required VoidCallback onTap,
     double height = 146,
     double gap = 14,
@@ -130,7 +130,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
                 // Fill the left half edge-to-edge, without an overlay or inset.
                 Expanded(
                   flex: 1,
-                  child: SizedBox.expand(child: _EntryArtwork(art)),
+                  child: SizedBox.expand(child: Image.asset(art, fit: BoxFit.cover)),
                 ),
                 Expanded(
                   flex: 1,
@@ -246,7 +246,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
               subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
               action: 'اطلب الآن',
               icon: Icons.bolt_rounded,
-              art: const Rect.fromLTWH(20, 541, 303, 195),
+              art: 'assets/images/entry/quick_delivery.jpg',
               height: cardHeight,
               gap: cardGap,
               onTap: () => _enter(const QuickOrderCreatePage()),
@@ -256,7 +256,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
               subtitle: 'أقوى الخصومات والعروض الحصرية',
               action: 'شاهد العروض',
               icon: Icons.local_offer_rounded,
-              art: const Rect.fromLTWH(22, 796, 295, 173),
+              art: 'assets/images/entry/offers.jpg',
               height: cardHeight,
               gap: cardGap,
               onTap: () => _enter(const HomePage(offersOnly: true)),
@@ -266,7 +266,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
               subtitle: 'اكتشف جميع المحلات والأصناف',
               action: 'استعرض المحلات',
               icon: Icons.storefront_rounded,
-              art: const Rect.fromLTWH(22, 1026, 305, 174),
+              art: 'assets/images/entry/stores.jpg',
               height: cardHeight,
               gap: cardGap,
               onTap: () => _enter(const StoreDirectoryPage()),
@@ -331,33 +331,3 @@ class _CustomerEntryState extends State<CustomerEntry> {
   }
 }
 
-class _EntryArtwork extends StatelessWidget {
-  const _EntryArtwork(this.crop);
-  final Rect crop;
-
-  @override
-  Widget build(BuildContext context) => ClipRect(
-    child: FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: crop.width,
-        height: crop.height,
-        child: Stack(
-          children: [
-            Positioned(
-              left: -crop.left,
-              top: -crop.top,
-              width: 691,
-              height: 1536,
-              child: Image.asset(
-                'assets/images/customer_entry_reference.jpg',
-                fit: BoxFit.fill,
-                excludeFromSemantics: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
