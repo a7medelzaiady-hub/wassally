@@ -345,6 +345,23 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         const SizedBox(height: 4),
         Text('الحي: ${o.area}', style: TextStyle(color: kMuted)),
       ],
+      if (!o.canSeeContact)
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text(
+            'العنوان ورقم التليفون بيظهروا بعد قبول الطلب فقط.',
+            style: TextStyle(fontSize: 12, color: kMuted),
+          ),
+        ),
+      if (!o.hasCustomerRequest)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text(
+            'الطلب بدون أصناف أو تفاصيل مكتوبة حتى الآن. راجع بيانات الطلب قبل قبوله.',
+            key: Key('quick-order-no-items'),
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
       for (final (index, store) in o.stores.indexed) ...[
         _requestDivider(),
         Text(
