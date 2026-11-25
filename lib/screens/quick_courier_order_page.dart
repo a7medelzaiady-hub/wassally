@@ -124,6 +124,8 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   Future<void> _call() async {
+    // Never dial a cached phone after the server revoked the assignment.
+    if (_order?.canSeeContact != true) return;
     final phone = _contact?.phone.trim() ?? '';
     if (phone.isEmpty) return;
     // Build a tel URI without interpreting # or ? in a phone number as URL delimiters.
