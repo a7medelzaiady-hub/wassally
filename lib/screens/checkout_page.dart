@@ -616,7 +616,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
                               child: Text(_referralPoints > 0
                                   ? 'إلغاء استخدام النقاط'
-                                  : 'استخدم نقاط الإحالة'),
+                                  : 'استخدم نقاط الدعوات'),
                             ),
                           if (_referralPoints > 0)
                             _line('خصم $_referralPoints نقطة',

@@ -86,7 +86,7 @@ class OrderGateway {
         'channel': channel,
         if (marketerUid != null) 'marketerUid': marketerUid,
       },
-      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+      connectivityMessage: 'تعذر الاتصال بخدمة الدعوات.',
     );
   }
 
@@ -100,7 +100,7 @@ class OrderGateway {
       method: 'POST',
       path: '/v1/referrals/settings',
       payload: {if (settings != null) 'settings': settings},
-      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+      connectivityMessage: 'تعذر الاتصال بخدمة الدعوات.',
     );
     return response['settings'] as Map<String, dynamic>?;
   }
@@ -155,7 +155,7 @@ class OrderGateway {
         'reference': reference,
         'dueMinor': dueMinor,
       },
-      connectivityMessage: 'تعذر الاتصال بخدمة تسوية عمولة الإحالة.',
+      connectivityMessage: 'تعذر الاتصال بخدمة تسوية عمولة الدعوات.',
     );
   }
 
@@ -177,7 +177,7 @@ class OrderGateway {
         if (payoutId != null) 'payoutId': payoutId,
         if (reference != null) 'reference': reference,
       },
-      connectivityMessage: 'تعذر الاتصال بخدمة صرف الإحالات.',
+      connectivityMessage: 'تعذر الاتصال بخدمة صرف مكافآت الدعوات.',
     );
   }
 
@@ -190,10 +190,10 @@ class OrderGateway {
       method: 'POST',
       path: '/v1/referrals/registration',
       payload: {'code': code},
-      connectivityMessage: 'تعذر الاتصال بخدمة الإحالات.',
+      connectivityMessage: 'تعذر الاتصال بخدمة الدعوات.',
     );
     if (body['accepted'] != true) {
-      throw StateError('لم يصل تأكيد حفظ كود الإحالة.');
+      throw StateError('لم يصل تأكيد حفظ كود الدعوة.');
     }
   }
 
