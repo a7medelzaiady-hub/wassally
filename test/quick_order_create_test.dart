@@ -46,9 +46,15 @@ void main() {
 
   testWidgets('«عنوان تاني» بيفتح خانة كتابة العنوان', (tester) async {
     await _pump(tester);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('quick-address-other')),
+      300,
+      scrollable: find
+          .descendant(of: find.byKey(const Key('quick-create-list')), matching: find.byType(Scrollable))
+          .first,
+    );
     expect(find.text('على عنواني'), findsOneWidget);
     expect(find.text('اكتب العنوان'), findsNothing);
-    await tester.ensureVisible(find.byKey(const Key('quick-address-other')));
     await tester.tap(find.byKey(const Key('quick-address-other')));
     await tester.pumpAndSettle();
     expect(find.text('اكتب العنوان'), findsOneWidget);
