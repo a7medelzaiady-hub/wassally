@@ -36,7 +36,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(const Key('guide-لصاحب المحل')),
       120,
-      scrollable: find.byKey(const Key('user-guide-list')),
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(find.byKey(const Key('guide-لصاحب المحل')));
     await tester.pumpAndSettle();
