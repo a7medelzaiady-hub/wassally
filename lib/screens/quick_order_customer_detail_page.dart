@@ -26,6 +26,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   bool _busy = false;
   final _voicePlayer = audio.AudioPlayer();
   bool _playingVoice = false;
+  String _customerVoiceUrl = '';
 
   @override
   void initState() {
@@ -67,8 +68,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!doc.exists || doc.data()?['userId'] != user.uid) {
         throw StateError('الطلب غير متاح');
       }
+      String voiceUrl = '';
+      if (doc.data()?['hasCustomerVoice'] == true) {
+        final contact = await FirebaseFirestore.instance.collection('quick_orders')
+            .doc(widget.orderId).collection('private').doc('contact').get();
+        voiceUrl = (contact.data()?['customerVoiceUrl'] ?? '').toString();
+      }
       if (!mounted) return;
-      setState(() { _order = doc.data(); _pin = null; });
+      setState(() { _order = doc.data(); _customerVoiceUrl = voiceUrl; _pin = null; });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -403,15 +410,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   ],
                 ],
               ),
-              if (order['customerVoiceUrl'] is String &&
-                  (order['customerVoiceUrl'] as String).isNotEmpty)
+              if (_customerVoiceUrl.isNotEmpty)
                 _card(
                   key: const Key('quick-customer-voice'),
                   title: 'تسجيل طلبك الصوتي',
                   icon: Icons.mic_outlined,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: () => _toggleVoice(order['customerVoiceUrl'] as String),
+                      onPressed: () => _toggleVoice(_customerVoiceUrl),
                       icon: Icon(_playingVoice ? Icons.stop_circle_outlined : Icons.play_circle_outline),
                       label: Text(_playingVoice ? 'إيقاف التسجيل' : 'اسمع تسجيل طلبك'),
                     ),
