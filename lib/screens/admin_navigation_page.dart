@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_tokens.dart';
 
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
@@ -56,6 +57,11 @@ class AdminNavigationPage extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth >= 650 ? 3 : 2;
+          // Height follows the phone font size so titles never overflow.
+          final scale = MediaQuery.textScalerOf(context);
+          final extent = 12 * 2 + 8 + 34 + 10 + 4 +
+              scale.scale(15) * 1.75 * 2 +
+              scale.scale(13) * 1.5 * 2;
           return GridView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: items.length,
@@ -63,7 +69,7 @@ class AdminNavigationPage extends StatelessWidget {
               crossAxisCount: columns,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
-              mainAxisExtent: 155,
+              mainAxisExtent: extent,
             ),
             itemBuilder: (context, index) {
               final item = items[index];
@@ -79,11 +85,11 @@ class AdminNavigationPage extends StatelessWidget {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(item.icon, size: 34, color: Theme.of(context).colorScheme.primary),
+                        Icon(item.icon, size: 34, color: AppColors.purple),
                         const SizedBox(height: 10),
                         Text(item.title, textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
                         const SizedBox(height: 4),
                         Text(item.subtitle, textAlign: TextAlign.center, maxLines: 2,
                           overflow: TextOverflow.ellipsis,

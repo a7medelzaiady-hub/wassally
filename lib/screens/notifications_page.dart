@@ -371,7 +371,7 @@ class _NotifHeader extends StatelessWidget {
                             children: [
                               Icon(
                                 Icons.done_all_rounded,
-                                color: Brand.gold,
+                                color: AppColors.orangeLight,
                                 size: 18,
                               ),
                               SizedBox(width: 6),
@@ -572,7 +572,7 @@ class _NotifCardState extends State<_NotifCard> {
                               Text(
                                 _stamp(dt),
                                 style: TextStyle(
-                                  fontSize: 11.5,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: kMuted,
                                 ),
@@ -656,7 +656,7 @@ class _KindChip extends StatelessWidget {
       child: Text(
         style.label,
         style: TextStyle(
-          fontSize: 11.5,
+          fontSize: 12,
           fontWeight: FontWeight.w800,
           color: style.color,
         ),
@@ -863,7 +863,7 @@ class _StepperState extends State<_Stepper>
                   maxLines: 1,
                   softWrap: false,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: i == widget.step
                         ? FontWeight.w800
                         : FontWeight.w600,

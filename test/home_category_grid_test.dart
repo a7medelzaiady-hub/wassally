@@ -39,7 +39,7 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    String? chosen;
+    String? chosen = 'none';
     await tester.pumpWidget(
       MaterialApp(
         home: Directionality(
@@ -59,23 +59,60 @@ void main() {
 
     expect(find.text('أقسامنا المختلفة'), findsOneWidget);
     expect(find.byKey(const Key('home-category-grid')), findsOneWidget);
+    expect(find.byKey(const Key('home-category-$kAllCategoriesId')), findsOneWidget);
     for (final item in homeCategories) {
       expect(find.byKey(Key('home-category-${item.id}')), findsOneWidget);
     }
+    // «الكل» is the first card of the first row (rightmost in RTL).
     final row = [
-      for (final id in ['restaurants', 'market', 'meat', 'bakery'])
+      for (final id in [kAllCategoriesId, 'restaurants', 'market', 'meat'])
         tester.getTopLeft(find.byKey(Key('home-category-$id'))),
     ];
     expect(row[1].dy, row[0].dy);
     expect(row[2].dy, row[0].dy);
     expect(row[3].dy, row[0].dy);
+    expect(row[0].dx, greaterThan(row[1].dx));
     final nextRowY = tester.getTopLeft(
-      find.byKey(const Key('home-category-pharmacy')),
+      find.byKey(const Key('home-category-bakery')),
     ).dy;
     expect(nextRowY, greaterThan(row[0].dy));
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const Key('home-category-market')));
     expect(chosen, 'market');
+    await tester.tap(find.byKey(const Key('home-category-$kAllCategoriesId')));
+    expect(chosen, isNull, reason: '«الكل» يفتح كل المحلات بدون تصفية');
+  });
+
+  testWidgets('الأقسام تتحمل تكبير الخط 1.3 بدون قص أو overflow', (tester) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: MediaQuery(
+        data: const MediaQueryData(
+          size: Size(320, 900),
+          textScaler: TextScaler.linear(1.3),
+        ),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: HomeCategoryGrid(
+                loadPhotos: false,
+                selectedId: 'market',
+                highlightSelection: true,
+                onSelected: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }

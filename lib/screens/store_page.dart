@@ -1847,7 +1847,7 @@ class _ProductRow extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: FontWeight.w800,
       ),
     ),

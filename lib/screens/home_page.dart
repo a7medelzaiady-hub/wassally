@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,7 +27,10 @@ import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
+import '../widgets/curved_nav_bar.dart';
 import 'notifications_page.dart';
+import '../services/saved_address.dart';
+import '../widgets/notification_bell.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
@@ -62,8 +64,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  // العنوان المحفوظ للعميل.
-  String _address = '';
+  // العنوان المحفوظ للعميل (مشترك مع صفحة الترحيب: قراءة واحدة).
+  String _address = SavedAddress.value.value;
+
+  static const double _bellSize = kMinTapTarget;
 
 
   // الإشعارات.
@@ -119,7 +123,8 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
-    _loadSavedAddress();
+    SavedAddress.value.addListener(_onSavedAddress);
+    SavedAddress.load();
     _initNotifications();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -129,6 +134,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    SavedAddress.value.removeListener(_onSavedAddress);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -165,23 +171,14 @@ class _HomePageState extends State<HomePage>
 
   // ───────────────────────── الموقع ─────────────────────────
 
-  Future<void> _loadSavedAddress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final a = (doc.data()?['address'] ?? '').toString();
-      if (mounted && a.isNotEmpty) setState(() => _address = a);
-    } catch (e) {
-      debugPrint('Load address error: $e');
-    }
+  void _onSavedAddress() {
+    final a = SavedAddress.value.value;
+    if (mounted && a.isNotEmpty && a != _address) setState(() => _address = a);
   }
 
   Future<void> _saveAddress(String address, {double? lat, double? lng}) async {
     if (mounted) setState(() => _address = address);
+    SavedAddress.update(address);
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
@@ -532,10 +529,9 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _openNotifications() async {
     // افتح الصفحة فورًا؛ أي مزامنة للتوكن/الـ topics تتم في الخلفية
-    // علشان تعليق الشبكة أو FCM ما يوقفش الزر.
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    // علشان تعليق الشبكة أو FCM ما يوقفش الزر. الضغط المتكرر يفتحها مرة واحدة.
     unawaited(_syncNotificationsInBackground());
+    await pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
   }
 
   Future<void> _syncNotificationsInBackground() async {
@@ -589,70 +585,20 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _bell() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openNotifications,
-            child: SizedBox(
-              width: 38,
-              height: 38,
-              child: AnimatedBuilder(
-                animation: _bellCtrl,
-                builder: (context, child) {
-                  // هزة يمين وشمال وتخفت تدريجيًا
-                  final t = _bellCtrl.value;
-                  final angle = math.sin(t * math.pi * 6) * 0.35 * (1 - t);
-                  return Transform.rotate(
-                    angle: angle,
-                    alignment: Alignment.topCenter,
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  color: Brand.green,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -5,
-          left: -5,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _unreadStream,
-            builder: (context, snap) {
-              if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
-              final n = snap.data?.docs.length ?? 0;
-              if (n == 0) return const SizedBox.shrink();
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: Text(
-                  n > 9 ? '9+' : '$n',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _unreadStream,
+      builder: (context, snap) {
+        if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
+        return NotificationBell(
+          count: snap.data?.docs.length ?? 0,
+          shake: _bellCtrl,
+          size: _bellSize,
+          onTap: _openNotifications,
+        );
+      },
     );
   }
+
 
   // ───────────────────────── الهيدر ─────────────────────────
 
@@ -663,7 +609,7 @@ class _HomePageState extends State<HomePage>
     return ClipPath(
       clipper: _WaveBottomClipper(),
       child: Container(
-      color: Brand.green,
+      color: AppColors.purpleDeep,
       padding: EdgeInsets.fromLTRB(16, top + 6, 16, 22),
       child: Column(
         children: [
@@ -772,6 +718,7 @@ class _HomePageState extends State<HomePage>
     final stores = _storesFuture;
     return Scaffold(
       appBar: AppBar(title: const Text('تصفح العروض')),
+      bottomNavigationBar: const CustomerPageNav(),
       body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
         future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
         builder: (context, snapshot) {
@@ -785,15 +732,37 @@ class _HomePageState extends State<HomePage>
           if (offers.isEmpty) {
             return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
           }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: offers.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (_, i) => Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _offerCard(offers[i], offer: true),
-            ),
-          );
+          // شبكة بعمودين (3 على الشاشات العريضة) بدل كروت نص عرض
+          // الشاشة ومساحة فاضية جنبها.
+          return LayoutBuilder(builder: (context, constraints) {
+            const gap = AppSpacing.md;
+            final columns = constraints.maxWidth >= 600 ? 3 : 2;
+            final cardWidth = (constraints.maxWidth - AppSpacing.page * 2 -
+                    gap * (columns - 1)) /
+                columns;
+            final imageHeight = cardWidth * 0.8;
+            final textHeight = MediaQuery.textScalerOf(context).scale(15) * 1.3 +
+                MediaQuery.textScalerOf(context).scale(13) * 1.4 +
+                MediaQuery.textScalerOf(context).scale(16) * 1.4 +
+                40;
+            return GridView.builder(
+              key: const Key('offers-grid'),
+              padding: AppSpacing.pagePadding,
+              itemCount: offers.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: gap,
+                mainAxisSpacing: gap,
+                mainAxisExtent: imageHeight + textHeight,
+              ),
+              itemBuilder: (_, i) => _offerCard(
+                offers[i],
+                offer: true,
+                width: null,
+                imageHeight: imageHeight,
+              ),
+            );
+          });
         },
       ),
     );
@@ -968,7 +937,12 @@ class _HomePageState extends State<HomePage>
   }
 
   /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
-  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+  Widget _offerCard(
+    (_StoreItem, Map<String, dynamic>) entry, {
+    bool offer = false,
+    double? width = 232,
+    double imageHeight = 130,
+  }) {
     final (s, m) = entry;
     final price = (m['price'] as num?)?.toDouble() ?? 0;
     final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
@@ -986,7 +960,7 @@ class _HomePageState extends State<HomePage>
     return GestureDetector(
       onTap: () => _openStore(s.store),
       child: Container(
-        width: 232,
+        width: width,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -999,7 +973,7 @@ class _HomePageState extends State<HomePage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 130,
+              height: imageHeight,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1100,10 +1074,10 @@ class _HomePageState extends State<HomePage>
                     children: [
                       Text(
                         formatPrice(price),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.green,
+                        style: const TextStyle(
+                          fontSize: AppTypography.price - 1,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeDeep,
                         ),
                       ),
                       if (offer && hasDiscount) ...[
@@ -1205,7 +1179,7 @@ class _HomePageState extends State<HomePage>
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
@@ -1313,7 +1287,7 @@ class _HomePageState extends State<HomePage>
                 left: 0,
                 right: 0,
                 height: MediaQuery.paddingOf(context).top,
-                child: ColoredBox(color: Brand.green),
+                child: const ColoredBox(color: AppColors.purpleDeep),
               ),
             ],
           );

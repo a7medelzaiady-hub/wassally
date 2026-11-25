@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import '../models/app_role.dart';
 import '../services/role_service.dart';
 
-import '../services/cart_book.dart';
-import '../services/cart_model.dart';
 import '../services/navigation.dart';
 import '../services/performance_monitor.dart';
 import '../widgets/curved_nav_bar.dart';
@@ -70,42 +68,10 @@ class MainShell extends StatelessWidget {
                 ),
             ],
           ),
-          bottomNavigationBar: ListenableBuilder(
-            listenable: Listenable.merge([cart, carts]),
-            builder: (context, _) {
-              // تبديل موضعي الرئيسية والسلة مع الحفاظ على طلباتي وحسابي.
-              // من اليمين لليسار: الرئيسية، طلباتي، السلة، حسابي.
-              const map = [0, 2, 1, 3];
-              return CurvedNavBar(
-                index: map.indexOf(index),
-                onTap: (i) {
-                  shellTab.value = map[i];
-                },
-                items: [
-                  const AppNavItem(
-                    icon: Icons.home_outlined,
-                    selectedIcon: Icons.home_rounded,
-                    label: 'الرئيسية',
-                  ),
-                  const AppNavItem(
-                    icon: Icons.receipt_long_outlined,
-                    selectedIcon: Icons.receipt_long,
-                    label: 'طلباتي',
-                  ),
-                  AppNavItem(
-                    icon: Icons.shopping_cart_outlined,
-                    selectedIcon: Icons.shopping_cart,
-                    label: 'السلة',
-                    badge: carts.totalItems,
-                  ),
-                  const AppNavItem(
-                    icon: Icons.person_outline,
-                    selectedIcon: Icons.person,
-                    label: 'حسابي',
-                  ),
-                ],
-              );
-            },
+          // Same approved bar as the entry page and inner shopping pages.
+          bottomNavigationBar: CustomerBottomNav(
+            currentTab: index,
+            onTab: (tab) => shellTab.value = tab,
           ),
         ),
         );

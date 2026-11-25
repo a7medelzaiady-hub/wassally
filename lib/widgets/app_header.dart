@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 
+import '../theme/app_tokens.dart';
 import '../theme/brand.dart';
 import '../services/navigation.dart';
 
@@ -10,6 +11,7 @@ class AppHeader extends StatelessWidget {
   final Color color;
   final Gradient? gradient;
   final EdgeInsets padding;
+  final double radius;
 
   const AppHeader({
     super.key,
@@ -17,6 +19,7 @@ class AppHeader extends StatelessWidget {
     this.color = Colors.white,
     this.gradient,
     this.padding = const EdgeInsets.fromLTRB(20, 12, 20, 22),
+    this.radius = 28,
   });
 
   @override
@@ -28,14 +31,16 @@ class AppHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: gradient == null ? color : null,
         gradient: gradient,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 16,
-            offset: Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(radius)),
+        boxShadow: radius == 0
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x14000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 6),
+                ),
+              ],
       ),
       child: child,
     );
@@ -65,26 +70,39 @@ class InnerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // نفس شكل AppBar في باقي التطبيق: بنفسجي، العنوان في النص.
     return AppHeader(
-      gradient: Brand.headerGradient,
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 14),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
-            tooltip: 'رجوع',
+      color: AppColors.purpleDeep,
+      radius: 0,
+      padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+      child: SizedBox(
+        height: 60,
+        child: IconTheme(
+          data: const IconThemeData(color: Colors.white),
+          child: Row(
+            children: [
+              IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                tooltip: 'رجوع',
+              ),
+              Expanded(
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (showHome) const HomeActionButton(),
+              ?trailing,
+              // Keeps the title centred when there is no action on the end.
+              if (!showHome && trailing == null) const SizedBox(width: kMinTapTarget),
+            ],
           ),
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
-            ),
-          ),
-          if (showHome) const HomeActionButton(),
-          ?trailing,
-        ],
+        ),
       ),
     );
   }

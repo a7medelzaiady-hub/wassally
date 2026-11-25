@@ -102,9 +102,11 @@ class WasallyApp extends StatelessWidget {
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(
+            // Respect the phone's font-size setting (no more forced
+            // shrinking), capped so layouts stay intact.
             textScaler: mq.textScaler.clamp(
-              minScaleFactor: 0.8,
-              maxScaleFactor: 0.88,
+              minScaleFactor: AppTypography.minTextScale,
+              maxScaleFactor: AppTypography.maxTextScale,
             ),
           ),
           child: child ?? const SizedBox.shrink(),

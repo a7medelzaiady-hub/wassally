@@ -1,0 +1,60 @@
+name: Design screenshots
+
+# لقطات شاشة حقيقية (بخط Tajawal وأيقونات Material) للمراجعة البصرية
+# قبل الدمج. اللقطات بتتحفظ في فرع منفصل design-shots/<الفرع> ولا تلمس main.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "design/**" ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - run: flutter pub get
+
+      - name: Render screens
+        shell: bash
+        run: |
+          export FLUTTER_ROOT="$(dirname "$(dirname "$(command -v flutter)")")"
+          flutter test test_screenshots --update-goldens --reporter expanded || echo "SOME_SHOTS_FAILED=1" >> "$GITHUB_ENV"
+
+      - name: Publish screenshots to design-shots branch
+        shell: bash
+        env:
+          SRC_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          OUT="design-shots/${SRC_BRANCH}"
+          mkdir -p /tmp/shots
+          find test_screenshots -name '*.png' -exec cp {} /tmp/shots/ \;
+          ls -la /tmp/shots
+          cd /tmp/shots
+          git init -q -b "$OUT"
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          echo "source: ${GITHUB_SHA}" > SOURCE.txt
+          git add -A
+          git commit -qm "screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${OUT}"
+
+      - name: Fail when a screen could not render
+        if: env.SOME_SHOTS_FAILED == '1'
+        run: exit 1

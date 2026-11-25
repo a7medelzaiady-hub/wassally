@@ -15,6 +15,7 @@ import '../services/role_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
@@ -263,11 +264,12 @@ class _AccountPageState extends State<AccountPage> {
     return Column(
       children: [
         AppHeader(
+          gradient: Brand.headerGradient,
           child: Row(
             children: [
               CircleAvatar(
                 radius: 32,
-                backgroundColor: kPrimarySoft,
+                backgroundColor: Colors.white,
                 foregroundImage: user?.photoURL != null
                     ? NetworkImage(user!.photoURL!)
                     : null,
@@ -282,12 +284,15 @@ class _AccountPageState extends State<AccountPage> {
                       name,
                       style: text.titleLarge?.copyWith(
                         fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                     ),
                     if ((user?.email ?? '').isNotEmpty)
                       Text(
                         user!.email!,
-                        style: text.bodySmall?.copyWith(color: kMuted),
+                        style: text.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
                       ),
                   ],
                 ),
@@ -511,7 +516,7 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                   child: const Text(
                     'حذف الحساب',
-                    style: TextStyle(fontSize: 11.5),
+                    style: TextStyle(fontSize: 12),
                   ),
                 ),
               ),

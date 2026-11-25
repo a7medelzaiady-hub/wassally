@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/quick_order_api.dart';
+import '../theme/app_tokens.dart';
 import '../theme/brand.dart';
 import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_ui.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -187,16 +189,6 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
     ),
   );
 
-  Widget _section(String title, List<Widget> children) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _receiptDivider(),
-      Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      const SizedBox(height: 6),
-      ...children,
-    ],
-  );
-
   Widget _amount(String label, Object? value, {bool emphasis = false}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -218,6 +210,48 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         ),
       );
 
+  Widget _card({Key? key, required String title, IconData? icon, required List<Widget> children}) =>
+      AppCard(
+        key: key,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppSectionHeader(title: title, icon: icon),
+            const SizedBox(height: AppSpacing.sm),
+            ...children,
+          ],
+        ),
+      );
+
+  void _openReceipt(String url) => showDialog<void>(
+        context: context,
+        builder: (dialog) => Dialog(
+          insetPadding: const EdgeInsets.all(AppSpacing.lg),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(children: [
+            InteractiveViewer(
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => const Padding(
+                  padding: EdgeInsets.all(AppSpacing.xxl),
+                  child: Text('تعذر تحميل صورة الفاتورة'),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              top: 4,
+              end: 4,
+              child: IconButton.filledTonal(
+                tooltip: 'إغلاق',
+                onPressed: () => Navigator.pop(dialog),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ]),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
@@ -233,70 +267,91 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         delivered || status == 'summary_pending' || status == 'summary_approved';
     final due = (totals['due'] as num?) ?? 0;
     final area = (order?['area'] ?? '').toString().trim();
+    final receiptImages = [
+      for (final raw in receipts)
+        if (raw is Map && raw['imageUrl'] is String) raw,
+    ];
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
         actions: [IconButton(onPressed: _busy ? null : _refresh,
-          icon: const Icon(Icons.refresh), tooltip: 'تحديث')]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
-        if (_busy) const LinearProgressIndicator(),
-        if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-        if (order == null)
-          Text(_error != null ? 'تعذر تحميل الطلب. اضغط تحديث لإعادة المحاولة.' : 'جارٍ تحميل الطلب...')
-        else ...[
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Brand.palette.line),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.receipt_long_outlined, color: Brand.green),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        quickOrderStatusLabel(status),
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+          icon: const Icon(Icons.refresh_rounded), tooltip: 'تحديث')]),
+      body: RefreshIndicator(
+        color: AppColors.purple,
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: AppSpacing.pagePadding.copyWith(top: AppSpacing.lg),
+          children: [
+            if (_busy) ...[
+              const LinearProgressIndicator(color: AppColors.purple),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            if (_error != null) AppNotice(_error!, type: AppNoticeType.error),
+            if (order == null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+                child: Text(
+                  _error != null
+                      ? 'تعذر تحميل الطلب. اسحب لأسفل أو اضغط تحديث لإعادة المحاولة.'
+                      : 'جارٍ تحميل الطلب...',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.secondary,
                 ),
-                if (area.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text('الحي: $area', style: TextStyle(color: Brand.palette.muted)),
-                ],
-                _section('محتويات الطلب', [
-                  if (stores.isEmpty) const Text('لم تُحدد محلات أو أصناف في الطلب.'),
+              )
+            else ...[
+              _StatusHeader(status: status, area: area),
+              const SizedBox(height: AppSpacing.md),
+              if (status == 'summary_pending')
+                const AppNotice(type: AppNoticeType.action, 'راجع الفواتير والحساب النهائي تحت، ووافق عليه علشان يظهر رمز التسليم.'),
+              if (status == 'summary_approved' && (_pin == null || _pin!.isEmpty))
+                const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
+              _card(
+                title: 'محتويات الطلب',
+                icon: Icons.shopping_basket_outlined,
+                children: [
+                  if (stores.isEmpty)
+                    const Text('لم تُحدد محلات أو أصناف في الطلب.', style: AppTypography.secondary),
                   for (final raw in stores)
                     if (raw is Map) ...[
-                      const SizedBox(height: 4),
-                      Text((raw['name'] ?? '').toString().trim().isEmpty
-                          ? 'محل يختاره المندوب' : (raw['name'] ?? '').toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        (raw['name'] ?? '').toString().trim().isEmpty
+                            ? 'محل يختاره المندوب'
+                            : (raw['name'] ?? '').toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: AppTypography.body,
+                          color: AppColors.purple,
+                        ),
+                      ),
                       if ((raw['items'] ?? '').toString().trim().isNotEmpty)
-                        Text((raw['items'] ?? '').toString()),
+                        Text((raw['items'] ?? '').toString(), style: AppTypography.bodyText),
                       if (raw['pricedItems'] is List)
                         for (final line in raw['pricedItems'] as List)
                           if (line is Map)
-                            Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}'),
+                            Text('• ${line['name'] ?? 'صنف'} × ${line['qty'] ?? 1}',
+                                style: AppTypography.bodyText),
                     ],
-                  if (notes.isNotEmpty) Text('ملاحظات: $notes'),
+                  if (notes.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text('ملاحظات: $notes', style: AppTypography.secondary),
+                  ],
                   if (!hasFinalBill) ...[
-                    const SizedBox(height: 8),
+                    _receiptDivider(),
                     if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
                       _amount('التقدير', order['approxTotalPiastres']),
-                    Text('الحساب بيتحدد بعد الشراء.',
-                      style: TextStyle(color: Brand.palette.muted)),
+                    const Text('الحساب بيتحدد بعد الشراء، وبيتفق عليه المندوب معاك في التليفون.',
+                        style: AppTypography.secondary),
                   ],
-                ]),
-                if (hasFinalBill) ...[
-                  _section('الحساب النهائي', [
+                ],
+              ),
+              if (hasFinalBill)
+                _card(
+                  key: const Key('quick-final-bill'),
+                  title: 'الحساب النهائي',
+                  icon: Icons.receipt_long_outlined,
+                  children: [
                     _amount('الفواتير', totals['purchases']),
                     _amount('أجرة التوصيل', totals['delivery']),
                     _amount('رسوم وصّلي', totals['serviceFee']),
@@ -310,60 +365,249 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                       due.abs(),
                       emphasis: true,
                     ),
-                  ]),
-                  if (receipts.isNotEmpty)
-                    _section('الفواتير', [
-                      for (final raw in receipts)
-                        if (raw is Map && raw['imageUrl'] is String) ...[
-                          _amount('فاتورة', raw['amountPiastres']),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.network(
-                              raw['imageUrl'] as String,
-                              height: 180,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) =>
-                                  const Text('تعذر تحميل صورة الفاتورة'),
+                  ],
+                ),
+              if (hasFinalBill && receiptImages.isNotEmpty)
+                _card(
+                  title: 'صور الفواتير',
+                  icon: Icons.photo_library_outlined,
+                  children: [
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: AppSpacing.sm,
+                      crossAxisSpacing: AppSpacing.sm,
+                      childAspectRatio: 0.82,
+                      children: [
+                        for (final raw in receiptImages)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            onTap: () => _openReceipt(raw['imageUrl'] as String),
+                            child: Container(
+                              clipBehavior: Clip.antiAlias,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceAlt,
+                                borderRadius: BorderRadius.circular(AppRadius.md),
+                                border: Border.all(color: AppColors.line),
+                              ),
+                              child: Column(children: [
+                                Expanded(
+                                  child: Image.network(
+                                    raw['imageUrl'] as String,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 420,
+                                    errorBuilder: (_, _, _) => const Center(
+                                      child: Icon(Icons.broken_image_outlined,
+                                          color: AppColors.muted),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  width: double.infinity,
+                                  color: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                                  child: Text(
+                                    _money(raw['amountPiastres']),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: AppTypography.bodySmall,
+                                      color: AppColors.orangeDeep,
+                                    ),
+                                  ),
+                                ),
+                              ]),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                        ],
-                    ]),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
+              if (status == 'summary_pending') ...[
+                FilledButton.icon(
+                  onPressed: _busy ? null : () => _act('approve-summary', {
+                    'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
+                  }),
+                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  label: const Text('موافق على الحساب النهائي'),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton(
+                  onPressed: _busy ? null : () => _act('reject-summary'),
+                  child: const Text('مش موافق — راجع الحساب مع المندوب'),
+                ),
               ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (status == 'open')
-            OutlinedButton(
-              onPressed: _busy ? null : _edit,
-              child: const Text('تعديل الطلب'),
-            ),
-          if (status == 'open' || status == 'accepted')
-            TextButton(
-              onPressed: _busy ? null : _cancel,
-              child: const Text('إلغاء الطلب'),
-            ),
-          if (status == 'summary_pending') ...[
-            const SizedBox(height: 12),
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : () => _act('approve-summary', {
-                'expectedSummaryRevision': (order['summaryRevision'] as num?)?.toInt() ?? -1,
-              }),
-              child: const Text('موافق على الحساب النهائي')),
-            OutlinedButton(onPressed: _busy ? null : () => _act('reject-summary'),
-              child: const Text('مش موافق — راجع الحساب مع المندوب')),
+              if (status == 'summary_approved') ...[
+                if (_pin != null && _pin!.isNotEmpty)
+                  _PinCard(pin: _pin!)
+                else
+                  FilledButton.icon(
+                    onPressed: _busy ? null : _showPin,
+                    icon: const Icon(Icons.pin_outlined),
+                    label: const Text('إظهار رمز التسليم'),
+                  ),
+              ],
+              if (status == 'open') ...[
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _edit,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('تعديل الطلب'),
+                ),
+              ],
+              if (status == 'open' || status == 'accepted')
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+                  onPressed: _busy ? null : _cancel,
+                  child: const Text('إلغاء الطلب'),
+                ),
+            ],
           ],
-          if (status == 'summary_approved') ...[
-            FilledButton(style: FilledButton.styleFrom(backgroundColor: Brand.green), onPressed: _busy ? null : _showPin,
-              child: const Text('إظهار رمز التسليم')),
-            if (_pin != null && _pin!.isNotEmpty)
-              SelectableText(_pin!, style: Theme.of(context).textTheme.headlineMedium),
-          ],
-        ],
-      ]),
+        ),
+      ),
     );
   }
+}
+
+/// رأس الحالة: اسم الحالة الحالية وخطوات الطلب بشكل مفهوم.
+class _StatusHeader extends StatelessWidget {
+  const _StatusHeader({required this.status, required this.area});
+
+  final String status;
+  final String area;
+
+  static const _steps = <(String, IconData)>[
+    ('بانتظار مندوب', Icons.hourglass_top_rounded),
+    ('المندوب استلم', Icons.delivery_dining_rounded),
+    ('بيشتري طلبك', Icons.shopping_bag_outlined),
+    ('الحساب', Icons.receipt_long_rounded),
+    ('تم التسليم', Icons.verified_rounded),
+  ];
+
+  /// رقم الخطوة الحالية (0..4)، أو -1 لو الطلب ملغي.
+  static int stepOf(String status) => switch (status) {
+        'open' => 0,
+        'accepted' || 'assigned' || 'awaiting_advance' => 1,
+        'shopping' || 'purchasing' => 2,
+        'summary_pending' || 'summary_approved' => 3,
+        'delivered' => 4,
+        'cancelled' || 'canceled' => -1,
+        _ => 0,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final current = stepOf(status);
+    final cancelled = current < 0;
+    return Container(
+      key: const Key('quick-status-header'),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        gradient: cancelled ? null : AppColors.headerGradient,
+        color: cancelled ? AppColors.dangerSoft : null,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            quickOrderStatusLabel(status),
+            style: TextStyle(
+              color: cancelled ? AppColors.danger : Colors.white,
+              fontSize: AppTypography.headline,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          if (area.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xxs),
+            Text(
+              'الحي: $area',
+              style: TextStyle(
+                color: cancelled ? AppColors.inkSoft : Colors.white.withValues(alpha: 0.85),
+                fontSize: AppTypography.bodySmall,
+              ),
+            ),
+          ],
+          if (!cancelled) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < _steps.length; i++)
+                  Expanded(
+                    child: Column(children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= current
+                              ? AppColors.orange
+                              : Colors.white.withValues(alpha: 0.16),
+                        ),
+                        child: Icon(_steps[i].$2, size: 18, color: Colors.white),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        _steps[i].$1,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: i <= current ? 1 : 0.7),
+                          fontSize: AppTypography.caption,
+                          fontWeight: i == current ? FontWeight.w900 : FontWeight.w600,
+                          height: 1.2,
+                        ),
+                      ),
+                    ]),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PinCard extends StatelessWidget {
+  const _PinCard({required this.pin});
+
+  final String pin;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('quick-pin-card'),
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          border: Border.all(color: AppColors.orange, width: 1.6),
+        ),
+        child: Column(children: [
+          const Text('رمز التسليم', style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.sm),
+          SelectableText(
+            pin,
+            textDirection: TextDirection.ltr,
+            style: const TextStyle(
+              fontSize: 40,
+              letterSpacing: 10,
+              fontWeight: FontWeight.w900,
+              color: AppColors.purple,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'ادّي الرمز للمندوب بعد ما تستلم طلبك بس.',
+            textAlign: TextAlign.center,
+            style: AppTypography.secondary,
+          ),
+        ]),
+      );
 }
 
 

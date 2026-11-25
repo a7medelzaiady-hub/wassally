@@ -121,12 +121,12 @@ class StoreOwnerPage extends StatelessWidget {
                   delegate: _TabsDelegate(
                     MediaQuery.paddingOf(context).top,
                     TabBar(
-                      labelColor: kPrimary,
+                      labelColor: AppColors.purple,
                       unselectedLabelColor: kMuted,
-                      indicatorColor: kPrimary,
+                      indicatorColor: AppColors.orange,
                       labelStyle: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 13.5,
+                        fontSize: AppTypography.body,
                       ),
                       tabs: const [
                         Tab(text: 'الطلبات'),
@@ -2771,7 +2771,7 @@ class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
             const SizedBox(height: 4),
             const Text(
               'العميل بيدفع رسوم الخدمة (2%، من 5 لـ15 جنيه) ضمن إجمالي الطلب، فالمحل بيستلمها ويوردها لوصّلي.',
-              style: TextStyle(fontSize: 11.5),
+              style: TextStyle(fontSize: 12),
             ),
           ],
         );

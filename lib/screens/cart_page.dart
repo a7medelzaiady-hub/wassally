@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../theme/app_theme.dart';
+import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
@@ -36,6 +37,8 @@ class CartPage extends StatelessWidget {
         final clearButton = cart.isEmpty
             ? null
             : TextButton(
+                // On the purple header: white text.
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: () => _clear(context),
                 child: const Text('تفريغ'),
               );
@@ -46,13 +49,14 @@ class CartPage extends StatelessWidget {
               InnerHeader(title: 'سلتي', trailing: clearButton)
             else
               AppHeader(
+                gradient: Brand.headerGradient,
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         'سلتي',
                         style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                            ?.copyWith(fontWeight: FontWeight.w800, color: Colors.white),
                       ),
                     ),
                     ?clearButton,

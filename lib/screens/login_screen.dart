@@ -230,7 +230,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       Text(
                         ' و',
-                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 11.5),
+                        style: text.bodySmall?.copyWith(color: Colors.white54, fontSize: 12),
                       ),
                       _LegalLink(
                         label: 'سياسة الخصوصية',
@@ -270,7 +270,7 @@ class _LegalLink extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 11.5),
+              ?.copyWith(color: kPrimary, fontWeight: FontWeight.w700, fontSize: 12),
         ),
       ),
     );

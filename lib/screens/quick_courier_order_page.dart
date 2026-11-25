@@ -649,16 +649,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          backgroundColor: Brand.ink,
-          foregroundColor: Colors.white,
-          titleTextStyle: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w800,
-          ),
           title: const Text('تفاصيل الطلب السريع'),
           actions: [
             if (o != null && o.canRelease)
               TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: _busy
                     ? null
                     : () async {

@@ -95,7 +95,7 @@ class _OrderTimerState extends State<OrderTimer> {
           ),
           if (widget.label.isNotEmpty) ...[
             const SizedBox(width: 4),
-            Text(widget.label, style: TextStyle(fontSize: 11, color: color)),
+            Text(widget.label, style: TextStyle(fontSize: 12, color: color)),
           ],
         ],
       ),

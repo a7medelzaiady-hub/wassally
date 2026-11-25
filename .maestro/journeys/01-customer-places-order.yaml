@@ -10,8 +10,14 @@ appId: com.wassally.app
 - tapOn: "دخول تجريبي: عميل"
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
-    visible: "(?s).*تصفح المحلات.*"
+    visible: ".*ابحث عن محل أو ماركت.*"
     timeout: 90000
+# الكارت الثالث قد يكون تحت حافة الشاشة على الهواتف الأقصر.
+- scrollUntilVisible:
+    element:
+      text: "(?s).*تصفح المحلات.*"
+    direction: DOWN
+    timeout: 30000
 - tapOn: "(?s).*تصفح المحلات.*"
 - runFlow: _dismiss-prompts.yaml
 - extendedWaitUntil:
