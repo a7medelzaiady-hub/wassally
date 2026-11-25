@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
-import '../widgets/home_top_ads.dart' show kTopAdPlacement, kTopAdAspectRatio;
+import '../widgets/home_top_ads.dart'
+    show kTopAdPlacement, kTopAdAspectRatio, kTourPlacement, kTourAspectRatio;
 
 import '../services/catalog_service.dart';
 import '../services/image_service.dart';
@@ -55,6 +56,13 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                 title: const Text('إعلان أعلى الرئيسية (كبير ومتحرك)'),
                 subtitle: const Text('المقاس: 1200×800 بكسل (3:2)'),
                 onTap: () => Navigator.pop(sheet, kTopAdPlacement),
+              ),
+              ListTile(
+                key: const Key('placement-tour'),
+                leading: const Icon(Icons.smartphone_rounded),
+                title: const Text('صفحات الإعلان بعد تسجيل الدخول (شاشة كاملة)'),
+                subtitle: const Text('المقاس: 1080×1920 بكسل (طولي 9:16)'),
+                onTap: () => Navigator.pop(sheet, kTourPlacement),
               ),
               ListTile(
                 key: const Key('placement-strip'),
@@ -211,6 +219,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                     child: Text(
                       'مفيش بوسترات لسه.\nاضغط "إضافة بوستر" وارفع صورة.\n'
                       'إعلان أعلى الرئيسية: 1200×800 (3:2).\n'
+                      'صفحات الإعلان بعد الدخول: 1080×1920 (طولي).\n'
                       'البوستر العادي: 1200×585 تقريباً (عرضي).',
                       textAlign: TextAlign.center,
                       style: TextStyle(height: 1.6),
@@ -225,7 +234,14 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                     final m = d.data();
                     final active = (m['active'] as bool?) ?? true;
                     final url = (m['image'] ?? '').toString();
-                    final top = m['placement'] == kTopAdPlacement;
+                    final placement = (m['placement'] ?? 'strip').toString();
+                    final top = placement == kTopAdPlacement;
+                    final tour = placement == kTourPlacement;
+                    final label = tour
+                        ? 'بعد تسجيل الدخول'
+                        : top
+                            ? 'أعلى الرئيسية'
+                            : 'شريط البوسترات';
                     return Container(
                       margin: const EdgeInsets.only(bottom: 14),
                       decoration: BoxDecoration(
@@ -245,7 +261,8 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                           Stack(
                             children: [
                               AspectRatio(
-                                aspectRatio: top ? kTopAdAspectRatio : 2.05,
+                                // الطولي بيتعرض أقصر في القايمة عشان متطولش.
+                                aspectRatio: tour ? 1.1 : (top ? kTopAdAspectRatio : 2.05),
                                 child: Opacity(
                                   opacity: active ? 1 : 0.4,
                                   child: Image.network(
@@ -277,7 +294,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${i + 1} • ${top ? 'أعلى الرئيسية' : 'شريط البوسترات'}',
+                                    '${i + 1} • $label',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
@@ -343,10 +360,21 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
                             alignment: AlignmentDirectional.centerStart,
                             child: Padding(
                               padding: const EdgeInsetsDirectional.only(start: 8, bottom: 6),
-                              child: TextButton.icon(
-                                onPressed: () => _setPlacement(d, top ? 'strip' : kTopAdPlacement),
-                                icon: Icon(top ? Icons.view_carousel_outlined : Icons.campaign_outlined),
-                                label: Text(top ? 'انقله لشريط البوسترات' : 'انقله لأعلى الرئيسية'),
+                              child: Wrap(
+                                spacing: 4,
+                                children: [
+                                  for (final (p, t, ic) in const [
+                                    (kTopAdPlacement, 'أعلى الرئيسية', Icons.campaign_outlined),
+                                    (kTourPlacement, 'بعد الدخول', Icons.smartphone_outlined),
+                                    ('strip', 'الشريط', Icons.view_carousel_outlined),
+                                  ])
+                                    if (p != (top || tour ? placement : 'strip'))
+                                      TextButton.icon(
+                                        onPressed: () => _setPlacement(d, p),
+                                        icon: Icon(ic, size: 18),
+                                        label: Text('انقله: $t'),
+                                      ),
+                                ],
                               ),
                             ),
                           ),

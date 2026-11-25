@@ -6,6 +6,7 @@ import '../services/location_picker.dart';
 import '../theme/app_tokens.dart';
 import '../services/cart_book.dart';
 import '../services/order_gateway.dart';
+import '../widgets/home_top_ads.dart' show loadTourPosters;
 import '../widgets/curved_nav_bar.dart';
 import '../widgets/invite_code_field.dart';
 import 'account_page.dart';
@@ -60,9 +61,12 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// الجولة الإعلانية لكل الحسابات، لحد مرتين في اليوم (محليًا).
   Future<void> _maybeShowTour() async {
     if (!await OnboardingStore.shouldShow() || !mounted) return;
+    // صور الإدارة لو موجودة، وإلا الجولة المدمجة.
+    final posters = await loadTourPosters();
+    if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute<void>(
       fullscreenDialog: true,
-      builder: (_) => const OnboardingPage(),
+      builder: (_) => OnboardingPage(posters: posters),
     ));
   }
 
