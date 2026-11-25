@@ -128,32 +128,12 @@ class _CustomerEntryState extends State<CustomerEntry> {
               children: [
                 Expanded(
                   flex: 5,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _EntryArtwork(art),
-                      const Positioned(
-                        top: 0,
-                        bottom: 0,
-                        right: 0,
-                        width: 40,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.white, Colors.transparent],
-                              begin: Alignment.centerRight,
-                              end: Alignment.centerLeft,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: _EntryArtwork(art),
                 ),
                 Expanded(
                   flex: 6,
                   child: Padding(
-                    padding: EdgeInsetsDirectional.fromSTEB(12, height < 130 ? 4 : 8, 2, height < 130 ? 4 : 8),
+                    padding: EdgeInsetsDirectional.fromSTEB(0, height < 130 ? 4 : 8, 2, height < 130 ? 4 : 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
