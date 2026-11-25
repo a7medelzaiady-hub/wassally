@@ -9,6 +9,7 @@ import '../theme/brand.dart';
 import '../utils/quick_order_status.dart';
 import '../utils/dialog_controllers.dart';
 import '../widgets/app_ui.dart';
+import '../widgets/quick_voice_edit_sheet.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -94,7 +95,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       if (!mounted) return;
       final updated = result['order'];
       if (updated is Map) {
-        setState(() { _order = Map<String, dynamic>.from(updated); _error = null; });
+        setState(() {
+          _order = Map<String, dynamic>.from(updated);
+          if (action == 'edit-voice') {
+            _customerVoiceUrl = (body['customerVoiceUrl'] ?? '').toString();
+            _playingVoice = false;
+          }
+          _error = null;
+        });
       } else {
         setState(() { _busy = false; });
         await _refresh();
@@ -170,6 +178,19 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       disposeAfterDialogCloses(controller);
     }
     if (mounted && updated != null) await _act('edit', updated);
+  }
+
+  Future<void> _editVoice() async {
+    if (_busy || _order?['status'] != 'open') return;
+    final url = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => QuickVoiceEditSheet(currentUrl: _customerVoiceUrl),
+    );
+    if (!mounted || url == null) return;
+    await _voicePlayer.stop();
+    if (!mounted) return;
+    await _act('edit-voice', {'customerVoiceUrl': url});
   }
 
   Future<void> _cancel() async {
@@ -548,6 +569,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   onPressed: _busy ? null : _edit,
                   icon: const Icon(Icons.edit_outlined),
                   label: const Text('تعديل الطلب'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                OutlinedButton.icon(
+                  key: const Key('quick-edit-voice'),
+                  onPressed: _busy ? null : _editVoice,
+                  icon: const Icon(Icons.mic_outlined),
+                  label: Text(_customerVoiceUrl.isNotEmpty
+                      ? 'تعديل التسجيل الصوتي' : 'إضافة تسجيل صوتي'),
                 ),
               ],
               if (status == 'open' || status == 'accepted')
