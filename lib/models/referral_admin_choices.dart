@@ -99,3 +99,59 @@ List<ReferralOrderChoice> referralEligibleOrders(
   }
   return result;
 }
+
+
+/// Read-only account suggestions for administrators. These are not eligibility
+/// decisions: the trusted Worker must verify Firebase Auth and issue the code.
+class ReferralMarketerChoice {
+  const ReferralMarketerChoice({
+    required this.uid,
+    required this.name,
+    required this.email,
+  });
+
+  final String uid;
+  final String name;
+  final String email;
+
+  String get label => email.isEmpty ? name : '$name — $email';
+
+  bool matches(String query) {
+    final search = query.trim().toLowerCase();
+    return search.isEmpty ||
+        name.toLowerCase().contains(search) ||
+        email.toLowerCase().contains(search) ||
+        uid.toLowerCase().contains(search);
+  }
+}
+
+/// Normalizes a bounded /users admin fetch into unique selection rows.
+/// Keep this independent of Firestore so its filtering can be unit tested.
+List<ReferralMarketerChoice> referralMarketerChoices(
+  List<Map<String, dynamic>> users,
+) {
+  final result = <ReferralMarketerChoice>[];
+  final seen = <String>{};
+  for (final user in users) {
+    final uid = (user['uid'] ?? '').toString().trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(uid) ||
+        !seen.add(uid) ||
+        user['active'] == false ||
+        user['deleted'] == true) {
+      continue;
+    }
+    final primaryName = (user['name'] ?? '').toString().trim();
+    final alternateName = (user['displayName'] ?? '').toString().trim();
+    result.add(ReferralMarketerChoice(
+      uid: uid,
+      name: primaryName.isNotEmpty
+          ? primaryName
+          : alternateName.isNotEmpty
+              ? alternateName
+              : 'حساب ($uid)',
+      email: (user['email'] ?? '').toString().trim(),
+    ));
+  }
+  result.sort((a, b) => a.name.compareTo(b.name));
+  return result;
+}
