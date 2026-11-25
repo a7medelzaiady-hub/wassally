@@ -141,6 +141,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('المتاحة: بطاقة الطلب من 320px تعرض المشتريات ولا تعرض بيانات خاصة',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(backend: _FakeBackend(_doc('open'))),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-order-request-preview')), findsOneWidget);
+    expect(find.textContaining('عيش بلدي'), findsOneWidget);
+    expect(find.textContaining('وسط البلد'), findsOneWidget);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('الطلب السريع غير المكتمل يوضح التفاصيل الناقصة والخصوصية', (tester) async {
     final backend = _FakeBackend(_doc('open', {
       'stores': [
