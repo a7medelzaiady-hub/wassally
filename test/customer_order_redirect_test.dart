@@ -7,6 +7,7 @@ void main() {
     'successful order opens My Orders even when checkout began on entry cards',
     (tester) async {
       shellTab.value = 0;
+      customerShellAvailable.value = true;
       final initialRequest = enterShellRequest.value;
       addTearDown(() {
         shellTab.value = 0;
@@ -30,6 +31,31 @@ void main() {
       expect(find.text('Browse stores'), findsNothing);
     },
   );
+
+  testWidgets('حساب موظف: تأكيد الطلب بيفتح «طلباتي» في شاشة التسوق مش صفحة الدخول', (tester) async {
+    shellTab.value = 0;
+    customerShellAvailable.value = false;
+    customerShellBuilder = (_) => const Scaffold(body: Text('Shell orders'));
+    addTearDown(() {
+      shellTab.value = 0;
+      customerShellAvailable.value = true;
+      customerShellBuilder = null;
+    });
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => openCustomerTab(context, 2),
+            child: const Text('Confirm'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+    expect(shellTab.value, 2);
+    expect(find.text('Shell orders'), findsOneWidget);
+  });
 }
 
 /// Mirrors the entry screen's enterShellRequest listener without Firebase.

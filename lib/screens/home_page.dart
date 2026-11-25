@@ -37,6 +37,7 @@ import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
 import '../widgets/cached_net_image.dart';
+import '../widgets/app_snack.dart';
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {
@@ -158,16 +159,16 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  void _openStore(Store s) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => StorePage(store: s)));
+  void _openStore(Store s, {String? focusProduct}) {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => StorePage(store: s, focusProduct: focusProduct)));
   }
 
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+      ..showSnackBar(appSnack(msg));
   }
 
   // ───────────────────────── الموقع ─────────────────────────
@@ -829,7 +830,9 @@ class _HomePageState extends State<HomePage>
                           oldPrice: (item['oldPrice'] as num?)?.toDouble() ?? 0,
                           offerText: (item['offerText'] ?? '').toString().trim(),
                           image: (item['image'] ?? '').toString(),
-                          onTap: () => _openStore(store.store),
+                          // صورة العرض بتفتح الصنف نفسه جوه المحل.
+                          onTap: () => _openStore(store.store,
+                              focusProduct: (item['name'] ?? '').toString()),
                         ),
                     ]),
                   ),
@@ -870,7 +873,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 17,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
@@ -916,7 +919,7 @@ class _HomePageState extends State<HomePage>
       child: const Icon(Icons.shopping_bag_outlined, color: AppColors.muted, size: 40),
     );
     return GestureDetector(
-      onTap: () => _openStore(s.store),
+      onTap: () => _openStore(s.store, focusProduct: (m['name'] ?? '').toString()),
       child: Container(
         width: width,
         clipBehavior: Clip.antiAlias,
@@ -1079,7 +1082,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     'محلات مميزة',
                     style: TextStyle(
-                      fontSize: 19,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),

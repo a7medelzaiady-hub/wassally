@@ -7,6 +7,7 @@ import '../screens/main_shell.dart';
 import '../services/navigation.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
+import 'app_snack.dart';
 
 /// بيفتح قايمة بكل اللوحات اللي حسابك له صلاحية عليها (أدمن / محل / مندوب) + عرض كعميل.
 Future<void> showPanelSwitcher(BuildContext context) async {
@@ -66,7 +67,7 @@ Future<void> showPanelSwitcher(BuildContext context) async {
             Text(
               'تبديل اللوحة',
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: kInk,
               ),
@@ -112,9 +113,7 @@ Future<void> showPanelSwitcher(BuildContext context) async {
                     } catch (_) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('تعذر تفعيل لوحة المندوب.'),
-                          ),
+                          appSnack('تعذر تفعيل لوحة المندوب.'),
                         );
                       }
                       return;

@@ -85,15 +85,16 @@ class AppRadius {
 /// تدرج الخطوط. أصغر حجم مسموح 12 حتى تفضل النصوص مقروءة.
 class AppTypography {
   AppTypography._();
-  static const double display = 26;
-  static const double headline = 22;
-  static const double title = 19;
-  static const double titleSmall = 17;
-  static const double body = 15;
-  static const double bodySmall = 14;
-  static const double label = 13;
+  // درجة أصغر من الأول (طلب صاحب التطبيق): الكروت بتاخد مساحة أقل والصفحة أهدى.
+  static const double display = 24;
+  static const double headline = 20;
+  static const double title = 18;
+  static const double titleSmall = 16;
+  static const double body = 14.5;
+  static const double bodySmall = 13.5;
+  static const double label = 12.5;
   static const double caption = 12;
-  static const double price = 17;
+  static const double price = 16;
 
   /// الحد الأدنى لأي نص في الواجهة.
   static const double minimum = caption;

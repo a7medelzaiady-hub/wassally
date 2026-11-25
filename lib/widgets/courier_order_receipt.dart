@@ -51,7 +51,7 @@ class CourierOrderReceipt extends StatelessWidget {
               const Expanded(
                 child: Text(
                   'فاتورة طلب العميل',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                 ),
               ),
             ],

@@ -10,7 +10,8 @@ import 'firebase_options.dart';
 import 'screens/auth_gate.dart';
 import 'services/e2e_support.dart';
 import 'services/error_guard.dart';
-import 'services/navigation.dart' show rootNavigatorKey;
+import 'screens/main_shell.dart';
+import 'services/navigation.dart' show rootNavigatorKey, customerShellBuilder;
 import 'services/notification_service.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
@@ -38,6 +39,7 @@ Future<void> _bootstrap() async {
     carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
   ]);
   final bootstrap = startup.elapsed;
+  customerShellBuilder = (_) => const MainShell();
   runApp(const WasallyApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
     PerformanceMonitor.recordStartup(PerformanceMonitor.startupMetrics(

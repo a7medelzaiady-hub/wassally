@@ -5,6 +5,7 @@ import 'admin_user_directory_page.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/app_snack.dart';
 
 /// إدارة المناديب: إضافة، إيقاف/تفعيل، وحذف. بتكتب مباشرة في couriers/{uid}
 /// والقواعد (firestore.rules) هي اللي بتسمح للمدير فقط.
@@ -39,7 +40,7 @@ class _AdminRolesPageState extends State<AdminRolesPage> {
 
   void _toast(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(m));
   }
 
   Future<void> _add() async {

@@ -23,6 +23,7 @@ import 'admin_banners_page.dart';
 import '../services/admin_inbox_counts.dart';
 import 'admin_inbox_page.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_snack.dart';
 
 /// شاشة المدير: كل الطلبات، فلترة بالحالة، تغيير الحالة، وتعيين مندوب.
 class AdminOrdersPage extends StatefulWidget {
@@ -535,7 +536,7 @@ class _ManageSheetState extends State<_ManageSheet> {
     final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
     messenger.showSnackBar(
-      const SnackBar(content: Text('تم تجهيز الطلب بالكامل.')),
+      appSnack('تم تجهيز الطلب بالكامل.'),
     );
   }
 
@@ -644,7 +645,7 @@ class _ManageSheetState extends State<_ManageSheet> {
       final v = double.tryParse(t);
       if (v == null || v < 0 || v > 500) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('اكتب رقم صحيح بين 0 و 500.')),
+          appSnack('اكتب رقم صحيح بين 0 و 500.'),
         );
         return null;
       }
@@ -1153,7 +1154,7 @@ class _ManageSheetState extends State<_ManageSheet> {
               Text(
                 'تفاصيل الطلب',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 19,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -1226,7 +1227,7 @@ class _ManageSheetState extends State<_ManageSheet> {
                     Text(
                       formatPrice(o.payable),
                       style: TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: Brand.goldDeep,
                       ),

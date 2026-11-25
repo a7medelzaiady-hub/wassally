@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/referral.dart';
 import '../services/order_gateway.dart';
 import '../theme/app_tokens.dart';
+import 'app_snack.dart';
 
 /// خانة «اكتب كود الدعوة هنا» في هيدر صفحة ما بعد الدخول.
 ///
@@ -64,7 +65,7 @@ class _InviteCodeFieldState extends State<InviteCodeField> {
   void _toast(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(appSnack(message));
   }
 
   Future<void> _claim(String code) async {

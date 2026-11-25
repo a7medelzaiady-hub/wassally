@@ -159,7 +159,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                             Text(
                               p.name,
                               style: TextStyle(
-                                fontSize: 19,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w800,
                                 color: Brand.ink,
                               ),
@@ -173,7 +173,7 @@ class _ProductSheetState extends State<_ProductSheet> {
                             Text(
                               formatPrice(p.price),
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 17,
                                 fontWeight: FontWeight.w800,
                                 color: Brand.ink,
                               ),
@@ -276,7 +276,7 @@ class _ProductSheetState extends State<_ProductSheet> {
           child: Text(
             '$_qty',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
         ),
         btn(Icons.remove_circle_outline, _qty > 1 ? () => setState(() => _qty--) : null),

@@ -16,6 +16,7 @@ import '../models/app_role.dart';
 import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
 import '../screens/admin_inbox_page.dart';
+import '../widgets/app_snack.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -253,7 +254,7 @@ class NotificationService {
     } catch (e) {
       debugPrint('تعذر فتح Google Play: $e');
       messengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('تعذر فتح Google Play')),
+        appSnack('تعذر فتح Google Play'),
       );
     }
   }
@@ -329,10 +330,10 @@ class NotificationService {
     messengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(parts.join(' — ')),
+        appSnack(
+          parts.join(' — '),
+          kind: AppSnackKind.info,
           duration: const Duration(seconds: 6),
-          behavior: SnackBarBehavior.floating,
           action: actionLabel == null
               ? null
               : SnackBarAction(

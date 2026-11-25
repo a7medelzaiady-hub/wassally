@@ -32,10 +32,21 @@ final ValueNotifier<int> enterShellRequest = ValueNotifier<int>(0);
 
 /// يفتح تبويب العميل من أي صفحة داخلية: يرجع لجذر التطبيق بدل تكديس الصفحات.
 void openCustomerTab(BuildContext context, int tab) {
-  Navigator.of(context).popUntil((route) => route.isFirst);
+  final navigator = Navigator.of(context);
+  navigator.popUntil((route) => route.isFirst);
   shellTab.value = tab;
-  enterShellRequest.value++;
+  if (customerShellAvailable.value) {
+    enterShellRequest.value++;
+    return;
+  }
+  // حسابات الموظفين (أدمن/محل/مندوب) صفحة الدخول عندهم مش بتفتح تبويبات العميل،
+  // فبنفتح شاشة التسوق على التبويب المطلوب (مثلًا «طلباتي» بعد تأكيد الطلب).
+  final builder = customerShellBuilder;
+  if (builder != null) navigator.push(MaterialPageRoute<void>(builder: builder));
 }
+
+/// بيتسجل من main_shell.dart (من غير import دائري): بيبني شاشة التسوق بتبويباتها.
+WidgetBuilder? customerShellBuilder;
 
 final Set<String> _routesInFlight = <String>{};
 

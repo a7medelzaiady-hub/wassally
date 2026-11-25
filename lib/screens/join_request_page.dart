@@ -7,6 +7,7 @@ import '../services/navigation.dart' show roleInfoOverride;
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/app_snack.dart';
 
 /// نموذج الانضمام كصاحب محل أو مندوب.
 class JoinRequestPage extends StatefulWidget {
@@ -80,7 +81,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذر رفع الصورة. حاول بصورة أخرى.')),
+        appSnack('تعذر رفع الصورة. حاول بصورة أخرى.'),
       );
     } finally {
       if (mounted) setState(() => _uploadingStoreImage = false);
@@ -93,7 +94,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
     final isStore = widget.type == JoinType.storeOwner;
     if (isStore && _storeImageUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اختار صورة للمحل أولاً.')),
+        appSnack('اختار صورة للمحل أولاً.'),
       );
       return;
     }
@@ -103,11 +104,7 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
         _proofUrl.text.trim().isEmpty &&
         _digits(_storePhone.text).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'أدخل رقم السجل التجاري أو رابط إثبات النشاط أو تليفون المحل.',
-          ),
-        ),
+        appSnack('أدخل رقم السجل التجاري أو رابط إثبات النشاط أو تليفون المحل.'),
       );
       return;
     }
@@ -136,15 +133,13 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
       if (!mounted) return;
       nav.pop();
       messenger.showSnackBar(
-        const SnackBar(content: Text('اتبعت طلبك. هنراجعه ونرد عليك.')),
+        appSnack('اتبعت طلبك. هنراجعه ونرد عليك.'),
       );
     } catch (_) {
       if (!mounted) return;
       setState(() => _busy = false);
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('تعذر إرسال الطلب. ممكن يكون عندك طلب قيد المراجعة.'),
-        ),
+        appSnack('تعذر إرسال الطلب. ممكن يكون عندك طلب قيد المراجعة.'),
       );
     }
   }

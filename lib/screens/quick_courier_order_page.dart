@@ -11,6 +11,7 @@ import '../theme/brand.dart';
 import '../utils/dialog_controllers.dart';
 import '../utils/maps.dart';
 import 'quick_courier_orders_page.dart' show quickStepLabel;
+import '../widgets/app_snack.dart';
 
 /// رحلة المندوب في طلب سريع: زرار واحد كبير لكل خطوة، وأقل كتابة ممكنة (أرقام وصور بس).
 /// كل الكتابة عن طريق الـWorker، والطلب بيتحدث من رده. مفيش مستمعات؛ زرار «تحديث» بقراءة واحدة.
@@ -139,7 +140,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(message));
   }
 
   Future<void> _call() async {
@@ -233,7 +234,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         key: key,
         style: FilledButton.styleFrom(
           backgroundColor: Brand.green,
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         onPressed: _busy ? null : onPressed,
@@ -325,7 +326,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           const Expanded(
             child: Text(
               'فاتورة مشتريات العميل',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
             ),
           ),
         ],
@@ -445,7 +446,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(item.name, style: const TextStyle(fontSize: 17, height: 1.4)),
+                        Text(item.name, style: const TextStyle(fontSize: 16, height: 1.4)),
                         Text('تقريبًا ${formatPiastres(item.subtotalPiastres)}',
                             style: TextStyle(color: kMuted)),
                       ],
@@ -453,7 +454,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                   ),
                   const SizedBox(width: 10),
                   Text('${item.qty}',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                 ],
               ),
             ),
@@ -463,7 +464,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             padding: const EdgeInsets.only(top: 6),
             child: Text(
               store.items.trim(),
-              style: const TextStyle(fontSize: 17, height: 1.45, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 16, height: 1.45, fontWeight: FontWeight.w600),
             ),
           ),
       ],
@@ -611,7 +612,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
                       errorBuilder: (_, _, _) => const Icon(Icons.receipt_long, size: 40)),
                 ),
                 title: Text(formatPiastres(o.receipts[i].amountPiastres),
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                 trailing: IconButton(
                   tooltip: 'شيل الفاتورة',
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -674,7 +675,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
               textAlign: TextAlign.center,
               maxLength: 4,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
-              style: const TextStyle(fontSize: 30, letterSpacing: 12, fontWeight: FontWeight.w900),
+              style: const TextStyle(fontSize: 29, letterSpacing: 12, fontWeight: FontWeight.w900),
               decoration: const InputDecoration(counterText: '', border: OutlineInputBorder()),
             ),
           ]),
@@ -694,7 +695,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             Icon(Icons.check_circle_outline, size: 36, color: Colors.green),
             SizedBox(height: 8),
             Text('الطلب اتسلّم', textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ]),
           if (o.totals != null) _totalsCard(o.totals!, delivered: true),
         ];
@@ -703,7 +704,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         return [
           _card(children: const [
             Icon(Icons.cancel, size: 48, color: Colors.red),
-            Text('الطلب ده اتلغى', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text('الطلب ده اتلغى', textAlign: TextAlign.center, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
           ]),
         ];
     }
@@ -792,7 +793,7 @@ class _MoneyField extends StatelessWidget {
       autofocus: autofocus,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+      style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
       onChanged: onChanged == null ? null : (_) => onChanged!(),
       decoration: const InputDecoration(
         suffixText: 'جنيه',

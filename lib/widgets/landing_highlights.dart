@@ -117,7 +117,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
           child: Text(
             title,
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),

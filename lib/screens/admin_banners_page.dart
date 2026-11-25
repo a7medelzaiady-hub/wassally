@@ -8,6 +8,7 @@ import '../services/catalog_service.dart';
 import '../services/image_service.dart';
 import '../theme/brand.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/app_snack.dart';
 
 CollectionReference<Map<String, dynamic>> get _banners =>
     FirebaseFirestore.instance.collection('banners');
@@ -35,7 +36,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
 
   void _say(String m) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    ScaffoldMessenger.of(context).showSnackBar(appSnack(m));
   }
 
   /// مكان البوستر: إعلان أعلى الرئيسية الكبير، أو شريط البوسترات العادي.
@@ -48,7 +49,7 @@ class _AdminBannersPageState extends State<AdminBannersPage> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
                 child: Text('البوستر هيظهر فين؟',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               ),
               ListTile(
                 key: const Key('placement-top'),

@@ -14,6 +14,7 @@ import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../utils/dialog_controllers.dart';
+import '../widgets/app_snack.dart';
 
 typedef _Doc = QueryDocumentSnapshot<Map<String, dynamic>>;
 
@@ -389,10 +390,10 @@ class _RequestCardState extends State<_RequestCard> {
     setState(() => _busy = true);
     try {
       await f();
-      messenger.showSnackBar(SnackBar(content: Text(done)));
+      messenger.showSnackBar(appSnack(done));
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر التنفيذ. تأكد من الصلاحيات.')),
+        appSnack('تعذر التنفيذ. تأكد من الصلاحيات.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -625,17 +626,13 @@ class _ApplicantCardState extends State<_ApplicantCard> {
         ),
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تعيين المندوب.')),
+        appSnack('تم تعيين المندوب.'),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            e is FirebaseException
+        appSnack(e is FirebaseException
                 ? 'تعذر التعيين (${e.code}).'
-                : 'تعذر التعيين.',
-          ),
-        ),
+                : 'تعذر التعيين.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -892,7 +889,7 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر حفظ قرار المراجعة: $error')),
+          appSnack('تعذر حفظ قرار المراجعة: $error'),
         );
       }
     } finally {
@@ -917,13 +914,13 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إرسال التنبيه للعميل.')),
+          appSnack('تم إرسال التنبيه للعميل.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر إرسال التنبيه: $error')),
+          appSnack('تعذر إرسال التنبيه: $error'),
         );
       }
     } finally {
@@ -993,13 +990,13 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم فرض تقييد مؤقت بعد مراجعة الإدارة.')),
+          appSnack('تم فرض تقييد مؤقت بعد مراجعة الإدارة.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر فرض التقييد: $error')),
+          appSnack('تعذر فرض التقييد: $error'),
         );
       }
     } finally {
@@ -1020,13 +1017,13 @@ class _CustomerReviewCardState extends State<_CustomerReviewCard> {
       await CustomerRatingService.liftRestriction(customerId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم رفع التقييد.')),
+          appSnack('تم رفع التقييد.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر رفع التقييد: $error')),
+          appSnack('تعذر رفع التقييد: $error'),
         );
       }
     } finally {
@@ -1286,13 +1283,13 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إرسال قرار الإدارة للمندوب والعميل.')),
+          appSnack('تم إرسال قرار الإدارة للمندوب والعميل.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('تعذر تحديث البلاغ: $error')),
+          appSnack('تعذر تحديث البلاغ: $error'),
         );
       }
     } finally {
@@ -1457,7 +1454,7 @@ class _OrderParticipants extends StatelessWidget {
                   await Clipboard.setData(ClipboardData(text: orderId));
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('تم نسخ مرجع الطلب')),
+                      appSnack('تم نسخ مرجع الطلب'),
                     );
                   }
                 },

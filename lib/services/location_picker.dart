@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import '../theme/brand.dart';
 import 'performance_monitor.dart';
 import 'saved_address.dart';
+import '../widgets/app_snack.dart';
 
 /// موقع اتحدد بالـGPS: الإحداثيات + الحي + العنوان المقروء.
 class PickedLocation {
@@ -36,7 +37,7 @@ class DeliveryLocationPicker {
   static void _toast(BuildContext context, String msg) {
     ScaffoldMessenger.maybeOf(context)
       ?..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+      ..showSnackBar(appSnack(msg));
   }
 
   static Future<void> _saveAddress(BuildContext context, String address, {double? lat, double? lng}) async {

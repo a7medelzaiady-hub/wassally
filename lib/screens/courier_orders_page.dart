@@ -24,6 +24,7 @@ import '../widgets/staff_header.dart';
 import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
 import 'quick_courier_orders_page.dart';
+import '../widgets/app_snack.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -436,18 +437,16 @@ class _AvailableOrderCardState extends State<_AvailableOrderCard> {
     try {
       await StaffOrderService.claimOrder(widget.order);
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تم استلام الطلب.')));
+        messenger.showSnackBar(appSnack('تم استلام الطلب.'));
       }
     } on FirebaseException catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text(e.code == 'permission-denied'
+        messenger.showSnackBar(appSnack(e.code == 'permission-denied'
               ? 'الطلب اتاخد من مندوب تاني.'
-              : 'تعذر الاستلام (${e.code}).'),
-        ));
+              : 'تعذر الاستلام (${e.code}).'));
       }
     } catch (e) {
-      if (mounted) messenger.showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) messenger.showSnackBar(appSnack('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -692,19 +691,15 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       final payable = widget.order.payable;
       final delivered = await DeliveryPinService.deliver(orderId, pin);
       if (!mounted || widget.order.id != orderId) return;
-      messenger.showSnackBar(SnackBar(
-        content: Text(delivered
+      messenger.showSnackBar(appSnack(delivered
             ? 'تم تأكيد التسليم. حصّل ${formatPrice(payable)} من العميل.'
-            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'),
-      ));
+            : 'تم تأكيد التسليم. سلّم النقدية للمحل.'));
     } on DeliveryPinError catch (e) {
-      if (mounted) messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) messenger.showSnackBar(appSnack(e.message));
     } catch (error) {
       debugPrint('Delivery PIN verification failed: $error');
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'),
-        ));
+        messenger.showSnackBar(appSnack('تعذر تأكيد التسليم. تحقق من الاتصال وحاول مرة أخرى.'));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -756,15 +751,15 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         'not-found' => 'الطلب لم يعد موجودًا.',
         _ => 'تعذر تحديث الطلب (${error.code}). حاول مرة أخرى.',
       };
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.showSnackBar(appSnack(message));
     } on StateError catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error.message)),
+        appSnack(error.message),
       );
     } catch (error) {
       debugPrint('Courier order status update failed: $error');
       messenger.showSnackBar(
-        const SnackBar(content: Text('حدث خطأ غير متوقع أثناء تحديث الطلب.')),
+        appSnack('حدث خطأ غير متوقع أثناء تحديث الطلب.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -785,13 +780,13 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       await StaffOrderService.recordCashHandedToStore(widget.order.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.')),
+          appSnack('تم تسجيل تسليم النقدية. في انتظار تأكيد المحل.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تسليم النقدية.')),
+          appSnack(error is StateError ? error.message : 'تعذر تسجيل تسليم النقدية.'),
         );
       }
     } finally {
@@ -806,11 +801,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     try {
       await StaffOrderService.recordCourierArrival(widget.order.id);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل وصولك للعنوان. حاول التواصل مع العميل.')),
+        appSnack('تم تسجيل وصولك للعنوان. حاول التواصل مع العميل.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل الوصول.')),
+        appSnack(error is StateError ? error.message : 'تعذر تسجيل الوصول.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -919,11 +914,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
         contactAttempted: true,
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.')),
+        appSnack('تم تسجيل السبب. ارجع الطلب للمحل ثم سجّل الإرجاع.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر إرسال بلاغ التسليم.')),
+        appSnack(error is StateError ? error.message : 'تعذر إرسال بلاغ التسليم.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -962,7 +957,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('تعذر استئناف التوصيل: $error')),
+                            appSnack('تعذر استئناف التوصيل: $error'),
                           );
                         } finally {
                           if (mounted) setState(() => _busy = false);
@@ -1000,7 +995,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
                         } catch (error) {
                           if (!context.mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('تعذر تسجيل الإرجاع: $error')),
+                            appSnack('تعذر تسجيل الإرجاع: $error'),
                           );
                         } finally {
                           if (mounted) setState(() => _busy = false);
@@ -1032,11 +1027,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     try {
       final ok = await openInMaps(_contact?.address ?? '');
       if (!ok && mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+        messenger.showSnackBar(appSnack('تعذر فتح الخريطة'));
       }
     } catch (_) {
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('تعذر فتح الخريطة')));
+        messenger.showSnackBar(appSnack('تعذر فتح الخريطة'));
       }
     }
   }
@@ -1055,7 +1050,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     await Clipboard.setData(ClipboardData(text: phone));
     if (mounted && _canSeeContact) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تعذر فتح الاتصال؛ تم نسخ الرقم')));
+          .showSnackBar(appSnack('تعذر فتح الاتصال؛ تم نسخ الرقم'));
     }
   }
 
@@ -1071,7 +1066,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر التحقق من التقييم السابق: $error')),
+        appSnack('تعذر التحقق من التقييم السابق: $error'),
       );
       return;
     } finally {
@@ -1081,7 +1076,7 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
     if (alreadyRated) {
       setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تقييم تعامل العميل على هذا الطلب من قبل.')),
+        appSnack('تم تقييم تعامل العميل على هذا الطلب من قبل.'),
       );
       return;
     }
@@ -1101,11 +1096,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
       );
       if (mounted) setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل تقييم العميل. شكرًا لمشاركتك.')),
+        appSnack('تم تسجيل تقييم العميل. شكرًا لمشاركتك.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.')),
+        appSnack(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1458,7 +1453,7 @@ class _DeliveryPinDialogState extends State<_DeliveryPinDialog> {
               textAlign: TextAlign.center,
               maxLength: 4,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]'))],
-              style: const TextStyle(fontSize: 26, letterSpacing: 8, fontWeight: FontWeight.w800),
+              style: const TextStyle(fontSize: 25, letterSpacing: 8, fontWeight: FontWeight.w800),
               decoration: InputDecoration(counterText: '', errorText: _error),
               onSubmitted: (_) => _submit(),
             ),

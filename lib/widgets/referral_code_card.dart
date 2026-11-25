@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/referral.dart';
+import 'app_snack.dart';
 
 /// Presentation-only referral card. Parent must supply a server-issued code.
 /// No reads, listeners, claims, balance changes, or reward grants are made here.
@@ -48,7 +49,7 @@ class ReferralCodeCard extends StatelessWidget {
                       await Clipboard.setData(ClipboardData(text: code));
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('تم نسخ كود الدعوة')),
+                          appSnack('تم نسخ كود الدعوة'),
                         );
                       }
                     },
