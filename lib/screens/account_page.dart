@@ -22,6 +22,7 @@ import 'join_request_page.dart';
 import 'admin_join_requests_page.dart';
 import 'info_pages.dart';
 import 'legal_page.dart';
+import 'user_guide_page.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
 
@@ -362,6 +363,17 @@ class _AccountPageState extends State<AccountPage> {
                 decoration: _card,
                 child: Column(
                   children: [
+                    ListTile(
+                      key: const Key('account-user-guide'),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(builder: (_) => const UserGuidePage()),
+                      ),
+                      leading: Icon(Icons.menu_book_outlined, color: kPrimary),
+                      title: const Text('دليل المستخدم'),
+                      subtitle: const Text('طريقة الطلب والتجهيز والتوصيل'),
+                      trailing: const Icon(Icons.chevron_left),
+                    ),
+                    Divider(height: 1, color: kLine),
                     ListTile(
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const AboutPage()),
