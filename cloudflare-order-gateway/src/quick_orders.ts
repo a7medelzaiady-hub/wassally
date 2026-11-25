@@ -25,7 +25,7 @@ export const QUICK_STATUSES = [
 export type QuickStatus = typeof QUICK_STATUSES[number];
 
 export const QUICK_ACTIONS = [
-  "edit", "cancel", "accept", "release", "start-purchase",
+  "edit", "edit-voice", "cancel", "accept", "release", "start-purchase",
   "advance-sent", "advance-received", "receipt", "receipt-remove",
   "submit-summary", "approve-summary", "reject-summary",
 ] as const;
@@ -372,6 +372,22 @@ export function applyQuickAction(
       }
       const stores = validateQuickStores(body.stores);
       return { stores, approxTotalPiastres: quickApproxTotal(stores), notes: validateQuickNotes(body.notes), rev };
+    }
+
+    case "edit-voice": {
+      // تعديل الصوت/حذفه مسموح لصاحب الطلب قبل قبول المندوب فقط.
+      // الـWorker بيتأكد من ملكية رابط Cloudinary قبل الوصول هنا.
+      if (!isCustomer) forbidden();
+      if (status !== "open") {
+        fail(409, "edit_after_accept", "بعد قبول المندوب لا يمكن تغيير التسجيل. كلّمه بالتليفون.");
+      }
+      if (typeof body.customerVoiceUrl !== "string") {
+        fail(400, "invalid_voice", "حدد التسجيل الجديد أو احذف التسجيل.");
+      }
+      const voice = body.customerVoiceUrl;
+      // لازم يفضل فيه طلب مكتوب أو صورة أو تسجيل بعد الحذف.
+      validateQuickStores(order.stores, quickCustomerImages(order).length > 0 || voice.length > 0);
+      return { hasCustomerVoice: voice.length > 0, rev };
     }
 
     case "cancel": {
