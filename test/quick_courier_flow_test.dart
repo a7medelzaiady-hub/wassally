@@ -121,6 +121,42 @@ void main() {
     expect(find.text('متاح للقبول'), findsOneWidget);
   });
 
+  testWidgets('عرض المشتريات في قائمة الطلبات السريعة بدون كشف بيانات العميل', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final backend = _FakeBackend(_doc('open'));
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(backend: backend),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-order-open-$_id')), findsOneWidget);
+    expect(find.textContaining('طلب العميل: عيش بلدي'), findsOneWidget);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('quick-order-open-$_id')));
+    await tester.pumpAndSettle();
+    expect(find.text('فاتورة مشتريات العميل'), findsOneWidget);
+    expect(find.text('المطلوب من المحل'), findsOneWidget);
+    expect(find.byKey(const Key('quick-private-after-accept')), findsOneWidget);
+    expect(find.byKey(const Key('quick-call')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('تفاصيل الطلب السريع الفارغ توضّح غياب الأصناف بدون ملء بيانات وهمية', (tester) async {
+    await _pumpPage(tester, _FakeBackend(_doc('open', {'stores': []})));
+    expect(find.byKey(const Key('quick-request-empty')), findsOneWidget);
+    expect(find.byKey(const Key('quick-private-after-accept')), findsOneWidget);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    expect(find.text('01012345678'), findsNothing);
+    await _show(tester, find.byKey(const Key('quick-accept')));
+    expect(_enabled(tester, const Key('quick-accept')), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
