@@ -121,6 +121,26 @@ void main() {
     expect(find.text('متاح للقبول'), findsOneWidget);
   });
 
+  testWidgets('بطاقة الطلب السريع تعرض مشتريات العميل دون كشف العنوان', (tester) async {
+    final backend = _FakeBackend(_doc('open', {
+      'stores': [
+        {'name': 'الخير', 'items': 'عيش بلدي 5 أرغفة، زيت كيلو'},
+      ],
+      'notes': 'من غير شطة',
+    }));
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(backend: backend),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-order-request-preview')), findsOneWidget);
+    expect(find.textContaining('عيش بلدي 5 أرغفة'), findsOneWidget);
+    expect(find.textContaining('من غير شطة'), findsOneWidget);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
