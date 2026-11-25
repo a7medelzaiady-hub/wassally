@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/cart_book.dart';
 import '../services/navigation.dart';
-import '../screens/notifications_page.dart';
+import '../screens/store_directory_page.dart';
 import '../theme/app_tokens.dart';
 
 class AppNavItem {
@@ -225,12 +225,13 @@ class CurvedNavBar extends StatelessWidget {
   }
 }
 
-/// رقم خاص لزر الإشعارات (صفحة مستقلة، مش تبويب في [shellTab]).
-const kNotificationsNavTab = 4;
+/// رقم خاص لزر «المحلات» (صفحة مستقلة، مش تبويب في [shellTab]).
+/// الإشعارات اتشالت من الشريط وفضلت في الجرس اللي فوق.
+const kStoresNavTab = 4;
 
-/// ترتيب أزرار العميل (من اليمين لليسار في RTL) زي التصميم المرجعي:
-/// الرئيسية، طلباتي، السلة (كبيرة في النص)، الإشعارات، حسابي.
-const customerNavTabs = <int>[0, 2, 1, kNotificationsNavTab, 3];
+/// ترتيب أزرار العميل (من اليمين لليسار في RTL):
+/// الرئيسية، طلباتي، السلة (كبيرة في النص)، المحلات، حسابي.
+const customerNavTabs = <int>[0, 2, 1, kStoresNavTab, 3];
 
 /// شريط العميل الموحد، يُستخدم في الصفحة الأساسية وصفحات التسوق الداخلية.
 /// [currentTab] = رقم التبويب النشط، أو null لو الصفحة صفحة داخلية.
@@ -251,8 +252,8 @@ class CustomerBottomNav extends StatelessWidget {
         centerIndex: 2,
         onTap: (i) {
           final tab = customerNavTabs[i];
-          if (tab == kNotificationsNavTab) {
-            pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
+          if (tab == kStoresNavTab) {
+            pushOnce<void>(context, 'stores', (_) => const StoreDirectoryPage());
           } else if (onTab != null) {
             onTab!(tab);
           } else {
@@ -277,9 +278,9 @@ class CustomerBottomNav extends StatelessWidget {
             badge: carts.totalItems,
           ),
           const AppNavItem(
-            icon: Icons.notifications_none_rounded,
-            selectedIcon: Icons.notifications_rounded,
-            label: 'الإشعارات',
+            icon: Icons.storefront_outlined,
+            selectedIcon: Icons.storefront_rounded,
+            label: 'المحلات',
           ),
           const AppNavItem(
             icon: Icons.person_outline_rounded,
