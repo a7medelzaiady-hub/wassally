@@ -5,13 +5,13 @@
  *
  * المبدأ: الاتفاق على أي تغيير بيتم بالتليفون بين العميل والمندوب. التطبيق بيثبت بس:
  *   1) المقدم قبل الشراء لو التقدير فوق الحد (حاجز أمان مالي).
- *   2) كشف نهائي واحد (فواتير + أجرة + رسوم − مقدم) يوافق عليه العميل قبل رمز التسليم.
+ *   2) كشف نهائي واحد (فواتير + أجرة + رسوم − مقدم) للعلم فقط. العميل يؤكد الاستلام بالرمز.
  * المندوب ما بيكتبش نصوص: أرقام وصور فواتير بس.
  *
  * دورة الطلب:
  *   open ← (accept) accepted ← (start-purchase + تقدير) purchasing [المندوب يدفع من جيبه، والمقدم اختياري]
- *   purchasing ← (receipt × n ثم submit-summary + أجرة) summary_pending
- *   summary_pending ← (approve-summary) summary_approved ← (deliver بالرمز) delivered
+ *   purchasing ← (receipt × n ثم submit-summary + أجرة) summary_approved (جاهز للتسليم)
+ *   summary_approved ← (deliver بالرمز) delivered
  *   summary_pending ← (reject-summary) purchasing   (بعد موافقة العميل الكشف بيتقفل؛ أي حاجة بعدها بالتليفون)
  *   cancelled: العميل قبل الشراء، أو الإدارة في أي وقت قبل التسليم.
  */
@@ -136,6 +136,15 @@ export function quickApproxTotal(stores: QuickStore[]): number {
 
 /** أقصى عدد صور «صوّر طلبك» في الطلب الواحد. */
 export const QUICK_MAX_CUSTOMER_IMAGES = 3;
+/** تسجيل صوتي واحد اختياري؛ الرابط لازم يكون فيديو Cloudinary في مجلد العميل الخاص. */
+export function validateQuickVoice(input: unknown, isOwnVoice: (url: string) => boolean): string {
+  if (input === undefined || input === null || input === "") return "";
+  if (typeof input !== "string" || input.length > 450 || !isOwnVoice(input)) {
+    fail(400, "invalid_voice", "التسجيل الصوتي غير صالح. سجّله من التطبيق تاني.");
+  }
+  return input;
+}
+
 
 /**
  * صور «صوّر طلبك»: لحد 3 روابط، كل رابط لازم يعدّي [isOwnImage]
@@ -232,6 +241,7 @@ export function newQuickOrder(input: {
   stores: QuickStore[];
   settings: QuickSettings;
   customerImages?: string[];
+  customerVoiceUrl?: string;
 }): JsonMap {
   return {
     userId: input.uid,
@@ -241,6 +251,7 @@ export function newQuickOrder(input: {
     stores: input.stores,
     // صور «صوّر طلبك» (Cloudinary). بتتمسح مراجعها وملفاتها عند التسليم.
     customerImages: input.customerImages ?? [],
+    customerVoiceUrl: input.customerVoiceUrl ?? "",
     approxTotalPiastres: quickApproxTotal(input.stores),
     status: "open",
     courierId: "",
@@ -281,7 +292,8 @@ export const QUICK_CONTACT_STATUSES: readonly string[] = [
 ];
 
 /** رمز التسليم بيظهر للعميل بعد ما يوافق على الكشف النهائي بس. */
-export const QUICK_PIN_STATUSES: readonly string[] = ["summary_approved"];
+// summary_pending قديمة: لا نعطل استلام طلب سابق بسبب إزالة خطوة الموافقة.
+export const QUICK_PIN_STATUSES: readonly string[] = ["summary_pending", "summary_approved"];
 
 export interface QuickTotals {
   purchases: number;
@@ -495,7 +507,8 @@ export function applyQuickAction(
       if (delivery === null) fail(400, "invalid_delivery", "أجرة التوصيل خارج الحد المسموح.");
       const totals = quickTotals(receipts, delivery, advance);
       return {
-        status: "summary_pending",
+        // الكشف للعرض فقط؛ لا ننتظر موافقة العميل على الفاتورة.
+        status: "summary_approved",
         deliveryPiastres: delivery,
         totals,
         summaryRevision: summaryRevision + 1,
@@ -538,8 +551,8 @@ export function applyQuickAction(
 /** شروط تأكيد التسليم بالرمز (قبل التحقق من الرمز نفسه). */
 export function quickDeliveryBlocker(order: JsonMap, uid: string): string | null {
   if (order.courierId !== uid) return "الطلب غير معيّن لحسابك.";
-  if (order.status !== "summary_approved" || !(order.summaryApprovedAt instanceof Date)) {
-    return "العميل لازم يوافق على الكشف النهائي الأول.";
+  if (!QUICK_PIN_STATUSES.includes(String(order.status))) {
+    return "الكشف النهائي لم يجهز بعد.";
   }
   if (!order.totals || typeof order.totals !== "object") return "الكشف النهائي غير موجود.";
   return null;
@@ -559,6 +572,7 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
     collectedPiastres: numOrNull(totals.due) ?? 0,
     // صور العميل بتتشال من الطلب لحظة تأكيد الاستلام (والملفات بتتمسح من Cloudinary).
     customerImages: [],
+    customerVoiceUrl: "",
     rev: (numOrNull(order.rev) ?? 0) + 1,
   };
 }
@@ -567,4 +581,9 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
 export function quickCustomerImages(order: JsonMap): string[] {
   const raw = order.customerImages;
   return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string" && v.length > 0) : [];
+}
+
+/** رابط صوت العميل اللي يتم مسحه من Cloudinary بمجرد التسليم. */
+export function quickCustomerVoice(order: JsonMap): string {
+  return typeof order.customerVoiceUrl === "string" ? order.customerVoiceUrl : "";
 }
