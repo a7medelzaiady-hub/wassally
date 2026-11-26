@@ -38,6 +38,8 @@ void main() {
         'شيبسي جبنة': 'photo-1566478989037-eec170784d0b',
         'بسكويت سادة': 'photo-1499636136210-6f4ee915583e',
         'عسل نحل': 'photo-1587049352851-8d4e89133924',
+        'سكر ابيض 1 كيلو': 'photo-1769259397222-33e425659c43',
+        'دقيق فاخر': 'photo-1714842981153-ffeaf74e7a1a',
       };
       for (final entry in cases.entries) {
         final result = productPhotoFor(name: entry.key);
