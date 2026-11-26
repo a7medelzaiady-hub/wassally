@@ -291,7 +291,7 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                       'الإجمالي: ${ReadMeter.total()}',
                       for (final row in top) '${row.key}: ${row.value}',
                       'ملاحظة: ليس فاتورة Firebase؛ لا يشمل قراءات Worker/Rules، والتجميعات حدود دنيا.',
-                    ].join('\\n');
+                    ].join('\n');
                     await Clipboard.setData(ClipboardData(text: report));
                     if (context.mounted) _say(context, 'تم نسخ تقرير القراءات.');
                   },
