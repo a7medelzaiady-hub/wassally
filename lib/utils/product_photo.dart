@@ -79,7 +79,7 @@ final _rules = <_PhotoRule>[
       _unsplash('photo-1512621776951-a57141f2eefd')),
 
   // زيوت السيارات والعناية قبل كلمة "زيت" الغذائية.
-  _PhotoRule(['زيت موتور', 'زيت محرك', 'زيت فتيس', 'زيت فرامل', 'زيت سيارات',
+  _PhotoRule(['زيت موتور', 'زيت محرك', 'زيت بترومين', 'زيت فتيس', 'زيت فرامل', 'زيت سيارات',
       'بترومين', 'زيت شل هيلكس', 'engine oil', 'motor oil'],
       _unsplash('photo-1487754180451-c456f719a1fc')),
   _PhotoRule(['زيت شعر', 'زيت للجسم', 'hair oil', 'body oil'],
@@ -266,11 +266,27 @@ ProductPhoto productPhotoFor({
         matchedName: true);
   }
 
+  // اسم الصنف الرئيسي بييجي غالبًا أولًا: «شيبسي جبنة» صورة شيبسي
+  // وليس جبنة، و«شاي بلبن» صورة شاي وليس لبن. عند التساوي نُفضل
+  // الوصف المركب («زيت شعر» أو «ساندوتش بطاطس») على الاسم العام.
+  final padded = ' $normalized ';
+  _IndexedRule? best;
+  var firstPosition = padded.length;
+  var longestPhrase = 0;
   for (final rule in _indexedRules) {
-    if (rule.words.any((word) => _hasPhrase(normalized, word))) {
-      return ProductPhoto(rule.url, matchedName: true);
+    for (final word in rule.words) {
+      if (word.isEmpty) continue;
+      final position = padded.indexOf(' $word ');
+      if (position < 0) continue;
+      if (position < firstPosition ||
+          (position == firstPosition && word.length > longestPhrase)) {
+        best = rule;
+        firstPosition = position;
+        longestPhrase = word.length;
+      }
     }
   }
+  if (best != null) return ProductPhoto(best.url, matchedName: true);
   for (final rule in _indexedCategoryRules) {
     if (rule.words.any((word) => _hasPhrase(category, word))) {
       return ProductPhoto(rule.url);
