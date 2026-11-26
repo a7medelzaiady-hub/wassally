@@ -1340,9 +1340,10 @@ class _StorePageState extends State<StorePage> {
     var savedSuccessfully = false;
     Timer? draftTimer;
     Future<void> writeDraft() async {
-      if (product != null || savedSuccessfully || prefs == null) return;
+      final localPrefs = prefs;
+      if (product != null || savedSuccessfully || localPrefs == null) return;
       try {
-        await prefs.setString(draftKey, jsonEncode({
+        await localPrefs.setString(draftKey, jsonEncode({
           'name': nameController.text,
           'price': priceController.text,
           'description': descController.text,
