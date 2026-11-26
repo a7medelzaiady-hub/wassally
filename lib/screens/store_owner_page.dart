@@ -2630,7 +2630,6 @@ class _ProductDialogState extends State<_ProductDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
           child: const Text('إلغاء'),
           onPressed: () async {
             _draftTimer?.cancel();
