@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../utils/product_autofill.dart';
 import '../services/order_gateway.dart';
 import 'referral_campaign_page.dart';
 import '../models/order.dart';
@@ -2086,8 +2087,43 @@ class _ProductDialogState extends State<_ProductDialog> {
   bool _uploading = false;
   String? _error;
 
+  /// اقتراح تفاصيل من اسم الصنف (قاموس جوه التطبيق، من غير أي قراءة).
+  ProductSuggestion? _suggestion;
+  String _suggestedFor = '';
+  bool _suggestionUsed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _name.addListener(_updateSuggestion);
+  }
+
+  void _updateSuggestion() {
+    final name = _name.text.trim();
+    if (name == _suggestedFor) return;
+    _suggestedFor = name;
+    final next = suggestProduct(name);
+    if (next?.description != _suggestion?.description) {
+      setState(() {
+        _suggestion = next;
+        _suggestionUsed = false;
+      });
+    }
+  }
+
+  void _applySuggestion() {
+    final s = _suggestion;
+    if (s == null) return;
+    setState(() {
+      if (_desc.text.trim().isEmpty) _desc.text = s.description;
+      if (_groups.isEmpty && s.optionGroups.isNotEmpty) _groups = s.optionGroups;
+      _suggestionUsed = true;
+    });
+  }
+
   @override
   void dispose() {
+    _name.removeListener(_updateSuggestion);
     _name.dispose();
     _price.dispose();
     _old.dispose();
@@ -2158,6 +2194,13 @@ class _ProductDialogState extends State<_ProductDialog> {
               controller: _name,
               decoration: const InputDecoration(labelText: 'اسم الصنف'),
             ),
+            if (_suggestion != null && !_suggestionUsed &&
+                (_desc.text.trim().isEmpty ||
+                    (_groups.isEmpty && _suggestion!.optionGroups.isNotEmpty)))
+              _SuggestionCard(
+                suggestion: _suggestion!,
+                onUse: _applySuggestion,
+              ),
             const SizedBox(height: 12),
             TextField(
               controller: _price,
@@ -2767,6 +2810,58 @@ class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
           ],
         );
       },
+    );
+  }
+}
+
+/// كارت «اقتراح تلقائي» تحت اسم الصنف. ما بيحفظش حاجة غير لما صاحب المحل يدوس «استخدم».
+class _SuggestionCard extends StatelessWidget {
+  final ProductSuggestion suggestion;
+  final VoidCallback onUse;
+  const _SuggestionCard({required this.suggestion, required this.onUse});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = suggestion.optionGroups.map((g) => g.title).join('، ');
+    return Container(
+      key: const Key('product-autofill-card'),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: kAccent.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kAccent.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome_rounded, size: 18, color: kAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${suggestion.section} • بال${suggestion.unit}',
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  options.isEmpty
+                      ? suggestion.description
+                      : '${suggestion.description} + خيارات: $options',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: kMuted),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const Key('product-autofill-use'),
+            onPressed: onUse,
+            child: const Text('استخدم'),
+          ),
+        ],
+      ),
     );
   }
 }
