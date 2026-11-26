@@ -47,7 +47,13 @@ String _normalizeProductName(String raw) => raw
     .replaceAll('ئ', 'ي')
     .replaceAll(RegExp(r'[^a-z0-9\u0621-\u064A]+'), ' ')
     .replaceAll(RegExp(r'\s+'), ' ')
-    .trim();
+    .trim()
+    .split(' ')
+    // «اللبن»/«السكر»/«الزيت» شائعة في أسماء المنتجات المصرية.
+    .map((word) => word.startsWith('ال') && word.length > 4
+        ? word.substring(2)
+        : word)
+    .join(' ');
 
 /// مطابقة كلمات كاملة، مش احتواء جزئي: "رز" لا يطابق "أرزاق"، و"ورد"
 /// لا يطابق "مورد". وتدعم الكلمات المركبة زي "زيت موتور".
