@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
+import '../services/notification_service.dart';
 import '../services/saved_address.dart';
 import '../services/location_picker.dart';
 import '../theme/app_tokens.dart';
@@ -54,7 +57,18 @@ class _CustomerEntryState extends State<CustomerEntry> {
     customerShellAvailable.value = _isCustomer;
     enterShellRequest.addListener(_onEnterShellRequest);
     SavedAddress.load();
-    _maybeShowTour();
+    unawaited(_startWelcomeFlows());
+  }
+
+  /// Ask for push after onboarding even if the user never opens Home.
+  Future<void> _startWelcomeFlows() async {
+    try {
+      await _maybeShowTour();
+    } catch (e) {
+      debugPrint('Welcome tour failed: $e');
+    }
+    if (!mounted) return;
+    await NotificationService.ensurePermissionWithExplanation(context);
   }
 
   /// الجولة الإعلانية لكل الحسابات، لحد مرتين في اليوم (محليًا).
