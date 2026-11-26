@@ -163,6 +163,18 @@ class CartBook extends ChangeNotifier {
     _scheduleSave();
   }
 
+  /// الطلب اتبعت ووصل السيرفر: سلة المحل ده تتمسح، والطلب مكانه «طلباتي».
+  void finishSubmitted(String storeId) {
+    if (active.storeId == storeId) {
+      active.clear();
+    } else {
+      _parked.remove(storeId);
+    }
+    _touched.remove(storeId);
+    notifyListeners();
+    _scheduleSave();
+  }
+
   /// يمسح سلة محفوظة.
   void removeParked(String storeId) {
     if (_parked.remove(storeId) != null) {
@@ -250,6 +262,8 @@ class CartBook extends ChangeNotifier {
         for (final entry in decoded.entries) {
           final snap = entry.value.snapshot;
           final storeId = entry.key;
+          // سلة اتبعت طلبها قبل كده (أو التطبيق اتقفل قبل ما تتمسح): مكانها «طلباتي» مش السلة.
+          if (snap.submittedOrderId != null) continue;
           // لو العميل لحق يضيف قبل ما التحميل يخلص، اللي في إيده هو الحالي ومش بنلمسه.
           if (storeId == active.storeId) continue;
           if (storeId == activeId && active.isEmpty) {
