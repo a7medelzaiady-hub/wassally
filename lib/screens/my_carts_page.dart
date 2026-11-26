@@ -238,7 +238,7 @@ class _CartCard extends StatelessWidget {
                     ),
                     Text(
                       snap.fee > 0
-                          ? '$kinds صنف • + توصيل ${formatPrice(snap.fee)}'
+                          ? '$kinds صنف • توصيل ${formatPrice(snap.fee)}'
                           : '$kinds صنف',
                       style: TextStyle(fontSize: 12, color: kMuted),
                     ),
