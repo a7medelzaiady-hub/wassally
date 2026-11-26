@@ -33,7 +33,7 @@ class OrderReceipt {
   factory OrderReceipt.of(AppOrder order) {
     final when = order.deliveredAt ?? order.createdAt;
     return OrderReceipt(
-      orderNumber: shortOrderId(order.id),
+      orderNumber: simpleOrderNumber(order.id),
       date: when == null ? '' : formatDateTime(when.toLocal()),
       storeName: order.storeName,
       items: [
@@ -60,6 +60,5 @@ class OrderReceipt {
   }
 
   /// اسم ملف الصورة عند المشاركة.
-  String get fileName =>
-      'wasally-receipt-${orderNumber.replaceAll('#', '')}.png';
+  String get fileName => 'wasally-receipt-$orderNumber.png';
 }

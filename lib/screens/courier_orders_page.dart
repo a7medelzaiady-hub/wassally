@@ -405,13 +405,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
 }
 
 // رقم العرض ثابت للطلب حتى بعد التعيين. العمليات تستخدم معرّف المستند.
-String _courierOrderNumber(String id) {
-  var number = 0;
-  for (final unit in id.codeUnits) {
-    number = (number * 131 + unit) % 900000;
-  }
-  return (100000 + number).toString();
-}
+String _courierOrderNumber(String id) => simpleOrderNumber(id);
 
 String _courierArea(AppOrder order) {
   final area = order.area.trim();

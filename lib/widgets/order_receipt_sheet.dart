@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -34,27 +35,68 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
   final _boundaryKey = GlobalKey();
   bool _busy = false;
 
+  /// بيحوّل كارت الإيصال لصورة PNG على الموبايل.
+  Future<Uint8List> _capture() async {
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) throw StateError('receipt not ready');
+    final image = await boundary.toImage(pixelRatio: 3);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (bytes == null) throw StateError('no bytes');
+    return bytes.buffer.asUint8List();
+  }
+
+  Future<void> _shareBytes(Uint8List bytes) async {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/${widget.receipt.fileName}');
+    await file.writeAsBytes(bytes, flush: true);
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(file.path, mimeType: 'image/png')],
+      text: 'إيصال طلب ${widget.receipt.orderNumber} من وصّلي',
+    ));
+  }
+
   Future<void> _share() async {
     if (_busy) return;
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final boundary = _boundaryKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
-      if (boundary == null) throw StateError('receipt not ready');
-      final image = await boundary.toImage(pixelRatio: 3);
-      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (bytes == null) throw StateError('no bytes');
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/${widget.receipt.fileName}');
-      await file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(file.path, mimeType: 'image/png')],
-        text: 'إيصال طلب ${widget.receipt.orderNumber} من وصّلي',
-      ));
+      await _shareBytes(await _capture());
     } catch (_) {
       messenger.showSnackBar(appSnack('تعذر تجهيز صورة الإيصال. جرّب تاني.'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// حفظ مباشر في معرض الصور (ألبوم «وصّلي»). على الأجهزة القديمة اللي
+  /// محتاجة صلاحية تخزين (أندرويد 9 وأقل) بنفتح المشاركة بدل الحفظ،
+  /// والعميل يختار منها «حفظ».
+  Future<void> _save() async {
+    if (_busy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    Uint8List? bytes;
+    try {
+      bytes = await _capture();
+      if (!await Gal.hasAccess()) await Gal.requestAccess();
+      await Gal.putImageBytes(
+        bytes,
+        album: 'وصّلي',
+        name: widget.receipt.fileName.replaceAll('.png', ''),
+      );
+      messenger.showSnackBar(appSnack('اتحفظ الإيصال في الصور (ألبوم وصّلي).'));
+    } catch (_) {
+      if (bytes != null) {
+        try {
+          await _shareBytes(bytes);
+        } catch (_) {
+          messenger.showSnackBar(appSnack('تعذر حفظ الإيصال. جرّب تاني.'));
+        }
+      } else {
+        messenger.showSnackBar(appSnack('تعذر تجهيز صورة الإيصال. جرّب تاني.'));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -77,24 +119,36 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: const Key('receipt-share'),
-                onPressed: _busy ? null : _share,
-                style: FilledButton.styleFrom(backgroundColor: Brand.gold),
-                icon: _busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.ios_share_rounded),
-                label: const Text('مشاركة أو حفظ الإيصال'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    key: const Key('receipt-save'),
+                    onPressed: _busy ? null : _save,
+                    style: FilledButton.styleFrom(backgroundColor: Brand.gold),
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.download_rounded),
+                    label: const Text('حفظ في الصور'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const Key('receipt-share'),
+                    onPressed: _busy ? null : _share,
+                    icon: const Icon(Icons.ios_share_rounded),
+                    label: const Text('مشاركة'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

@@ -1,4 +1,5 @@
 import 'package:city_store/models/order.dart';
+import 'package:city_store/utils/format.dart';
 import 'package:city_store/utils/order_receipt.dart';
 import 'package:city_store/widgets/order_receipt_sheet.dart';
 import 'package:flutter/material.dart';
@@ -38,7 +39,8 @@ void main() {
 
   test('أرقام الإيصال هي نفس أرقام تفاصيل الطلب', () {
     final r = OrderReceipt.of(_order());
-    expect(r.orderNumber, '#ABC12');
+    expect(r.orderNumber, '969626');
+    expect(r.orderNumber, simpleOrderNumber('abc12xyz'));
     expect(r.storeName, 'بقالة الحاج سيد');
     expect(r.date, '26/11/2026 - 5:30 م');
     expect(r.items.map((l) => l.label), [
@@ -52,7 +54,7 @@ void main() {
     expect(totals['رسوم الخدمة'], '5 ج.م');
     expect(totals['الإجمالي'], '110 ج.م');
     expect(r.totals.last.strong, isTrue);
-    expect(r.fileName, 'wasally-receipt-ABC12.png');
+    expect(r.fileName, 'wasally-receipt-969626.png');
   });
 
   test('من غير رسوم خدمة ومع خصم الدعوات', () {
@@ -73,10 +75,20 @@ void main() {
       ),
     ));
     expect(find.text('وصّلي'), findsOneWidget);
-    expect(find.text('#ABC12'), findsOneWidget);
+    expect(find.text('969626'), findsOneWidget);
     expect(find.text('بقالة الحاج سيد'), findsOneWidget);
     expect(find.text('110 ج.م'), findsOneWidget);
     expect(find.byKey(const Key('receipt-share')), findsOneWidget);
+    expect(find.byKey(const Key('receipt-save')), findsOneWidget);
+    expect(find.text('حفظ في الصور'), findsOneWidget);
     expect(find.byType(RepaintBoundary), findsWidgets);
+  });
+
+  test('رقم الطلب البسيط: 6 أرقام وثابت لنفس الطلب', () {
+    final a = simpleOrderNumber('abc12xyz');
+    expect(a, hasLength(6));
+    expect(int.tryParse(a), isNotNull);
+    expect(simpleOrderNumber('abc12xyz'), a);
+    expect(simpleOrderNumber('other-id'), isNot(a));
   });
 }
