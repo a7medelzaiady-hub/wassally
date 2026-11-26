@@ -28,6 +28,7 @@ import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../utils/product_photo.dart';
+import '../utils/share_links.dart';
 import '../widgets/app_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/option_groups_editor.dart';
@@ -36,6 +37,7 @@ import '../widgets/qty_stepper.dart';
 import 'cart_page.dart';
 import '../widgets/cached_net_image.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/share_actions.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -810,6 +812,16 @@ class _StorePageState extends State<StorePage> {
         () => Navigator.of(context).maybePop(),
         'رجوع',
       ),
+      actions: [
+        circleBtn(
+          Icons.share_rounded,
+          () => shareText(
+            context,
+            ShareLinks.storeMessage(storeName: store.name, storeId: store.id),
+          ),
+          'مشاركة المحل',
+        ),
+      ],
       title: AnimatedOpacity(
         duration: const Duration(milliseconds: 150),
         opacity: _collapsed ? 1 : 0,
@@ -1509,6 +1521,7 @@ class _StorePageState extends State<StorePage> {
       product: p,
       storeName: store.name,
       storeCategory: store.category,
+      storeId: store.id,
       onAdd: (line, qty) => _add(context, line, qty: qty),
     );
   }
