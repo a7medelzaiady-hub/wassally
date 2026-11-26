@@ -14,7 +14,7 @@ const bool kCourierWaitsForPrep = true;
 const bool kCourierWaitsForReady = true;
 
 enum OrderStatus {
-  newOrder('new', 'تم استلام الطلب', Icons.receipt_long, null),
+  newOrder('new', 'المحل استلم الطلب', Icons.receipt_long, null),
   preparing('preparing', 'جاري التحضير', Icons.soup_kitchen, Color(0xFFE59A00)),
   onTheWay(
     'on_the_way',
@@ -36,7 +36,7 @@ enum OrderStatus {
   bool get canHideFromHistory =>
       this == OrderStatus.delivered || this == OrderStatus.cancelled;
 
-  /// لون الحالة. "تم الاستلام" بيتبع لون السمة المختارة.
+  /// لون حالة «المحل استلم الطلب» بيتبع لون السمة المختارة.
   Color get color => _color ?? kPrimary;
 
   static OrderStatus parse(String? key) {

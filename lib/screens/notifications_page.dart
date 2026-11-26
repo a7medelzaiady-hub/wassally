@@ -25,7 +25,7 @@ class _KindStyle {
 
 Map<_NotifKind, _KindStyle> get _kStyles => <_NotifKind, _KindStyle>{
   _NotifKind.received: _KindStyle(
-    'تم الاستلام',
+    'المحل استلم الطلب',
     Icons.receipt_long_rounded,
     Color(0xFF5B6EE1),
     0,
@@ -71,7 +71,7 @@ _NotifKind? _testKind(String s) {
   }
   if (s.contains('في الطريق')) return _NotifKind.onTheWay;
   if (s.contains('تجهيز') || s.contains('تحضير')) return _NotifKind.preparing;
-  if (s.contains('استلام')) return _NotifKind.received;
+  if (s.contains('استلام') || s.contains('المحل استلم')) return _NotifKind.received;
   return null;
 }
 
@@ -722,7 +722,7 @@ class _PulseDotState extends State<_PulseDot>
   }
 }
 
-/// شريط تتبع الطلب: استلام ← تجهيز ← في الطريق ← تسليم.
+/// شريط تتبع الطلب: المحل استلم ← تجهيز ← في الطريق ← تسليم.
 class _Stepper extends StatefulWidget {
   final int step;
   final Color color;
@@ -739,7 +739,7 @@ class _Stepper extends StatefulWidget {
 
 class _StepperState extends State<_Stepper>
     with SingleTickerProviderStateMixin {
-  static const _labels = ['استلام', 'تجهيز', 'في الطريق', 'تسليم'];
+  static const _labels = ['المحل استلم', 'تجهيز', 'في الطريق', 'تسليم'];
   static const double _dot = 20;
 
   late final AnimationController _c = AnimationController(
@@ -858,18 +858,21 @@ class _StepperState extends State<_Stepper>
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  _labels[i],
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: i == widget.step
-                        ? FontWeight.w800
-                        : FontWeight.w600,
-                    color: i == widget.step
-                        ? widget.color
-                        : (i < widget.step ? Brand.ink : kMuted),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _labels[i],
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: i == widget.step
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                      color: i == widget.step
+                          ? widget.color
+                          : (i < widget.step ? Brand.ink : kMuted),
+                    ),
                   ),
                 ),
               ],

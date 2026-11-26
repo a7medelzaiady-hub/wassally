@@ -27,19 +27,64 @@ class _OrdersPageState extends State<OrdersPage> {
     return Column(
       children: [
         const BrandHeader(title: 'طلباتي', subtitle: 'تابع حالة طلباتك'),
+        // رابط خفيف بدل الزر الكبير الذي كان يستهلك مساحة من قائمة الطلبات.
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Brand.green),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const QuickCustomerOrdersPage(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+          child: Semantics(
+            button: true,
+            label: 'متابعة طلباتك على السريع',
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const QuickCustomerOrdersPage(),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Brand.green.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Brand.green.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(Icons.bolt_rounded, color: Brand.green, size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'طلباتك على السريع',
+                          style: TextStyle(
+                            color: Brand.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'متابعة',
+                        style: TextStyle(
+                          color: Brand.goldDeep,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(Icons.chevron_left_rounded, color: Brand.goldDeep, size: 20),
+                    ],
+                  ),
                 ),
               ),
-              icon: const Icon(Icons.flash_on),
-              label: const Text('تابع طلباتك على السريع'),
             ),
           ),
         ),
@@ -72,9 +117,9 @@ class _OrdersPageState extends State<OrdersPage> {
                   );
                 }
                 return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
                   itemCount: orders.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 14),
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, i) => _OrderCard(order: orders[i]),
                 );
               },
@@ -95,6 +140,13 @@ String _timeText(DateTime d) {
   final h12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
   final suffix = d.hour < 12 ? 'ص' : 'م';
   return '$h12:${_two(d.minute)} $suffix';
+}
+
+/// عرض اسم المحل صريحًا بدون تكرار كلمة «محل» إذا كانت من الاسم الأصلي.
+String orderStoreTitle(String storeName) {
+  final name = storeName.trim();
+  if (name.isEmpty) return 'طلب من محل';
+  return name.startsWith('محل ') ? name : 'محل $name';
 }
 
 class _OrderCard extends StatefulWidget {
@@ -137,7 +189,7 @@ class _OrderCardState extends State<_OrderCard> {
     final order = widget.order;
     final status = order.status;
     final created = order.createdAt;
-    final name = order.storeName.isEmpty ? 'طلب' : order.storeName;
+    final name = orderStoreTitle(order.storeName);
 
     return Container(
       clipBehavior: Clip.antiAlias,
@@ -162,7 +214,7 @@ class _OrderCardState extends State<_OrderCard> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -194,7 +246,7 @@ class _OrderCardState extends State<_OrderCard> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Wrap(
                   spacing: 10,
                   runSpacing: 2,
@@ -223,15 +275,15 @@ class _OrderCardState extends State<_OrderCard> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 9),
                 Divider(height: 1, color: kLine),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 5,
+                        horizontal: 10,
+                        vertical: 4,
                       ),
                       decoration: BoxDecoration(
                         color: status.color.withValues(alpha: 0.12),

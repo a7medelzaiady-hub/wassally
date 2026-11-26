@@ -412,10 +412,10 @@ class _Details extends StatelessWidget {
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
+            padding: const EdgeInsets.fromLTRB(12, 5, 12, 14),
             children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,7 +429,7 @@ class _Details extends StatelessWidget {
                   formatDateTime(order.createdAt!),
                   style: text.bodySmall?.copyWith(color: kMuted),
                 ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 7),
               if (order.status == OrderStatus.cancelled) ...[
                 _CancelledBanner(status: order.status),
                 if (order.referralDiscountMinor > 0)
@@ -455,12 +455,12 @@ class _Details extends StatelessWidget {
           ),
         ),
 
-        // رمز التسليم واضح ومضغوط؛ لا نطلب أي قراءة جديدة.
+        // رمز التسليم في سطر واضح صغير، من غير أي قراءات إضافية.
         if (showPin) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: const Color(0xFFEAF7EF),
               borderRadius: BorderRadius.circular(14),
@@ -471,12 +471,12 @@ class _Details extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.shield_outlined, size: 22, color: kSuccess),
+                    Icon(Icons.shield_outlined, size: 18, color: kSuccess),
                     const SizedBox(width: 6),
                     const Expanded(
                       child: Text(
-                        'رمز التسليم',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                        'ده الرمز اللي هتستلم بيه',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                       ),
                     ),
                     if (deliveryPin != null)
@@ -485,9 +485,9 @@ class _Details extends StatelessWidget {
                         child: Text(
                           deliveryPin!.split('').join(' '),
                           style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
                           ),
                         ),
                       )
@@ -501,10 +501,10 @@ class _Details extends StatelessWidget {
                       TextButton(onPressed: onRetryPin, child: const Text('إعادة المحاولة')),
                   ],
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
-                  pinMessage ?? 'قوله للمندوب بعد ما تستلم طلبك وتراجعه فقط.',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  pinMessage ?? 'ما تقولوش للمندوب غير بعد ما تستلم الطلب وتراجعه.',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -557,7 +557,7 @@ class _Details extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -599,7 +599,7 @@ class _Details extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -710,7 +710,7 @@ class _Details extends StatelessWidget {
 
   Widget _info(IconData icon, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -872,12 +872,12 @@ class _CancelledBanner extends StatelessWidget {
   }
 }
 
-/// مراحل الطلب: استلام ← تحضير ← في الطريق ← تم التوصيل.
+/// مراحل الطلب: المحل استلم ← تحضير ← في الطريق ← تم التوصيل.
 class _Timeline extends StatelessWidget {
   final OrderStatus current;
   const _Timeline({required this.current});
 
-  static const _shortLabels = ['استلام', 'تجهيز', 'في الطريق', 'توصيل'];
+  static const _shortLabels = ['المحل استلم', 'تجهيز', 'في الطريق', 'توصيل'];
 
   @override
   Widget build(BuildContext context) {
