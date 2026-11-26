@@ -90,7 +90,6 @@ class _StorePageState extends State<StorePage> {
   int _gen = 0;
 
   bool _collapsed = false; // الغلاف اتطوى: نظهر اسم المحل في الشريط العلوي
-  bool _specialOpen = false; // كارت الطلب الخاص مطوي افتراضيًا
   bool _canEditStore = false; // المدير (كل المحلات) وصاحب المحل (محله) يشوفوا أزرار الإضافة والرفع
 
   final _specialRequestCtrl = TextEditingController();
@@ -281,21 +280,21 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
-  Future<void> _sendSpecialRequest() async {
+  Future<bool> _sendSpecialRequest() async {
     final user = FirebaseAuth.instance.currentUser;
     final description = _specialRequestCtrl.text.trim();
     if (user == null) {
       _say('سجّل الدخول الأول لإرسال الطلب.');
-      return;
+      return false;
     }
-    if (!await _ensureCartForStore()) return;
+    if (!await _ensureCartForStore()) return false;
     if (description.isEmpty && _specialImageUrl == null && _voicePath == null) {
       _say('اكتب وصف المنتج أو أرفق صورة أو رسالة صوتية.');
-      return;
+      return false;
     }
     if (_recording) {
       _say('أنه التسجيل الصوتي الأول.');
-      return;
+      return false;
     }
     final sentVoicePath = _voicePath;
     setState(() => _sendingSpecial = true);
@@ -329,7 +328,7 @@ class _StorePageState extends State<StorePage> {
       if (sentVoicePath != null) {
         await _voicePreviewPlayer.stop();
       }
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _playingVoicePreview = false;
         _specialRequestCtrl.clear();
@@ -345,142 +344,226 @@ class _StorePageState extends State<StorePage> {
         }());
       }
       _say('تمت إضافة الطلب الخاص إلى سلتك. كمّل الطلب لإرساله مع المنتجات.');
+      return true;
     } catch (e) {
       _say('تعذر إرسال الطلب الخاص: $e');
+      return false;
     } finally {
       if (mounted) setState(() => _sendingSpecial = false);
     }
   }
 
+  /// لا نحجز مساحة قائمة الأصناف لطلب خاص: يفتح محرر مستقل عند الضغط.
   Widget _specialRequestCard() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Brand.gold.withValues(alpha: 0.55), width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => setState(() => _specialOpen = !_specialOpen),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: Material(
+        color: const Color(0xFFFFF8F3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Brand.gold.withValues(alpha: 0.50)),
+        ),
+        child: InkWell(
+          key: const Key('store-special-request-open'),
+          borderRadius: BorderRadius.circular(14),
+          onTap: _openSpecialRequest,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             child: Row(
               children: [
-                Icon(Icons.edit_note_rounded, color: Brand.green, size: 26),
-                const SizedBox(width: 8),
+                Icon(Icons.edit_note_rounded, color: Brand.green, size: 23),
+                const SizedBox(width: 9),
                 Expanded(
-                  child: Text('طلب خاص / منتج غير موجود؟',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Brand.ink)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('محتاج صنف مش موجود؟',
+                          style: TextStyle(color: Brand.ink,
+                              fontWeight: FontWeight.w800, fontSize: 14)),
+                      Text('اكتبه أو ابعت صورته أو صوته',
+                          style: TextStyle(color: kMuted, fontSize: 11.5)),
+                    ],
+                  ),
                 ),
-                Icon(_specialOpen ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                    color: kMuted),
+                const SizedBox(width: 5),
+                Text('طلب خاص', style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w800,
+                    color: Brand.green)),
+                Icon(Icons.chevron_left_rounded, color: Brand.green),
               ],
             ),
           ),
-          if (_specialOpen) ...[
-          const SizedBox(height: 4),
-          Text('اكتب اللي محتاجه أو أرفق صورة أو رسالة صوتية وسيقوم المحل بتجهيزه لك',
-              style: TextStyle(fontSize: 15, height: 1.5, color: Brand.ink)),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7E8),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Brand.gold.withValues(alpha: 0.6)),
-            ),
-            child: const Text(
-              'تنبيه: سيتم حذف الصور والتسجيلات الصوتية المرفقة تلقائيًا من مساحة التخزين بعد تأكيد استلامك للطلب.',
-              style: TextStyle(fontSize: 12.5, height: 1.5, fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _specialRequestCtrl,
-            minLines: 1,
-            maxLines: 3,
-            maxLength: 300,
-            decoration: const InputDecoration(
-              hintText: 'مثال: رغيف حواوشي مخصوص بدون...',
-              counterText: '',
-              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _sendingSpecial ? null : _pickSpecialImage,
-                icon: const Icon(Icons.attach_file),
-                label: Text(_specialImageUrl == null ? 'إرفاق صورة' : 'تم إرفاق صورة'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _sendingSpecial ? null : _toggleVoiceRecording,
-                icon: Icon(_recording ? Icons.stop_circle_outlined : Icons.mic_none),
-                label: Text(_recording
-                    ? 'إيقاف التسجيل ($_recordSeconds/15 ث)'
-                    : (_voicePath == null ? 'رسالة صوتية' : 'تم تسجيل الصوت')),
-              ),
-              if (_voicePath != null)
-                OutlinedButton.icon(
-                  onPressed: _sendingSpecial ? null : _toggleVoicePreview,
-                  icon: Icon(_playingVoicePreview ? Icons.pause : Icons.play_arrow),
-                  label: Text(_playingVoicePreview ? 'إيقاف المعاينة' : 'معاينة الصوت'),
-                ),
-            ],
-          ),
-          if (_specialImageUrl != null || _voicePath != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text('المرفقات جاهزة للإرسال',
-                  style: TextStyle(color: Brand.greenDark, fontWeight: FontWeight.w700)),
-            ),
-          if (_specialImageUrl != null || _voicePath != null)
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Text(kAttachmentsWillBeDeleted,
-                  style: TextStyle(fontSize: 12, height: 1.4)),
-            ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              IconButton(
-                onPressed: _specialQty > 1 && !_sendingSpecial
-                    ? () => setState(() => _specialQty--)
-                    : null,
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              Text('$_specialQty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              IconButton(
-                onPressed: _specialQty < 99 && !_sendingSpecial
-                    ? () => setState(() => _specialQty++)
-                    : null,
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-              const Spacer(),
-              FilledButton(
-                onPressed: _sendingSpecial ? null : _sendSpecialRequest,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF6B1A),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
-                  shape: const StadiumBorder(),
-                ),
-                child: _sendingSpecial
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('إضافة للطلب', style: TextStyle(fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-          ],
-        ],
+        ),
       ),
     );
+  }
+
+  void _openSpecialRequest() {
+    StateSetter? refreshSheet;
+    BuildContext? sheetContext;
+    // تحديث عداد التسجيل الظاهر داخل النافذة فقط أثناء التسجيل.
+    final ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_recording && sheetContext?.mounted == true) {
+        refreshSheet?.call(() {});
+      }
+    });
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, refresh) {
+          sheetContext = ctx;
+          refreshSheet = refresh;
+          Future<void> run(Future<void> Function() action) async {
+            await action();
+            if (ctx.mounted) refresh(() {});
+          }
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * 0.78,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('طلب خاص من المحل',
+                        style: TextStyle(
+                          color: Brand.ink, fontWeight: FontWeight.w900,
+                          fontSize: 19,
+                        )),
+                    const SizedBox(height: 3),
+                    Text('مش لاقي الصنف؟ اكتبه أو صوره أو سجّل طلبك.',
+                        style: TextStyle(color: kMuted, fontSize: 13)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _specialRequestCtrl,
+                      minLines: 1,
+                      maxLines: 3,
+                      maxLength: 300,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        hintText: 'مثال: ساندوتش باذنجان بدون شطة',
+                        counterText: '',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(14))),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _sendingSpecial ? null :
+                              () => run(_pickSpecialImage),
+                          icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                          label: Text(_specialImageUrl == null
+                              ? 'إرفاق صورة' : 'الصورة مرفقة'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _sendingSpecial ? null :
+                              () => run(_toggleVoiceRecording),
+                          icon: Icon(_recording
+                              ? Icons.stop_circle_outlined
+                              : Icons.mic_none_rounded, size: 18),
+                          label: Text(_recording
+                              ? 'إنهاء الصوت ($_recordSeconds/15)'
+                              : (_voicePath == null
+                                  ? 'تسجيل صوت' : 'الصوت مسجل')),
+                        ),
+                        if (_voicePath != null)
+                          OutlinedButton.icon(
+                            onPressed: _sendingSpecial ? null :
+                                () => run(_toggleVoicePreview),
+                            icon: Icon(_playingVoicePreview
+                                ? Icons.pause : Icons.play_arrow, size: 18),
+                            label: Text(_playingVoicePreview
+                                ? 'إيقاف' : 'استماع'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Text('الكمية', style: TextStyle(
+                            fontWeight: FontWeight.w700, color: Brand.ink)),
+                        IconButton(
+                          constraints: const BoxConstraints(
+                              minWidth: 34, minHeight: 34),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _specialQty > 1 && !_sendingSpecial
+                              ? () => refresh(() => _specialQty--)
+                              : null,
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                        Text('$_specialQty', style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                        IconButton(
+                          constraints: const BoxConstraints(
+                              minWidth: 34, minHeight: 34),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _specialQty < 99 && !_sendingSpecial
+                              ? () => refresh(() => _specialQty++)
+                              : null,
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          key: const Key('store-special-request-add'),
+                          onPressed: _sendingSpecial ? null : () async {
+                            final saved = await _sendSpecialRequest();
+                            if (!ctx.mounted) return;
+                            if (saved) {
+                              Navigator.of(ctx).pop();
+                            } else {
+                              refresh(() {});
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF6B1A),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 15, vertical: 9),
+                          ),
+                          child: _sendingSpecial
+                            ? const SizedBox(width: 18, height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                            : const Text('إضافة للسلة'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'خصوصيتك: الصور والتسجيلات المرفقة تتحذف من التخزين '
+                      'بعد تأكيد استلام الطلب.',
+                      style: TextStyle(color: kMuted,
+                          fontSize: 11.5, height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ).whenComplete(() async {
+      ticker.cancel();
+      if (_recording && mounted) await _toggleVoiceRecording();
+    });
   }
 
   void _onScroll() {
@@ -1419,6 +1502,7 @@ class _StorePageState extends State<StorePage> {
       context,
       product: p,
       storeName: store.name,
+      storeCategory: store.category,
       onAdd: (line, qty) => _add(context, line, qty: qty),
     );
   }
