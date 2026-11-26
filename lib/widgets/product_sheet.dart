@@ -6,7 +6,9 @@ import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../utils/product_photo.dart';
+import '../utils/share_links.dart';
 import 'cached_net_image.dart';
+import 'share_actions.dart';
 
 /// أقصى كمية بتتضاف من الشاشة دي في المرة الواحدة.
 const int _kMaxSheetQty = 20;
@@ -18,6 +20,7 @@ Future<void> showProductSheet(
   required Product product,
   required String storeName,
   String storeCategory = '',
+  String storeId = '',
   required Future<void> Function(Product line, int qty) onAdd,
 }) {
   return showModalBottomSheet<void>(
@@ -32,6 +35,7 @@ Future<void> showProductSheet(
       product: product,
       storeName: storeName,
       storeCategory: storeCategory,
+      storeId: storeId,
       onAdd: onAdd,
     ),
   );
@@ -41,11 +45,13 @@ class _ProductSheet extends StatefulWidget {
   final Product product;
   final String storeName;
   final String storeCategory;
+  final String storeId;
   final Future<void> Function(Product line, int qty) onAdd;
   const _ProductSheet({
     required this.product,
     required this.storeName,
     required this.storeCategory,
+    this.storeId = '',
     required this.onAdd,
   });
 
@@ -175,9 +181,33 @@ class _ProductSheetState extends State<_ProductSheet> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              widget.storeName,
-                              style: TextStyle(fontSize: 13, color: Brand.green),
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    widget.storeName,
+                                    style: TextStyle(fontSize: 13, color: Brand.green),
+                                  ),
+                                ),
+                                IconButton(
+                                  key: const Key('product-share'),
+                                  tooltip: 'مشاركة الصنف',
+                                  visualDensity: VisualDensity.compact,
+                                  iconSize: 18,
+                                  color: Brand.green,
+                                  icon: const Icon(Icons.share_rounded),
+                                  onPressed: () => shareText(
+                                    context,
+                                    ShareLinks.productMessage(
+                                      productName: p.name,
+                                      price: p.price,
+                                      oldPrice: p.oldPrice,
+                                      storeName: widget.storeName,
+                                      storeId: widget.storeId,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 10),
                             Text(

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/bulk_products.dart';
+import '../widgets/share_actions.dart';
 import '../utils/product_autofill.dart';
 import '../utils/product_photo.dart';
 import '../utils/store_product_templates.dart';
@@ -647,6 +648,21 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                       icon: const Icon(Icons.local_offer_outlined, size: 18),
                       label: const Text('عمل عرض'),
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.outlined(
+                    key: const Key('owner-store-qr'),
+                    tooltip: 'كود QR ومشاركة المحل',
+                    color: kPrimary,
+                    style: IconButton.styleFrom(
+                      side: BorderSide(color: kPrimary),
+                    ),
+                    onPressed: () => showStoreQrSheet(
+                      context,
+                      storeName: shopName,
+                      storeId: widget.storeId,
+                    ),
+                    icon: const Icon(Icons.qr_code_2_rounded, size: 20),
                   ),
                 ],
               ),
