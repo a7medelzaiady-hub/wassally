@@ -15,8 +15,8 @@
 - بناء AAB موقّع يدويًا من `.github/workflows/release-aab.yml` بعد ضبط أسرار GitHub Actions الأربعة: `KEYSTORE_BASE64` و`KEYSTORE_PASSWORD` و`KEY_ALIAS` و`KEY_PASSWORD`. لا يوجد رفع تلقائي إلى Play Console.
 
 ## لازم تعمله إنت في Play Console (مش بيتحل بالكود)
-1. **App content ← Privacy policy:** حط رابط legal/privacy.html المنشور (لازم يفتح من غير تسجيل دخول).
-2. **App content ← Account deletion:** حط رابط legal/delete-account.html، وقول إن الحذف متاح من داخل التطبيق.
+1. **App content ← Privacy policy:** حط https://a7medelzaiady-hub.github.io/wasally-privacy-policy/.
+2. **App content ← Account deletion:** حط https://a7medelzaiady-hub.github.io/wasally-privacy-policy/delete-account.html، وقول إن الحذف متاح من داخل التطبيق.
 3. **Data safety:** راجع الإفصاح لكل الأدوار والـ SDKs: الاسم والبريد والهاتف، عنوان التوصيل، الموقع الدقيق عند اختيار العميل «تحديد موقعي» فقط (إدخال العنوان يدويًا بديل متاح)، الطلبات وسجل النشاط، رسائل الدعم والشكاوى، معرّفات الجهاز/FCM، وبيانات تشخيص الأداء المجمّعة عبر Firebase Performance Monitoring (زمن بدء التطبيق والعمليات وأنماط طلبات الشبكة)، وصور المحلات والمنتجات التي يرفعها أصحاب المحلات، وبيانات المحل/المندوب اللازمة للتشغيل. الغرض: تشغيل الخدمة والأمان والدعم. اذكر مشاركة البيانات مع مقدمي المعالجة Firebase/Google وCloudinary. التشفير أثناء النقل: نعم. إمكانية طلب الحذف: نعم، مع الإفصاح عن السجلات المجهّلة/اللازمة قانونيًا.
 4. **App access:** التطبيق بيدخل بحساب جوجل بس، فادّي المراجعين حساب جوجل تجريبي وبياناته
    (من غيره ممكن ترفض المراجعة بسبب "تعذر الدخول"). لو في أدوار (أدمن/مندوب) اشرحها.
