@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/bulk_products.dart';
 import '../utils/product_autofill.dart';
+import '../utils/product_photo.dart';
 import '../utils/store_product_templates.dart';
 import '../services/order_gateway.dart';
 import 'referral_campaign_page.dart';
@@ -2151,8 +2152,17 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                 child: SizedBox(
                   width: 48,
                   height: 48,
+                  // من غير صورة: نفس الصورة التوضيحية اللي العميل بيشوفها (باهتة شوية).
                   child: image.isEmpty
-                      ? Icon(Icons.image_outlined, color: kMuted)
+                      ? Opacity(
+                          opacity: 0.6,
+                          child: Image.network(
+                            productPhotoFor(name: (m['name'] ?? '').toString()).url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                Icon(Icons.image_outlined, color: kMuted),
+                          ),
+                        )
                       : Image.network(
                           image,
                           fit: BoxFit.cover,
@@ -2410,12 +2420,13 @@ class _ProductDialogState extends State<_ProductDialog> {
     if (name == _suggestedFor) return;
     _suggestedFor = name;
     final next = suggestProduct(name);
-    if (next?.description != _suggestion?.description) {
-      setState(() {
+    // إعادة بناء مع كل تغيير في الاسم: الاقتراح ومعاينة الصورة التوضيحية.
+    setState(() {
+      if (next?.description != _suggestion?.description) {
         _suggestion = next;
         _suggestionUsed = false;
-      });
-    }
+      }
+    });
   }
 
   void _applySuggestion() {
@@ -2611,6 +2622,29 @@ class _ProductDialogState extends State<_ProductDialog> {
                   errorBuilder: (_, _, _) =>
                       const Icon(Icons.broken_image_outlined),
                 ),
+              )
+            else if (_name.text.trim().isNotEmpty)
+              // معاينة: لو ما رفعتش صورة، التطبيق بيكمّل بصورة توضيحية من اسم الصنف.
+              Column(
+                key: const Key('owner-fallback-photo'),
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      productPhotoFor(name: _name.text).url,
+                      height: 90,
+                      width: 120,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'صورة توضيحية هتظهر للعميل لحد ما ترفع صورة حقيقية',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
+                  ),
+                ],
               ),
             TextButton.icon(
               onPressed: _uploading ? null : _pickImage,
