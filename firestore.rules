@@ -1804,6 +1804,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Pseudonymous deletion tombstones: only Worker service credentials can
+    // create/read/delete. The mobile app cannot enumerate or infer identities.
+    match /referral_deleted_identities/{digest} {
+      allow read, write: if false;
+    }
+
+    // Per-device invite eligibility: HMAC identifiers, never raw hardware or
+    // Google IDs. Admin and clients cannot read, list, forge or remove markers.
+    match /referral_device_bindings/{digest} {
+      allow read, write: if false;
+    }
+
     match /referral_attributions/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow list, create, update, delete: if false;

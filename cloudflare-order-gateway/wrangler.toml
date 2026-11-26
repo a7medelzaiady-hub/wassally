@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2026-11-16"
 
 # Persist Worker request/error logs across deployments for canary diagnostics.
+# Bounded daily purging of expired pseudonymous referral markers (UTC).
+# Uses the existing free-tier Worker rather than Blaze/Cloud Functions.
+[triggers]
+crons = ["0 2 * * *"]
+
 [observability.logs]
 enabled = true
 invocation_logs = true
@@ -26,10 +31,18 @@ limit = 15
 period = 60
 
 [vars]
+# REFERRAL_IDENTITY_HMAC_KEY is a required Cloudflare Worker secret for
+# referral-code claims (32+ random bytes). Never add it to [vars]/GitHub.
+# npx wrangler secret put REFERRAL_IDENTITY_HMAC_KEY
+# Account deletion remains available if the secret is absent, but referral
+# claims fail closed until it is configured.
 # Referral codes and registration only. Keep award settlement, payouts, point discounts
 # and commission discounts disabled until the authenticated rollout is approved.
 REFERRAL_REGISTRATION_ENABLED = "true"
 REFERRAL_DELIVERY_ENABLED = "false"
+# Enforce Play Integrity-backed Firebase App Check on device binding and
+# invitation claims ONLY. Other Worker routes remain in monitor mode.
+REFERRAL_DEVICE_APP_CHECK_REQUIRED = "true"
 DEFAULT_DELIVERY_FEE = "20"
 MAX_ORDER_LINES = "100"
 MAX_LINE_QTY = "50"

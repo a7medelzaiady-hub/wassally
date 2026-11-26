@@ -73,7 +73,7 @@ class _ReferralRegistrationCardState extends State<ReferralRegistrationCard> {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'الكود اختياري عند إنشاء حساب وصّلي لأول مرة. تقدر تكمل من غيره، لكن بعد كده مش هينفع تضيفه.',
+                      'الكود اختياري عند إنشاء الحساب لأول مرة. كل موبايل له فرصة إحالة تسجيل واحدة، حتى لو اتستخدم عليه أكتر من حساب جوجل. بصمة الجهاز بتتحفظ بشكل مستعار لمنع التحايل، مش رقم الجهاز نفسه.',
                     ),
                     const SizedBox(height: 8),
                     TextFormField(

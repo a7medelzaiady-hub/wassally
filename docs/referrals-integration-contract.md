@@ -23,6 +23,77 @@ Cloud Functions or new Firestore snapshot listeners.
   Store policies support cash or commission credit. Policy updates use Firestore
   version and document preconditions.
 
+## Account deletion and repeated signup protection
+
+- Firebase Auth assigns a new UID if a person deletes and recreates an account.
+  Do not treat a new UID as proof of a new Google identity.
+- The Worker obtains the stable Google provider subject from the verified
+  Firebase Auth `accounts:lookup.providerUserInfo` response, never from the
+  client or a client-editable Firestore document. During account deletion the
+  Worker stores ONLY an HMAC-SHA256 digest (purpose-separated; a dedicated
+  `REFERRAL_IDENTITY_HMAC_KEY` Cloudflare Secret) in
+  `referral_deleted_identities/{digest}`. Neither email, name, old Firebase UID
+  nor raw Google subject is stored in the marker.
+- On first-registration claims the Worker calculates the digest for the new
+  account's verified Google identity and refuses the referral if an unexpired
+  deletion marker exists. It still permits normal use of the newly created
+  account; the restriction only applies to claiming a new-user referral.
+- There is an explicit **365-day retention** period. The Worker runs a
+  bounded daily scheduled cleanup of expired records (no Firebase paid TTL,
+  no Blaze, no Cloud Functions); expired records do not block a claim even
+  if removal is scheduled but not completed. The digest is pseudonymous
+  personal data, not anonymized data, and this retention is disclosed in both
+  the app and the public privacy/deletion pages.
+- Deployment is **blocked for referral rewards** until the 32+ byte
+  `REFERRAL_IDENTITY_HMAC_KEY` is set in Cloudflare Secrets and verified.
+  Missing secret or missing verified Google identity fails closed on the
+  *claim* endpoint. Account deletion remains available even if this secret
+  is missing. Keep the secret stable for the full retention period; rotating
+  it requires a dual-key migration, otherwise old records no longer match.
+- This only protects deletions performed after the updated Worker and secret
+  have been deployed; preexisting deletions cannot be reconstructed from
+  completely erased account data. Test deletion->rejoin and two different
+  Google accounts against staging before production activation.
+
+## One-invitation-per-device guard (Android)
+
+- Multiple Google accounts may sign in and use Wasally normally, but **only the
+  first Google identity bound to an Android device may claim an invitation code**.
+  Even if the first user never enters an invitation code, their first login
+  reserves that device so a later Google account cannot claim a second new-user
+  referral. Every login attempts a low-read, idempotent binding; resumed
+  Firebase sessions bind in the role gate without new Firestore listeners.
+- Android `Settings.Secure.ANDROID_ID` is scoped by device, Android profile
+  and app signing key on Android 8+. Flutter gets it through a native MethodChannel,
+  sends it only via HTTPS to the Worker; it is never stored in the app's
+  Firestore data or logged. The Worker stores separate HMAC digests for the
+  device and the Google subject (no raw device ID, email or UID), using the
+  existing `REFERRAL_IDENTITY_HMAC_KEY` Cloudflare secret.
+- The Worker conditionally creates `referral_device_bindings/{deviceDigest}`
+  and rejects any other verified Google identity while the record is active.
+  Firestore preconditions defeat racing account registration; existing owner
+  requests are idempotent. Claim requires the device ID and rechecks the server
+  binding. Read/list/write are denied to all app roles including admin.
+- **Only these two referral endpoints** require valid Firebase App Check
+  (Play Integrity) in production, controlled by
+  `REFERRAL_DEVICE_APP_CHECK_REQUIRED=true`. Other Worker routes remain
+  in monitor mode. Device identity alone is spoofable; Play Integrity
+  makes ordinary automation harder but does not guarantee uniqueness.
+- Device markers expire in 365 days; existing daily Worker Cron deletes expired
+  records from both `referral_deleted_identities` and
+  `referral_device_bindings`. Expired markers can be replaced by a new
+  Google identity. The device ID can also change on factory reset, Android
+  profile or app signing-key changes. This is a proportional anti-abuse guard,
+  not a tamper-proof hardware identity.
+- Device marker retention is pseudonymous personal data and is disclosed in
+  the app and the public privacy/deletion pages. **Do not deploy without
+  publishing those notices** and verifying the actual production App Check
+  configuration and HMAC secret. Android debug builds signed differently
+  can have a different scoped Android ID than Play-signed builds.
+- Older app versions that do not send device identity will safely fail code
+  submission; regular ordering and sign-in are unaffected. iOS/web cannot
+  submit an Android invitation under this safeguard.
+
 ## Delivery and rewards
 
 - A successful regular order has status `delivered` and a canonical

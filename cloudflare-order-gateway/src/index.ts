@@ -6,6 +6,19 @@ import { ReferralPayoutConflict, updateReferralPayout } from "./referral_payout"
 import { getOrIssueReferralCode } from "./referral_campaign";
 import { settleCustomerDelivery, settleStoreDelivery } from "./referral_delivery";
 import { registerReferral } from "./referral_registration";
+import {
+  REFERRAL_IDENTITY_COLLECTION,
+  googleSubjectFromFirebaseLookup,
+  hasValidIdentitySecret,
+  identityMarkerExpiresAt,
+  isActiveDeletedIdentity,
+  referralIdentityDocumentId,
+  isValidAndroidSsaid,
+  referralDeviceDocumentId,
+  referralDeviceOwnerDigest,
+  referralDeviceEligibility,
+} from "./referral_identity";
+import { pruneExpiredDeletedReferralIdentities } from "./referral_identity_prune";
 import { isOriginalRegistrationSession } from "./referral_first_session";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
 import {
@@ -36,6 +49,10 @@ interface Env {
   FIREBASE_PROJECT_ID: string;
   REFERRAL_REGISTRATION_ENABLED?: string;
   REFERRAL_DELIVERY_ENABLED?: string;
+  /** Cloudflare secret; 32+ bytes, never committed or exposed to clients. */
+  REFERRAL_IDENTITY_HMAC_KEY?: string;
+  /** Set true in production. App Check must pass for device-bound claims. */
+  REFERRAL_DEVICE_APP_CHECK_REQUIRED?: string;
   FIREBASE_SERVICE_ACCOUNT_EMAIL: string;
   FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: string;
   ALLOWED_ORIGINS?: string;
@@ -132,6 +149,7 @@ const firebaseUserStateCache = new Map<string, {
   checkedAt: number;
   createdAtMs: number;
   lastLoginAtMs: number;
+  googleSubject: string | null;
   validSince: number;
   disabled: boolean;
 }>();
@@ -425,7 +443,11 @@ async function assertFirebaseUserActive(
       throw new HttpError(503, "تعذر التحقق من حالة الحساب حاليًا. حاول مرة أخرى.");
     }
     const result = await lookup.json() as {
-      users?: Array<{ localId?: string; validSince?: string; disabled?: boolean; createdAt?: string; lastLoginAt?: string }>;
+      users?: Array<{
+        localId?: string; validSince?: string; disabled?: boolean;
+        createdAt?: string; lastLoginAt?: string;
+        providerUserInfo?: Array<{ providerId?: string; rawId?: string }>;
+      }>;
     };
     const user = result.users?.find((entry) => entry.localId === uid);
     if (!user) {
@@ -442,6 +464,7 @@ async function assertFirebaseUserActive(
       disabled: user.disabled === true,
       createdAtMs: Number(user.createdAt),
       lastLoginAtMs: Number(user.lastLoginAt),
+      googleSubject: googleSubjectFromFirebaseLookup(user.providerUserInfo),
     };
     firebaseUserStateCache.set(uid, state);
     if (firebaseUserStateCache.size > 1_000) {
@@ -931,6 +954,137 @@ async function deleteFirebaseAuthUser(env: Env, token: string, uid: string): Pro
   }
 }
 
+/**
+ * In the deletion flow, the verified Google subject is only used in memory.
+ * Deleting accounts is never blocked by a missing secret or missing provider
+ * metadata: the right to delete must be preserved. The referral CLAIM endpoint
+ * fails closed in that state, and production rollout requires the secret.
+ */
+async function rememberDeletedReferralIdentity(
+  env: Env,
+  token: string,
+  uid: string,
+): Promise<void> {
+  const googleSubject = firebaseUserStateCache.get(uid)?.googleSubject ?? null;
+  if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY) || !googleSubject) {
+    console.warn("Referral re-registration protection not configured for account deletion");
+    return;
+  }
+  const marker = await referralIdentityDocumentId(
+    env.REFERRAL_IDENTITY_HMAC_KEY!, googleSubject,
+  );
+  await commitFirestoreWrites(env, token, [{
+    update: {
+      name: firestoreDocumentName(env, `${REFERRAL_IDENTITY_COLLECTION}/${marker}`),
+      fields: encodeFields({
+        reason: "deleted_account_referral_prevention",
+        createdAt: new Date(),
+        expiresAt: identityMarkerExpiresAt(new Date()),
+      }),
+    },
+  }]);
+}
+
+const REFERRAL_DEVICE_COLLECTION = "referral_device_bindings";
+
+async function assertReferralDeviceAppCheck(request: Request, env: Env): Promise<void> {
+  // In production, require valid Play Integrity-backed App Check for the
+  // invitation binding path, even while the rest of the app is in monitor mode.
+  // "false" is reserved for CI/emulator staging, not a release configuration.
+  if (env.REFERRAL_DEVICE_APP_CHECK_REQUIRED !== "false") {
+    await assertAppCheck(request, { ...env, APP_CHECK_MODE: "enforce" });
+  }
+}
+
+/**
+ * One Google identity per Android app-scoped device can receive a new-user
+ * invitation. All Google sign-ins attempt this lightweight binding, even if
+ * the account will not use a code, so a second account cannot impersonate a
+ * new user from the same phone merely because the first skipped the code.
+ *
+ * The on-device SSAID is never persisted or logged; this stores HMAC digests
+ * only. Android SSAID is not a cryptographic attestation: App Check must also
+ * pass, and rooted/virtual devices cannot be guaranteed unique.
+ */
+async function bindReferralDevice(
+  env: Env, token: string, uid: string, deviceId: unknown,
+): Promise<boolean> {
+  if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY)) {
+    throw new HttpError(503, "حماية مكافآت الإحالة غير مهيأة حاليًا.");
+  }
+  if (!isValidAndroidSsaid(deviceId)) {
+    throw new HttpError(403, "تعذر التحقق من جهازك لاستحقاق كود الدعوة.");
+  }
+  const subject = firebaseUserStateCache.get(uid)?.googleSubject;
+  if (!subject) throw new HttpError(403, "تعذر التحقق من هوية جوجل للمكافأة.");
+  const key = env.REFERRAL_IDENTITY_HMAC_KEY!;
+  const digest = await referralDeviceDocumentId(key, deviceId);
+  const owner = await referralDeviceOwnerDigest(key, subject);
+  const path = `${REFERRAL_DEVICE_COLLECTION}/${digest}`;
+  const name = firestoreDocumentName(env, path);
+
+  // Conditional create/replace is safe if two accounts bind concurrently.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await getDocument(env, path, token);
+    const now = new Date();
+    const decision = referralDeviceEligibility(
+      existing ? decodeFields(existing.fields ?? {}) : null, owner, now,
+    );
+    if (decision === "block") return false;
+    if (decision === "same") return true;
+    if (decision === "replace-expired" && !existing?.updateTime) {
+      throw new HttpError(503, "تعذر التحقق من سجل الجهاز حاليًا.");
+    }
+    const result = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ writes: [{
+        update: {
+          name,
+          fields: encodeFields({
+            googleOwnerDigest: owner,
+            createdAt: now,
+            expiresAt: identityMarkerExpiresAt(now),
+          }),
+        },
+        currentDocument: existing
+          ? { updateTime: existing.updateTime }
+          : { exists: false },
+      }] }),
+    });
+    if (result.ok) return true;
+    // A racing registration may have won; re-read instead of overwriting.
+    if (result.status === 409 || result.status === 412) continue;
+    throw new HttpError(503, "تعذر تسجيل حماية الإحالة على الجهاز.");
+  }
+  throw new HttpError(503, "حاول التحقق من الجهاز مرة ثانية.");
+}
+
+async function rejectPreviouslyDeletedReferralIdentity(
+  env: Env,
+  uid: string,
+  token: string,
+): Promise<void> {
+  if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY)) {
+    throw new HttpError(503, "حماية الإحالات غير مهيأة حاليًا.");
+  }
+  const googleSubject = firebaseUserStateCache.get(uid)?.googleSubject;
+  if (!googleSubject) {
+    throw new HttpError(403, "تعذر التحقق من أهلية كود الإحالة لحساب جوجل.");
+  }
+  const marker = await referralIdentityDocumentId(
+    env.REFERRAL_IDENTITY_HMAC_KEY!, googleSubject,
+  );
+  const deleted = await getDocument(
+    env, `${REFERRAL_IDENTITY_COLLECTION}/${marker}`, token,
+  );
+  if (deleted && isActiveDeletedIdentity(decodeFields(deleted.fields ?? {}), new Date())) {
+    throw new HttpError(403, "كود الدعوة للمستخدم الجديد فقط، ولا يُعاد بعد حذف الحساب.");
+  }
+}
+
 async function deleteAccount(request: Request, env: Env): Promise<Response> {
   if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_SERVICE_ACCOUNT_EMAIL ||
       !env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY) {
@@ -938,6 +1092,7 @@ async function deleteAccount(request: Request, env: Env): Promise<Response> {
   }
   const uid = await verifyRecentCustomer(request, env);
   const token = await googleAccessToken(env);
+  await rememberDeletedReferralIdentity(env, token, uid);
   await deleteAccountData(env, token, uid);
   await deleteFirebaseAuthUser(env, token, uid);
   return response({ ok: true, deleted: true });
@@ -2231,6 +2386,21 @@ async function cleanupOrderAttachmentsFor(
 }
 
 export default {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    if (!hasValidIdentitySecret(env.REFERRAL_IDENTITY_HMAC_KEY)) return;
+    const token = await googleAccessToken(env);
+    // Only the HMAC document IDs are ever touched. No user email, raw Google
+    // subject or Firebase UID is persisted by this retention job.
+    const deletedCount = await pruneExpiredDeletedReferralIdentities(
+      env.FIREBASE_PROJECT_ID, token, fetch,
+    );
+    const expiredDevices = await pruneExpiredDeletedReferralIdentities(
+      env.FIREBASE_PROJECT_ID, token, fetch, new Date(), 10, REFERRAL_DEVICE_COLLECTION,
+    );
+    if (deletedCount || expiredDevices) {
+      console.info("Expired referral protection markers deleted", deletedCount + expiredDevices);
+    }
+  },
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     let headers: Headers;
     try {
@@ -2310,19 +2480,39 @@ export default {
         return response({ error: e.message }, e.status, headers);
       }
     }
+    if (request.method === "POST" && url.pathname === "/v1/referrals/device-binding") {
+      if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
+        return response({ error: "الإحالات غير متاحة حاليًا." }, 404, headers);
+      }
+      try {
+        await assertReferralDeviceAppCheck(request, env);
+        const uid = await verifyCustomer(request, env);
+        const body = await request.json().catch(() => null) as { deviceId?: unknown } | null;
+        const token = await googleAccessToken(env);
+        const eligible = await bindReferralDevice(env, token, uid, body?.deviceId);
+        return response({ eligible }, 200, headers);
+      } catch (error) {
+        const e = error instanceof HttpError ? error : new HttpError(503, "تعذر التحقق من الجهاز حاليًا.");
+        return response({ error: e.message }, e.status, headers);
+      }
+    }
     if (request.method === "POST" && url.pathname === "/v1/referrals/registration") {
       if (env.REFERRAL_REGISTRATION_ENABLED !== "true") {
         return response({ error: "التسجيل بكود الإحالة غير متاح حاليًا." }, 404, headers);
       }
       try {
+        await assertReferralDeviceAppCheck(request, env);
         const uid = await verifyCustomer(request, env, true);
         const limit = await env.ORDER_RATE_LIMITER?.limit({ key: "referral-registration:" + uid });
         if (limit?.success === false) throw new HttpError(429, "حاول مرة أخرى بعد قليل.");
-        const body = await request.json().catch(() => null) as { code?: unknown } | null;
+        const body = await request.json().catch(() => null) as { code?: unknown; deviceId?: unknown } | null;
         if (typeof body?.code !== "string" || body.code.length > 32) {
           throw new HttpError(400, "اكتب كود إحالة صحيح.");
         }
         const token = await googleAccessToken(env);
+        await rejectPreviouslyDeletedReferralIdentity(env, uid, token);
+        const deviceEligible = await bindReferralDevice(env, token, uid, body?.deviceId);
+        if (!deviceEligible) throw new HttpError(403, "نفس الموبايل لا يستحق أكثر من إحالة تسجيل جديدة.");
         const accepted = await registerReferral({
           projectId: env.FIREBASE_PROJECT_ID,
           token,

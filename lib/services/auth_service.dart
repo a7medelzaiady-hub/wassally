@@ -23,10 +23,23 @@ class AuthService {
   /// No pending invitation is restored for users who registered previously.
   static final ValueNotifier<String?> newAccountInvitation = ValueNotifier(null);
 
-  static void _onGoogleLogin(UserCredential credential) {
-    newAccountInvitation.value = credential.additionalUserInfo?.isNewUser == true
-        ? credential.user?.uid
-        : null;
+  static Future<void> _onGoogleLogin(UserCredential credential) async {
+    // Register every Google account on this device, not only customers who
+    // choose to enter an invitation. A second account cannot claim a second
+    // new-user reward simply because the first account skipped the code.
+    // Failure never blocks normal Google login; the claim endpoint fails closed.
+    bool deviceEligible = false;
+    try {
+      deviceEligible = await OrderGateway.registerReferralDevice();
+    } catch (_) {
+      debugPrint('Referral device verification unavailable (sign-in unaffected).');
+    }
+    // A second Google account on this phone, or a missing verification,
+    // must not even see a "new customer" invitation form.
+    newAccountInvitation.value =
+        deviceEligible && credential.additionalUserInfo?.isNewUser == true
+            ? credential.user?.uid
+            : null;
   }
 
   static void dismissNewAccountInvitation(String uid) {
@@ -42,7 +55,7 @@ class AuthService {
   ///   رجوع تلقائي للمتصفح لو فشلت (بتظهر رسالة بسبب الفشل بدل كده).
   static Future<void> signInWithGoogle() async {
     if (kIsWeb) {
-      _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
+      await _onGoogleLogin(await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider()));
       await carts.attachAfterSignIn();
       return;
     }
@@ -50,7 +63,7 @@ class AuthService {
       // نافذة اختيار الحساب المنبثقة (الأصلية). مفيش رجوع للمتصفح: صفحة المتصفح كانت
       // بتطلب بصمة وبتعرض صفحة برابط بدل ما ترجع للتطبيق.
       try {
-        _onGoogleLogin(await _nativeGoogleSignIn());
+        await _onGoogleLogin(await _nativeGoogleSignIn());
         await carts.attachAfterSignIn();
         return;
       } on GoogleSignInException catch (e) {
@@ -70,7 +83,7 @@ class AuthService {
         );
       }
     }
-    _onGoogleLogin(await _providerSignInWithRetry());
+    await _onGoogleLogin(await _providerSignInWithRetry());
     await carts.attachAfterSignIn();
   }
 
