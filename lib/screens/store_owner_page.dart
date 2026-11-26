@@ -1861,7 +1861,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       _say('مفيش أصناف بدون عروض مناسبة للتعديل في القائمة المعروضة.');
       return;
     }
-    final input = TextEditingController();
+    var input = '';
     String? error;
     final percent = await showDialog<double>(
       context: context,
@@ -1875,7 +1875,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                   'الخصومات الحالية مش هتتغير. نسبة سالبة = تخفيض.'),
               const SizedBox(height: 12),
               TextField(
-                controller: input,
+                onChanged: (value) => input = value,
                 keyboardType: const TextInputType.numberWithOptions(
                     decimal: true, signed: true),
                 decoration: InputDecoration(
@@ -1889,7 +1889,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                 child: const Text('إلغاء')),
             FilledButton(
               onPressed: () {
-                final p = double.tryParse(input.text.trim().replaceAll(',', '.'));
+                final p = double.tryParse(input.trim().replaceAll(',', '.'));
                 if (p == null || p < -80 || p > 100 || p == 0) {
                   refresh(() => error = 'اكتب نسبة بين -80 و100 غير الصفر');
                   return;
@@ -1902,7 +1902,6 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         ),
       ),
     );
-    input.dispose();
     if (percent == null || !mounted) return;
     final changes = <(QueryDocumentSnapshot<_Json>, double)>[];
     for (final doc in candidates) {
@@ -2374,8 +2373,12 @@ class _ProductDialogState extends State<_ProductDialog> {
       'optionGroups': _groups.map((e) => e.toMap()).toList(),
       'bestSeller': _best, 'image': _image,
     });
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_draftKey(widget.storeId), raw);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftKey(widget.storeId), raw);
+    } catch (_) {
+      // عدم توفر التخزين المحلي لا يمنع إضافة الصنف أو حفظه في المتجر.
+    }
   }
 
   void _draftChanged() {
