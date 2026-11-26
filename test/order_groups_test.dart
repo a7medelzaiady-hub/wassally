@@ -120,7 +120,9 @@ void main() {
       await tester.tap(find.byKey(const Key('carts-group-switch')));
       await tester.pumpAndSettle();
       expect(book.groupingOn, isTrue);
-      expect(find.textContaining('#${book.groupCode}'), findsOneWidget);
+      // رقم المجموعة للمندوب بس، مش بيظهر للعميل في «سلّاتي».
+      expect(find.textContaining('مفعّل'), findsOneWidget);
+      expect(find.textContaining('#${book.groupCode}'), findsNothing);
     });
 
     testWidgets('ما يظهرش من غير بوابة الطلبات أو مع سلة واحدة', (tester) async {

@@ -41,13 +41,15 @@ class MainShell extends StatelessWidget {
             if (!didPop) shellTab.value = 0;
           },
           child: Scaffold(
-          floatingActionButton: index == 3
+          // السلة ليها زرار أساسي تحت، فالزرار العايم بيزحمها.
+          floatingActionButton: index == 3 || index == 1
               ? null
               : const FeedbackFab(allowOrderIssue: true),
           body: Stack(
             children: [
               IndexedStack(index: index, children: _pages),
-              if (Navigator.of(context).canPop() &&
+              if (index != 1 &&
+                  Navigator.of(context).canPop() &&
                   (RoleService.cachedFor(
                             FirebaseAuth.instance.currentUser?.uid ?? '',
                           )?.role ??

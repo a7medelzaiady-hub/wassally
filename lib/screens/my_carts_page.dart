@@ -55,48 +55,38 @@ class MyCartsPage extends StatelessWidget {
                         ),
                       )
                     : ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7E8),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE5B85C)),
-                            ),
-                            child: Text(
-                              all.length == 1
-                                  ? 'عندك سلة واحدة. راجعها وأكد طلبك.'
-                                  : 'عندك ${all.length} سلال من ${all.length} محلات. كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. راجع كل سلة: أكدها أو عدّلها أو امسحها. السلال بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
-                              style: const TextStyle(height: 1.5),
-                            ),
-                          ),
+                          _CartsNote(count: all.length),
                           if (allowGrouping && (all.length >= 2 || book.groupingOn))
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Material(
-                              color: Colors.white,
-                              shape: RoundedRectangleBorder(
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
                                 borderRadius: BorderRadius.circular(14),
-                                side: BorderSide(color: kLine),
+                                border: Border.all(color: kLine),
                               ),
-                              clipBehavior: Clip.antiAlias,
                               child: SwitchListTile(
                                 key: const Key('carts-group-switch'),
+                                dense: true,
+                                contentPadding: const EdgeInsetsDirectional.fromSTEB(14, 2, 8, 2),
                                 value: book.groupingOn,
                                 onChanged: (v) => book.setGrouping(v),
+                                secondary: CircleAvatar(
+                                  radius: 17,
+                                  backgroundColor: kAccent.withValues(alpha: 0.10),
+                                  child: Icon(Icons.route_rounded, size: 19, color: kAccent),
+                                ),
                                 title: const Text(
-                                  'اجمع طلبات السلال دي في رحلة واحدة',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                  'اجمع الطلبات في رحلة واحدة',
+                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                                 ),
                                 subtitle: Text(
                                   book.groupingOn
-                                      ? 'رقم المجموعة #${book.groupCode}: هيظهر للمندوب على كل طلب تأكده من هنا. كل طلب بيفضل مستقل برقمه ورسومه.'
-                                      : 'اختياري: المندوب يعرف إن الطلبات دي لنفس الرحلة. كل طلب بيفضل مستقل برقمه ورسومه.',
-                                  style: const TextStyle(height: 1.4),
+                                      ? 'مفعّل: مندوب واحد هيجيب السلال مع بعض'
+                                      : 'اختياري: مندوب واحد يجيب السلال مع بعض',
+                                  style: TextStyle(fontSize: 12, color: kMuted),
                                 ),
-                              ),
                               ),
                             ),
                           for (final c in all)
@@ -105,11 +95,10 @@ class MyCartsPage extends StatelessWidget {
                               isActive: c.storeId != null && c.storeId == book.active.storeId,
                               book: book,
                             ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
+                          TextButton.icon(
                             key: const Key('carts-shop-other'),
-                            icon: const Icon(Icons.storefront),
-                            label: const Text('التسوق من محل آخر'),
+                            icon: const Icon(Icons.add_business_outlined, size: 20),
+                            label: const Text('تسوّق من محل تاني'),
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => const StoreDirectoryPage()),
                             ),
@@ -169,72 +158,154 @@ class _CartCard extends StatelessWidget {
       for (final e in snap.items.entries) '${e.key.name} × ${e.value}',
       if (snap.specialRequest != null) 'طلب خاص',
     ];
+    // عدد الأصناف = الأصناف المختلفة، مش مجموع الكميات (بطاطس × 5 = صنف واحد).
+    final kinds = snap.items.length + (snap.specialRequest != null ? 1 : 0);
     final canAddMore = book.storeFor(_storeId) != null;
+    final submitted = snap.submittedOrderId != null;
     return Container(
       key: Key('cart-card-$_storeId'),
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isActive ? kPrimary : kLine, width: isActive ? 1.6 : 1),
+        border: Border.all(color: isActive ? kPrimary.withValues(alpha: 0.55) : kLine),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Icon(Icons.storefront, color: kPrimary),
-              const SizedBox(width: 8),
+              CircleAvatar(
+                radius: 19,
+                backgroundColor: kAccent.withValues(alpha: 0.10),
+                child: Icon(Icons.storefront_rounded, size: 20, color: kAccent),
+              ),
+              const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  snap.storeName ?? 'محل',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      snap.storeName ?? 'محل',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      names.join('، '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, color: kMuted),
+                    ),
+                  ],
                 ),
               ),
               if (isActive)
-                Text('السلة الحالية', style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            names.join('، '),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: kMuted, height: 1.4),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${snap.count} صنف • ${formatPrice(snap.subtotal)}',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            key: Key('cart-review-$_storeId'),
-            icon: const Icon(Icons.check_circle_outline),
-            label: const Text('راجع وأكد الطلب'),
-            onPressed: () => _review(context),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              if (canAddMore)
-                Expanded(
-                  child: OutlinedButton(
-                    key: Key('cart-add-more-$_storeId'),
-                    onPressed: () => _addMore(context),
-                    child: const Text('إضافة منتجات من نفس المحل', textAlign: TextAlign.center),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: kPrimary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'السلة الحالية',
+                    style: TextStyle(fontSize: 11, color: kPrimary, fontWeight: FontWeight.w800),
                   ),
                 ),
-              if (canAddMore) const SizedBox(width: 8),
-              TextButton.icon(
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formatPrice(snap.subtotal),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      snap.fee > 0
+                          ? '$kinds صنف • + توصيل ${formatPrice(snap.fee)}'
+                          : '$kinds صنف',
+                      style: TextStyle(fontSize: 12, color: kMuted),
+                    ),
+                  ],
+                ),
+              ),
+              if (canAddMore)
+                IconButton(
+                  key: Key('cart-add-more-$_storeId'),
+                  tooltip: 'إضافة منتجات من نفس المحل',
+                  onPressed: () => _addMore(context),
+                  icon: Icon(Icons.add_shopping_cart_rounded, color: kAccent),
+                  style: IconButton.styleFrom(
+                    side: BorderSide(color: kLine),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              const SizedBox(width: 6),
+              IconButton(
                 key: Key('cart-delete-$_storeId'),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('امسح'),
+                tooltip: 'امسح السلة',
                 onPressed: () => _delete(context),
+                icon: Icon(Icons.delete_outline_rounded, color: kDanger),
+                style: IconButton.styleFrom(
+                  side: BorderSide(color: kLine),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 44,
+                child: FilledButton(
+                  key: Key('cart-review-$_storeId'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => _review(context),
+                  child: Text(submitted ? 'عرض' : 'أكمل الطلب'),
+                ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// سطر تعريفي قصير فوق السلال (بدل فقرة الشرح الطويلة).
+class _CartsNote extends StatelessWidget {
+  final int count;
+  const _CartsNote({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 17, color: kMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              count == 1
+                  ? 'سلتك محفوظة على موبايلك لحد ما تفرّغها بنفسك.'
+                  : 'عندك $count سلال، كل سلة بتتطلب لوحدها برسوم توصيلها. محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
+              style: TextStyle(fontSize: 12.5, color: kMuted, height: 1.45),
+            ),
           ),
         ],
       ),

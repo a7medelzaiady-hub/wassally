@@ -1,5 +1,9 @@
 import 'package:city_store/screens/admin_navigation_page.dart';
+import 'package:city_store/models/product.dart';
 import 'package:city_store/screens/cart_page.dart';
+import 'package:city_store/screens/my_carts_page.dart';
+import 'package:city_store/services/cart_book.dart';
+import 'package:city_store/services/cart_model.dart';
 import 'package:city_store/screens/categories_landing_page.dart';
 import 'package:city_store/screens/user_guide_page.dart';
 import 'package:city_store/screens/onboarding_page.dart';
@@ -151,6 +155,20 @@ void main() {
 
   testWidgets('cart empty inner', (tester) async {
     await shoot(tester, 'cart_inner_390x844', const Scaffold(body: CartPage(showBackButton: true)));
+  });
+
+  testWidgets('cart with items + my carts', (tester) async {
+    carts.clearAll();
+    cart.add(const Product('بطاطس', 33), storeId: 'veg', storeName: 'فواكه وخضروات', qty: 5);
+    carts.switchTo('ph');
+    cart.add(const Product('فيتامين سي', 45), storeId: 'ph', storeName: 'صيدلية الشفاء');
+    cart.add(const Product('كمامات (علبة)', 30), storeId: 'ph', storeName: 'صيدلية الشفاء');
+    await shoot(tester, 'cart_items_390x844', const Scaffold(
+      body: CartPage(),
+      bottomNavigationBar: CustomerBottomNav(currentTab: 1),
+    ));
+    await shoot(tester, 'my_carts_390x844', const MyCartsPage(allowGrouping: true));
+    carts.clearAll();
   });
 
   testWidgets('user guide', (tester) async {
