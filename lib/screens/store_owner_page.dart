@@ -5,9 +5,11 @@ import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/bulk_products.dart';
 import '../utils/product_autofill.dart';
+import '../utils/store_product_templates.dart';
 import '../services/order_gateway.dart';
 import 'referral_campaign_page.dart';
 import '../models/order.dart';
@@ -1685,17 +1687,29 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     return ok;
   }
 
-  Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
+  Future<void> _edit(QueryDocumentSnapshot<_Json>? doc, {bool copy = false}) async {
+    final original = doc?.data();
+    final draft = copy && original != null
+        ? <String, dynamic>{...original, 'name': '${original['name']} نسخة'}
+        : original;
     final result = await showDialog<_ProductForm>(
       context: context,
-      builder: (_) =>
-          _ProductDialog(existing: doc?.data(), storeId: widget.storeId),
+      builder: (_) => _ProductDialog(
+        existing: draft, storeId: widget.storeId,
+      ),
     );
     if (result == null || !mounted) return;
+    final key = normalizeProductKey(result.name);
+    // دون استعلام إضافي: استخدم الأصناف التي حمّلتها صفحة التاجر بالفعل.
+    if (_docs.any((d) => d.id != (copy ? null : doc?.id) &&
+        normalizeProductKey((d.data()['name'] ?? '').toString()) == key)) {
+      _say('الصنف ده موجود بالفعل. عدّل الصنف الموجود أو غيّر الاسم.');
+      return;
+    }
 
     try {
-      final newRef = doc == null ? _col.doc() : null;
-      final savedId = doc?.id ?? newRef!.id;
+      final newRef = doc == null || copy ? _col.doc() : null;
+      final savedId = newRef?.id ?? doc!.id;
       // قبل الكتابة: لو التطبيق اتقفل قبل مزامنة القائمة، تتكمّل أول ما الصفحة تتفتح.
       await CatalogSync.markPending(widget.storeId, [savedId]);
       if (newRef != null) {
@@ -1730,36 +1744,60 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         });
       }
       final ok = await _afterProductChange(savedId);
+      if (doc == null && !copy) {
+        // المسودة لا تُحذف إلا بعد حفظ المنتج بنجاح على Firestore.
+        await _ProductDialogState.clearNewDraft(widget.storeId);
+      }
       _say(StoreHighlights.withNote('تم حفظ الصنف', ok));
     } catch (e) {
       _say('تعذر حفظ الصنف: ${_why(e)}');
     }
   }
 
-  /// لصق قايمة أسعار (سطر لكل صنف) ← مراجعة ← إضافة الكل على دفعات.
-  /// الأصناف بتتكتب مرة واحدة، وبعدها القائمة المجمّعة بتتبني مرة واحدة بس.
-  Future<void> _bulkAdd() async {
-    final lines = await showModalBottomSheet<List<BulkProductLine>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => const _BulkProductsSheet(),
-    );
-    if (lines == null || lines.isEmpty || !mounted) return;
+  /// كتابة الأصناف في دفعات مع مزامنة الملخص مرة واحدة فقط.
+  /// كشف التكرار يعتمد على القائمة المحمّلة محليًا (أول 200 صنف).
+  Future<void> _addProducts(List<BulkProductLine> lines) async {
+    final known = _docs.map((d) =>
+        normalizeProductKey((d.data()['name'] ?? '').toString())).toSet();
+    final unique = <BulkProductLine>[];
+    var skipped = 0;
+    for (final line in lines) {
+      if (!known.add(normalizeProductKey(line.name))) {
+        skipped++;
+      } else {
+        unique.add(line);
+      }
+    }
+    if (unique.isEmpty) {
+      _say('كل الأصناف المختارة موجودة بالفعل في القائمة المحمّلة.');
+      return;
+    }
+    if (skipped > 0) {
+      final proceed = await confirmDialog(
+        context,
+        title: 'أصناف مكررة',
+        message: 'لقينا $skipped صنف مكرر في القائمة المحمّلة. '
+            'هنضيف ${unique.length} صنف بس. تكمل؟',
+        confirmLabel: 'إضافة غير المكرر',
+      );
+      if (!proceed || !mounted) return;
+    }
     var added = 0;
     Object? error;
     await CatalogSync.markPending(widget.storeId);
     try {
-      for (var start = 0; start < lines.length; start += 100) {
-        final end = start + 100 > lines.length ? lines.length : start + 100;
+      for (var start = 0; start < unique.length; start += 100) {
+        final end = (start + 100).clamp(0, unique.length);
         final batch = FirebaseFirestore.instance.batch();
-        for (final l in lines.sublist(start, end)) {
+        for (final l in unique.sublist(start, end)) {
           final groups = l.suggestion?.optionGroups ?? const <OptionGroup>[];
           batch.set(_col.doc(), {
             'name': l.name,
             'price': l.price,
             'image': '',
             if (l.description.isNotEmpty) 'description': l.description,
-            if (groups.isNotEmpty) 'optionGroups': groups.map((g) => g.toMap()).toList(),
+            if (groups.isNotEmpty)
+              'optionGroups': groups.map((g) => g.toMap()).toList(),
             'isAvailable': true,
             'available': true,
             'createdAt': FieldValue.serverTimestamp(),
@@ -1773,19 +1811,139 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       error = e;
     }
     if (added > 0) {
-      try {
-        await _syncCount();
-      } catch (_) {}
+      try { await _syncCount(); } catch (_) {}
       final ok = await CatalogSync.afterProductsChanged(widget.storeId);
       await _load(fromCache: true);
-      if (error == null) {
-        _say(StoreHighlights.withNote('تم إضافة $added صنف', ok));
-        return;
-      }
-      _say('اتضاف $added صنف بس، والباقي ما اتضافش: ${_why(error)}');
+      _say(error == null
+          ? StoreHighlights.withNote('تم إضافة $added صنف', ok)
+          : 'اتضاف $added صنف بس: ${_why(error)}');
+    } else if (error != null) {
+      _say('تعذر إضافة الأصناف: ${_why(error)}');
+    }
+  }
+
+  Future<void> _bulkAdd() async {
+    final lines = await showModalBottomSheet<List<BulkProductLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _BulkProductsSheet(),
+    );
+    if (lines != null && lines.isNotEmpty && mounted) {
+      await _addProducts(lines);
+    }
+  }
+
+  Future<void> _addFromTemplates() async {
+    final lines = await showModalBottomSheet<List<BulkProductLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _ProductTemplatesSheet(),
+    );
+    if (lines != null && lines.isNotEmpty && mounted) {
+      await _addProducts(lines);
+    }
+  }
+
+  /// تعديل أسعار الأصناف المعروضة فقط، من غير قراءة جديدة. نستبعد الأصناف
+  /// عليها عروض حتى لا نفسد السعر قبل الخصم.
+  Future<void> _changePricesTogether() async {
+    final term = normalizeProductKey(_term);
+    final candidates = _docs.where((doc) {
+      final m = doc.data();
+      final price = m['price'];
+      return (term.isEmpty ||
+              normalizeProductKey((m['name'] ?? '').toString()).contains(term)) &&
+          price is num && price > 0 &&
+          m['oldPrice'] is! num &&
+          (m['offerText'] ?? '').toString().isEmpty;
+    }).toList();
+    if (candidates.isEmpty) {
+      _say('مفيش أصناف بدون عروض مناسبة للتعديل في القائمة المعروضة.');
       return;
     }
-    if (error != null) _say('تعذر إضافة الأصناف: ${_why(error)}');
+    final input = TextEditingController();
+    String? error;
+    final percent = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, refresh) => AlertDialog(
+          title: const Text('تعديل أسعار مجموعة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('هيتعدل سعر ${candidates.length} صنف محمّل في الصفحة فقط. '
+                  'الخصومات الحالية مش هتتغير. نسبة سالبة = تخفيض.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: input,
+                keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true, signed: true),
+                decoration: InputDecoration(
+                    labelText: 'نسبة التغيير % (مثال 10 أو -5)',
+                    errorText: error),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () {
+                final p = double.tryParse(input.text.trim().replaceAll(',', '.'));
+                if (p == null || p < -80 || p > 100 || p == 0) {
+                  refresh(() => error = 'اكتب نسبة بين -80 و100 غير الصفر');
+                  return;
+                }
+                Navigator.pop(ctx, p);
+              },
+              child: const Text('مراجعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    input.dispose();
+    if (percent == null || !mounted) return;
+    final changes = <(QueryDocumentSnapshot<_Json>, double)>[];
+    for (final doc in candidates) {
+      final old = (doc.data()['price'] as num).toDouble();
+      final updated = adjustedProductPrice(old, percent);
+      if (updated > 0 && updated <= 20000 && updated != old) {
+        changes.add((doc, updated));
+      }
+    }
+    if (changes.isEmpty) {
+      _say('مافيش أسعار صالحة للتحديث (الحد الأقصى 20,000 جنيه).');
+      return;
+    }
+    final yes = await confirmDialog(
+      context,
+      title: 'تأكيد تعديل الأسعار',
+      message: 'تغيير أسعار ${changes.length} صنف بنسبة $percent%؟ '
+          'التغيير هيظهر للعملاء بعد مزامنة الكتالوج. '
+          'لن يُعدل أي صنف عليه عرض حاليًا.',
+      confirmLabel: 'تأكيد التعديل',
+    );
+    if (!yes || !mounted) return;
+    try {
+      await CatalogSync.markPending(widget.storeId,
+          changes.map((e) => e.$1.id).toList());
+      for (var i = 0; i < changes.length; i += 100) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final entry in changes.skip(i).take(100)) {
+          batch.update(entry.$1.reference, {
+            'price': entry.$2,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      final ok = await CatalogSync.afterProductsChanged(widget.storeId);
+      await _load(fromCache: true);
+      _say(StoreHighlights.withNote('تم تعديل ${changes.length} سعر', ok));
+    } catch (e) {
+      _say('تعذر إكمال تعديل الأسعار: ${_why(e)}');
+    }
   }
 
   /// اختيار صنف من القايمة ثم عمل عرض عليه.
@@ -2026,6 +2184,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'edit') _edit(d);
+                      if (v == 'copy') _edit(d, copy: true);
                       if (v == 'offer') _offer(d);
                       if (v == 'delete') _delete(d);
                     },
@@ -2035,6 +2194,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                         child: Text('عمل عرض / خصم'),
                       ),
                       PopupMenuItem(value: 'edit', child: Text('تعديل')),
+                      PopupMenuItem(value: 'copy', child: Text('نسخ صنف')),
                       PopupMenuItem(value: 'delete', child: Text('حذف')),
                     ],
                   ),
@@ -2083,6 +2243,24 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                   label: const Text('إضافة أصناف كتير مرة واحدة (لصق قايمة)'),
                 ),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(children: [
+                Expanded(child: OutlinedButton.icon(
+                  key: const Key('owner-product-templates'),
+                  onPressed: _addFromTemplates,
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('أصناف جاهزة'),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton.icon(
+                  key: const Key('owner-bulk-prices'),
+                  onPressed: _changePricesTogether,
+                  icon: const Icon(Icons.price_change_outlined),
+                  label: const Text('تعديل أسعار مجموعة'),
+                )),
+              ]),
             ),
             Expanded(child: body),
           ],
