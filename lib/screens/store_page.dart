@@ -1421,8 +1421,8 @@ class _StorePageState extends State<StorePage> {
       return;
     }
     carts.rememberStore(store);
-    if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
-    if (!await _ensureCartForStore()) return;
+    if (!cart.canAddFrom(store.id) && !await _ensureCartForStore()) return;
+    cart.rememberLoadedProducts(store.id, _visible);
     cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
   }
 

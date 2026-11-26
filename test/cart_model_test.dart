@@ -47,6 +47,20 @@ void main() {
       expect(cart.add(fries, storeId: 'b', storeName: 'سوبر'), isTrue);
     });
 
+    test('restoring a cart clears suggestions from the previous catalog', () {
+      const rice = Product('رز', 30);
+      const oil = Product('زيت', 80);
+      cart.add(rice, storeId: 'a', storeName: 'بقالة');
+      cart.rememberLoadedProducts('a', [rice, oil]);
+      expect(cart.completionSuggestions, [oil]);
+
+      final savedCart = cart.snapshot();
+      cart.restore(savedCart);
+
+      expect(cart.qtyOf(rice), 1);
+      expect(cart.completionSuggestions, isEmpty);
+    });
+
     test('clear بتمسح كل حاجة', () {
       cart.add(falafel, storeId: 'a', storeName: 'مطعم');
       cart.clear();
