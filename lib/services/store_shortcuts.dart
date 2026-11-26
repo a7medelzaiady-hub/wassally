@@ -18,19 +18,32 @@ class StoreShortcuts extends ChangeNotifier {
   static String _favoritesKey(String uid) => 'store_favorites_v1_$uid';
   static String _recentKey(String uid) => 'store_recent_v1_$uid';
 
+  Future<void>? _initialLoad;
+
   Future<void> load(String? userId) async {
     if (userId == null || userId.isEmpty) {
       _accountId = null;
+      _initialLoad = null;
       _favorites.clear();
       _recent.clear();
       notifyListeners();
       return;
     }
-    if (_accountId == userId) return;
+    if (_accountId == userId) {
+      await _initialLoad;
+      return;
+    }
     _accountId = userId;
     _favorites.clear();
     _recent.clear();
     notifyListeners();
+    final pending = _readForAccount(userId);
+    _initialLoad = pending;
+    await pending;
+    if (identical(_initialLoad, pending)) _initialLoad = null;
+  }
+
+  Future<void> _readForAccount(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     final favorites = prefs.getStringList(_favoritesKey(userId)) ?? const <String>[];
     final recent = prefs.getStringList(_recentKey(userId)) ?? const <String>[];
@@ -41,7 +54,7 @@ class StoreShortcuts extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(String userId, String storeId) async {
-    if (_accountId != userId) await load(userId);
+    await load(userId);
     if (_accountId != userId || storeId.isEmpty) return;
     if (!_favorites.remove(storeId)) _favorites.add(storeId);
     notifyListeners();
@@ -51,7 +64,7 @@ class StoreShortcuts extends ChangeNotifier {
   }
 
   Future<void> recordVisit(String userId, String storeId) async {
-    if (_accountId != userId) await load(userId);
+    await load(userId);
     if (_accountId != userId || storeId.isEmpty) return;
     _recent.remove(storeId);
     _recent.insert(0, storeId);
