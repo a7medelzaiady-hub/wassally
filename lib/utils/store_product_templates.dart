@@ -59,7 +59,12 @@ String normalizeProductKey(String raw) => raw
     .replaceAll('ة', 'ه')
     .replaceAll('ى', 'ي')
     .replaceAll(RegExp(r'[\s\-–—_]+'), ' ')
-    .trim();
+    .trim()
+    .split(' ')
+    .map((word) => word.startsWith('ال') && word.length > 4
+        ? word.substring(2)
+        : word)
+    .join(' ');
 
 /// تعديل الأسعار على الأصناف المحددة فقط. الأسعار المطبّق عليها خصم
 /// تبقى خارج التعديل كي لا نكسر السعر القديم/الجديد في العرض.
