@@ -100,9 +100,12 @@ class NotificationService {
 
   static Future<bool> _askPermissionOnce(BuildContext context) async {
     if (!_supported) return false;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return false;
     try {
+      // Widget tests may render CustomerEntry without a Firebase app.
+      // Gracefully skip opt-in until Auth is available; production initializes
+      // Firebase before runApp.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return false;
       if (await hasPermission()) {
         await init();
         return true;
