@@ -401,6 +401,7 @@ class _StorePageState extends State<StorePage> {
   void _openSpecialRequest() {
     StateSetter? refreshSheet;
     BuildContext? sheetContext;
+    bool sheetSubmitting = false;
     // تحديث عداد التسجيل الظاهر داخل النافذة فقط أثناء التسجيل.
     final ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_recording && sheetContext?.mounted == true) {
@@ -523,13 +524,19 @@ class _StorePageState extends State<StorePage> {
                         const Spacer(),
                         FilledButton(
                           key: const Key('store-special-request-add'),
-                          onPressed: _sendingSpecial ? null : () async {
-                            final saved = await _sendSpecialRequest();
-                            if (!ctx.mounted) return;
-                            if (saved) {
-                              Navigator.of(ctx).pop();
-                            } else {
-                              refresh(() {});
+                          onPressed: _sendingSpecial || sheetSubmitting
+                              ? null : () async {
+                            refresh(() => sheetSubmitting = true);
+                            try {
+                              final saved = await _sendSpecialRequest();
+                              if (!ctx.mounted) return;
+                              if (saved) {
+                                Navigator.of(ctx).pop();
+                              }
+                            } finally {
+                              if (ctx.mounted) {
+                                refresh(() => sheetSubmitting = false);
+                              }
                             }
                           },
                           style: FilledButton.styleFrom(
