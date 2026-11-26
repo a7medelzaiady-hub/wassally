@@ -37,7 +37,6 @@ import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
 import '../widgets/cached_net_image.dart';
-import '../widgets/app_snack.dart';
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {
@@ -178,13 +177,6 @@ class _HomePageState extends State<HomePage>
         builder: (_) => StorePage(store: s, focusProduct: focusProduct)));
   }
 
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(appSnack(msg));
-  }
-
   // ───────────────────────── الموقع ─────────────────────────
 
   void _onSavedAddress() {
@@ -196,41 +188,6 @@ class _HomePageState extends State<HomePage>
   void _pickLocation() => DeliveryLocationPicker.open(context);
 
   // ───────────────────────── الإشعارات ─────────────────────────
-
-  /// شرح واضح قبل طلب إذن الإشعارات، وقرار عرضه محفوظ محليًا لكل جهاز.
-  Future<bool> _confirmNotificationsUse() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'تفعيل الإشعارات',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
-            'والخصومات الجديدة. تقدر توقفها في أي وقت من إعدادات الجهاز.',
-            style: TextStyle(height: 1.6),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('مش دلوقتي'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('تفعيل'),
-            ),
-          ],
-        ),
-      ),
-    );
-    return ok ?? false;
-  }
 
   /// الاشتراك في topic العروض العامة (all): للعملاء بس.
   /// الأدمن وأصحاب المحلات بنشيلهم منه لو كانوا مشتركين قبل كده.
@@ -299,38 +256,11 @@ class _HomePageState extends State<HomePage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      if (await NotificationService.hasPermission()) {
-        // الإذن قد يكون محفوظًا من جلسة سابقة؛ لازم نسجل FCM token ونربط listeners
-        // في كل تشغيل، مش مجرد الاشتراك في topics.
-        await NotificationService.init();
-        await _syncBroadcastTopic(user.uid);
-        return;
-      }
-
-      // حالة عرض الشرح محلية لكل جهاز؛ إذن أندرويد نفسه خاص بالجهاز وليس بالحساب.
-      final prefs = await SharedPreferences.getInstance();
-      final promptKey = 'notification_prompted_${user.uid}';
-      if (prefs.getBool(promptKey) == true) return;
-
-      // نعرض الشرح داخل التطبيق أولًا، ثم نطلب إذن أندرويد مرة واحدة.
-      await Future<void>.delayed(const Duration(seconds: 3));
-      if (!mounted) return;
-
-      final accepted = await _confirmNotificationsUse();
-      if (!mounted) return;
-      if (!accepted) {
-        await prefs.setBool(promptKey, true);
-        return;
-      }
-
-      final granted =
-          await NotificationService.requestPermissionAndRegister();
-      await prefs.setBool(promptKey, true);
-
-      if (!granted) {
-        _toast('الإشعارات لسه مقفولة. تقدر تفعّلها من إعدادات التطبيق.');
-        return;
-      }
+      // Home is a fallback entry point; the landing page normally asks first.
+      final enabled =
+          await NotificationService.ensurePermissionWithExplanation(context);
+      if (!mounted || !enabled ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) return;
       await _syncBroadcastTopic(user.uid);
     } catch (e) {
       debugPrint('Notifications init error: $e');
