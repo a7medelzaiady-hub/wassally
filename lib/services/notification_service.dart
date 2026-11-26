@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/order_details_page.dart';
@@ -16,6 +17,7 @@ import '../models/app_role.dart';
 import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
 import '../screens/admin_inbox_page.dart';
+import '../widgets/app_snack.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -82,6 +84,91 @@ class NotificationService {
     await _registerGrantedDevice();
   }
 
+  /// Shared opt-in for the post-login landing page and Home. No Firestore
+  /// listeners are added; a shared future prevents two overlapping dialogs.
+  static Future<bool>? _permissionFlow;
+
+  static Future<bool> ensurePermissionWithExplanation(BuildContext context) {
+    if (_permissionFlow != null) return _permissionFlow!;
+    late Future<bool> flow;
+    flow = _askPermissionOnce(context).whenComplete(() {
+      if (identical(_permissionFlow, flow)) _permissionFlow = null;
+    });
+    _permissionFlow = flow;
+    return flow;
+  }
+
+  static Future<bool> _askPermissionOnce(BuildContext context) async {
+    if (!_supported) return false;
+    try {
+      // Widget tests may render CustomerEntry without a Firebase app.
+      // Gracefully skip opt-in until Auth is available; production initializes
+      // Firebase before runApp.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return false;
+      if (await hasPermission()) {
+        await init();
+        return true;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'notification_prompted_$uid';
+      if (prefs.getBool(key) == true) return false;
+
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!context.mounted || FirebaseAuth.instance.currentUser?.uid != uid) {
+        return false;
+      }
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            title: const Text(
+              'تفعيل الإشعارات',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            content: const Text(
+              'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
+              'والخصومات الجديدة. تقدر توقفها في أي وقت من إعدادات الجهاز.',
+              style: TextStyle(height: 1.6),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('مش دلوقتي'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('تفعيل'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!context.mounted || FirebaseAuth.instance.currentUser?.uid != uid) {
+        return false;
+      }
+      if (accepted != true) {
+        await prefs.setBool(key, true);
+        return false;
+      }
+      final granted = await requestPermissionAndRegister();
+      await prefs.setBool(key, true);
+      if (!granted) {
+        messengerKey.currentState?.showSnackBar(
+          appSnack('الإشعارات لسه مقفولة. تقدر تفعّلها من إعدادات التطبيق.'),
+        );
+      }
+      return granted;
+    } catch (e) {
+      debugPrint('Notification opt-in failed: $e');
+      return false;
+    }
+  }
+
   /// Synchronize the courier push topic using the already-loaded, verified role.
   /// No additional Firestore reads or listeners. Do not subscribe based on a
   /// cached role: RoleGate invokes this only after RoleService.load() completes.
@@ -132,35 +219,34 @@ class NotificationService {
     }
   }
 
-  static Future<void> _registerGrantedDevice() async {
+  /// One registration at a time: RoleGate and the welcome screen can both
+  /// initialize notifications during the same login.
+  static Future<void>? _registrationInFlight;
+
+  static Future<void> _registerGrantedDevice() {
+    final ongoing = _registrationInFlight;
+    if (ongoing != null) return ongoing;
+    late Future<void> task;
+    task = _performDeviceRegistration().whenComplete(() {
+      if (identical(_registrationInFlight, task)) _registrationInFlight = null;
+    });
+    _registrationInFlight = task;
+    return task;
+  }
+
+  static Future<void> _performDeviceRegistration() async {
+    if (!_supported) return;
     final user = FirebaseAuth.instance.currentUser;
-    if (!_supported || user == null) return;
+    if (user == null) return;
     try {
       final messaging = FirebaseMessaging.instance;
-      await _tokenRefresh?.cancel();
-      final token = await messaging.getToken();
-      if (token != null && token.isNotEmpty) {
-        final previousToken = _fcmToken;
-        _fcmToken = token;
-        if (previousToken != null && previousToken != token) {
-          await _removeToken(user.uid, previousToken);
-        }
-        await _saveToken(user.uid, token);
-      }
-      // الاشتراك في تنبيهات تحديث التطبيق القادمة من Cloudflare Worker
-      await messaging.subscribeToTopic('app_updates');
-      final verifiedRole = _verifiedCourierRole;
-      if (verifiedRole != null) {
-        await syncCourierTopic(
-          isCourier: verifiedRole,
-          isQuickCourier: _verifiedQuickCourier,
-        );
-      }
-      final verifiedAdmin = _verifiedAdminRole;
-      if (verifiedAdmin != null) {
-        await syncAdminTopic(isAdmin: verifiedAdmin);
-      }
+      // IMPORTANT: handle foreground pushes even if fetching/storing the FCM
+      // token or a topic subscription fails. Previously any such failure
+      // prevented onMessage from ever being registered for this session.
+      _foreground ??= FirebaseMessaging.onMessage.listen(_showInApp);
+      _opened ??= FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
 
+      await _tokenRefresh?.cancel();
       _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) async {
         final previousToken = _fcmToken;
         _fcmToken = nextToken;
@@ -176,18 +262,50 @@ class NotificationService {
         }
       });
 
-      await _foreground?.cancel();
-      await _opened?.cancel();
-      _foreground = FirebaseMessaging.onMessage.listen(_showInApp);
-      _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
+      try {
+        final token = await messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          final previousToken = _fcmToken;
+          _fcmToken = token;
+          if (previousToken != null && previousToken != token) {
+            await _removeToken(user.uid, previousToken);
+          }
+          await _saveToken(user.uid, token);
+        }
+      } catch (e) {
+        debugPrint('تعذر حفظ رمز الإشعارات: $e');
+      }
 
-      final initialMessage = await messaging.getInitialMessage();
-      if (initialMessage != null) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _openMessage(initialMessage));
+      // Independent subscriptions: failure of one does not disable any other.
+      try {
+        await messaging.subscribeToTopic('app_updates');
+      } catch (e) {
+        debugPrint('تعذر الاشتراك في تحديثات التطبيق: $e');
+      }
+
+      final verifiedRole = _verifiedCourierRole;
+      if (verifiedRole != null) {
+        await syncCourierTopic(
+          isCourier: verifiedRole,
+          isQuickCourier: _verifiedQuickCourier,
+        );
+      }
+      final verifiedAdmin = _verifiedAdminRole;
+      if (verifiedAdmin != null) {
+        await syncAdminTopic(isAdmin: verifiedAdmin);
+      }
+
+      try {
+        final initialMessage = await messaging.getInitialMessage();
+        if (initialMessage != null) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _openMessage(initialMessage));
+        }
+      } catch (e) {
+        debugPrint('تعذر قراءة الإشعار الذي فتح التطبيق: $e');
       }
     } catch (e) {
-      debugPrint('تعذر تسجيل جهاز الإشعارات: $e');
+      debugPrint('تعذر تهيئة استقبال الإشعارات: $e');
     }
   }
 
@@ -253,7 +371,7 @@ class NotificationService {
     } catch (e) {
       debugPrint('تعذر فتح Google Play: $e');
       messengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('تعذر فتح Google Play')),
+        appSnack('تعذر فتح Google Play'),
       );
     }
   }
@@ -329,10 +447,10 @@ class NotificationService {
     messengerKey.currentState
       ?..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(parts.join(' — ')),
+        appSnack(
+          parts.join(' — '),
+          kind: AppSnackKind.info,
           duration: const Duration(seconds: 6),
-          behavior: SnackBarBehavior.floating,
           action: actionLabel == null
               ? null
               : SnackBarAction(

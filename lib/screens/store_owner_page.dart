@@ -34,6 +34,7 @@ import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/unanswered_orders_alert.dart';
 import '../services/store_fee_service.dart';
+import '../widgets/app_snack.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -121,12 +122,12 @@ class StoreOwnerPage extends StatelessWidget {
                   delegate: _TabsDelegate(
                     MediaQuery.paddingOf(context).top,
                     TabBar(
-                      labelColor: kPrimary,
+                      labelColor: AppColors.purple,
                       unselectedLabelColor: kMuted,
-                      indicatorColor: kPrimary,
+                      indicatorColor: AppColors.orange,
                       labelStyle: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        fontSize: 13.5,
+                        fontSize: AppTypography.body,
                       ),
                       tabs: const [
                         Tab(text: 'الطلبات'),
@@ -246,13 +247,13 @@ class _PendingStoreSetupState extends State<_PendingStoreSetup> {
         await CatalogSync.storeChanged(widget.storeId);
         if (!mounted) return;
         messenger.showSnackBar(
-          const SnackBar(content: Text('تم تحديث صورة المحل.')),
+          appSnack('تم تحديث صورة المحل.'),
         );
       }
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تحديث الصورة: ${_why(e)}')),
+        appSnack('تعذر تحديث الصورة: ${_why(e)}'),
       );
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -441,12 +442,12 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
         await CatalogSync.storeChanged(widget.storeId);
         await CatalogService.bump();
         messenger.showSnackBar(
-          const SnackBar(content: Text('تم تغيير صورة المحل.')),
+          appSnack('تم تغيير صورة المحل.'),
         );
       }
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تغيير الصورة: ${_why(e)}')),
+        appSnack('تعذر تغيير الصورة: ${_why(e)}'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -469,14 +470,12 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
       if (!indexed) {
         await CatalogSync.markIndexPending(widget.storeId);
         messenger.showSnackBar(
-          const SnackBar(
-            content: Text('اتغيرت حالة المحل، بس ظهوره للعملاء هيتحدث لما الاتصال يتحسن.'),
-          ),
+          appSnack('اتغيرت حالة المحل، بس ظهوره للعملاء هيتحدث لما الاتصال يتحسن.'),
         );
       }
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر تغيير حالة المحل، جرّب تاني.')),
+        appSnack('تعذر تغيير حالة المحل، جرّب تاني.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -530,7 +529,7 @@ class _ShopStatusBarState extends State<_ShopStatusBar> {
                                           : shopName.substring(0, 1),
                                       style: TextStyle(
                                         color: kPrimary,
-                                        fontSize: 22,
+                                        fontSize: 21,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -1010,19 +1009,15 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     try {
       await StaffOrderService.setUnavailableItems(widget.order, _unavailable);
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            _unavailable.isEmpty
+        appSnack(_unavailable.isEmpty
                 ? 'تم شيل علامة النقص.'
-                : 'تم تبليغ العميل. هيكمّل من غير الأصناف دي أو يلغي.',
-          ),
-        ),
+                : 'تم تبليغ العميل. هيكمّل من غير الأصناف دي أو يلغي.'),
       );
     } on StateError catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+      messenger.showSnackBar(appSnack(e.message));
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('تعذر تبليغ العميل. جرّب تاني.')),
+        appSnack('تعذر تبليغ العميل. جرّب تاني.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1062,7 +1057,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
               children: [
                 const Padding(
                   padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
-                  child: Text('اختيار مندوب تابع للمحل', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  child: Text('اختيار مندوب تابع للمحل', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                 ),
                 for (final courier in couriers)
                   ListTile(
@@ -1082,9 +1077,9 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     setState(() => _busy = true);
     try {
       await StaffOrderService.assignCourier(widget.order.id, courier);
-      messenger.showSnackBar(SnackBar(content: Text('تم تعيين ' + courier.name + ' كمندوب للمحل.')));
+      messenger.showSnackBar(appSnack('تم تعيين ' + courier.name + ' كمندوب للمحل.'));
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(error is StateError ? error.message : 'تعذر تعيين المندوب.')));
+      messenger.showSnackBar(appSnack(error is StateError ? error.message : 'تعذر تعيين المندوب.'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1105,9 +1100,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
       await StaffOrderService.markReady(widget.order.id);
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('تعذر تأكيد جاهزية الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
-        ),
+        appSnack('تعذر تأكيد جاهزية الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1131,11 +1124,11 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
         issueId: issueId,
       );
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تأكيد استلام المحل للمرتجع.')),
+        appSnack('تم تأكيد استلام المحل للمرتجع.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر تأكيد الاستلام: $error')),
+        appSnack('تعذر تأكيد الاستلام: $error'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1196,13 +1189,13 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
       await StaffOrderService.confirmCashReceived(widget.order);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم تأكيد استلام النقدية وإغلاق الطلب.')),
+          appSnack('تم تأكيد استلام النقدية وإغلاق الطلب.'),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error is StateError ? error.message : 'تعذر تأكيد استلام النقدية.')),
+          appSnack(error is StateError ? error.message : 'تعذر تأكيد استلام النقدية.'),
         );
       }
     } finally {
@@ -1222,7 +1215,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('تعذر التحقق من التقييم السابق: $error')),
+        appSnack('تعذر التحقق من التقييم السابق: $error'),
       );
       return;
     } finally {
@@ -1232,7 +1225,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     if (alreadyRated) {
       setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تقييم تعامل العميل على هذا الطلب من قبل.')),
+        appSnack('تم تقييم تعامل العميل على هذا الطلب من قبل.'),
       );
       return;
     }
@@ -1252,11 +1245,11 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
       );
       if (mounted) setState(() => _customerRated = true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('تم تسجيل تقييم العميل. شكرًا لمشاركتك.')),
+        appSnack('تم تسجيل تقييم العميل. شكرًا لمشاركتك.'),
       );
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.')),
+        appSnack(error is StateError ? error.message : 'تعذر تسجيل تقييم العميل.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1288,9 +1281,7 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
       );
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('تعذر تحديث الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
-        ),
+        appSnack('تعذر تحديث الطلب. ممكن حالته اتغيّرت، جرّب تاني.'),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1621,7 +1612,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
   void _say(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(appSnack(message));
   }
 
   DateTime? _lastServerLoad;
@@ -2700,7 +2691,7 @@ class _SpecialVoicePlayerState extends State<_SpecialVoicePlayer> {
       if (mounted) {
         setState(() => _playing = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تعذر تشغيل الرسالة الصوتية.')),
+          appSnack('تعذر تشغيل الرسالة الصوتية.'),
         );
       }
     }
@@ -2771,7 +2762,7 @@ class _StoreFeeSummaryViewState extends State<StoreFeeSummaryView> {
             const SizedBox(height: 4),
             const Text(
               'العميل بيدفع رسوم الخدمة (2%، من 5 لـ15 جنيه) ضمن إجمالي الطلب، فالمحل بيستلمها ويوردها لوصّلي.',
-              style: TextStyle(fontSize: 11.5),
+              style: TextStyle(fontSize: 12),
             ),
           ],
         );

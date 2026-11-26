@@ -1,21 +1,46 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
-import '../theme/brand.dart';
+import '../services/notification_service.dart';
+import '../services/saved_address.dart';
+import '../services/location_picker.dart';
+import '../theme/app_tokens.dart';
+import '../services/cart_book.dart';
+import '../services/order_gateway.dart';
+import '../widgets/home_top_ads.dart' show loadTourPosters;
+import '../widgets/curved_nav_bar.dart';
+import '../widgets/invite_code_field.dart';
 import 'account_page.dart';
 import 'home_page.dart';
 import 'main_shell.dart';
 import 'notifications_page.dart';
+import 'onboarding_page.dart';
 import 'quick_order_create_page.dart';
 import 'store_directory_page.dart';
 
-/// A single signed-in landing experience for every role.
-/// Other roles keep their own dashboard and permissions behind the "لوحتي" entry.
+/// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
+const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
+const kEntryOffersAsset = 'assets/images/entry_offers.jpg';
+const kEntryStoresAsset = 'assets/images/entry_stores.jpg';
+const kWasallyLogoLightAsset = 'assets/images/wasally_logo_light.png';
+
+/// واجهة اختيار الخدمات بعد تسجيل الدخول (لكل الأدوار).
+/// الأدوار التانية بتحتفظ بلوحتها وصلاحياتها خلف زر «لوحتي».
 class CustomerEntry extends StatefulWidget {
-  const CustomerEntry({super.key, this.dashboard, this.dashboardLabel});
+  const CustomerEntry({
+    super.key,
+    this.dashboard,
+    this.dashboardLabel,
+    this.showInviteCode,
+  });
 
   final Widget? dashboard;
   final String? dashboardLabel;
+
+  /// خانة كود الدعوة بدل البحث (الافتراضي: لما حملة الدعوات مفعلة).
+  final bool? showInviteCode;
 
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
@@ -24,202 +49,332 @@ class CustomerEntry extends StatefulWidget {
 class _CustomerEntryState extends State<CustomerEntry> {
   bool _entered = false;
 
+  bool get _isCustomer => widget.dashboard == null;
+
+  @override
+  void initState() {
+    super.initState();
+    customerShellAvailable.value = _isCustomer;
+    enterShellRequest.addListener(_onEnterShellRequest);
+    SavedAddress.load();
+    unawaited(_startWelcomeFlows());
+  }
+
+  /// Ask for push after onboarding even if the user never opens Home.
+  Future<void> _startWelcomeFlows() async {
+    try {
+      await _maybeShowTour();
+    } catch (e) {
+      debugPrint('Welcome tour failed: $e');
+    }
+    if (!mounted) return;
+    await NotificationService.ensurePermissionWithExplanation(context);
+  }
+
+  /// الجولة الإعلانية لكل الحسابات، لحد مرتين في اليوم (محليًا).
+  Future<void> _maybeShowTour() async {
+    if (!await OnboardingStore.shouldShow() || !mounted) return;
+    // صور الإدارة لو موجودة، وإلا الجولة المدمجة.
+    final posters = await loadTourPosters();
+    if (!mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => OnboardingPage(posters: posters),
+    ));
+  }
+
+  @override
+  void dispose() {
+    enterShellRequest.removeListener(_onEnterShellRequest);
+    super.dispose();
+  }
+
+  /// صفحة داخلية (مثل صفحة التسوق) طلبت تبويبًا من الشريط السفلي.
+  void _onEnterShellRequest() {
+    if (!mounted || !_isCustomer || _entered) return;
+    setState(() => _entered = true);
+  }
+
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
-    shellTab.value = tab;
-    setState(() => _entered = true);
     if (destination != null) {
+      // Leaving a service must return to the entry cards, not skip them.
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => destination),
       );
+      return;
     }
+    shellTab.value = tab;
+    setState(() => _entered = true);
   }
+
+  void _openNotifications() =>
+      pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
 
   Widget get _dashboard => widget.dashboard ?? const MainShell();
 
-  Widget _topButton(IconData icon, String label, Widget page) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 3,
-      child: IconButton(
-        tooltip: label,
-        icon: Icon(icon, color: Brand.palette.ink, size: 26),
-        onPressed: () => _enter(page),
+  // ───────────────────────── الهيدر ─────────────────────────
+
+  Widget _headerIcon(IconData icon, String label, VoidCallback onTap) {
+    return IconButton(
+      key: ValueKey<String>('entry-$label'),
+      tooltip: label,
+      onPressed: onTap,
+      style: IconButton.styleFrom(
+        minimumSize: const Size(kMinTapTarget, kMinTapTarget),
+        foregroundColor: Colors.white,
+      ),
+      icon: Icon(icon, size: 28, color: Colors.white),
+    );
+  }
+
+  /// الهيدر ثابت برا القائمة: أزراره بتستجيب من أول ضغطة حتى أثناء التمرير.
+  Widget _header(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return ClipPath(
+      key: const Key('entry-header-wave'),
+      clipper: const _EntryHeaderWaveClipper(),
+      child: Container(
+        color: AppColors.purpleDeep,
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md, top, AppSpacing.md, AppSpacing.sm + 28,
+        ),
+        child: Column(
+          children: [
+          Row(
+            children: [
+              Expanded(child: _location()),
+              _headerIcon(Icons.notifications_none_rounded, 'الإشعارات', _openNotifications),
+              _headerIcon(Icons.person_outline_rounded, 'حسابي',
+                  () => _enter(const _StandaloneAccount())),
+            ],
+          ),
+          Semantics(
+            label: 'وصّلي',
+            image: true,
+            child: Image.asset(
+              kWasallyLogoLightAsset,
+              height: 36,
+              fit: BoxFit.contain,
+              excludeFromSemantics: true,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          if (widget.showInviteCode ?? OrderGateway.referralCampaignEnabled)
+            const InviteCodeField(key: Key('entry-invite-code'))
+          else
+            _searchBar(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _hero() => Container(
-    height: 236,
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(26),
-      gradient: LinearGradient(
-        begin: Alignment.topRight,
-        end: Alignment.bottomLeft,
-        colors: [Brand.palette.accent, Brand.palette.accentDeep],
-      ),
-    ),
-    child: Stack(
-      children: [
-        Positioned(
-          left: -4,
-          bottom: -4,
-          width: 190,
-          height: 146,
-          child: const _EntryArtwork(Rect.fromLTWH(12, 311, 310, 207)),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 8,
-          child: ColoredBox(color: Brand.palette.primary),
-        ),
-        Positioned(
-          top: 10,
-          left: 12,
-          child: _topButton(Icons.notifications_none_rounded, 'الإشعارات', const NotificationsPage()),
-        ),
-        Positioned(
-          top: 10,
-          right: 12,
-          child: _topButton(Icons.person_outline_rounded, 'حسابي', const AccountPage()),
-        ),
-        const Positioned(
-          top: 7,
-          left: 105,
-          right: 105,
-          height: 100,
-          // Use the authentic bag-and-speed logo from the approved artwork.
-          child: _EntryArtwork(Rect.fromLTWH(247, 156, 221, 173)),
-        ),
-        Positioned(
-          top: 111,
-          right: 18,
-          left: 160,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _location() {
+    return ValueListenableBuilder<String>(
+      valueListenable: SavedAddress.value,
+      builder: (context, address, _) => InkWell(
+        key: const Key('entry-location'),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        // يفتح اختيار عنوان التوصيل مباشرة (موقعي الحالي أو كتابة العنوان).
+        onTap: () => DeliveryLocationPicker.open(context),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kMinTapTarget),
+          child: Row(
             children: [
-              const Text('كل اللي بتحبه...', maxLines: 1,
-                style: TextStyle(color: Colors.white, fontSize: 19,
-                    fontWeight: FontWeight.w900)),
-              RichText(
-                text: TextSpan(
-                  style: const TextStyle(fontFamily: 'Tajawal',
-                    color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
-                  children: [
-                    TextSpan(text: 'يوصلك ', style: TextStyle(color: Brand.palette.primaryLight)),
-                    const TextSpan(text: 'لحد باب بيتك'),
-                  ],
+              const Icon(Icons.location_on_outlined, color: Colors.white, size: 26),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(
+                      text: 'التوصيل إلى: ',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: address.isEmpty ? 'حدد عنوانك' : address,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ]),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: AppTypography.bodySmall - 1),
                 ),
               ),
+              const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 20),
             ],
           ),
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
+  Widget _searchBar() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      elevation: 2,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        key: const Key('entry-search'),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        onTap: () => _enter(const StoreDirectoryPage()),
+        child: SizedBox(
+          height: 46,
+          child: Row(
+            children: [
+              const SizedBox(width: AppSpacing.xl),
+              const Expanded(
+                child: Text(
+                  'ابحث عن محل أو ماركت...',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: AppTypography.body,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(Icons.search_rounded, color: AppColors.muted.withValues(alpha: 0.9), size: 26),
+              const SizedBox(width: AppSpacing.lg),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────── كروت الخدمات ─────────────────────────
+
+  /// كارت زي التصميم المرجعي: الصورة الواقعية على اليسار وبتتلاشى في
+  /// الأبيض تحت النص، والأيقونة والعنوان والوصف والزر على اليمين.
   Widget _serviceCard({
     required String title,
     required String subtitle,
     required String action,
-    required IconData icon,
-    required Rect art,
+    required String asset,
     required VoidCallback onTap,
+    required double height,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+    return SizedBox(
+      height: height,
       child: Material(
-        elevation: 5,
-        shadowColor: Brand.palette.ink.withValues(alpha: 0.15),
+        elevation: 3,
+        shadowColor: AppColors.ink.withValues(alpha: 0.12),
         color: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(26),
-          side: BorderSide(color: Brand.palette.line),
+          borderRadius: BorderRadius.circular(AppRadius.xl),
+          side: const BorderSide(color: AppColors.line),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
+          key: ValueKey<String>('entry-card-$title'),
           onTap: onTap,
-          child: SizedBox(
-            height: 146,
-            child: Row(
-              textDirection: TextDirection.ltr,
+          splashColor: AppColors.purple.withValues(alpha: 0.08),
+          highlightColor: AppColors.purple.withValues(alpha: 0.04),
+          child: LayoutBuilder(builder: (context, box) {
+            final artWidth = box.maxWidth * 0.74;
+            return Stack(
               children: [
-                Expanded(
-                  flex: 5,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _EntryArtwork(art),
-                      const Positioned(
-                        top: 0,
-                        bottom: 0,
-                        right: 0,
-                        width: 40,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.white, Colors.transparent],
-                              begin: Alignment.centerRight,
-                              end: Alignment.centerLeft,
+                // الصورة نفسها بتذوب في الأبيض تدريجيًا (شفافية مش طبقة بيضا)،
+                // فمفيش حد/هامش ظاهر بين الصورة والكارت.
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: artWidth,
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) => const LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      stops: [0.0, 0.42, 0.68, 0.92],
+                      colors: [Colors.black, Colors.black, Color(0x66000000), Color(0x00000000)],
+                    ).createShader(rect),
+                    child: Image.asset(
+                      asset,
+                      key: ValueKey<String>('entry-art-$title'),
+                      fit: BoxFit.cover,
+                      alignment: Alignment.centerLeft,
+                      excludeFromSemantics: true,
+                    ),
+                  ),
+                ),
+                PositionedDirectional(
+                  start: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: box.maxWidth * 0.56,
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(
+                        AppSpacing.md, AppSpacing.sm, AppSpacing.xs, AppSpacing.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: AppColors.ink,
+                              fontSize: 17,
+                              height: 1.2,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 6,
-                  child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 2, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Align(
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
                           alignment: AlignmentDirectional.centerStart,
-                          child: Icon(icon, color: Brand.green, size: 23),
+                          child: Text(
+                            subtitle,
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: AppTypography.caption - 1,
+                              height: 1.25,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(title, maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Brand.ink,
-                            fontSize: 18, height: 1.08, fontWeight: FontWeight.w900)),
-                        const SizedBox(height: 3),
-                        Text(subtitle, maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Brand.palette.muted,
-                            fontSize: 11, height: 1.1, fontWeight: FontWeight.w700)),
-                        const Spacer(),
                         Container(
                           height: 34,
-                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [
-                              Brand.palette.primaryLight, Brand.green,
-                            ]),
-                            borderRadius: BorderRadius.circular(22),
-                            boxShadow: [BoxShadow(
-                              color: Brand.green.withValues(alpha: 0.22),
-                              blurRadius: 7, offset: const Offset(0, 3),
-                            )],
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Flexible(
-                                child: Text(action, maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white, fontSize: 13,
-                                    fontWeight: FontWeight.w900)),
+                            gradient: const LinearGradient(
+                              colors: [AppColors.orangeLight, AppColors.orange, AppColors.orangeDeep],
+                            ),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.orange.withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
                               ),
-                              const SizedBox(width: 2),
-                              const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 19),
                             ],
+                          ),
+                          // يفضل في سطر واحد كامل من غير «...» حتى في الشاشات الضيقة.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              action,
+                              maxLines: 1,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label - 1,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -227,140 +382,162 @@ class _CustomerEntryState extends State<CustomerEntry> {
                   ),
                 ),
               ],
-            ),
-          ),
+            );
+          }),
         ),
       ),
     );
   }
 
-  Widget _navButton(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: selected ? Brand.green : Brand.ink,
-                size: selected ? 31 : 25),
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: selected ? Brand.green : Brand.ink,
-                  fontSize: 11, fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-      ),
-    );
+  /// أقل ارتفاع للكارت يكفي العنوان والوصف والزر (حسب حجم الخط).
+  double _minCardHeight(BuildContext context) {
+    final scale = MediaQuery.textScalerOf(context);
+    return scale.scale(17) * 1.2 +
+        scale.scale(AppTypography.caption - 1) * 1.25 +
+        34 +
+        AppSpacing.sm * 2 +
+        AppSpacing.md * 2;
   }
+
+  List<Widget> _cards(double height) => [
+        _serviceCard(
+          title: 'خدمة وصّلي ع السريع',
+          subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
+          action: 'اطلب الآن',
+          asset: kEntryQuickAsset,
+          height: height,
+          onTap: () => _enter(const QuickOrderCreatePage()),
+        ),
+        _serviceCard(
+          title: 'تصفح العروض',
+          subtitle: 'أقوى الخصومات والعروض الحصرية',
+          action: 'شاهد العروض',
+          asset: kEntryOffersAsset,
+          height: height,
+          onTap: () => _enter(const HomePage(offersOnly: true)),
+        ),
+        _serviceCard(
+          title: 'تصفح المحلات',
+          subtitle: 'اكتشف جميع المحلات والأصناف',
+          action: 'استعرض المحلات',
+          asset: kEntryStoresAsset,
+          height: height,
+          onTap: () => _enter(const StoreDirectoryPage()),
+        ),
+      ];
+
+  /// الكروت الثلاثة تملأ المساحة المتاحة أسفل الهيدر المموج.
+  /// الشاشات الصغيرة تسمح بالتمرير بدل ضغط النص أو إخفاء الأزرار.
+  Widget _body(BuildContext context) {
+    const gap = AppSpacing.md;
+    final minCard = _minCardHeight(context);
+    return LayoutBuilder(builder: (context, box) {
+      final available = box.maxHeight - gap * 4;
+      var card = available / 3;
+      final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
+      if (card > maxCard) card = maxCard;
+      final fits = card >= minCard;
+      if (!fits) card = minCard;
+      return ListView(
+        key: const Key('entry-list'),
+        physics: fits ? const NeverScrollableScrollPhysics() : null,
+        padding: const EdgeInsets.only(bottom: gap),
+        children: [
+          for (final service in _cards(card))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
+              child: service,
+            ),
+        ],
+      );
+    });
+  }
+
+  void _openShell(int tab) {
+    shellTab.value = tab;
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const MainShell()));
+  }
+
+  /// نفس شكل شريط العميل (السلة الكبيرة في النص)، و«لوحتي» مكان «طلباتي».
+  Widget _staffNav() => ListenableBuilder(
+        listenable: carts,
+        builder: (context, _) => CurvedNavBar(
+          index: 0,
+          centerIndex: 2,
+          onTap: (i) {
+            switch (i) {
+              case 0:
+                _openShell(0);
+              case 1:
+                _enter();
+              case 2:
+                _openShell(1);
+              case 3:
+                _enter(const StoreDirectoryPage());
+              default:
+                _enter(const _StandaloneAccount());
+            }
+          },
+          items: [
+            const AppNavItem(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'الرئيسية'),
+            const AppNavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard_rounded, label: 'لوحتي'),
+            AppNavItem(
+              icon: Icons.shopping_cart_outlined,
+              selectedIcon: Icons.shopping_cart_rounded,
+              label: 'السلة',
+              badge: carts.totalItems,
+            ),
+            const AppNavItem(icon: Icons.storefront_outlined, selectedIcon: Icons.storefront_rounded, label: 'المحلات'),
+            const AppNavItem(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'حسابي'),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
     if (_entered) return _dashboard;
-
-    final isCustomer = widget.dashboard == null;
     return Scaffold(
-      backgroundColor: Brand.bg,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-          children: [
-            _hero(),
-            const SizedBox(height: 16),
-            _serviceCard(
-              title: 'خدمة وصّلي ع السريع',
-              subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
-              action: 'اطلب الآن',
-              icon: Icons.bolt_rounded,
-              art: const Rect.fromLTWH(20, 541, 303, 195),
-              onTap: () => _enter(const QuickOrderCreatePage()),
-            ),
-            _serviceCard(
-              title: 'تصفح العروض',
-              subtitle: 'أقوى الخصومات والعروض الحصرية',
-              action: 'شاهد العروض',
-              icon: Icons.local_offer_rounded,
-              art: const Rect.fromLTWH(22, 796, 295, 173),
-              onTap: () => _enter(const HomePage(offersOnly: true)),
-            ),
-            _serviceCard(
-              title: 'تصفح المحلات',
-              subtitle: 'اكتشف جميع المحلات والأصناف',
-              action: 'استعرض المحلات',
-              icon: Icons.storefront_rounded,
-              art: const Rect.fromLTWH(22, 1026, 305, 174),
-              onTap: () => _enter(const StoreDirectoryPage()),
-            ),
-            if (!isCustomer) ...[
-              const SizedBox(height: 2),
-              FilledButton.icon(
-                onPressed: () => _enter(),
-                icon: const Icon(Icons.dashboard_customize_outlined),
-                label: Text(widget.dashboardLabel ?? 'افتح لوحتي'),
-              ),
-            ],
-          ],
-        ),
+      backgroundColor: AppColors.bg,
+      body: Column(
+        children: [
+          _header(context),
+          Expanded(child: _body(context)),
+        ],
       ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 3, 12, 10),
-          child: Material(
-            color: Colors.white,
-            elevation: 5,
-            shadowColor: Brand.ink.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(30),
-            child: Row(
-              children: [
-                if (isCustomer)
-                  _navButton(Icons.shopping_cart_outlined, 'السلة', () => _enter(null, 1))
-                else
-                  _navButton(Icons.dashboard_outlined, 'لوحتي', () => _enter()),
-                if (isCustomer)
-                  _navButton(Icons.receipt_long_outlined, 'طلباتي', () => _enter(null, 2))
-                else
-                  _navButton(Icons.notifications_none, 'الإشعارات', () => _enter(const NotificationsPage())),
-                _navButton(Icons.home_rounded, 'الرئيسية', () => _enter(), selected: true),
-                _navButton(Icons.person_outline, 'حسابي', () => _enter(const AccountPage())),
-              ],
-            ),
-          ),
-        ),
-      ),
+      bottomNavigationBar: _isCustomer
+          // Approved order: السلة، طلباتي، الرئيسية، حسابي.
+          ? CustomerBottomNav(currentTab: 0, onTab: (tab) => _enter(null, tab))
+          // لوحة الدور من زر «لوحتي» في الشريط.
+          : _staffNav(),
     );
   }
 }
 
-class _EntryArtwork extends StatelessWidget {
-  const _EntryArtwork(this.crop);
-  final Rect crop;
+/// صفحة «حسابي» لما تتفتح من صفحة الترحيب: لازم Scaffold (كانت بتظهر
+/// شاشة خطأ «No Material widget found» لأنها مصممة كتبويب داخلي).
+class _StandaloneAccount extends StatelessWidget {
+  const _StandaloneAccount();
 
   @override
-  Widget build(BuildContext context) => ClipRect(
-    child: FittedBox(
-      fit: BoxFit.cover,
-      child: SizedBox(
-        width: crop.width,
-        height: crop.height,
-        child: Stack(
-          children: [
-            Positioned(
-              left: -crop.left,
-              top: -crop.top,
-              width: 691,
-              height: 1536,
-              child: Image.asset(
-                'assets/images/customer_entry_reference.jpg',
-                fit: BoxFit.fill,
-                excludeFromSemantics: true,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => const Scaffold(body: AccountPage());
+}
+
+/// الحافة السفلية المموجة للهيدر، من غير طبقة تغطي الكروت أو الأزرار.
+class _EntryHeaderWaveClipper extends CustomClipper<Path> {
+  const _EntryHeaderWaveClipper();
+
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    return Path()
+      ..moveTo(0, 0)
+      ..lineTo(0, h - 24)
+      ..cubicTo(w * 0.28, h + 5, w * 0.72, h - 40, w, h - 18)
+      ..lineTo(w, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant _EntryHeaderWaveClipper oldClipper) => false;
 }

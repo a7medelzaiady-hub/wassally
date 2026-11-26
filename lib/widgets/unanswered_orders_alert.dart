@@ -132,22 +132,27 @@ class _UnansweredOrdersAlertState extends State<UnansweredOrdersAlert> {
           Icon(Icons.notifications_active_outlined, color: kDanger),
           const SizedBox(width: 9),
           Expanded(
-            child: Text(
-              'تنبيه: يوجد $countLabel طلب جديد لم يتم الرد عليه منذ 5 دقائق أو أكثر.',
-              style: TextStyle(
-                color: kDanger,
-                fontWeight: FontWeight.w800,
-                fontSize: 12.5,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'أقدمهم من $oldest',
-            style: TextStyle(
-              color: kDanger,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'تنبيه: $countLabel طلب بانتظار رد المحل منذ 5 دقائق أو أكثر.',
+                  style: TextStyle(
+                    color: kDanger,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'أقدم طلب لسه حالته «جديد» من $oldest. راجع حالته أو اتعامل مع الطلب.',
+                  style: TextStyle(
+                    color: kDanger,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

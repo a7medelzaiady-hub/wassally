@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:in_app_update/in_app_update.dart';
 
 import 'notification_service.dart';
+import '../widgets/app_snack.dart';
 
 /// تحديث داخل التطبيق عن طريق Google Play (In-App Updates). أندرويد فقط، ويشتغل بس لو
 /// التطبيق متسطّب من Google Play (ومنها الاختبار المغلق). في أي حالة تانية (تشغيل من
@@ -41,8 +42,8 @@ class PlayUpdate {
   /// التحديث اتنزّل في الخلفية: نسيب المستخدم يثبّته وقت ما يحب (التثبيت بيعيد تشغيل التطبيق).
   static void _offerInstall() {
     NotificationService.messengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: const Text('تم تنزيل تحديث جديد للتطبيق.'),
+      appSnack(
+        'تم تنزيل تحديث جديد للتطبيق.',
         duration: const Duration(seconds: 30),
         action: SnackBarAction(
           label: 'ثبّت الآن',

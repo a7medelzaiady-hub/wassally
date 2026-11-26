@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
 import '../theme/app_theme.dart';
+import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
@@ -36,6 +38,8 @@ class CartPage extends StatelessWidget {
         final clearButton = cart.isEmpty
             ? null
             : TextButton(
+                // On the purple header: white text.
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: () => _clear(context),
                 child: const Text('تفريغ'),
               );
@@ -46,13 +50,14 @@ class CartPage extends StatelessWidget {
               InnerHeader(title: 'سلتي', trailing: clearButton)
             else
               AppHeader(
+                gradient: Brand.headerGradient,
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         'سلتي',
                         style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
+                            ?.copyWith(fontWeight: FontWeight.w800, color: Colors.white),
                       ),
                     ),
                     ?clearButton,
@@ -83,8 +88,30 @@ class CartPage extends StatelessWidget {
   }
 }
 
-class _CartBody extends StatelessWidget {
+class _CartBody extends StatefulWidget {
   const _CartBody();
+
+  @override
+  State<_CartBody> createState() => _CartBodyState();
+}
+
+class _CartBodyState extends State<_CartBody> {
+  bool _showSuggestions = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) setState(() => _showSuggestions = prefs.getBool('cart_suggestions_enabled') ?? true);
+    });
+  }
+
+  Future<void> _toggleSuggestions(bool enabled) async {
+    setState(() => _showSuggestions = enabled);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('cart_suggestions_enabled', enabled);
+  }
+
 
   // الودجت دي بتتعمل const من CartPage، يعني Flutter بيتخطّى إعادة بنائها لما السلة تتغيّر.
   // عشان كده بتسمع للسلة بنفسها، وإلا أزرار + و − و حذف الصنف بتغيّر الكميات من غير ما الشاشة تتحدّث.
@@ -167,6 +194,54 @@ class _CartBody extends StatelessWidget {
                               SizedBox(width: 6),
                               Text('رسالة صوتية مرفقة بالطلب'),
                             ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              if (!_showSuggestions)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    onPressed: () => _toggleSuggestions(true),
+                    icon: const Icon(Icons.visibility_outlined, size: 18),
+                    label: const Text('إظهار اقتراحات كمّل طلبك'),
+                  ),
+                ),
+              if (_showSuggestions && cart.completionSuggestions.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F8F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFCCE7D2)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(child: Text('🛒 ناقصك حاجة؟ كمّل طلبك!',
+                            style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800))),
+                        TextButton.icon(
+                          onPressed: () => _toggleSuggestions(false),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('إيقاف الاقتراحات'),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      for (final p in cart.completionSuggestions)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(formatPrice(p.price)),
+                          trailing: IconButton(
+                            tooltip: 'إضافة للسلة',
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: () => cart.add(p,
+                              storeId: cart.storeId ?? '',
+                              storeName: cart.storeName ?? ''),
                           ),
                         ),
                     ],
@@ -260,13 +335,50 @@ class _CartBody extends StatelessWidget {
                   strong: true,
                 ),
                 const SizedBox(height: 14),
+                if (cart.submittedOrderId != null) ...[
+                  Container(
+                    key: const Key('submitted-cart-notice'),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3E5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'طلبك اتبعت بنجاح. الأصناف لسه محفوظة في السلة، '
+                      'ومش هيتبعت نفس الطلب مرتين.',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: const Key('cart-reorder-explicit'),
+                    onPressed: () async {
+                      final ok = await confirmDialog(
+                        context,
+                        title: 'طلب جديد بنفس الأصناف',
+                        message: 'هتبدأ طلب جديد بنفس محتويات السلة. '
+                            'تأكد إنك مش بتكرر الطلب اللي بعتّه.',
+                        confirmLabel: 'ابدأ طلب جديد',
+                      );
+                      if (ok) cart.beginNewOrder();
+                    },
+                    icon: const Icon(Icons.replay_rounded),
+                    label: const Text('طلب جديد بنفس الأصناف'),
+                  ),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: cart.items.isEmpty ? null : () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const CheckoutPage()),
-                    ),
-                    child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
+                    onPressed: cart.items.isEmpty || cart.submittedOrderId != null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const CheckoutPage()),
+                          ),
+                    child: Text(cart.items.isEmpty
+                        ? 'ضيف منتجًا أولًا'
+                        : cart.submittedOrderId != null
+                            ? 'تم إرسال الطلب'
+                            : 'كمّل الطلب'),
                   ),
                 ),
               ],
@@ -292,7 +404,7 @@ class _SummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.bodyLarge;
     final style = strong
-        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 18)
+        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 17)
         : base?.copyWith(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -336,7 +448,7 @@ class MyCartsBanner extends StatelessWidget {
                 Expanded(
                   child: Text(
                     restored > 0
-                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتتحفظ 3 أيام). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
+                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
                         : others == 1
                             ? 'عندك سلة تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.'
                             : 'عندك $others سلال تانية محفوظة. افتح «سلّاتي» وراجع كل سلالك.',

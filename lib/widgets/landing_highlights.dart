@@ -117,7 +117,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
           child: Text(
             title,
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),
@@ -227,7 +227,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
                   '${((1 - price / old) * 100).round()}%-',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -252,7 +252,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
             s.store.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: kMuted),
+            style: TextStyle(fontSize: 12, color: kMuted),
           ),
           Row(
             children: [
@@ -269,7 +269,7 @@ class _LandingHighlightsState extends State<LandingHighlights> {
                 Text(
                   formatPrice(old),
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     color: kMuted,
                     decoration: TextDecoration.lineThrough,
                   ),

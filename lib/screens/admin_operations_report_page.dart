@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/app_header.dart';
+import '../services/read_meter.dart';
 
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
@@ -124,6 +125,13 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
     final both = await Future.wait<Object>([aggregatesFuture, settlementsTodayFuture]);
     final results = both[0] as List<AggregateQuerySnapshot>;
     final todaySettlements = both[1] as QuerySnapshot<Map<String, dynamic>>;
+    ReadMeter.query('admin:operations-settlements', todaySettlements);
+    // Nine aggregate calls. ReadMeter.aggregate reports a FLOOR of one
+    // billed read per query, not the exact number of index entries scanned.
+    // For exact billed reads use Query Explain or Firebase Usage.
+    for (var i = 0; i < results.length; i++) {
+      ReadMeter.aggregate('admin:operations-aggregate-${i + 1}');
+    }
     final todayMoney = results[3];
     final allMoney = results[7];
     final totalCollected = _sum(allMoney, 'collectedAmount');
@@ -170,7 +178,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   style: TextStyle(
                     color: Brand.ink,
                     fontWeight: FontWeight.w800,
-                    fontSize: 19,
+                    fontSize: 18,
                   ),
                 ),
               ],
@@ -234,7 +242,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                     Text(
                       '$error',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: kMuted, fontSize: 11),
+                      style: TextStyle(color: kMuted, fontSize: 12),
                     ),
                     TextButton(
                       onPressed: _refresh,
@@ -297,7 +305,7 @@ class _AdminOperationsReportPageState extends State<AdminOperationsReportPage> {
                   'الأرقام المالية محسوبة من الطلبات المسلّمة وسجلات التوريد. '
                   'التقرير لا يغيّر الطلبات أو الأرصدة، ولا يعرض بيانات تواصل العملاء. '
                   'لا يحسب التأخير آليًا لعدم اعتماد مهلة تشغيلية (SLA) حتى الآن.',
-                  style: TextStyle(color: kMuted, fontSize: 11.5),
+                  style: TextStyle(color: kMuted, fontSize: 12),
                 ),
               ],
             ),

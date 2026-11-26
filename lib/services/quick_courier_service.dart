@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/quick_courier_order.dart';
 import 'image_service.dart';
 import 'quick_order_api.dart';
+import 'read_meter.dart';
 
 /// بيانات تواصل العميل (private/contact): بتظهر للمندوب المعيّن بعد القبول بس.
 class QuickContact {
@@ -11,7 +12,8 @@ class QuickContact {
   final String phone;
   final String address;
   final String notes;
-  const QuickContact({this.name = '', this.phone = '', this.address = '', this.notes = ''});
+  final String voiceUrl;
+  const QuickContact({this.name = '', this.phone = '', this.address = '', this.notes = '', this.voiceUrl = ''});
 }
 
 /// كل اللي شاشات المندوب محتاجاه. الكتابة كلها عن طريق الـWorker؛ القراءة get بس (مفيش مستمعات).
@@ -40,6 +42,7 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
     final uid = _uid;
     if (uid.isEmpty) return false;
     final snap = await _db.collection('couriers').doc(uid).get();
+    ReadMeter.document('quick:courier-eligibility', snap);
     final data = snap.data();
     if (data == null) return false;
     final active = data['active'];
@@ -54,6 +57,7 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
         .where('status', isEqualTo: 'open')
         .limit(30)
         .get();
+    ReadMeter.query('quick:open-orders', snap);
     final list = [for (final d in snap.docs) QuickCourierOrder.fromMap(d.id, d.data())];
     list.sort((a, b) => (a.createdAt ?? DateTime(2000)).compareTo(b.createdAt ?? DateTime(2000)));
     return list;
@@ -69,12 +73,14 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
         .orderBy('createdAt', descending: true)
         .limit(30)
         .get();
+    ReadMeter.query('quick:mine', snap);
     return [for (final d in snap.docs) QuickCourierOrder.fromMap(d.id, d.data())];
   }
 
   @override
   Future<QuickCourierOrder?> loadOrder(String id) async {
     final snap = await _db.collection('quick_orders').doc(id).get();
+    ReadMeter.document('quick:order-detail', snap);
     final data = snap.data();
     return data == null ? null : QuickCourierOrder.fromMap(snap.id, data);
   }
@@ -87,6 +93,7 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
         .collection('private')
         .doc('contact')
         .get(const GetOptions(source: Source.server));
+    ReadMeter.document('quick:private-contact', snap);
     final d = snap.data();
     if (d == null) return null;
     String s(Object? v) => v is String ? v.trim() : '';
@@ -95,6 +102,7 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
       phone: s(d['phone']),
       address: s(d['address']),
       notes: s(d['courierNotes']),
+      voiceUrl: s(d['customerVoiceUrl']),
     );
   }
 

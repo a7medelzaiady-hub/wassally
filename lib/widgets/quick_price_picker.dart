@@ -2,16 +2,24 @@ import 'package:flutter/material.dart';
 
 import '../models/quick_price_guide.dart';
 import '../services/quick_price_guide_service.dart';
+import 'app_snack.dart';
 
 /// Reusable quick-order item selector. Unlisted products remain free text
 /// and are never assigned an invented approximate price.
 class QuickPricePicker extends StatefulWidget {
   final ValueChanged<List<QuickPriceSelection>> onChanged;
   final ValueChanged<String>? onUnlistedChanged;
+  /// خانة «اكتب طلبك» المدمجة (الصفحة الجديدة بتعرض خانتها هي).
+  final bool showFreeText;
+
+  /// خانة البحث في الدليل.
+  final bool showSearch;
   const QuickPricePicker({
     super.key,
     required this.onChanged,
     this.onUnlistedChanged,
+    this.showFreeText = true,
+    this.showSearch = true,
   });
 
   @override
@@ -44,7 +52,7 @@ class _QuickPricePickerState extends State<QuickPricePicker>
   void _change(QuickPriceGuide guide, QuickPriceItem item, int delta) {
     if (delta > 0 && !_quantities.containsKey(item.id) && _quantities.length >= 30) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الحد الأقصى 30 صنفًا لكل محل')),
+        appSnack('الحد الأقصى 30 صنفًا لكل محل'),
       );
       return;
     }
@@ -85,6 +93,7 @@ class _QuickPricePickerState extends State<QuickPricePicker>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.showFreeText) ...[
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -122,7 +131,8 @@ class _QuickPricePickerState extends State<QuickPricePicker>
               ),
             ),
             const SizedBox(height: 12),
-            if (hasItems)
+            ],
+            if (hasItems && widget.showSearch)
               TextField(
                 controller: _search,
                 onChanged: (_) => setState(() {}),
@@ -139,7 +149,7 @@ class _QuickPricePickerState extends State<QuickPricePicker>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('البحث متاح لما دليل الأسعار يتحمّل. تقدر تكتب طلبك أو تمليه دلوقتي.'),
+                    const Text('دليل الأسعار مش متاح دلوقتي. تقدر تكتب طلبك عادي.'),
                     TextButton.icon(
                       onPressed: _refreshGuide,
                       icon: const Icon(Icons.refresh),

@@ -147,6 +147,7 @@ class StaffOrderService {
     final aggregate = await query
         .aggregate(count(), sum('collectedAmount'), sum('courierEarning'))
         .get();
+    ReadMeter.aggregate('courier:stats-aggregate');
     return DeliveryStats(
       delivered: aggregate.count ?? 0,
       collected: (aggregate.getSum('collectedAmount') as num?)?.toDouble() ?? 0,

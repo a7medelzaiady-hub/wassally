@@ -121,6 +121,26 @@ void main() {
     expect(find.text('متاح للقبول'), findsOneWidget);
   });
 
+  testWidgets('بطاقة الطلب السريع تعرض مشتريات العميل دون كشف العنوان', (tester) async {
+    final backend = _FakeBackend(_doc('open', {
+      'stores': [
+        {'name': 'الخير', 'items': 'عيش بلدي 5 أرغفة، زيت كيلو'},
+      ],
+      'notes': 'من غير شطة',
+    }));
+    await tester.pumpWidget(MaterialApp(
+      home: QuickCourierOrdersPage(backend: backend),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('quick-order-request-preview')), findsOneWidget);
+    expect(find.textContaining('عيش بلدي 5 أرغفة'), findsOneWidget);
+    expect(find.textContaining('من غير شطة'), findsOneWidget);
+    expect(find.textContaining('شارع التحرير 10'), findsNothing);
+    expect(find.textContaining('01012345678'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('القبول بيروح للـWorker، وبعده يظهر الاتصال بالعميل', (tester) async {
     final backend = _FakeBackend(_doc('open'))..next = (_, _) => _doc('accepted');
     await _pumpPage(tester, backend);
@@ -164,6 +184,35 @@ void main() {
     await tester.pumpAndSettle();
     expect(launches, hasLength(2));
     expect(find.text('تعذر فتح الخريطة.'), findsOneWidget);
+  });
+
+  testWidgets('الطلب السريع يوضح وضع التعيين ولا يكشف بيانات قبل القبول',
+      (tester) async {
+    final backend = _FakeBackend(_doc('open'));
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-before-assignment-note')), findsOneWidget);
+    expect(find.byKey(const Key('quick-after-assignment-note')), findsNothing);
+    expect(find.textContaining('عنوان سري'), findsNothing);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    // Updating a real order through the Worker must change the copy.
+    backend.next = (_, _) => _doc('accepted');
+    await _tap(tester, const Key('quick-accept'));
+    expect(find.byKey(const Key('quick-before-assignment-note')), findsNothing);
+    expect(find.byKey(const Key('quick-after-assignment-note')), findsOneWidget);
+    expect(find.byKey(const Key('quick-call')), findsOneWidget);
+  });
+
+  testWidgets('طلب سريع ناقص تفاصيل المشتريات يعرض تحذير واضح بدل فاتورة فاضية',
+      (tester) async {
+    final backend = _FakeBackend(_doc('open', {
+      'stores': <Object>[],
+      'notes': '',
+    }));
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-request-empty-warning')), findsOneWidget);
+    expect(find.byKey(const Key('quick-accept')), findsOneWidget);
+    expect(find.text('افتح الخريطة'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('التقدير: المندوب يبدأ الشراء على طول مهما كان المبلغ (مفيش حد 200)', (tester) async {

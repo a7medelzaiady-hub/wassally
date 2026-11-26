@@ -112,19 +112,21 @@ class AppPalette {
     soft: Color(0xFFFFE4EA),
   );
 
+  // Values mirror AppColors (app_tokens.dart): orange = primary actions,
+  // royal purple = identity accent, white/neutral surfaces.
   static const wasally = AppPalette(
     id: 'wasally',
-    name: 'وصّلي الأصلي',
-    primary: Color(0xFFFF7900),
-    primaryDark: Color(0xFFE65F00),
-    primaryLight: Color(0xFFFFA340),
-    accent: Color(0xFF102344),
-    accentDeep: Color(0xFF08182F),
-    bg: Color(0xFFF5F6FA),
-    ink: Color(0xFF102344),
-    muted: Color(0xFF69758B),
-    line: Color(0xFFE0E5ED),
-    soft: Color(0xFFFFE9D5),
+    name: 'وصّلي - البنفسجي الملكي والبرتقالي',
+    primary: Color(0xFFF26B00),
+    primaryDark: Color(0xFFC24A00),
+    primaryLight: Color(0xFFFF9133),
+    accent: Color(0xFF8318D8),
+    accentDeep: Color(0xFF6E10BE),
+    bg: Color(0xFFF6F5FA),
+    ink: Color(0xFF1E1638),
+    muted: Color(0xFF6B6480),
+    line: Color(0xFFE5E1EF),
+    soft: Color(0xFFFFEEDF),
   );
 
   // Approved identity is fixed for every role; legacy definitions are kept
@@ -154,11 +156,9 @@ class Brand {
   static Color get bg => palette.bg;
   static Color get ink => palette.ink;
 
+  /// هيدر الصفحات: البنفسجي الملكي (هوية وصّلي) في كل التطبيق.
   static LinearGradient get headerGradient => LinearGradient(
-    colors: [
-      palette.primary,
-      Color.lerp(palette.primary, palette.primaryDark, 0.6)!,
-    ],
+    colors: [palette.accentDeep, palette.accent],
     begin: Alignment.topRight,
     end: Alignment.bottomLeft,
   );

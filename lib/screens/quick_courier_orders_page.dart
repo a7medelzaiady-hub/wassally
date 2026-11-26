@@ -33,7 +33,7 @@ class _QuickCourierEntryState extends State<QuickCourierEntry> {
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: Brand.green,
-                textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               icon: const Icon(Icons.flash_on, size: 26),
               label: const Text('الطلبات السريعة'),
@@ -237,6 +237,16 @@ class QuickOrderSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final named = order.stores.map((s) => s.name).where((n) => n.isNotEmpty).toList();
     final approx = order.approxTotalPiastres;
+    // Preview only the request text already in the public quick-order feed.
+    // Never show private contact, address or phone before assignment.
+    final requested = <String>[
+      for (final store in order.stores)
+        if (store.items.trim().isNotEmpty)
+          store.items.trim()
+        else if (store.pricedItems.isNotEmpty)
+          store.pricedItems.map((item) => '${item.qty} × ${item.name}').join('، '),
+      if (order.notes.trim().isNotEmpty) order.notes.trim(),
+    ];
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
@@ -256,7 +266,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                 backgroundColor: Brand.green.withValues(alpha: 0.12),
                 child: Text(
                   '${order.stores.length}',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Brand.green),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Brand.green),
                 ),
               ),
               const SizedBox(width: 14),
@@ -270,6 +280,20 @@ class QuickOrderSummaryCard extends StatelessWidget {
                     ),
                     if (named.isNotEmpty)
                       Text(named.join(' • '), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 6),
+                    Text(
+                      requested.isEmpty ? 'تفاصيل المشتريات غير متاحة حتى الآن' : requested.join(' • '),
+                      key: const Key('quick-order-request-preview'),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.rtl,
+                      style: TextStyle(
+                        color: Brand.ink,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                        fontSize: 14,
+                      ),
+                    ),
                     if (order.area.isNotEmpty)
                       Text('📍 منطقة العميل: ${order.area}',
                         maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -303,7 +327,7 @@ String quickStepLabel(QuickCourierStep step) => switch (step) {
       QuickCourierStep.available => 'متاح للقبول',
       QuickCourierStep.estimate => 'اتصل بالعميل واكتب التقدير',
       QuickCourierStep.purchasing => 'اشتري وصوّر الفواتير',
-      QuickCourierStep.waitCustomer => 'مستني موافقة العميل على الكشف',
+      QuickCourierStep.waitCustomer => 'الكشف جاهز للتسليم',
       QuickCourierStep.deliver => 'سلّم واكتب الرمز',
       QuickCourierStep.delivered => 'اتسلّم',
       QuickCourierStep.cancelled => 'ملغي',

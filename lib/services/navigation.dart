@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import '../models/app_role.dart';
 import 'role_service.dart';
@@ -23,3 +23,47 @@ final ValueNotifier<RoleInfo?> roleInfoOverride = ValueNotifier<RoleInfo?>(
 
 /// مفتاح الـ Navigator الرئيسي: بنستخدمه لعرض نوافذ من داخل الخدمات (مثلًا إدخال رابط صورة).
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// صفحة الترحيب بتعلن إن شريط العميل متاح (العميل فقط، مش لوحات الأدوار التانية).
+final ValueNotifier<bool> customerShellAvailable = ValueNotifier<bool>(false);
+
+/// طلب من صفحة الترحيب إنها تفتح الواجهة الأساسية (الرئيسية/السلة/طلباتي/حسابي).
+final ValueNotifier<int> enterShellRequest = ValueNotifier<int>(0);
+
+/// يفتح تبويب العميل من أي صفحة داخلية: يرجع لجذر التطبيق بدل تكديس الصفحات.
+void openCustomerTab(BuildContext context, int tab) {
+  final navigator = Navigator.of(context);
+  navigator.popUntil((route) => route.isFirst);
+  shellTab.value = tab;
+  if (customerShellAvailable.value) {
+    enterShellRequest.value++;
+    return;
+  }
+  // حسابات الموظفين (أدمن/محل/مندوب) صفحة الدخول عندهم مش بتفتح تبويبات العميل،
+  // فبنفتح شاشة التسوق على التبويب المطلوب (مثلًا «طلباتي» بعد تأكيد الطلب).
+  final builder = customerShellBuilder;
+  if (builder != null) navigator.push(MaterialPageRoute<void>(builder: builder));
+}
+
+/// بيتسجل من main_shell.dart (من غير import دائري): بيبني شاشة التسوق بتبويباتها.
+WidgetBuilder? customerShellBuilder;
+
+final Set<String> _routesInFlight = <String>{};
+
+/// يفتح الصفحة مرة واحدة حتى لو المستخدم ضغط بسرعة أكتر من مرة.
+/// المفتاح بيتحرر لما الصفحة تتقفل.
+Future<T?> pushOnce<T>(
+  BuildContext context,
+  String key,
+  WidgetBuilder builder,
+) async {
+  if (!_routesInFlight.add(key)) return null;
+  try {
+    return await Navigator.of(context).push<T>(MaterialPageRoute<T>(
+      settings: RouteSettings(name: key),
+      builder: builder,
+    ));
+  } finally {
+    _routesInFlight.remove(key);
+  }
+}

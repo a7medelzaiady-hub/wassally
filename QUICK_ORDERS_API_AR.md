@@ -9,16 +9,15 @@
   مفيش تفاوض ولا موافقة لكل تغيير داخل التطبيق.
 - التطبيق بيثبت حاجتين بس:
   1. **المقدم اختياري تمامًا** مهما كان تقدير المشتريات. المندوب يدفع من جيبه، والعميل ممكن يحوّل مقدم بالاتفاق.
-  2. **كشف نهائي واحد** يوافق عليه العميل قبل رمز التسليم: مجموع الفواتير + أجرة التوصيل + رسوم وصّلي − المقدم.
-- المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة).
+  2. **كشف نهائي واحد للعرض فقط**؛ العميل لا يحتاج للموافقة عليه، ويؤكد استلام الطلب برمز التسليم: مجموع الفواتير + أجرة التوصيل + رسوم وصّلي − المقدم.
+- المندوب **ما بيكتبش نصوص**: أرقام وصور فواتير بس (أزرار كبيرة، خطوات قليلة). العميل يقدر يكتب أو يصوّر أو يسجّل طلبه بصوت قصير.
 
 ## ما تغيّر عن النسخة 1
 
 - اتشال: `propose`، `approve`، `lock-receipts`، `quote`، حالة `receipts_locked`، وتعديل العميل بعد القبول.
-- اتضاف: `start-purchase`، `submit-summary`، `approve-summary`، `reject-summary`،
-  وحالتين `summary_pending` و`summary_approved`.
+- اتضاف: `start-purchase`، `submit-summary`. أمر `submit-summary` يجهّز حسابًا نهائيًا للعرض وينقل الطلب مباشرة إلى `summary_approved` (جاهز للتسليم). `approve-summary` و`reject-summary` متاحان لتوافق الطلبات القديمة بحالة `summary_pending` فقط؛ لا يظهران في واجهة العميل الجديدة.
 - `receipt`: اسم المحل **اختياري**، والمطلوب صورة + مبلغ.
-- رمز التسليم يظهر للعميل **بعد موافقته على الكشف بس**.
+- رمز التسليم يظهر للعميل **بعد تجهيز الكشف النهائي مباشرة**، دون موافقة على الفاتورة.
 
 ## الإعدادات (الإدارة)
 
@@ -55,8 +54,8 @@ advance: { amountPiastres, reference, sentAt, confirmedAt }
 receipts: [{ storeName, amountPiastres, imageUrl, uploadedAt }]   // storeName ممكن يبقى ""
 deliveryPiastres                     // أجرة التوصيل اللي كتبها المندوب في الكشف
 totals: { purchases, serviceFee, delivery, prepaid, due }         // due سالب = المندوب يرجّع للعميل
-summaryRevision, summarySubmittedAt, summaryApprovedAt
-summaryRejectedAt, summaryRejectReason, summaryRejections
+summaryRevision, summarySubmittedAt, summaryApprovedAt  // الأخير محفوظ للتوافق مع الطلبات القديمة
+summaryRejectedAt, summaryRejectReason, summaryRejections  // حقول قديمة
 overEstimatePiastres                 // للإدارة: الزيادة عن التقدير
 deliveredAt, deliveredBy, courierOwedPiastres, collectedPiastres
 cancelledAt, cancelledBy (customer|admin), cancelReason, advanceRefundDue
@@ -64,7 +63,7 @@ deliveryPinLockedAt
 rev                                   // يزيد مع كل كتابة
 ```
 
-`quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes? }` — صاحب الطلب والإدارة،
+`quick_orders/{id}/private/contact`: `{ userName, phone, address, courierNotes?, customerVoiceUrl? }` — صاحب الطلب والإدارة،
 والمندوب المعيّن من `accepted` حتى `summary_approved`.
 
 ## الأسعار التقريبية (للعرض بس)
@@ -98,19 +97,18 @@ rev                                   // يزيد مع كل كتابة
 | `POST /v1/uploads` (multipart) | المندوب المعيّن | `folder=quick_receipts, orderId, file` | `purchasing` — يرجّع `{ url }` |
 | `POST /v1/quick/{id}/receipt` | المندوب المعيّن | `imageUrl, amountPiastres, storeName?` | `purchasing` (حتى 20 فاتورة) |
 | `POST /v1/quick/{id}/receipt-remove` | المندوب المعيّن | `index` | `purchasing` |
-| `POST /v1/quick/{id}/submit-summary` | المندوب المعيّن | `deliveryPiastres` | `purchasing` ← `summary_pending` (الـWorker يحسب `totals`) |
+| `POST /v1/quick/{id}/submit-summary` | المندوب المعيّن | `deliveryPiastres` | `purchasing` ← `summary_approved` (الـWorker يحسب `totals`، لا موافقة مطلوبة) |
 | `POST /v1/quick/{id}/approve-summary` | العميل | `expectedSummaryRevision` (= `summaryRevision`) | `summary_pending` ← `summary_approved` |
 | `POST /v1/quick/{id}/reject-summary` | العميل | `reason?` | `summary_pending` ← `purchasing` (الكشف يتمسح، مفيش تسليم) |
-| `GET /v1/quick/{id}/delivery-pin` | العميل | — | `summary_approved` بس |
-| `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `summary_approved` ← `delivered` |
+| `GET /v1/quick/{id}/delivery-pin` | العميل | — | `summary_approved` أو `summary_pending` القديمة |
+| `POST /v1/quick/{id}/deliver` | المندوب المعيّن | `pin` | `summary_approved` أو `summary_pending` القديمة ← `delivered` |
 
 **قاعدة الدفع:** المندوب يموّل الشراء من ماله. لا حد 200 جنيه ولا تحويل إلزامي، والمقدم الاختياري لا يخصم من الحساب إلا بعد تأكيد المندوب استلامه.
 
 **شاشة المندوب المقترحة (أقل كتابة):** قبول ← اتصال ← رقم «تقدير المشتريات» ← (لو العميل حوّل مقدمًا اختياريًا: زر «وصلني التحويل» برقم المبلغ)
-← زر كبير «تصوير فاتورة» + رقم المبلغ (يتكرر) ← رقم «أجرة التوصيل» ← «ابعت الكشف للعميل» ← رمز التسليم.
+← زر كبير «تصوير فاتورة» + رقم المبلغ (يتكرر) ← رقم «أجرة التوصيل» ← «جهّز الحساب النهائي» ← رمز التسليم.
 
-**شاشة العميل:** لما الحالة `summary_pending` يظهر كشف واحد (`totals` + صور الفواتير) بزرين: «موافق» و«مش موافق».
-عند الرفض: زر اتصال بالمندوب أو الإدارة. بعد الموافقة يظهر رمز التسليم، والكشف بيتقفل (أي حاجة بعدها بالتليفون).
+**شاشة العميل:** بعد تجهيز الكشف يظهر الحساب النهائي (`totals` + صور الفواتير) للعلم فقط وزر «إظهار رمز التسليم». لا توجد موافقة على الفاتورة. رمز التسليم يُعطى للمندوب فقط بعد استلام المشتريات فعليًا؛ أي اختلاف في الحساب يُناقش تليفونيًا.
 
 ## القراءة في التطبيق (أقل قراءات)
 
@@ -125,4 +123,21 @@ rev                                   // يزيد مع كل كتابة
 عند التسليم الـWorker بيكتب `courierOwedPiastres` (= رسوم وصّلي) و`collectedPiastres` على نفس الطلب.
 المستحق على المندوب من الخدمة = `sum(courierOwedPiastres)` لطلباته المسلّمة في `quick_orders`
 (aggregate زي لوحة المناديب الحالية)، والمدفوع بيتسجل في `courier_settlements` الموجودة.
-لو العميل رفض الكشف: مفيش تسليم ولا تسوية لحد كشف جديد وموافقة جديدة.
+التسليم والتسوية مرتبطان بالرمز الذي يعطيه العميل للمندوب عند الاستلام، وليس بموافقة على الحساب.
+
+## «صوّر طلبك» — صور الطلب (#242)
+
+- الرفع: `POST /v1/uploads` بـ `folder=quick_requests` (أي عميل مسجّل، صور JPG/PNG/WEBP لحد 5MB، بدون أي قراءة Firestore). المجلد: `special_requests/<sha256(uid)>/quick` على Cloudinary، فحذف الحساب بيمسحه مع باقي مرفقات العميل.
+- الإنشاء: `POST /v1/quick` بيقبل `customerImages` (لحد 3 روابط من مجلد العميل نفسه وعلى نفس حساب Cloudinary). لو فيه صورة، كتابة الأصناف بقت اختيارية.
+- القراءة: الصور على مستند الطلب العام (`customerImages`)، فبتظهر للعميل وللمندوب المعتمد للخدمة بنفس قواعد القراءة الحالية (مفيش رقم ولا عنوان فيها).
+- التسليم بالرمز: نفس الكتابة اللي بتعلّم الطلب «تم التسليم» بتشيل `customerImages`، والـWorker بيمسح الملفات من Cloudinary. لو المسح فشل، الروابط بتتحفظ في `customerImagesPendingCleanup` للتنظيف لاحقًا.
+- التطبيق: الميزة ورا `kQuickPhotoOrdersEnabled` ومش هتتفعل غير بعد نشر الـWorker.
+
+## «سجّل طلبك بصوتك» (2026-11-25)
+
+- العميل يقدر يسجّل رسالة m4a قصيرة حتى دقيقة كاملة (60 ثانية)؛ يمكن أن تكون **الطلب بالكامل** بدون كتابة أو صور، ويستطيع سماعها أو استبدالها قبل إرسال الطلب.
+- `POST /v1/uploads`، `folder=quick_voices`، حد الحجم 1MB، يتحقق من بصمة m4a/AAC وهوية العميل؛ المجلد `special_requests/<sha256(uid)>/quick/voice` على Cloudinary.
+- `POST /v1/quick` يقبل حقل `customerVoiceUrl` واحد اختياري، ويفحص الـWorker ملكية الرابط ومساره. الرابط محفوظ في `quick_orders/{id}/private/contact` ويقرأه صاحب الطلب أو الإدارة أو المندوب المعيّن فقط بعد القبول. مستند الطلب العام يحمل `hasCustomerVoice` فقط، بدون الرابط أو محتوى الصوت.
+- يمكن تعديل التسجيل أو إعادة تسجيله أو حذفه قبل الإرسال، وبعد الإرسال ما دام الطلب `open` ولم يقبله المندوب، عبر `POST /v1/quick/{id}/edit-voice` مع `customerVoiceUrl` (رابط جديد أو سلسلة فارغة للحذف). الـWorker يحفظ الرابط الخاص والعلم العام معًا بكتابة ذرية، ويمسح التسجيل القديم بعد نجاح الحفظ. ما يفشل حذفه يُسجّل في `customerVoicesPendingCleanup` داخل `private/contact` لمحاولة حذفه وقت التسليم.
+- عند تأكيد التسليم بالرمز، يُحذف ملف الصوت من Cloudinary ويُمسح `customerVoiceUrl` من المستند الخاص في نفس عملية تسليم الطلب. لو فشل حذف الملف، يُحفظ `customerVoicePendingCleanup` في `private/contact` لتكرار التنظيف لاحقًا؛ لا تُخزّن ملفات صوتية داخل Firestore.
+- عند `submit-summary` لا تحتاج الفاتورة موافقة العميل؛ الاستلام بالرمز فقط. تُعرض الفاتورة للعلم قبل التسليم.

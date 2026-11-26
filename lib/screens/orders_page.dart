@@ -10,6 +10,7 @@ import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
 import 'order_details_page.dart';
 import 'quick_customer_orders_page.dart';
+import '../widgets/app_snack.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -123,9 +124,9 @@ class _OrderCardState extends State<_OrderCard> {
     setState(() => _busy = true);
     try {
       await OrderService.hideFromCustomer(widget.order.id);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم إخفاء الطلب من سجلّك.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(appSnack('تم إخفاء الطلب من سجلّك.'));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(appSnack(e.toString()));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

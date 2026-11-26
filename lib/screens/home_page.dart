@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,9 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
 import '../models/store.dart';
@@ -19,7 +16,6 @@ import '../services/read_meter.dart';
 import '../services/catalog_sync.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
-import '../services/performance_monitor.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
 import '../theme/app_theme.dart';
@@ -27,7 +23,14 @@ import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
 import '../widgets/promo_banners.dart';
+import '../widgets/home_category_grid.dart';
+import '../widgets/curved_nav_bar.dart';
+import '../widgets/offer_carousel.dart';
+import '../widgets/home_top_ads.dart';
 import 'notifications_page.dart';
+import '../services/saved_address.dart';
+import '../services/location_picker.dart';
+import '../widgets/notification_bell.dart';
 import 'quick_order_create_page.dart';
 import 'store_page.dart';
 import 'store_directory_page.dart';
@@ -61,8 +64,10 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
-  // العنوان المحفوظ للعميل.
-  String _address = '';
+  // العنوان المحفوظ للعميل (مشترك مع صفحة الترحيب: قراءة واحدة).
+  String _address = SavedAddress.value.value;
+
+  static const double _bellSize = kMinTapTarget;
 
 
   // الإشعارات.
@@ -118,7 +123,8 @@ class _HomePageState extends State<HomePage>
           .snapshots().metered('home:unread-notifications');
     }
 
-    _loadSavedAddress();
+    SavedAddress.value.addListener(_onSavedAddress);
+    SavedAddress.load();
     _initNotifications();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -128,6 +134,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   void dispose() {
+    SavedAddress.value.removeListener(_onSavedAddress);
     _courierStatusSubscription?.cancel();
     _bellCtrl.dispose();
     _player.dispose();
@@ -150,249 +157,22 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  void _openStore(Store s) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => StorePage(store: s)));
-  }
-
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg)));
+  void _openStore(Store s, {String? focusProduct}) {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => StorePage(store: s, focusProduct: focusProduct)));
   }
 
   // ───────────────────────── الموقع ─────────────────────────
 
-  Future<void> _loadSavedAddress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final a = (doc.data()?['address'] ?? '').toString();
-      if (mounted && a.isNotEmpty) setState(() => _address = a);
-    } catch (e) {
-      debugPrint('Load address error: $e');
-    }
+  void _onSavedAddress() {
+    final a = SavedAddress.value.value;
+    if (mounted && a.isNotEmpty && a != _address) setState(() => _address = a);
   }
 
-  Future<void> _saveAddress(String address, {double? lat, double? lng}) async {
-    if (mounted) setState(() => _address = address);
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'address': address,
-        'lat': ?lat,
-        'lng': ?lng,
-      }, SetOptions(merge: true));
-      _toast('تم حفظ موقعك');
-    } catch (e) {
-      debugPrint('Save address error: $e');
-      _toast('تعذر حفظ العنوان');
-    }
-  }
-
-  /// شرح واضح قبل طلب إذن الموقع (متطلب سياسة جوجل بلاي: طلب الإذن في سياقه).
-  Future<bool> _confirmLocationUse() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'استخدام موقعك',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هنستخدم موقع جهازك مرة واحدة بس عشان نحدد عنوان التوصيل، '
-            'ونحفظ العنوان في حسابك لتسهيل طلباتك الجاية. '
-            'مش بنتتبع موقعك في الخلفية، وتقدر تكتب عنوانك بنفسك بدل كده.',
-            style: TextStyle(height: 1.6),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('اكتب العنوان بنفسي'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('متابعة'),
-            ),
-          ],
-        ),
-      ),
-    );
-    return ok ?? false;
-  }
-
-  Future<void> _useGps() async {
-    if (!await _confirmLocationUse() || !mounted) return;
-    _toast('جاري تحديد موقعك...');
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        _toast('فعّل خدمة الموقع (GPS) من الإعدادات');
-        await Geolocator.openLocationSettings();
-        return;
-      }
-
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied) {
-        _toast('محتاجين إذن الموقع عشان نحدد مكانك');
-        return;
-      }
-      if (perm == LocationPermission.deniedForever) {
-        _toast('إذن الموقع مرفوض. فعّله من إعدادات التطبيق');
-        await Geolocator.openAppSettings();
-        return;
-      }
-
-      final pos = await PerformanceMonitor.trace(
-        'map_gps_location',
-        () => Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-          ),
-        ),
-      );
-
-      var text =
-          '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
-      try {
-        final marks = await PerformanceMonitor.trace(
-          'map_reverse_geocode',
-          () => placemarkFromCoordinates(pos.latitude, pos.longitude),
-        );
-        if (marks.isNotEmpty) {
-          final m = marks.first;
-          final parts = [
-            m.street,
-            m.subLocality,
-            m.locality,
-            m.administrativeArea,
-          ].where((e) => e != null && e.trim().isNotEmpty).toList();
-          if (parts.isNotEmpty) text = parts.join('، ');
-        }
-      } catch (e) {
-        debugPrint('Reverse geocoding error: $e');
-      }
-
-      await _saveAddress(text, lat: pos.latitude, lng: pos.longitude);
-    } catch (e) {
-      debugPrint('GPS error: $e');
-      _toast('تعذر تحديد الموقع، جرّب تاني أو اكتب العنوان بنفسك');
-    }
-  }
-
-  void _pickLocation() {
-    final ctrl = TextEditingController(text: _address);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          MediaQuery.viewInsetsOf(ctx).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'اختر موقع التوصيل',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _useGps();
-              },
-              icon: const Icon(Icons.my_location_rounded),
-              label: const Text('استخدم موقعي الحالي'),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'أو اكتب عنوانك (الحي، الشارع، علامة مميزة)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () {
-                final t = ctrl.text.trim();
-                if (t.isEmpty) return;
-                Navigator.of(ctx).pop();
-                _saveAddress(t);
-              },
-              child: const Text('حفظ العنوان'),
-            ),
-          ],
-        ),
-      ),
-    ).whenComplete(ctrl.dispose);
-  }
+  /// نفس اختيار العنوان المستخدم في صفحة ما بعد الدخول.
+  void _pickLocation() => DeliveryLocationPicker.open(context);
 
   // ───────────────────────── الإشعارات ─────────────────────────
-
-  /// شرح واضح قبل طلب إذن الإشعارات، وقرار عرضه محفوظ محليًا لكل جهاز.
-  Future<bool> _confirmNotificationsUse() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text(
-            'تفعيل الإشعارات',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
-          content: const Text(
-            'هنبعتلك إشعار لما حالة طلبك تتغيّر، وعشان توصلك العروض '
-            'والخصومات الجديدة. تقدر توقفها في أي وقت من إعدادات الجهاز.',
-            style: TextStyle(height: 1.6),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('مش دلوقتي'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('تفعيل'),
-            ),
-          ],
-        ),
-      ),
-    );
-    return ok ?? false;
-  }
 
   /// الاشتراك في topic العروض العامة (all): للعملاء بس.
   /// الأدمن وأصحاب المحلات بنشيلهم منه لو كانوا مشتركين قبل كده.
@@ -461,38 +241,11 @@ class _HomePageState extends State<HomePage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      if (await NotificationService.hasPermission()) {
-        // الإذن قد يكون محفوظًا من جلسة سابقة؛ لازم نسجل FCM token ونربط listeners
-        // في كل تشغيل، مش مجرد الاشتراك في topics.
-        await NotificationService.init();
-        await _syncBroadcastTopic(user.uid);
-        return;
-      }
-
-      // حالة عرض الشرح محلية لكل جهاز؛ إذن أندرويد نفسه خاص بالجهاز وليس بالحساب.
-      final prefs = await SharedPreferences.getInstance();
-      final promptKey = 'notification_prompted_${user.uid}';
-      if (prefs.getBool(promptKey) == true) return;
-
-      // نعرض الشرح داخل التطبيق أولًا، ثم نطلب إذن أندرويد مرة واحدة.
-      await Future<void>.delayed(const Duration(seconds: 3));
-      if (!mounted) return;
-
-      final accepted = await _confirmNotificationsUse();
-      if (!mounted) return;
-      if (!accepted) {
-        await prefs.setBool(promptKey, true);
-        return;
-      }
-
-      final granted =
-          await NotificationService.requestPermissionAndRegister();
-      await prefs.setBool(promptKey, true);
-
-      if (!granted) {
-        _toast('الإشعارات لسه مقفولة. تقدر تفعّلها من إعدادات التطبيق.');
-        return;
-      }
+      // Home is a fallback entry point; the landing page normally asks first.
+      final enabled =
+          await NotificationService.ensurePermissionWithExplanation(context);
+      if (!mounted || !enabled ||
+          FirebaseAuth.instance.currentUser?.uid != user.uid) return;
       await _syncBroadcastTopic(user.uid);
     } catch (e) {
       debugPrint('Notifications init error: $e');
@@ -531,10 +284,9 @@ class _HomePageState extends State<HomePage>
 
   Future<void> _openNotifications() async {
     // افتح الصفحة فورًا؛ أي مزامنة للتوكن/الـ topics تتم في الخلفية
-    // علشان تعليق الشبكة أو FCM ما يوقفش الزر.
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+    // علشان تعليق الشبكة أو FCM ما يوقفش الزر. الضغط المتكرر يفتحها مرة واحدة.
     unawaited(_syncNotificationsInBackground());
+    await pushOnce<void>(context, 'notifications', (_) => const NotificationsPage());
   }
 
   Future<void> _syncNotificationsInBackground() async {
@@ -588,70 +340,20 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _bell() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openNotifications,
-            child: SizedBox(
-              width: 38,
-              height: 38,
-              child: AnimatedBuilder(
-                animation: _bellCtrl,
-                builder: (context, child) {
-                  // هزة يمين وشمال وتخفت تدريجيًا
-                  final t = _bellCtrl.value;
-                  final angle = math.sin(t * math.pi * 6) * 0.35 * (1 - t);
-                  return Transform.rotate(
-                    angle: angle,
-                    alignment: Alignment.topCenter,
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  Icons.notifications_none_rounded,
-                  color: Brand.green,
-                  size: 24,
-                ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -5,
-          left: -5,
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _unreadStream,
-            builder: (context, snap) {
-              if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
-              final n = snap.data?.docs.length ?? 0;
-              if (n == 0) return const SizedBox.shrink();
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: Text(
-                  n > 9 ? '9+' : '$n',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _unreadStream,
+      builder: (context, snap) {
+        if (snap.hasData) _onUnreadChanged(snap.data!.docs.length);
+        return NotificationBell(
+          count: snap.data?.docs.length ?? 0,
+          shake: _bellCtrl,
+          size: _bellSize,
+          onTap: _openNotifications,
+        );
+      },
     );
   }
+
 
   // ───────────────────────── الهيدر ─────────────────────────
 
@@ -662,7 +364,7 @@ class _HomePageState extends State<HomePage>
     return ClipPath(
       clipper: _WaveBottomClipper(),
       child: Container(
-      color: Brand.green,
+      color: AppColors.purpleDeep,
       padding: EdgeInsets.fromLTRB(16, top + 6, 16, 22),
       child: Column(
         children: [
@@ -770,95 +472,177 @@ class _HomePageState extends State<HomePage>
   Widget _offersPage() {
     final stores = _storesFuture;
     return Scaffold(
-      appBar: AppBar(title: const Text('تصفح العروض')),
+      backgroundColor: AppColors.bg,
+      bottomNavigationBar: const CustomerPageNav(),
       body: FutureBuilder<List<(_StoreItem, Map<String, dynamic>)>>(
         future: _offersFuture ??= stores.then((docs) => _loadCatalogOffers(_parse(docs))),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('تعذر تحميل العروض.'));
-          }
           final offers = snapshot.data;
-          if (offers == null) {
-            return const Center(child: CircularProgressIndicator());
+          final Widget content;
+          if (snapshot.hasError) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('تعذر تحميل العروض.', style: AppTypography.secondary)),
+            );
+          } else if (offers == null) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: CircularProgressIndicator()),
+            );
+          } else if (offers.isEmpty) {
+            content = const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(child: Text('مفيش عروض متاحة دلوقتي.', style: AppTypography.secondary)),
+            );
+          } else {
+            content = SliverPadding(
+              padding: AppSpacing.pagePadding,
+              sliver: SliverLayoutBuilder(builder: (context, constraints) {
+                const gap = AppSpacing.md;
+                final width = constraints.crossAxisExtent;
+                final columns = width >= 600 ? 3 : 2;
+                final cardWidth = (width - gap * (columns - 1)) / columns;
+                final imageHeight = cardWidth * 0.8;
+                final scaler = MediaQuery.textScalerOf(context);
+                final textHeight = scaler.scale(15) * 1.3 +
+                    scaler.scale(13) * 1.4 +
+                    scaler.scale(16) * 1.4 +
+                    40;
+                return SliverGrid(
+                  key: const Key('offers-grid'),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    mainAxisExtent: imageHeight + textHeight,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _offerCard(
+                      offers[i],
+                      offer: true,
+                      width: null,
+                      imageHeight: imageHeight,
+                    ),
+                    childCount: offers.length,
+                  ),
+                );
+              }),
+            );
           }
-          if (offers.isEmpty) {
-            return const Center(child: Text('مفيش عروض متاحة دلوقتي.'));
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: offers.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (_, i) => Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: _offerCard(offers[i], offer: true),
-            ),
+          return CustomScrollView(
+            slivers: [
+              // هيدر بصورة للعروض (نفس صورة كارت العروض في صفحة الترحيب).
+              SliverAppBar(
+                key: const Key('offers-hero'),
+                pinned: true,
+                expandedHeight: 190,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  title: const Text(
+                    'تصفح العروض',
+                    style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/entry_offers.jpg',
+                        fit: BoxFit.cover,
+                        alignment: Alignment.centerLeft,
+                        excludeFromSemantics: true,
+                      ),
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0x55000000), Color(0x00000000), Color(0xCC4A0C80)],
+                            stops: [0, 0.4, 1],
+                          ),
+                        ),
+                      ),
+                      if (offers != null && offers.isNotEmpty)
+                        PositionedDirectional(
+                          start: AppSpacing.lg,
+                          bottom: 52,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.orange,
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                            child: Text(
+                              '${offers.length} عرض متاح دلوقتي',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: AppTypography.label,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              content,
+            ],
           );
         },
       ),
     );
   }
 
+
   // ───────────────────────── عروض / الأكثر مبيعًا ─────────────────────────
+
+  /// عروض الجلسة: الرئيسية وصفحة العروض بيستخدموا نفس النتيجة لمدة قصيرة
+  /// بدل ما كل صفحة تعيد التحميل (أسرع وقراءات أقل).
+  static Future<List<(_StoreItem, Map<String, dynamic>)>>? _sharedOffers;
+  static DateTime? _sharedOffersAt;
 
   Future<List<(_StoreItem, Map<String, dynamic>)>> _loadCatalogOffers(
     List<_StoreItem> stores,
+  ) {
+    final at = _sharedOffersAt;
+    final cached = _sharedOffers;
+    if (cached != null &&
+        at != null &&
+        DateTime.now().difference(at) < const Duration(minutes: 5)) {
+      return cached;
+    }
+    _sharedOffersAt = DateTime.now();
+    final future = _scanOffers(stores);
+    _sharedOffers = future;
+    future.catchError((Object _) {
+      _sharedOffers = null;
+      return const <(_StoreItem, Map<String, dynamic>)>[];
+    });
+    return future;
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _scanOffers(
+    List<_StoreItem> stores,
+  ) async {
+    // كل المحلات بالتوازي بدل واحد ورا التاني (نفس عدد القراءات، وقت أقل بكتير).
+    final perStore = await Future.wait(stores.map(_storeOffers));
+    return [for (final list in perStore) ...list];
+  }
+
+  Future<List<(_StoreItem, Map<String, dynamic>)>> _storeOffers(
+    _StoreItem store,
   ) async {
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
-    for (final store in stores) {
-      var hasCatalog = false;
-      // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
-      // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
-      // مع كل فتحة للرئيسية؛ المسح بقى للمحل اللي ملخصه لسه ما اتحسبش بس.
+    {
+      // ملخص العروض محفوظ على مستند المحل/فهرس الكتالوج (offerItems) وبيتحدث مع كل تعديل صنف،
+      // فبنستخدمه من غير أي قراءة إضافية.
+      // كان فيه مسح احتياطي لكل أصناف المحل لو الملخص ناقص (ممكن يوصل لآلاف القراءات
+      // مع كل فتحة للرئيسية). اتشال: المحل اللي ملخصه ناقص عروضه بتظهر أول ما صاحبه
+      // يعدّل أي صنف، أو المدير يدوس «تحديث ملخص العروض» من أدوات الإدارة.
       if (store.data['offerItems'] is! List) {
-        try {
-          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-              .collection('stores')
-              .doc(store.store.id)
-              .collection('products')
-              .limit(200);
-          DocumentSnapshot<Map<String, dynamic>>? cursor;
-          do {
-            if (cursor != null) {
-              query = FirebaseFirestore.instance
-                  .collection('stores')
-                  .doc(store.store.id)
-                  .collection('products')
-                  .limit(200)
-                  .startAfterDocument(cursor);
-            }
-            final page = await query.get();
-            ReadMeter.query('home:offers-scan', page);
-            if (page.docs.isNotEmpty) hasCatalog = true;
-            for (final doc in page.docs) {
-              final item = doc.data();
-              final name = (item['name'] ?? '').toString().trim();
-              final price = (item['price'] as num?)?.toDouble() ?? 0;
-              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-              final text = (item['offerText'] ?? '').toString().trim();
-              final end = item['offerEndsAt'];
-              final expired = isOfferExpired(
-                end is Timestamp ? end.toDate() : null,
-                DateTime.now(),
-              );
-              if (name.isEmpty ||
-                  price <= 0 ||
-                  expired ||
-                  item['available'] == false ||
-                  item['isAvailable'] == false ||
-                  (!(old > price && old > 0) && text.isEmpty)) {
-                continue;
-              }
-              offers.add((store, item));
-            }
-            cursor = page.docs.isEmpty ? null : page.docs.last;
-            if (page.docs.length < 200) break;
-          } while (cursor != null);
-        } catch (error) {
-          debugPrint('Home offers load failed for ${store.store.id}: $error');
-        }
+        debugPrint('Home offers: summary missing for ${store.store.id} (no scan).');
       }
-      // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
-      if (!hasCatalog) {
+      {
         final raw = store.data['offerItems'];
         if (raw is List) {
           for (final value in raw) {
@@ -879,6 +663,12 @@ class _HomePageState extends State<HomePage>
       }
     }
     return offers;
+  }
+
+  static double _discountOf(Map<String, dynamic> m) {
+    final price = (m['price'] as num?)?.toDouble() ?? 0;
+    final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
+    return old > price && old > 0 ? 1 - price / old : 0;
   }
 
   Widget _highlights(
@@ -906,7 +696,32 @@ class _HomePageState extends State<HomePage>
             builder: (context, snapshot) {
               final offers = snapshot.data ?? const <(_StoreItem, Map<String, dynamic>)>[];
               if (offers.isEmpty) return const SizedBox.shrink();
-              return _hlRow('عروض وخصومات', offers, offer: true);
+              // الأكتر خصمًا الأول في البانرات المتحركة.
+              final featured = [...offers]..sort((a, b) => _discountOf(b.$2).compareTo(_discountOf(a.$2)));
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _hlRow('عروض وخصومات', offers, offer: true),
+                  // بانرات متحركة لعروض الأصناف بين العروض والأكثر مبيعًا.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: OfferCarousel(slides: [
+                      for (final (store, item) in featured.take(6))
+                        OfferSlide(
+                          name: (item['name'] ?? '').toString(),
+                          storeName: store.store.name,
+                          price: (item['price'] as num?)?.toDouble() ?? 0,
+                          oldPrice: (item['oldPrice'] as num?)?.toDouble() ?? 0,
+                          offerText: (item['offerText'] ?? '').toString().trim(),
+                          image: (item['image'] ?? '').toString(),
+                          // صورة العرض بتفتح الصنف نفسه جوه المحل.
+                          onTap: () => _openStore(store.store,
+                              focusProduct: (item['name'] ?? '').toString()),
+                        ),
+                    ]),
+                  ),
+                ],
+              );
             },
           ),
           if (best.isNotEmpty) _hlRow('الأكثر مبيعًا', best),
@@ -922,14 +737,14 @@ class _HomePageState extends State<HomePage>
   }) {
     // offer كان بيلوّن الخلفية بيج؛ دلوقتي كل الخلفيات أبيض ناصع.
     return Container(
-      margin: const EdgeInsets.only(top: 18),
-      padding: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
                 Icon(
@@ -942,7 +757,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 17,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
@@ -967,7 +782,12 @@ class _HomePageState extends State<HomePage>
   }
 
   /// كارت عرض/صنف زي طلبات: صورة عريضة، شارة خصم، شعار المحل، الاسم والسعر.
-  Widget _offerCard((_StoreItem, Map<String, dynamic>) entry, {bool offer = false}) {
+  Widget _offerCard(
+    (_StoreItem, Map<String, dynamic>) entry, {
+    bool offer = false,
+    double? width = 232,
+    double imageHeight = 130,
+  }) {
     final (s, m) = entry;
     final price = (m['price'] as num?)?.toDouble() ?? 0;
     final old = (m['oldPrice'] as num?)?.toDouble() ?? 0;
@@ -978,14 +798,14 @@ class _HomePageState extends State<HomePage>
         ? 'خصم ${((1 - price / old) * 100).round()}%'
         : offerText;
     final fallback = Container(
-      decoration: BoxDecoration(gradient: Brand.softGradient),
+      color: AppColors.surfaceAlt,
       alignment: Alignment.center,
-      child: Icon(s.store.icon, color: Colors.white70, size: 40),
+      child: const Icon(Icons.shopping_bag_outlined, color: AppColors.muted, size: 40),
     );
     return GestureDetector(
-      onTap: () => _openStore(s.store),
+      onTap: () => _openStore(s.store, focusProduct: (m['name'] ?? '').toString()),
       child: Container(
-        width: 232,
+        width: width,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: Colors.white,
@@ -998,7 +818,7 @@ class _HomePageState extends State<HomePage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 130,
+              height: imageHeight,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1099,10 +919,10 @@ class _HomePageState extends State<HomePage>
                     children: [
                       Text(
                         formatPrice(price),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.green,
+                        style: const TextStyle(
+                          fontSize: AppTypography.price - 1,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeDeep,
                         ),
                       ),
                       if (offer && hasDiscount) ...[
@@ -1134,7 +954,7 @@ class _HomePageState extends State<HomePage>
     final shown = all.take(14).toList();
     if (shown.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(top: 18),
+      padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1146,7 +966,7 @@ class _HomePageState extends State<HomePage>
                   child: Text(
                     'محلات مميزة',
                     style: TextStyle(
-                      fontSize: 19,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: Brand.ink,
                     ),
@@ -1204,7 +1024,7 @@ class _HomePageState extends State<HomePage>
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: item.store.isOpen ? Brand.ink : kDanger,
                           ),
@@ -1245,29 +1065,37 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
+              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها.
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(context).push(
+                  // بوسترات الإدارة (مكان «إعلان أعلى الرئيسية») متحركة،
+                  // وإعلان «وصّلي ع السريع» المدمج لو مفيش بوسترات.
+                  child: HomeTopAds(
+                    onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => const QuickOrderCreatePage(),
                       ),
                     ),
-                    icon: const Icon(Icons.delivery_dining_outlined),
-                    label: const Text('طلباتك على السريع'),
                   ),
                 ),
               ),
+              if (!loading && !hasError)
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),
 
               const SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.only(top: 18),
+                  padding: EdgeInsets.only(top: 12),
                   child: PromoBanners(),
                 ),
+              ),
+
+              // Four real-photo cards in each row. Browse-stores and
+              // browse-offers entry cards remain unchanged.
+              SliverToBoxAdapter(
+                child: HomeCategoryGrid(onSelected: (id) => _openDirectory(id)),
               ),
 
               if (!loading && !hasError)
@@ -1306,7 +1134,7 @@ class _HomePageState extends State<HomePage>
                 left: 0,
                 right: 0,
                 height: MediaQuery.paddingOf(context).top,
-                child: ColoredBox(color: Brand.green),
+                child: const ColoredBox(color: AppColors.purpleDeep),
               ),
             ],
           );
@@ -1332,3 +1160,4 @@ class _WaveBottomClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
+

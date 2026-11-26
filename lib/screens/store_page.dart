@@ -35,6 +35,7 @@ import '../widgets/product_sheet.dart';
 import '../widgets/qty_stepper.dart';
 import 'cart_page.dart';
 import '../widgets/cached_net_image.dart';
+import '../widgets/app_snack.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -51,7 +52,10 @@ double? _parsePrice(String input) {
 
 class StorePage extends StatefulWidget {
   final Store store;
-  const StorePage({super.key, required this.store});
+
+  /// اسم الصنف اللي يتفتح أول ما المحل يحمّل (مثلًا من بانر عرض في الرئيسية).
+  final String? focusProduct;
+  const StorePage({super.key, required this.store, this.focusProduct});
 
   @override
   State<StorePage> createState() => _StorePageState();
@@ -151,7 +155,7 @@ class _StorePageState extends State<StorePage> {
   void _say(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(appSnack(message));
   }
 
   /// المدير يشوف الأزرار في كل المحلات، وصاحب المحل في محله هو بس.
@@ -450,7 +454,7 @@ class _StorePageState extends State<StorePage> {
                     : null,
                 icon: const Icon(Icons.remove_circle_outline),
               ),
-              Text('$_specialQty', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              Text('$_specialQty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
               IconButton(
                 onPressed: _specialQty < 99 && !_sendingSpecial
                     ? () => setState(() => _specialQty++)
@@ -557,6 +561,37 @@ class _StorePageState extends State<StorePage> {
     return list;
   }
 
+  /// بيفتح صنف العرض مرة واحدة: من الأصناف المحمّلة، أو بالبحث عن اسمه لو مش في أول صفحة.
+  bool _focusDone = false;
+  bool _focusSearched = false;
+  void _maybeOpenFocus() {
+    final name = widget.focusProduct?.trim() ?? '';
+    if (_focusDone || name.isEmpty || !mounted) return;
+    Product? hit;
+    for (final p in _items) {
+      if (p.name.trim() == name) {
+        hit = p;
+        break;
+      }
+    }
+    if (hit == null) {
+      if (!_focusSearched && _hasMore) {
+        _focusSearched = true;
+        _searchCtrl.text = name;
+        _term = name;
+        _load(reset: true);
+      } else {
+        _focusDone = true;
+      }
+      return;
+    }
+    _focusDone = true;
+    final product = hit;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openSheet(context, product);
+    });
+  }
+
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       _gen++;
@@ -588,6 +623,7 @@ class _StorePageState extends State<StorePage> {
           _lastMenu = menu;
           _syncCartWithMenu();
         }
+        _maybeOpenFocus();
         return;
       }
 
@@ -614,6 +650,7 @@ class _StorePageState extends State<StorePage> {
         _hasMore = snap.docs.length == _pageSize;
         _loading = false;
       });
+      _maybeOpenFocus();
     } catch (_) {
       if (!mounted || gen != _gen) return;
       setState(() {
@@ -691,7 +728,7 @@ class _StorePageState extends State<StorePage> {
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w800,
-            fontSize: 18,
+            fontSize: 16.5,
           ),
         ),
       ),
@@ -767,7 +804,7 @@ class _StorePageState extends State<StorePage> {
           Text(
             store.name,
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               color: Brand.ink,
             ),
@@ -901,7 +938,7 @@ class _StorePageState extends State<StorePage> {
               child: Text(
                 'المنتجات',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -941,7 +978,7 @@ class _StorePageState extends State<StorePage> {
               Text(
                 'رفع أصناف من ملف',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: Brand.ink,
                 ),
@@ -1380,14 +1417,12 @@ class _StorePageState extends State<StorePage> {
 
   Future<void> _add(BuildContext context, Product p, {int qty = 1}) async {
     if (!store.isOpen) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('المحل مغلق الآن. تقدر تتفرج على الأصناف وتطلب لما يفتح.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(appSnack('المحل مغلق الآن. تقدر تتفرج على الأصناف وتطلب لما يفتح.'));
       return;
     }
     carts.rememberStore(store);
-    if (cart.add(p, storeId: store.id, storeName: store.name, qty: qty)) return;
-    if (!await _ensureCartForStore()) return;
+    if (!cart.canAddFrom(store.id) && !await _ensureCartForStore()) return;
+    cart.rememberLoadedProducts(store.id, _visible);
     cart.add(p, storeId: store.id, storeName: store.name, qty: qty);
   }
 
@@ -1646,10 +1681,10 @@ class _ProductRow extends StatelessWidget {
   Widget _image() {
     if (product.imageUrl.isEmpty) return _fallback();
     return CachedNetImage(
-      url: thumb(product.imageUrl, w: 300),
+      url: thumb(product.imageUrl, w: 360),
       width: double.infinity,
       height: double.infinity,
-      memCacheWidth: 300,
+      memCacheWidth: 360,
       placeholder: _fallback(),
       errorWidget: _fallback(),
     );
@@ -1717,7 +1752,8 @@ class _ProductRow extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 14),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            // الاسم والسعر في نص ارتفاع الصورة: تناغم بين الكلام والصورة.
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
             Expanded(
               child: Column(
@@ -1728,7 +1764,7 @@ class _ProductRow extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15.5,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
                       height: 1.35,
                       color: Brand.ink,
@@ -1740,7 +1776,7 @@ class _ProductRow extends StatelessWidget {
                       product.description.trim(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12.5, height: 1.35, color: kMuted),
+                      style: TextStyle(fontSize: 12.5, height: 1.4, color: kMuted),
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -1748,10 +1784,10 @@ class _ProductRow extends StatelessWidget {
                     children: [
                       Text(
                         formatPrice(product.price),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Brand.ink,
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orangeDeep,
                         ),
                       ),
                       if (product.hasOffer) ...[
@@ -1789,17 +1825,24 @@ class _ProductRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             SizedBox(
-              width: 104,
-              height: 104,
+              width: 116,
+              height: 116,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: _image(),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.line),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(17),
+                        child: _image(),
+                      ),
                     ),
                   ),
                   PositionedDirectional(
@@ -1839,7 +1882,7 @@ class _ProductRow extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
       color: color,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.pill),
     ),
     child: Text(
       text,
@@ -1847,7 +1890,7 @@ class _ProductRow extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: FontWeight.w800,
       ),
     ),

@@ -141,11 +141,24 @@ void main() {
       expect(find.byKey(const Key('cart-card-g')), findsOneWidget);
       expect(find.byKey(const Key('cart-card-p')), findsOneWidget);
       expect(find.text('السلة الحالية'), findsOneWidget);
+      expect(find.textContaining('لحد ما تفرّغها بنفسك'), findsOneWidget);
+      expect(find.textContaining('3 أيام'), findsNothing);
       // المحل المعروف بس عليه «إضافة منتجات من نفس المحل».
       expect(find.byKey(const Key('cart-add-more-g')), findsOneWidget);
       expect(find.byKey(const Key('cart-add-more-p')), findsNothing);
+      // The shop-another-store button is below two full cart cards on a
+      // phone-sized viewport. Scroll before asserting: ListView lazily builds
+      // children and a missing offscreen widget is not a missing feature.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('carts-shop-other')),
+        180,
+      );
       expect(find.byKey(const Key('carts-shop-other')), findsOneWidget);
 
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('cart-delete-g')),
+        -180,
+      );
       await tester.ensureVisible(find.byKey(const Key('cart-delete-g')));
       await tester.tap(find.byKey(const Key('cart-delete-g')));
       await tester.pumpAndSettle();
@@ -188,7 +201,7 @@ void main() {
       expect(second.restoredCount, 0);
     });
 
-    test('السلة الأقدم من 3 أيام بتتمسح، والحديثة بتفضل', () async {
+    test('السلال القديمة بتفضل محفوظة حتى يفرغها العميل', () async {
       final now = DateTime(2026, 11, 22, 12);
       final data = {
         'v': 1,
@@ -208,10 +221,28 @@ void main() {
       };
       final book = CartBook(CartModel(), storage: _MemoryStorage(jsonEncode(data)));
       await book.load(now: now);
-      expect(book.restoredCount, 1);
+      expect(book.restoredCount, 2);
       expect(book.parkedFor('new')!.count, 2);
-      expect(book.parkedFor('old'), isNull);
-      expect(book.active.isEmpty, isTrue);
+      expect(book.active.storeId, 'old');
+      expect(book.active.count, 1);
+    });
+
+    test('علامة إرسال الطلب محفوظة مع السلة بعد فتح التطبيق وتسجيل الخروج', () async {
+      final storage = _MemoryStorage();
+      final first = CartBook(CartModel(), storage: storage);
+      await first.load();
+      first.active.add(_rice, storeId: 'g', storeName: 'بقالة الخير');
+      first.active.markSubmitted('order_123');
+      await first.flush();
+      expect(storage.value, contains('submittedOrderId'));
+
+      await first.detachForSignOut();
+      expect(first.active.isEmpty, isTrue);
+      expect(storage.value, isNotNull);
+
+      await first.attachAfterSignIn();
+      expect(first.active.submittedOrderId, 'order_123');
+      expect(first.active.count, 1);
     });
 
     test('تخزين تالف ما يوقعش التطبيق', () async {
