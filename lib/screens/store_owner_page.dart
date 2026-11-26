@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../utils/bulk_products.dart';
 import '../utils/product_autofill.dart';
 import '../services/order_gateway.dart';
 import 'referral_campaign_page.dart';
@@ -1733,6 +1734,58 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     }
   }
 
+  /// لصق قايمة أسعار (سطر لكل صنف) ← مراجعة ← إضافة الكل على دفعات.
+  /// الأصناف بتتكتب مرة واحدة، وبعدها القائمة المجمّعة بتتبني مرة واحدة بس.
+  Future<void> _bulkAdd() async {
+    final lines = await showModalBottomSheet<List<BulkProductLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _BulkProductsSheet(),
+    );
+    if (lines == null || lines.isEmpty || !mounted) return;
+    var added = 0;
+    Object? error;
+    await CatalogSync.markPending(widget.storeId);
+    try {
+      for (var start = 0; start < lines.length; start += 100) {
+        final end = start + 100 > lines.length ? lines.length : start + 100;
+        final batch = FirebaseFirestore.instance.batch();
+        for (final l in lines.sublist(start, end)) {
+          final groups = l.suggestion?.optionGroups ?? const <OptionGroup>[];
+          batch.set(_col.doc(), {
+            'name': l.name,
+            'price': l.price,
+            'image': '',
+            if (l.description.isNotEmpty) 'description': l.description,
+            if (groups.isNotEmpty) 'optionGroups': groups.map((g) => g.toMap()).toList(),
+            'isAvailable': true,
+            'available': true,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+        added += end - start;
+      }
+    } catch (e) {
+      error = e;
+    }
+    if (added > 0) {
+      try {
+        await _syncCount();
+      } catch (_) {}
+      final ok = await CatalogSync.afterProductsChanged(widget.storeId);
+      await _load(fromCache: true);
+      if (error == null) {
+        _say(StoreHighlights.withNote('تم إضافة $added صنف', ok));
+        return;
+      }
+      _say('اتضاف $added صنف بس، والباقي ما اتضافش: ${_why(error)}');
+      return;
+    }
+    if (error != null) _say('تعذر إضافة الأصناف: ${_why(error)}');
+  }
+
   /// اختيار صنف من القايمة ثم عمل عرض عليه.
   Future<void> _pickForOffer() async {
     if (_docs.isEmpty) {
@@ -2017,6 +2070,18 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const Key('owner-bulk-add'),
+                  onPressed: _bulkAdd,
+                  icon: const Icon(Icons.playlist_add_rounded),
+                  label: const Text('إضافة أصناف كتير مرة واحدة (لصق قايمة)'),
+                ),
+              ),
+            ),
             Expanded(child: body),
           ],
         ),
@@ -2147,7 +2212,7 @@ class _ProductDialogState extends State<_ProductDialog> {
     }
   }
 
-  void _save() {
+  Future<void> _save() async {
     final name = _name.text.trim();
     final price = double.tryParse(_price.text.trim().replaceAll(',', '.'));
     if (name.isEmpty || name.length > 120) {
@@ -2169,6 +2234,23 @@ class _ProductDialogState extends State<_ProductDialog> {
         return;
       }
     }
+    // تنبيه «متأكد؟» لو السعر شكله غلط (طماطم 1500 بدل 15)؛ مش منع.
+    final previous = widget.existing?['price'];
+    final warning = priceWarningFor(
+      name,
+      price,
+      previousPrice: previous is num && previous.toDouble() != price ? previous.toDouble() : null,
+    );
+    if (warning != null) {
+      final ok = await confirmDialog(
+        context,
+        title: 'راجع السعر',
+        message: '$warning\n\nالسعر اللي هيتحفظ: ${formatPrice(price)}',
+        confirmLabel: 'السعر صح، احفظ',
+      );
+      if (!ok || !mounted) return;
+    }
+    if (!mounted) return;
     Navigator.of(context).pop(
       _ProductForm(
         name,
@@ -2861,6 +2943,143 @@ class _SuggestionCard extends StatelessWidget {
             child: const Text('استخدم'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// لصق قايمة أصناف ← جدول مراجعة ← «إضافة الكل». مفيش أي قراءة من Firestore هنا.
+class _BulkProductsSheet extends StatefulWidget {
+  const _BulkProductsSheet();
+
+  @override
+  State<_BulkProductsSheet> createState() => _BulkProductsSheetState();
+}
+
+class _BulkProductsSheetState extends State<_BulkProductsSheet> {
+  final _text = TextEditingController();
+  BulkParseResult? _result;
+  final Set<int> _off = {};
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _parse() {
+    final r = parseBulkProducts(_text.text);
+    setState(() {
+      _result = r;
+      _off.clear();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _result;
+    final chosen = r == null
+        ? const <BulkProductLine>[]
+        : [for (var i = 0; i < r.lines.length; i++) if (!_off.contains(i)) r.lines[i]];
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    r == null ? 'الصق قايمة أصنافك' : 'راجع الأصناف قبل الإضافة',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    r == null
+                        ? 'سطر لكل صنف: الاسم والسعر. مثال:\nطماطم 15\nخيار 10\nجبنة رومي 250'
+                        : 'الوصف بيتكتب لوحده لو الصنف معروف. شيل العلامة من أي صنف مش عايزه.',
+                    style: TextStyle(fontSize: 12.5, color: kMuted, height: 1.5),
+                  ),
+                  const SizedBox(height: 10),
+                  if (r == null)
+                    Flexible(
+                      child: TextField(
+                        key: const Key('bulk-text'),
+                        controller: _text,
+                        onChanged: (_) => setState(() {}),
+                        minLines: 6,
+                        maxLines: 14,
+                        decoration: const InputDecoration(hintText: 'طماطم 15\nخيار 10'),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (var i = 0; i < r.lines.length; i++)
+                            CheckboxListTile(
+                              key: Key('bulk-line-$i'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              value: !_off.contains(i),
+                              onChanged: (v) => setState(() => v == true ? _off.remove(i) : _off.add(i)),
+                              title: Text(
+                                '${r.lines[i].name} — ${formatPrice(r.lines[i].price)}',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              subtitle: Text(
+                                r.lines[i].priceWarning ??
+                                    (r.lines[i].description.isEmpty
+                                        ? 'من غير وصف (تقدر تضيفه بعدين)'
+                                        : r.lines[i].description),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: r.lines[i].priceWarning != null ? kDanger : kMuted,
+                                  fontWeight: r.lines[i].priceWarning != null ? FontWeight.w700 : null,
+                                ),
+                              ),
+                            ),
+                          if (r.skipped.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                'سطور ما اتفهمتش (${r.skipped.length}): ${r.skipped.take(5).join('، ')}'
+                                '${r.skipped.length > 5 ? '…' : ''}',
+                                style: TextStyle(fontSize: 12, color: kMuted),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      if (r != null)
+                        TextButton(
+                          onPressed: () => setState(() => _result = null),
+                          child: const Text('رجوع للتعديل'),
+                        ),
+                      const Spacer(),
+                      FilledButton(
+                        key: const Key('bulk-confirm'),
+                        onPressed: r == null
+                            ? (_text.text.trim().isEmpty ? null : _parse)
+                            : (chosen.isEmpty ? null : () => Navigator.pop(context, chosen)),
+                        child: Text(r == null ? 'تجهيز' : 'إضافة ${chosen.length} صنف'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
