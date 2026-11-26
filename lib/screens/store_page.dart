@@ -23,11 +23,13 @@ import '../services/store_highlights.dart';
 import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
+import '../services/store_shortcuts.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../utils/product_photo.dart';
+import '../utils/shop_search.dart';
 import '../widgets/app_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/option_groups_editor.dart';
@@ -38,6 +40,8 @@ import '../widgets/cached_net_image.dart';
 import '../widgets/app_snack.dart';
 
 typedef _Json = Map<String, dynamic>;
+
+enum _ProductSort { byName, lowToHigh, highToLow }
 
 /// تحويل نص السعر لرقم (يدعم الفاصلة العربية والأرقام العربية).
 double? _parsePrice(String input) {
@@ -86,6 +90,7 @@ class _StorePageState extends State<StorePage> {
   bool _hasMore = true;
   bool _error = false;
   String _term = '';
+  _ProductSort _sortOrder = _ProductSort.byName;
   int _gen = 0;
 
   bool _collapsed = false; // الغلاف اتطوى: نظهر اسم المحل في الشريط العلوي
@@ -111,13 +116,17 @@ class _StorePageState extends State<StorePage> {
 
   /// الأصناف المعروضة: الأصناف القديمة (المخزنة جوه المحل) + أصناف Firestore.
   List<Product> get _visible {
-    final term = _term.toLowerCase();
-    final legacy = store.products.where(
-      (p) => term.isEmpty || p.name.toLowerCase().contains(term),
-    );
-    // الأصناف الموقوفة (available=false) بتظهر للمدير بس، والعميل ما يشوفهاش.
-    final live = _items.where((p) => p.available || _canEditStore);
-    return [...legacy, ...live];
+    final term = _term;
+    final legacy = store.products.where((p) => matchesShopSearch(p.name, term));
+    final live = _items.where((p) =>
+        (p.available || _canEditStore) && matchesShopSearch(p.name, term));
+    final products = [...legacy, ...live];
+    if (_sortOrder == _ProductSort.lowToHigh) {
+      products.sort((a, b) => a.price.compareTo(b.price));
+    } else if (_sortOrder == _ProductSort.highToLow) {
+      products.sort((a, b) => b.price.compareTo(a.price));
+    }
+    return products;
   }
 
   @override
@@ -127,6 +136,7 @@ class _StorePageState extends State<StorePage> {
       if (mounted) setState(() => _playingVoicePreview = false);
     });
     _checkAdmin();
+    _recordVisit();
 
     _scroll.addListener(() {
       final collapsed = _scroll.hasClients && _scroll.offset > 120;
@@ -136,6 +146,15 @@ class _StorePageState extends State<StorePage> {
     });
 
     _load(reset: true);
+  }
+
+  Future<void> _recordVisit() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await storeShortcuts.recordVisit(uid, store.id);
+    } catch (_) {
+      // حفظ اختياري على الجهاز، لا يجب أن يعطّل تحميل المحل.
+    }
   }
 
   @override
@@ -705,7 +724,7 @@ class _StorePageState extends State<StorePage> {
             ..clear()
             ..addAll(term.isEmpty
                 ? menu
-                : menu.where((p) => p.name.toLowerCase().contains(term)));
+                : menu.where((p) => matchesShopSearch(p.name, term)));
           _hasMore = false;
           _loading = false;
         });
@@ -990,6 +1009,18 @@ class _StorePageState extends State<StorePage> {
                       ),
                     ),
                   ),
+                ),
+                PopupMenuButton<_ProductSort>(
+                  key: const Key('store-price-sort'),
+                  tooltip: 'ترتيب المنتجات',
+                  icon: const Icon(Icons.sort_rounded),
+                  initialValue: _sortOrder,
+                  onSelected: (value) => setState(() => _sortOrder = value),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: _ProductSort.byName, child: Text('الترتيب الافتراضي')),
+                    PopupMenuItem(value: _ProductSort.lowToHigh, child: Text('الأرخص أولًا')),
+                    PopupMenuItem(value: _ProductSort.highToLow, child: Text('الأغلى أولًا')),
+                  ],
                 ),
                 if (_canEditStore) ...[
                   const SizedBox(width: 8),
