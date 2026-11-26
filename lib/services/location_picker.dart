@@ -170,68 +170,89 @@ class DeliveryLocationPicker {
   }
 
   /// شيت اختيار عنوان التوصيل: موقعي الحالي (GPS) أو كتابة العنوان.
-  static void open(BuildContext context) {
-    final ctrl = TextEditingController(text: SavedAddress.value.value);
-    showModalBottomSheet<void>(
+  /// الشيت بيرجّع الاختيار والتنفيذ بيحصل بعد ما يتقفل (الكنترولر بيتمسح مع الشيت نفسه).
+  static Future<void> open(BuildContext context) async {
+    final choice = await showModalBottomSheet<_AddressChoice>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          MediaQuery.viewInsetsOf(ctx).bottom + 20,
-        ),
+      builder: (_) => _AddressSheet(initial: SavedAddress.value.value),
+    );
+    if (choice == null || !context.mounted) return;
+    if (choice.gps) {
+      await _useGps(context);
+    } else {
+      await _saveAddress(context, choice.text);
+    }
+  }
+
+}
+
+
+class _AddressChoice {
+  const _AddressChoice.gps() : gps = true, text = '';
+  const _AddressChoice.text(this.text) : gps = false;
+  final bool gps;
+  final String text;
+}
+
+class _AddressSheet extends StatefulWidget {
+  const _AddressSheet({required this.initial});
+  final String initial;
+
+  @override
+  State<_AddressSheet> createState() => _AddressSheetState();
+}
+
+class _AddressSheetState extends State<_AddressSheet> {
+  late final _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'اختر موقع التوصيل',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Brand.ink,
-              ),
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Brand.ink),
             ),
             const SizedBox(height: 14),
             FilledButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                _useGps(context);
-              },
+              onPressed: () => Navigator.of(context).pop(const _AddressChoice.gps()),
               icon: const Icon(Icons.my_location_rounded),
               label: const Text('استخدم موقعي الحالي'),
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: ctrl,
+              controller: _ctrl,
               maxLines: 2,
               decoration: InputDecoration(
                 hintText: 'أو اكتب عنوانك (الحي، الشارع، علامة مميزة)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
               onPressed: () {
-                final t = ctrl.text.trim();
+                final t = _ctrl.text.trim();
                 if (t.isEmpty) return;
-                Navigator.of(ctx).pop();
-                _saveAddress(context, t);
+                FocusScope.of(context).unfocus();
+                Navigator.of(context).pop(_AddressChoice.text(t));
               },
               child: const Text('حفظ العنوان'),
             ),
           ],
         ),
-      ),
-    ).whenComplete(ctrl.dispose);
-  }
-
+      );
 }
