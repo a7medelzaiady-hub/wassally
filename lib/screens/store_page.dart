@@ -25,7 +25,6 @@ import '../services/image_service.dart';
 import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
-import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../utils/product_photo.dart';
