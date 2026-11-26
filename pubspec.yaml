@@ -46,6 +46,9 @@ dependencies:
   share_plus: '>=11.0.0 <13.0.0'
   # حفظ صورة الإيصال مباشرة في معرض الصور (أندرويد 10+ من غير صلاحيات).
   gal: ^2.3.0
+  # تذكير السلة المنسية: إشعار محلي متجدول من غير FCM ومن غير Firestore.
+  flutter_local_notifications: ^19.4.0
+  timezone: ^0.10.1
 
   shared_preferences: ^2.3.2
 

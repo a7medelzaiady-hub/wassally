@@ -81,6 +81,11 @@
 
         </activity>
 
+        <!-- تذكير السلة المنسية (flutter_local_notifications): استقبال الإشعار المتجدول. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>

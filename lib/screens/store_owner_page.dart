@@ -5,9 +5,12 @@ import 'package:audioplayers/audioplayers.dart' as audio;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/bulk_products.dart';
 import '../utils/product_autofill.dart';
+import '../utils/product_photo.dart';
+import '../utils/store_product_templates.dart';
 import '../services/order_gateway.dart';
 import 'referral_campaign_page.dart';
 import '../models/order.dart';
@@ -1685,17 +1688,29 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     return ok;
   }
 
-  Future<void> _edit(QueryDocumentSnapshot<_Json>? doc) async {
+  Future<void> _edit(QueryDocumentSnapshot<_Json>? doc, {bool copy = false}) async {
+    final original = doc?.data();
+    final draft = copy && original != null
+        ? <String, dynamic>{...original, 'name': '${original['name']} نسخة'}
+        : original;
     final result = await showDialog<_ProductForm>(
       context: context,
-      builder: (_) =>
-          _ProductDialog(existing: doc?.data(), storeId: widget.storeId),
+      builder: (_) => _ProductDialog(
+        existing: draft, storeId: widget.storeId,
+      ),
     );
     if (result == null || !mounted) return;
+    final key = normalizeProductKey(result.name);
+    // دون استعلام إضافي: استخدم الأصناف التي حمّلتها صفحة التاجر بالفعل.
+    if (_docs.any((d) => d.id != (copy ? null : doc?.id) &&
+        normalizeProductKey((d.data()['name'] ?? '').toString()) == key)) {
+      _say('الصنف ده موجود بالفعل. عدّل الصنف الموجود أو غيّر الاسم.');
+      return;
+    }
 
     try {
-      final newRef = doc == null ? _col.doc() : null;
-      final savedId = doc?.id ?? newRef!.id;
+      final newRef = doc == null || copy ? _col.doc() : null;
+      final savedId = newRef?.id ?? doc!.id;
       // قبل الكتابة: لو التطبيق اتقفل قبل مزامنة القائمة، تتكمّل أول ما الصفحة تتفتح.
       await CatalogSync.markPending(widget.storeId, [savedId]);
       if (newRef != null) {
@@ -1730,36 +1745,60 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         });
       }
       final ok = await _afterProductChange(savedId);
+      if (doc == null && !copy) {
+        // المسودة لا تُحذف إلا بعد حفظ المنتج بنجاح على Firestore.
+        await _ProductDialogState.clearNewDraft(widget.storeId);
+      }
       _say(StoreHighlights.withNote('تم حفظ الصنف', ok));
     } catch (e) {
       _say('تعذر حفظ الصنف: ${_why(e)}');
     }
   }
 
-  /// لصق قايمة أسعار (سطر لكل صنف) ← مراجعة ← إضافة الكل على دفعات.
-  /// الأصناف بتتكتب مرة واحدة، وبعدها القائمة المجمّعة بتتبني مرة واحدة بس.
-  Future<void> _bulkAdd() async {
-    final lines = await showModalBottomSheet<List<BulkProductLine>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => const _BulkProductsSheet(),
-    );
-    if (lines == null || lines.isEmpty || !mounted) return;
+  /// كتابة الأصناف في دفعات مع مزامنة الملخص مرة واحدة فقط.
+  /// كشف التكرار يعتمد على القائمة المحمّلة محليًا (أول 200 صنف).
+  Future<void> _addProducts(List<BulkProductLine> lines) async {
+    final known = _docs.map((d) =>
+        normalizeProductKey((d.data()['name'] ?? '').toString())).toSet();
+    final unique = <BulkProductLine>[];
+    var skipped = 0;
+    for (final line in lines) {
+      if (!known.add(normalizeProductKey(line.name))) {
+        skipped++;
+      } else {
+        unique.add(line);
+      }
+    }
+    if (unique.isEmpty) {
+      _say('كل الأصناف المختارة موجودة بالفعل في القائمة المحمّلة.');
+      return;
+    }
+    if (skipped > 0) {
+      final proceed = await confirmDialog(
+        context,
+        title: 'أصناف مكررة',
+        message: 'لقينا $skipped صنف مكرر في القائمة المحمّلة. '
+            'هنضيف ${unique.length} صنف بس. تكمل؟',
+        confirmLabel: 'إضافة غير المكرر',
+      );
+      if (!proceed || !mounted) return;
+    }
     var added = 0;
     Object? error;
     await CatalogSync.markPending(widget.storeId);
     try {
-      for (var start = 0; start < lines.length; start += 100) {
-        final end = start + 100 > lines.length ? lines.length : start + 100;
+      for (var start = 0; start < unique.length; start += 100) {
+        final end = start + 100 > unique.length ? unique.length : start + 100;
         final batch = FirebaseFirestore.instance.batch();
-        for (final l in lines.sublist(start, end)) {
+        for (final l in unique.sublist(start, end)) {
           final groups = l.suggestion?.optionGroups ?? const <OptionGroup>[];
           batch.set(_col.doc(), {
             'name': l.name,
             'price': l.price,
             'image': '',
             if (l.description.isNotEmpty) 'description': l.description,
-            if (groups.isNotEmpty) 'optionGroups': groups.map((g) => g.toMap()).toList(),
+            if (groups.isNotEmpty)
+              'optionGroups': groups.map((g) => g.toMap()).toList(),
             'isAvailable': true,
             'available': true,
             'createdAt': FieldValue.serverTimestamp(),
@@ -1773,19 +1812,138 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
       error = e;
     }
     if (added > 0) {
-      try {
-        await _syncCount();
-      } catch (_) {}
+      try { await _syncCount(); } catch (_) {}
       final ok = await CatalogSync.afterProductsChanged(widget.storeId);
       await _load(fromCache: true);
-      if (error == null) {
-        _say(StoreHighlights.withNote('تم إضافة $added صنف', ok));
-        return;
-      }
-      _say('اتضاف $added صنف بس، والباقي ما اتضافش: ${_why(error)}');
+      _say(error == null
+          ? StoreHighlights.withNote('تم إضافة $added صنف', ok)
+          : 'اتضاف $added صنف بس: ${_why(error)}');
+    } else if (error != null) {
+      _say('تعذر إضافة الأصناف: ${_why(error)}');
+    }
+  }
+
+  Future<void> _bulkAdd() async {
+    final lines = await showModalBottomSheet<List<BulkProductLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _BulkProductsSheet(),
+    );
+    if (lines != null && lines.isNotEmpty && mounted) {
+      await _addProducts(lines);
+    }
+  }
+
+  Future<void> _addFromTemplates() async {
+    final lines = await showModalBottomSheet<List<BulkProductLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _ProductTemplatesSheet(),
+    );
+    if (lines != null && lines.isNotEmpty && mounted) {
+      await _addProducts(lines);
+    }
+  }
+
+  /// تعديل أسعار الأصناف المعروضة فقط، من غير قراءة جديدة. نستبعد الأصناف
+  /// عليها عروض حتى لا نفسد السعر قبل الخصم.
+  Future<void> _changePricesTogether() async {
+    final term = normalizeProductKey(_term);
+    final candidates = _docs.where((doc) {
+      final m = doc.data();
+      final price = m['price'];
+      return (term.isEmpty ||
+              normalizeProductKey((m['name'] ?? '').toString()).contains(term)) &&
+          price is num && price > 0 &&
+          m['oldPrice'] is! num &&
+          (m['offerText'] ?? '').toString().isEmpty;
+    }).toList();
+    if (candidates.isEmpty) {
+      _say('مفيش أصناف بدون عروض مناسبة للتعديل في القائمة المعروضة.');
       return;
     }
-    if (error != null) _say('تعذر إضافة الأصناف: ${_why(error)}');
+    var input = '';
+    String? error;
+    final percent = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, refresh) => AlertDialog(
+          title: const Text('تعديل أسعار مجموعة'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('هيتعدل سعر ${candidates.length} صنف محمّل في الصفحة فقط. '
+                  'الخصومات الحالية مش هتتغير. نسبة سالبة = تخفيض.'),
+              const SizedBox(height: 12),
+              TextField(
+                onChanged: (value) => input = value,
+                keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true, signed: true),
+                decoration: InputDecoration(
+                    labelText: 'نسبة التغيير % (مثال 10 أو -5)',
+                    errorText: error),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () {
+                final p = double.tryParse(input.trim().replaceAll(',', '.'));
+                if (p == null || p < -80 || p > 100 || p == 0) {
+                  refresh(() => error = 'اكتب نسبة بين -80 و100 غير الصفر');
+                  return;
+                }
+                Navigator.pop(ctx, p);
+              },
+              child: const Text('مراجعة'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (percent == null || !mounted) return;
+    final changes = <(QueryDocumentSnapshot<_Json>, double)>[];
+    for (final doc in candidates) {
+      final old = (doc.data()['price'] as num).toDouble();
+      final updated = adjustedProductPrice(old, percent);
+      if (updated > 0 && updated <= 20000 && updated != old) {
+        changes.add((doc, updated));
+      }
+    }
+    if (changes.isEmpty) {
+      _say('مافيش أسعار صالحة للتحديث (الحد الأقصى 20,000 جنيه).');
+      return;
+    }
+    final yes = await confirmDialog(
+      context,
+      title: 'تأكيد تعديل الأسعار',
+      message: 'تغيير أسعار ${changes.length} صنف بنسبة $percent%؟ '
+          'التغيير هيظهر للعملاء بعد مزامنة الكتالوج. '
+          'لن يُعدل أي صنف عليه عرض حاليًا.',
+      confirmLabel: 'تأكيد التعديل',
+    );
+    if (!yes || !mounted) return;
+    try {
+      await CatalogSync.markPending(widget.storeId,
+          changes.map((e) => e.$1.id).toList());
+      for (var i = 0; i < changes.length; i += 100) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final entry in changes.skip(i).take(100)) {
+          batch.update(entry.$1.reference, {
+            'price': entry.$2,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        await batch.commit();
+      }
+      final ok = await CatalogSync.afterProductsChanged(widget.storeId);
+      await _load(fromCache: true);
+      _say(StoreHighlights.withNote('تم تعديل ${changes.length} سعر', ok));
+    } catch (e) {
+      _say('تعذر إكمال تعديل الأسعار: ${_why(e)}');
+    }
   }
 
   /// اختيار صنف من القايمة ثم عمل عرض عليه.
@@ -1994,8 +2152,17 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                 child: SizedBox(
                   width: 48,
                   height: 48,
+                  // من غير صورة: نفس الصورة التوضيحية اللي العميل بيشوفها (باهتة شوية).
                   child: image.isEmpty
-                      ? Icon(Icons.image_outlined, color: kMuted)
+                      ? Opacity(
+                          opacity: 0.6,
+                          child: Image.network(
+                            productPhotoFor(name: (m['name'] ?? '').toString()).url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                Icon(Icons.image_outlined, color: kMuted),
+                          ),
+                        )
                       : Image.network(
                           image,
                           fit: BoxFit.cover,
@@ -2026,6 +2193,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                   PopupMenuButton<String>(
                     onSelected: (v) {
                       if (v == 'edit') _edit(d);
+                      if (v == 'copy') _edit(d, copy: true);
                       if (v == 'offer') _offer(d);
                       if (v == 'delete') _delete(d);
                     },
@@ -2035,6 +2203,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                         child: Text('عمل عرض / خصم'),
                       ),
                       PopupMenuItem(value: 'edit', child: Text('تعديل')),
+                      PopupMenuItem(value: 'copy', child: Text('نسخ صنف')),
                       PopupMenuItem(value: 'delete', child: Text('حذف')),
                     ],
                   ),
@@ -2083,6 +2252,24 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
                   label: const Text('إضافة أصناف كتير مرة واحدة (لصق قايمة)'),
                 ),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(children: [
+                Expanded(child: OutlinedButton.icon(
+                  key: const Key('owner-product-templates'),
+                  onPressed: _addFromTemplates,
+                  icon: const Icon(Icons.auto_awesome_outlined),
+                  label: const Text('أصناف جاهزة'),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton.icon(
+                  key: const Key('owner-bulk-prices'),
+                  onPressed: _changePricesTogether,
+                  icon: const Icon(Icons.price_change_outlined),
+                  label: const Text('تعديل أسعار مجموعة'),
+                )),
+              ]),
             ),
             Expanded(child: body),
           ],
@@ -2153,6 +2340,62 @@ class _ProductDialogState extends State<_ProductDialog> {
   late String _image = (widget.existing?['image'] ?? '').toString();
   bool _uploading = false;
   String? _error;
+  Timer? _draftTimer;
+  bool _restoringDraft = false;
+  bool _hasDraft = false;
+
+  static String _draftKey(String storeId) =>
+      'owner_product_draft_v1_${FirebaseAuth.instance.currentUser?.uid ?? 'guest'}_$storeId';
+
+  static Future<void> clearNewDraft(String storeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftKey(storeId));
+  }
+
+  Future<void> _restoreDraft() async {
+    if (widget.existing != null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_draftKey(widget.storeId));
+    if (raw == null || !mounted || _name.text.isNotEmpty) return;
+    try {
+      final saved = jsonDecode(raw);
+      if (saved is! Map) return;
+      _restoringDraft = true;
+      _name.text = (saved['name'] ?? '').toString();
+      _price.text = (saved['price'] ?? '').toString();
+      _old.text = (saved['oldPrice'] ?? '').toString();
+      _desc.text = (saved['description'] ?? '').toString();
+      _groups = parseOptionGroups(saved['optionGroups']);
+      _best = saved['bestSeller'] == true;
+      _image = (saved['image'] ?? '').toString();
+      _restoringDraft = false;
+      if (mounted) setState(() => _hasDraft = true);
+    } catch (_) {
+      _restoringDraft = false;
+    }
+  }
+
+  Future<void> _writeDraft() async {
+    if (widget.existing != null) return;
+    final raw = jsonEncode({
+      'name': _name.text, 'price': _price.text,
+      'oldPrice': _old.text, 'description': _desc.text,
+      'optionGroups': _groups.map((e) => e.toMap()).toList(),
+      'bestSeller': _best, 'image': _image,
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_draftKey(widget.storeId), raw);
+    } catch (_) {
+      // عدم توفر التخزين المحلي لا يمنع إضافة الصنف أو حفظه في المتجر.
+    }
+  }
+
+  void _draftChanged() {
+    if (widget.existing != null || _restoringDraft) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 300), _writeDraft);
+  }
 
   /// اقتراح تفاصيل من اسم الصنف (قاموس جوه التطبيق، من غير أي قراءة).
   ProductSuggestion? _suggestion;
@@ -2163,6 +2406,13 @@ class _ProductDialogState extends State<_ProductDialog> {
   void initState() {
     super.initState();
     _name.addListener(_updateSuggestion);
+    if (widget.existing == null) {
+      _name.addListener(_draftChanged);
+      _price.addListener(_draftChanged);
+      _old.addListener(_draftChanged);
+      _desc.addListener(_draftChanged);
+      _restoreDraft();
+    }
   }
 
   void _updateSuggestion() {
@@ -2170,12 +2420,13 @@ class _ProductDialogState extends State<_ProductDialog> {
     if (name == _suggestedFor) return;
     _suggestedFor = name;
     final next = suggestProduct(name);
-    if (next?.description != _suggestion?.description) {
-      setState(() {
+    // إعادة بناء مع كل تغيير في الاسم: الاقتراح ومعاينة الصورة التوضيحية.
+    setState(() {
+      if (next?.description != _suggestion?.description) {
         _suggestion = next;
         _suggestionUsed = false;
-      });
-    }
+      }
+    });
   }
 
   void _applySuggestion() {
@@ -2186,11 +2437,17 @@ class _ProductDialogState extends State<_ProductDialog> {
       if (_groups.isEmpty && s.optionGroups.isNotEmpty) _groups = s.optionGroups;
       _suggestionUsed = true;
     });
+    _draftChanged();
   }
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
     _name.removeListener(_updateSuggestion);
+    _name.removeListener(_draftChanged);
+    _price.removeListener(_draftChanged);
+    _old.removeListener(_draftChanged);
+    _desc.removeListener(_draftChanged);
     _name.dispose();
     _price.dispose();
     _old.dispose();
@@ -2206,7 +2463,10 @@ class _ProductDialogState extends State<_ProductDialog> {
         'products',
         storeId: widget.storeId,
       );
-      if (url != null && mounted) setState(() => _image = url);
+      if (url != null && mounted) {
+        setState(() => _image = url);
+        _draftChanged();
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'تعذر رفع الصورة. جرّب تاني.');
     } finally {
@@ -2253,6 +2513,9 @@ class _ProductDialogState extends State<_ProductDialog> {
       if (!ok || !mounted) return;
     }
     if (!mounted) return;
+    _draftTimer?.cancel();
+    await _writeDraft();
+    if (!mounted) return;
     Navigator.of(context).pop(
       _ProductForm(
         name,
@@ -2278,6 +2541,15 @@ class _ProductDialogState extends State<_ProductDialog> {
               controller: _name,
               decoration: const InputDecoration(labelText: 'اسم الصنف'),
             ),
+            if (widget.existing == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _hasDraft ? 'رجعنالك مسودة الصنف المحفوظة' :
+                    'بيتم حفظ مسودة الصنف على الموبايل تلقائيًا',
+                  style: TextStyle(color: kMuted, fontSize: 11.5),
+                ),
+              ),
             if (_suggestion != null && !_suggestionUsed &&
                 (_desc.text.trim().isEmpty ||
                     (_groups.isEmpty && _suggestion!.optionGroups.isNotEmpty)))
@@ -2318,7 +2590,10 @@ class _ProductDialogState extends State<_ProductDialog> {
             OutlinedButton.icon(
               onPressed: () async {
                 final res = await showOptionGroupsEditor(context, _groups);
-                if (res != null && mounted) setState(() => _groups = res);
+                if (res != null && mounted) {
+                  setState(() => _groups = res);
+                  _draftChanged();
+                }
               },
               icon: const Icon(Icons.tune),
               label: Text(
@@ -2330,7 +2605,10 @@ class _ProductDialogState extends State<_ProductDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _best,
-              onChanged: (v) => setState(() => _best = v),
+              onChanged: (v) {
+                setState(() => _best = v);
+                _draftChanged();
+              },
               title: const Text('الأكثر مبيعًا'),
             ),
             const SizedBox(height: 4),
@@ -2344,6 +2622,29 @@ class _ProductDialogState extends State<_ProductDialog> {
                   errorBuilder: (_, _, _) =>
                       const Icon(Icons.broken_image_outlined),
                 ),
+              )
+            else if (_name.text.trim().isNotEmpty)
+              // معاينة: لو ما رفعتش صورة، التطبيق بيكمّل بصورة توضيحية من اسم الصنف.
+              Column(
+                key: const Key('owner-fallback-photo'),
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      productPhotoFor(name: _name.text).url,
+                      height: 90,
+                      width: 120,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'صورة توضيحية هتظهر للعميل لحد ما ترفع صورة حقيقية',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
+                  ),
+                ],
               ),
             TextButton.icon(
               onPressed: _uploading ? null : _pickImage,
@@ -2366,8 +2667,12 @@ class _ProductDialogState extends State<_ProductDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
           child: const Text('إلغاء'),
+          onPressed: () async {
+            _draftTimer?.cancel();
+            await _writeDraft();
+            if (context.mounted) Navigator.of(context).pop();
+          },
         ),
         FilledButton(onPressed: _save, child: const Text('حفظ')),
       ],
@@ -3088,6 +3393,7 @@ class _BulkProductsSheetState extends State<_BulkProductsSheet> {
 }
 
 /// «النهارده: 12 طلب • اتسلّم 9 • 1,800 ج.م» من الطلبات اللي ظاهرة أصلًا (صفر قراءات).
+/// سطر واحد مضغوط عشان ما يزقّش أزرار الطلبات لتحت.
 class _TodaySummaryBar extends StatelessWidget {
   final List<AppOrder> orders;
   const _TodaySummaryBar({required this.orders});
@@ -3096,41 +3402,174 @@ class _TodaySummaryBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = StoreTodaySummary.of(orders, DateTime.now());
     if (s.isEmpty) return const SizedBox.shrink();
-    Widget cell(String value, String label, {Color? color}) => Expanded(
-          child: Column(
-            children: [
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color),
-              ),
-              Text(label, style: TextStyle(fontSize: 11.5, color: kMuted)),
-            ],
-          ),
-        );
+    final parts = <String>[
+      '${s.orders} طلب',
+      'اتسلّم ${s.delivered}',
+      formatPrice(s.deliveredGoods),
+      if (s.cancelled > 0) 'ملغي ${s.cancelled}',
+    ];
     return Container(
       key: const Key('owner-today-summary'),
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kLine),
+        color: kPrimary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Text('النهارده', style: TextStyle(fontSize: 12, color: kMuted, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              cell('${s.orders}', 'طلب'),
-              cell('${s.delivered}', 'اتسلّم', color: kSuccess),
-              cell(formatPrice(s.deliveredGoods), 'بضاعة اتسلّمت', color: kPrimary),
-              if (s.cancelled > 0) cell('${s.cancelled}', 'ملغي', color: kDanger),
-            ],
+          Icon(Icons.today_rounded, size: 16, color: kPrimary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'النهارده: ${parts.join(' • ')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// قائمة قوالب محلية، تُراجع الأسعار قبل أي كتابة. لا نضع أسعار تخمينية.
+class _ProductTemplatesSheet extends StatefulWidget {
+  const _ProductTemplatesSheet();
+
+  @override
+  State<_ProductTemplatesSheet> createState() => _ProductTemplatesSheetState();
+}
+
+class _ProductTemplatesSheetState extends State<_ProductTemplatesSheet> {
+  StoreTemplate _template = storeProductTemplates.first;
+  final Set<String> _chosen = {};
+  final Map<String, TextEditingController> _prices = {};
+  String? _error;
+
+  TextEditingController _controller(String name) =>
+      _prices.putIfAbsent(name, () => TextEditingController());
+
+  @override
+  void dispose() {
+    for (final c in _prices.values) { c.dispose(); }
+    super.dispose();
+  }
+
+  void _done() {
+    if (_chosen.isEmpty) {
+      setState(() => _error = 'اختار صنف واحد على الأقل.');
+      return;
+    }
+    final lines = <BulkProductLine>[];
+    for (final name in _template.products) {
+      if (!_chosen.contains(name)) continue;
+      final price = double.tryParse(
+          _controller(name).text.trim().replaceAll(',', '.'));
+      if (price == null || price <= 0 || price > 20000) {
+        setState(() => _error =
+            'اكتب سعرًا صحيحًا لكل صنف مختار (من 1 إلى 20000 جنيه).');
+        return;
+      }
+      final s = suggestProduct(name);
+      lines.add(BulkProductLine(name, price,
+          suggestion: s, priceWarning: priceWarningFor(name, price)));
+    }
+    Navigator.pop(context, lines);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          child: FractionallySizedBox(
+            heightFactor: .88,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('جهّز محلك بأصناف جاهزة',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  const Text('اختار اللي بتبيعه واكتب سعره بنفسك. '
+                      'مش هنضيف أي صنف إلا بعد تأكيدك.',
+                      style: TextStyle(fontSize: 12.5)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<StoreTemplate>(
+                    key: const Key('template-category'),
+                    value: _template,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'نوع المحل'),
+                    items: [
+                      for (final t in storeProductTemplates)
+                        DropdownMenuItem(value: t, child: Text(t.label)),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _template = value; _chosen.clear(); _error = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _template.products.length,
+                      itemBuilder: (context, index) {
+                        final name = _template.products[index];
+                        return Row(children: [
+                          Checkbox(
+                            value: _chosen.contains(name),
+                            onChanged: (value) => setState(() {
+                              if (value == true) { _chosen.add(name); }
+                              else { _chosen.remove(name); }
+                              _error = null;
+                            }),
+                          ),
+                          Expanded(child: Text(name, maxLines: 2,
+                              overflow: TextOverflow.ellipsis)),
+                          SizedBox(
+                            width: 94,
+                            child: TextField(
+                              key: Key('template-price-$index'),
+                              controller: _controller(name),
+                              enabled: _chosen.contains(name),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'السعر', suffixText: 'ج',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ]);
+                      },
+                    ),
+                  ),
+                  if (_error != null)
+                    Text(_error!, style: TextStyle(color: kDanger)),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    TextButton(onPressed: () => Navigator.pop(context),
+                        child: const Text('إلغاء')),
+                    const Spacer(),
+                    FilledButton.icon(
+                      key: const Key('template-add-selected'),
+                      onPressed: _done,
+                      icon: const Icon(Icons.check),
+                      label: Text('مراجعة وإضافة (${_chosen.length})'),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

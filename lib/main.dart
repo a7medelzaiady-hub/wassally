@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -17,6 +19,8 @@ import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 import 'services/cart_book.dart';
+import 'services/cart_reminder.dart';
+import 'services/data_saver.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -37,6 +41,7 @@ Future<void> _bootstrap() async {
     if (!E2eSupport.enabled) _activateAppCheck(),
     ThemeController.instance.load(), // هوية وصّلي الموحدة حتى بعد تحديث النسخة
     carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
+    DataSaver.load(), // «وضع توفير الباقة» (اختيار محلي)
   ]);
   final bootstrap = startup.elapsed;
   customerShellBuilder = (_) => const MainShell();
@@ -46,6 +51,8 @@ Future<void> _bootstrap() async {
       bootstrap: bootstrap,
       firstFrame: startup.elapsed,
     ));
+    // تذكير السلة المنسية (إشعار محلي على أندرويد بس؛ أي فشل بيتجاهل).
+    if (isAndroid && !E2eSupport.enabled) unawaited(CartReminder.instance.start());
   });
 }
 
