@@ -71,13 +71,22 @@ class _HomeTopAdsState extends State<HomeTopAds> {
         shadowColor: AppColors.purple.withValues(alpha: 0.25),
         child: InkWell(
           onTap: widget.onTap,
+          // أثناء التحميل خلفية هادية (مش الإعلان المدمج: كان بيبان كأن البوستر ما اتغيرش).
           child: CachedNetImage(
-            url: thumb(url, w: 1200),
-            memCacheWidth: 1200,
+            url: thumb(url, w: 1080),
+            memCacheWidth: 1080,
             width: double.infinity,
             height: double.infinity,
             fit: BoxFit.cover,
-            errorWidget: QuickOrderPromo(onTap: widget.onTap),
+            slowAfter: const Duration(seconds: 30),
+            placeholder: const ColoredBox(
+              color: AppColors.purpleSoft,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+            ),
+            errorWidget: const ColoredBox(
+              color: AppColors.surfaceAlt,
+              child: Center(child: Icon(Icons.image_not_supported_outlined, color: AppColors.muted, size: 40)),
+            ),
           ),
         ),
       );
