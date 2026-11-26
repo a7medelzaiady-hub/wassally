@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'quick_price_admin_page.dart';
 import '../services/catalog_service.dart';
@@ -279,6 +280,23 @@ class _AdminReadMeterPageState extends State<AdminReadMeterPage> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final top = ReadMeter.snapshot();
+                    final report = <String>[
+                      'وصّلي — تقرير قراءات Firestore المرصودة (تقريبي)',
+                      'منذ: ${ReadMeter.since.toIso8601String()}',
+                      'الإجمالي: ${ReadMeter.total()}',
+                      for (final row in top) '${row.key}: ${row.value}',
+                      'ملاحظة: ليس فاتورة Firebase؛ لا يشمل قراءات Worker/Rules، والتجميعات حدود دنيا.',
+                    ].join('\n');
+                    await Clipboard.setData(ClipboardData(text: report));
+                    if (context.mounted) _say(context, 'تم نسخ تقرير القراءات.');
+                  },
+                  icon: const Icon(Icons.copy_all_outlined),
+                  label: const Text('نسخ تقرير القراءات'),
                 ),
                 const SizedBox(height: 8),
                 Text(

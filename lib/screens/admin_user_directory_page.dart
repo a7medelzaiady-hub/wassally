@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/read_meter.dart';
 
 import '../theme/app_tokens.dart';
 import '../widgets/app_ui.dart';
@@ -27,7 +28,9 @@ class _AdminUserDirectoryPageState extends State<AdminUserDirectoryPage> {
       String label,
     ) async {
       try {
-        return await db.collection(collection).limit(200).get();
+        final snap = await db.collection(collection).limit(200).get();
+        ReadMeter.query('admin:directory:$collection', snap);
+        return snap;
       } on FirebaseException catch (error) {
         throw _DirectoryLoadFailure(label, error.code);
       }
