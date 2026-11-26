@@ -219,35 +219,34 @@ class NotificationService {
     }
   }
 
-  static Future<void> _registerGrantedDevice() async {
+  /// One registration at a time: RoleGate and the welcome screen can both
+  /// initialize notifications during the same login.
+  static Future<void>? _registrationInFlight;
+
+  static Future<void> _registerGrantedDevice() {
+    final ongoing = _registrationInFlight;
+    if (ongoing != null) return ongoing;
+    late Future<void> task;
+    task = _performDeviceRegistration().whenComplete(() {
+      if (identical(_registrationInFlight, task)) _registrationInFlight = null;
+    });
+    _registrationInFlight = task;
+    return task;
+  }
+
+  static Future<void> _performDeviceRegistration() async {
+    if (!_supported) return;
     final user = FirebaseAuth.instance.currentUser;
-    if (!_supported || user == null) return;
+    if (user == null) return;
     try {
       final messaging = FirebaseMessaging.instance;
-      await _tokenRefresh?.cancel();
-      final token = await messaging.getToken();
-      if (token != null && token.isNotEmpty) {
-        final previousToken = _fcmToken;
-        _fcmToken = token;
-        if (previousToken != null && previousToken != token) {
-          await _removeToken(user.uid, previousToken);
-        }
-        await _saveToken(user.uid, token);
-      }
-      // الاشتراك في تنبيهات تحديث التطبيق القادمة من Cloudflare Worker
-      await messaging.subscribeToTopic('app_updates');
-      final verifiedRole = _verifiedCourierRole;
-      if (verifiedRole != null) {
-        await syncCourierTopic(
-          isCourier: verifiedRole,
-          isQuickCourier: _verifiedQuickCourier,
-        );
-      }
-      final verifiedAdmin = _verifiedAdminRole;
-      if (verifiedAdmin != null) {
-        await syncAdminTopic(isAdmin: verifiedAdmin);
-      }
+      // IMPORTANT: handle foreground pushes even if fetching/storing the FCM
+      // token or a topic subscription fails. Previously any such failure
+      // prevented onMessage from ever being registered for this session.
+      _foreground ??= FirebaseMessaging.onMessage.listen(_showInApp);
+      _opened ??= FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
 
+      await _tokenRefresh?.cancel();
       _tokenRefresh = messaging.onTokenRefresh.listen((nextToken) async {
         final previousToken = _fcmToken;
         _fcmToken = nextToken;
@@ -263,18 +262,50 @@ class NotificationService {
         }
       });
 
-      await _foreground?.cancel();
-      await _opened?.cancel();
-      _foreground = FirebaseMessaging.onMessage.listen(_showInApp);
-      _opened = FirebaseMessaging.onMessageOpenedApp.listen(_openMessage);
+      try {
+        final token = await messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          final previousToken = _fcmToken;
+          _fcmToken = token;
+          if (previousToken != null && previousToken != token) {
+            await _removeToken(user.uid, previousToken);
+          }
+          await _saveToken(user.uid, token);
+        }
+      } catch (e) {
+        debugPrint('تعذر حفظ رمز الإشعارات: $e');
+      }
 
-      final initialMessage = await messaging.getInitialMessage();
-      if (initialMessage != null) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _openMessage(initialMessage));
+      // Independent subscriptions: failure of one does not disable any other.
+      try {
+        await messaging.subscribeToTopic('app_updates');
+      } catch (e) {
+        debugPrint('تعذر الاشتراك في تحديثات التطبيق: $e');
+      }
+
+      final verifiedRole = _verifiedCourierRole;
+      if (verifiedRole != null) {
+        await syncCourierTopic(
+          isCourier: verifiedRole,
+          isQuickCourier: _verifiedQuickCourier,
+        );
+      }
+      final verifiedAdmin = _verifiedAdminRole;
+      if (verifiedAdmin != null) {
+        await syncAdminTopic(isAdmin: verifiedAdmin);
+      }
+
+      try {
+        final initialMessage = await messaging.getInitialMessage();
+        if (initialMessage != null) {
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _openMessage(initialMessage));
+        }
+      } catch (e) {
+        debugPrint('تعذر قراءة الإشعار الذي فتح التطبيق: $e');
       }
     } catch (e) {
-      debugPrint('تعذر تسجيل جهاز الإشعارات: $e');
+      debugPrint('تعذر تهيئة استقبال الإشعارات: $e');
     }
   }
 
