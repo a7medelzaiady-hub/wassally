@@ -578,114 +578,22 @@ class _HomePageState extends State<HomePage>
     return null;
   }
 
-  void _showSareeGuide(List<_StoreItem> stores) {
-    final available = stores.map((item) => item.store.category).toSet();
-    final controller = TextEditingController();
-    String? suggestion;
-    String message = 'يا ميت أهلاً! نورت سوق وصّلي، بتدور على إيه النهارده؟';
-    showModalBottomSheet<void>(
+  /// الشيت بيرجّع اختيار العميل، والتنقل بيحصل بعد ما يتقفل خالص
+  /// (كان بيقفل التطبيق: الكنترولر بيتمسح والصفحة الجديدة بتتفتح أثناء أنيميشن القفل).
+  Future<void> _showSareeGuide(List<_StoreItem> stores) async {
+    final available = stores.map((item) => item.store.category).where((c) => c.isNotEmpty).toSet();
+    final choice = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, update) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              20, 8, 20, MediaQuery.viewInsetsOf(sheetContext).bottom + 24,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(children: [
-                    const CircleAvatar(child: Text('⚡')),
-                    const SizedBox(width: 10),
-                    const Expanded(child: Text('صديق السوق',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800))),
-                    IconButton(
-                      tooltip: 'إغلاق',
-                      onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ]),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(sheetContext);
-                      _setSareeEnabled(false);
-                    },
-                    icon: const Icon(Icons.visibility_off_outlined),
-                    label: const Text('إخفاء صديق السوق من الرئيسية'),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(message, style: const TextStyle(fontSize: 15, height: 1.5)),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      hintText: 'مثلاً: لبن وسكر، خضار، بيتزا...',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onSubmitted: (value) {
-                      final category = _guideCategory(value, available);
-                      update(() {
-                        suggestion = category;
-                        message = category == null
-                            ? 'مش لاقي قسم مناسب للكلام ده دلوقتي. جرّب اسم منتج أو اختار من الأقسام.'
-                            : 'لقيتها! نروح لقسم $category؟';
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () {
-                      final category = _guideCategory(controller.text, available);
-                      update(() {
-                        suggestion = category;
-                        message = category == null
-                            ? 'مش لاقي قسم مناسب للكلام ده دلوقتي. جرّب اسم منتج أو اختار من الأقسام.'
-                            : 'لقيتها! نروح لقسم $category؟';
-                      });
-                    },
-                    child: const Text('دوّر مع صديق السوق'),
-                  ),
-                  if (suggestion != null) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        final category = suggestion!;
-                        Navigator.pop(sheetContext);
-                        _openDirectory(category);
-                      },
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                      label: Text('افتح قسم $suggestion'),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      for (final category in available.where((c) => c.isNotEmpty).take(8))
-                        ActionChip(
-                          label: Text(category),
-                          onPressed: () {
-                            Navigator.pop(sheetContext);
-                            _openDirectory(category);
-                          },
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    ).whenComplete(controller.dispose);
+      builder: (_) => _SareeGuideSheet(available: available, find: _guideCategory),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == _SareeGuideSheet.hide) {
+      _setSareeEnabled(false);
+    } else {
+      _openDirectory(choice);
+    }
   }
 
   Widget _sareeGuideCard(List<_StoreItem> stores) {
@@ -1480,4 +1388,113 @@ class _WaveBottomClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+
+/// شيت «صديق السوق»: الكنترولر بيتمسح مع الشيت نفسه (مش قبل ما الأنيميشن يخلص).
+class _SareeGuideSheet extends StatefulWidget {
+  const _SareeGuideSheet({required this.available, required this.find});
+
+  static const hide = '__hide__';
+
+  final Set<String> available;
+  final String? Function(String query, Set<String> available) find;
+
+  @override
+  State<_SareeGuideSheet> createState() => _SareeGuideSheetState();
+}
+
+class _SareeGuideSheetState extends State<_SareeGuideSheet> {
+  final _controller = TextEditingController();
+  String? _suggestion;
+  String _message = 'يا ميت أهلاً! نورت سوق وصّلي، بتدور على إيه النهارده؟';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _search() {
+    final category = widget.find(_controller.text, widget.available);
+    setState(() {
+      _suggestion = category;
+      _message = category == null
+          ? 'مش لاقي قسم مناسب للكلام ده دلوقتي. جرّب اسم منتج أو اختار من الأقسام.'
+          : 'لقيتها! نروح لقسم $category؟';
+    });
+  }
+
+  void _choose(String value) {
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.viewInsetsOf(context).bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              const CircleAvatar(child: Text('⚡')),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('صديق السوق', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              ),
+              IconButton(
+                tooltip: 'إغلاق',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ]),
+            TextButton.icon(
+              onPressed: () => _choose(_SareeGuideSheet.hide),
+              icon: const Icon(Icons.visibility_off_outlined),
+              label: const Text('إخفاء صديق السوق من الرئيسية'),
+            ),
+            const SizedBox(height: 12),
+            Text(_message, style: const TextStyle(fontSize: 15, height: 1.5)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              textInputAction: TextInputAction.search,
+              decoration: const InputDecoration(
+                hintText: 'مثلاً: لبن وسكر، خضار، بيتزا...',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onSubmitted: (_) => _search(),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: _search, child: const Text('دوّر مع صديق السوق')),
+            if (_suggestion != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const Key('saree-open-suggestion'),
+                onPressed: () => _choose(_suggestion!),
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: Text('افتح قسم $_suggestion'),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                for (final category in widget.available.take(8))
+                  ActionChip(
+                    key: ValueKey('saree-chip-$category'),
+                    label: Text(category),
+                    onPressed: () => _choose(category),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
