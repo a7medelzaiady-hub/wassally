@@ -11,8 +11,8 @@
 
 ## يدوي في Play Console (مش بيتحل بالكود)
 1. **اسم الناشر:** Manage account ← Account details ← About you ← Developer name، احفظ. يظهر بعد مراجعة جوجل. للمالك فقط. (المصدر: [Google Play Help](https://support.google.com/googleplay/android-developer/answer/13634081)). أدخل اسمًا يطابق براند التطبيق، لأن الاسم لازم يلتزم بسياسات المطورين.
-2. **Privacy policy:** رابط `legal/privacy.html` بعد نشره على استضافة تفتح من غير تسجيل دخول.
-3. **Account deletion:** رابط `legal/delete-account.html`، واذكر إن الحذف متاح من داخل التطبيق.
+2. **Privacy policy:** `https://a7medelzaiady-hub.github.io/wasally-privacy-policy/`.
+3. **Account deletion:** `https://a7medelzaiady-hub.github.io/wasally-privacy-policy/delete-account.html`، واذكر إن الحذف متاح من داخل التطبيق.
 4. **Data safety:** الاسم، الهاتف، العنوان، الموقع الدقيق (عند الطلب فقط)، الطلبات، رسائل الدعم، معرّفات الجهاز/FCM، صور المحلات. المعالجون: Firebase/Google وCloudinary. التشفير أثناء النقل: نعم. الحذف: نعم.
 5. **App access:** أعطِ المراجعين حساب جوجل تجريبي، واشرح أدوار الأدمن/المندوب/صاحب المحل.
 6. **Content rating (IARC)**، و**Target audience** (18+ أو 13+)، و**Ads: لا**.

@@ -203,10 +203,9 @@ flutter build appbundle          # ملف للرفع على Google Play
   `lib/legal/legal_content.dart` وكل ملفات `legal/*.html` (Find & Replace في كل الملفات).
   وراجع النصوص (خصوصاً "القانون الواجب التطبيق") مع محامٍ لو أمكن.
 - حذف الحساب: حسابي ← حذف حسابي. التطبيق بيطلب إعادة تأكيد الهوية بجوجل، وبعدين بيبعت للـWorker (`POST /v1/account/delete`) في `cloudflare-order-gateway/`. الـWorker بيشيل البيانات الشخصية وروابط الحساب من Firestore الأول، ويحذف حساب Firebase Auth في الآخر؛ لو أي خطوة فشلت الحساب بيفضل موجود. مجلد `functions/` (`onUserDeleted`) **غير منشور** على Spark ومش مستخدم.
-- نشر الصفحات على رابط عام (Firebase Hosting، بيشتغل على الخطة المجانية): `firebase deploy --only hosting`
-  والروابط بتبقى:
-  - `https://wasally-12259.web.app/privacy.html`
-  - `https://wasally-12259.web.app/delete-account.html`
+- الصفحات العامة منشورة على GitHub Pages من مستودع `a7medelzaiady-hub/wasally-privacy-policy` (هو المرجع، و`legal/` هنا نسخة منه):
+  - `https://a7medelzaiady-hub.github.io/wasally-privacy-policy/`
+  - `https://a7medelzaiady-hub.github.io/wasally-privacy-policy/delete-account.html`
   استخدم رابط الخصوصية في Google Play Console، ورابط الحذف في خانة "Data deletion".
 
 ### إجابات Play Console ← Data safety (لازم تراجعها بنفسك)
