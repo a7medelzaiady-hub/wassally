@@ -801,9 +801,8 @@ class _StorePageState extends State<StorePage> {
             // الصنف اللي له خيارات بيفتح شاشة الاختيار؛ التاني بيتضاف مباشرة.
             onAdd: () =>
                 p.hasOptions ? _openSheet(context, p) : _add(context, p),
-            onTap: p.hasOptions || p.description.trim().isNotEmpty
-                ? () => _openSheet(context, p)
-                : null,
+            // الضغط على كارت الصنف دايمًا بيفتح التفاصيل (الصورة كبيرة، الوصف، الخيارات).
+            onTap: () => _openSheet(context, p),
             onEdit: () => _showProductDialog(context, product: p),
           );
         },

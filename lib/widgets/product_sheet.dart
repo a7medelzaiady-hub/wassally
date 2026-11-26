@@ -125,6 +125,34 @@ class _ProductSheetState extends State<_ProductSheet> {
     return 'اختر حتى ${g.max}';
   }
 
+  /// الصورة ملء الشاشة مع تكبير بالصوابع.
+  void _openPhoto(BuildContext context, String url, String name) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text(name, style: const TextStyle(fontSize: 16)),
+        ),
+        body: Center(
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 4,
+            child: CachedNetImage(
+              url: thumb(url, w: 1200),
+              width: double.infinity,
+              memCacheWidth: 1200,
+              fit: BoxFit.contain,
+              errorWidget: const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
+            ),
+          ),
+        ),
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
@@ -135,13 +163,8 @@ class _ProductSheetState extends State<_ProductSheet> {
     );
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
     final fallback = Container(
-      width: 84,
-      height: 84,
-      decoration: BoxDecoration(
-        color: Brand.green.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Icon(Icons.restaurant_rounded, color: Brand.green, size: 32),
+      color: Brand.green.withValues(alpha: 0.10),
+      child: Center(child: Icon(Icons.restaurant_rounded, color: Brand.green, size: 40)),
     );
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -165,6 +188,58 @@ class _ProductSheetState extends State<_ProductSheet> {
                       ),
                     ),
                   ),
+                  // صورة الصنف كبيرة فوق؛ الضغط عليها بيفتحها ملء الشاشة مع تكبير.
+                  GestureDetector(
+                    key: const Key('product-photo'),
+                    onTap: () => _openPhoto(context, photo.url, p.name),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 10,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CachedNetImage(
+                              url: thumb(photo.url, w: 900),
+                              width: double.infinity,
+                              height: double.infinity,
+                              memCacheWidth: 900,
+                              placeholder: fallback,
+                              errorWidget: fallback,
+                            ),
+                            if (p.imageUrl.trim().isEmpty)
+                              PositionedDirectional(
+                                top: 8,
+                                end: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text('صورة توضيحية',
+                                      style: TextStyle(fontSize: 11, color: Colors.white)),
+                                ),
+                              ),
+                            PositionedDirectional(
+                              bottom: 8,
+                              start: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black45,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.zoom_out_map_rounded,
+                                    size: 16, color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -218,35 +293,6 @@ class _ProductSheetState extends State<_ProductSheet> {
                                 color: Brand.ink,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Stack(
-                          children: [
-                            CachedNetImage(
-                              url: thumb(photo.url, w: 300),
-                              width: 84,
-                              height: 84,
-                              memCacheWidth: 300,
-                              errorWidget: fallback,
-                            ),
-                            if (p.imageUrl.trim().isEmpty)
-                              PositionedDirectional(
-                                top: 4,
-                                start: 4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  child: const Text('توضيحية',
-                                      style: TextStyle(fontSize: 9, color: Colors.white)),
-                                ),
-                              ),
                           ],
                         ),
                       ),
