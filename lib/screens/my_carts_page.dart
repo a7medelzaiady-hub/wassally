@@ -178,7 +178,7 @@ class _CartCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isActive ? kPrimary.withValues(alpha: 0.55) : kLine),
+        border: Border.all(color: isActive && !submitted ? kPrimary.withValues(alpha: 0.55) : kLine),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3)),
         ],
@@ -221,9 +221,16 @@ class _CartCard extends StatelessWidget {
                     color: kSuccess.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text(
-                    'اتبعت ✓',
-                    style: TextStyle(fontSize: 11, color: kSuccess, fontWeight: FontWeight.w800),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_rounded, size: 13, color: kSuccess),
+                      SizedBox(width: 3),
+                      Text(
+                        'اتبعت',
+                        style: TextStyle(fontSize: 11, color: kSuccess, fontWeight: FontWeight.w800),
+                      ),
+                    ],
                   ),
                 )
               else if (isActive)
