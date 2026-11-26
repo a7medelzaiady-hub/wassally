@@ -29,7 +29,8 @@ void main() {
   test('التذكير اتبعت: مفيش تذكير تاني قبل 20 ساعة', () {
     final p = CartReminderPolicy()..onLeave(now: t0, hasOpenCart: true);
     final fired = t0.add(CartReminderPolicy.delay);
-    expect(p.onReturn(now: fired.add(const Duration(minutes: 5))), isFalse);
+    // بنلغي حتى بعد المعاد، علشان لو أندرويد أخّر الإشعار ما يظهرش والتطبيق مفتوح.
+    expect(p.onReturn(now: fired.add(const Duration(minutes: 5))), isTrue);
     expect(p.nextAllowedAt, fired.add(CartReminderPolicy.cooldown));
 
     expect(p.onLeave(now: fired.add(const Duration(hours: 2)), hasOpenCart: true), isNull);
@@ -55,5 +56,16 @@ void main() {
     expect(CartReminderPolicy.body('بقالة الحاج سيد'), contains('سلتك من بقالة الحاج سيد'));
     expect(CartReminderPolicy.body(null), startsWith('سلتك'));
     expect(CartReminderPolicy.body('  '), startsWith('سلتك لسه'));
+  });
+
+  test('رجع في نفس لحظة المعاد: بنلغي ونبدأ فترة الانتظار', () {
+    final p = CartReminderPolicy()..onLeave(now: t0, hasOpenCart: true);
+    final at = t0.add(CartReminderPolicy.delay);
+    expect(p.onReturn(now: at), isTrue);
+    expect(p.nextAllowedAt, at.add(CartReminderPolicy.cooldown));
+  });
+
+  test('رجوع من غير تذكير متجدول: مفيش إلغاء', () {
+    expect(CartReminderPolicy().onReturn(now: t0), isFalse);
   });
 }

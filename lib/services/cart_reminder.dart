@@ -31,15 +31,17 @@ class CartReminderPolicy {
     return pendingAt = now.add(delay);
   }
 
-  /// العميل رجع للتطبيق. بيرجع true لو لازم نلغي تذكير لسه ما اتبعتش.
+  /// العميل رجع للتطبيق. بيرجع true لو فيه تذكير لازم يتلغي.
+  ///
+  /// بنلغي دايمًا (حتى لو المعاد عدّى): أندرويد ممكن يأخّر الإشعار الـinexact،
+  /// فمن غير الإلغاء ممكن يظهر والعميل فاتح التطبيق. إلغاء إشعار اتبعت خلاص ما بيضرّش.
+  /// ولو المعاد عدّى نحسبه اتبعت ونبدأ فترة الـ20 ساعة.
   bool onReturn({required DateTime now}) {
     final at = pendingAt;
     if (at == null) return false;
     pendingAt = null;
-    if (now.isBefore(at)) return true;
-    // التذكير اتبعت وهو بره التطبيق.
-    nextAllowedAt = at.add(cooldown);
-    return false;
+    if (!now.isBefore(at)) nextAllowedAt = at.add(cooldown);
+    return true;
   }
 
   /// العميل بعت طلبه أو فضّى سلاته: أي تذكير متجدول ملوش لازمة.
@@ -105,7 +107,19 @@ class CartReminder with WidgetsBindingObserver {
     }
   }
 
+  /// لو المستخدم قافل إشعارات التطبيق، ما نجدولش حاجة (ولا نبدأ أي عدّاد).
+  Future<bool> _notificationsAllowed() async {
+    try {
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      return await android?.areNotificationsEnabled() ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> _handleLeave() async {
+    if (carts.totalItems == 0 || !await _notificationsAllowed()) return;
     final at = _policy.onLeave(
       now: DateTime.now(),
       hasOpenCart: carts.totalItems > 0,
