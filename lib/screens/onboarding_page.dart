@@ -27,6 +27,9 @@ class OnboardingStore {
     }
   }
 
+  /// فيه حساب مسجل دخول؟ (متزامن: بيحدد هل صفحة ما بعد الدخول تستنى قرار الجولة.)
+  static bool get hasAccount => _uid != null;
+
   /// هل الجولة محتاجة تظهر للحساب الحالي؟
   static Future<bool> shouldShow({String? uid, DateTime? now}) async {
     final id = uid ?? _uid;
