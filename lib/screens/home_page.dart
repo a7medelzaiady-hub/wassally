@@ -747,60 +747,15 @@ class _HomePageState extends State<HomePage>
   ) async {
     final offers = <(_StoreItem, Map<String, dynamic>)>[];
     {
-      var hasCatalog = false;
-      // ملخص العروض محفوظ على مستند المحل (offerItems/bestItems) وبيتحدث مع كل تعديل صنف،
-      // فبنستخدمه من غير أي قراءة إضافية. قراءة كل أصناف كل المحلات كانت بتكلف آلاف القراءات
-      // مع كل فتحة للرئيسية؛ المسح بقى للمحل اللي ملخصه لسه ما اتحسبش بس.
+      // ملخص العروض محفوظ على مستند المحل/فهرس الكتالوج (offerItems) وبيتحدث مع كل تعديل صنف،
+      // فبنستخدمه من غير أي قراءة إضافية.
+      // كان فيه مسح احتياطي لكل أصناف المحل لو الملخص ناقص (ممكن يوصل لآلاف القراءات
+      // مع كل فتحة للرئيسية). اتشال: المحل اللي ملخصه ناقص عروضه بتظهر أول ما صاحبه
+      // يعدّل أي صنف، أو المدير يدوس «تحديث ملخص العروض» من أدوات الإدارة.
       if (store.data['offerItems'] is! List) {
-        try {
-          Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-              .collection('stores')
-              .doc(store.store.id)
-              .collection('products')
-              .limit(200);
-          DocumentSnapshot<Map<String, dynamic>>? cursor;
-          do {
-            if (cursor != null) {
-              query = FirebaseFirestore.instance
-                  .collection('stores')
-                  .doc(store.store.id)
-                  .collection('products')
-                  .limit(200)
-                  .startAfterDocument(cursor);
-            }
-            final page = await query.get();
-            ReadMeter.query('home:offers-scan', page);
-            if (page.docs.isNotEmpty) hasCatalog = true;
-            for (final doc in page.docs) {
-              final item = doc.data();
-              final name = (item['name'] ?? '').toString().trim();
-              final price = (item['price'] as num?)?.toDouble() ?? 0;
-              final old = (item['oldPrice'] as num?)?.toDouble() ?? 0;
-              final text = (item['offerText'] ?? '').toString().trim();
-              final end = item['offerEndsAt'];
-              final expired = isOfferExpired(
-                end is Timestamp ? end.toDate() : null,
-                DateTime.now(),
-              );
-              if (name.isEmpty ||
-                  price <= 0 ||
-                  expired ||
-                  item['available'] == false ||
-                  item['isAvailable'] == false ||
-                  (!(old > price && old > 0) && text.isEmpty)) {
-                continue;
-              }
-              offers.add((store, item));
-            }
-            cursor = page.docs.isEmpty ? null : page.docs.last;
-            if (page.docs.length < 200) break;
-          } while (cursor != null);
-        } catch (error) {
-          debugPrint('Home offers load failed for ${store.store.id}: $error');
-        }
+        debugPrint('Home offers: summary missing for ${store.store.id} (no scan).');
       }
-      // بيانات العروض المختصرة القديمة بديل عند عدم وجود كتالوج للمحل.
-      if (!hasCatalog) {
+      {
         final raw = store.data['offerItems'];
         if (raw is List) {
           for (final value in raw) {

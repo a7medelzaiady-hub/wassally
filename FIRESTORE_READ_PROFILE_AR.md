@@ -51,3 +51,6 @@
 - https://firebase.google.com/docs/firestore/pricing
 - https://firebase.google.com/docs/firestore/monitor-usage
 - https://firebase.google.com/docs/firestore/query-explain
+
+## تحديث: الرئيسية والعروض (26 نوفمبر 2026)
+اتشال المسح الاحتياطي لأصناف المحلات من `home_page.dart` (كان ممكن يوصل لآلاف القراءات لو ملخص العروض ناقص). العروض بقت بتتقرا من ملخص `offerItems` اللي على مستند المحل/فهرس الكتالوج بس (صفر قراءات إضافية). لو محل عروضه مش ظاهرة: صاحب المحل يعدّل أي صنف، أو المدير يدوس «تحديث ملخص العروض» من أدوات الإدارة مرة واحدة.
