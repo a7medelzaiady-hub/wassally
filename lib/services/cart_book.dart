@@ -9,7 +9,7 @@ import '../models/product.dart';
 import '../models/store.dart';
 import 'cart_model.dart';
 
-/// مكان حفظ السلال على الموبايل (قابل للاستبدال في الاختبارات).
+/// مكان حفظ السلات على الموبايل (قابل للاستبدال في الاختبارات).
 abstract class CartStorage {
   Future<String?> read();
   Future<void> write(String? value);
@@ -45,9 +45,9 @@ class PrefsCartStorage implements CartStorage {
 }
 
 /// «سلّاتي»: سلة لكل محل. السلة الحالية هي [cart] (المسار القديم زي ما هو)،
-/// والسلال التانية محفوظة هنا. كل سلة بتتطلب كطلب مستقل بنظام الطلبات الحالي.
+/// والسلات التانية محفوظة هنا. كل سلة بتتطلب كطلب مستقل بنظام الطلبات الحالي.
 ///
-/// كل السلال بتتحفظ على موبايل العميل (مش Firebase، فمفيش تكلفة) وبترجع لما يفتح التطبيق تاني،
+/// كل السلات بتتحفظ على موبايل العميل (مش Firebase، فمفيش تكلفة) وبترجع لما يفتح التطبيق تاني،
 /// بدون انتهاء تلقائي حسب العمر؛ والأسعار بتتراجع من قائمة المحل لما يفتحه،
 /// والسيرفر بيراجعها تاني وقت الطلب.
 class CartBook extends ChangeNotifier {
@@ -67,11 +67,11 @@ class CartBook extends ChangeNotifier {
   bool _saveAgain = false;
   Future<void>? _saveFuture;
 
-  /// عدد السلال اللي رجعت من آخر مرة (للتنبيه). بيتصفر لما العميل يشوف «سلّاتي».
+  /// عدد السلات اللي رجعت من آخر مرة (للتنبيه). بيتصفر لما العميل يشوف «سلّاتي».
   int restoredCount = 0;
 
   // ── تجميع الطلبات (اختياري، العميل بيختاره من «سلّاتي») ──
-  // رقم مشترك للطلبات اللي هتتأكد من السلال دي. كل طلب بيفضل مستقل برقمه وحالته ورسومه.
+  // رقم مشترك للطلبات اللي هتتأكد من السلات دي. كل طلب بيفضل مستقل برقمه وحالته ورسومه.
   // السيرفر بيربط الرقم بحساب العميل ويرفض أي محل متكرر أو رقم منتهي أو مش تبعه.
   static const int groupMaxOrders = 5;
   static const Duration groupKeepFor = Duration(hours: 5, minutes: 50); // أقل من مدة السيرفر (6 ساعات)
@@ -120,13 +120,13 @@ class CartBook extends ChangeNotifier {
     return 'grp_${List.generate(20, (_) => chars[random.nextInt(chars.length)]).join()}';
   }
 
-  /// السلال المحفوظة (غير السلة الحالية)، بترتيب الإضافة.
+  /// السلات المحفوظة (غير السلة الحالية)، بترتيب الإضافة.
   List<CartSnapshot> get parked => List.unmodifiable(_parked.values);
 
-  /// عدد كل السلال اللي فيها حاجة (الحالية + المحفوظة).
+  /// عدد كل السلات اللي فيها حاجة (الحالية + المحفوظة).
   int get cartsCount => (active.isEmpty ? 0 : 1) + _parked.length;
 
-  /// علامة السلة في الشريط السفلي: عدد الأصناف المختلفة في السلال اللي لسه ما اتبعتتش.
+  /// علامة السلة في الشريط السفلي: عدد الأصناف المختلفة في السلات اللي لسه ما اتبعتتش.
   /// (بطاطس × 6 = صنف واحد، والسلة اللي اتبعت طلبها ما بتتحسبش.)
   int get totalItems {
     int kinds(int items, Object? special, String? submitted) =>
@@ -239,7 +239,7 @@ class CartBook extends ChangeNotifier {
   void _onActiveChanged() {
     final id = active.storeId;
     if (id != null && !active.isEmpty) _touched[id] = DateTime.now();
-    // كل السلال اتأكدت أو اتمسحت: التجميع خلص.
+    // كل السلات اتأكدت أو اتمسحت: التجميع خلص.
     if (_groupId != null && cartsCount == 0) {
       _groupId = null;
       _groupStartedAt = null;
@@ -248,8 +248,8 @@ class CartBook extends ChangeNotifier {
     _scheduleSave();
   }
 
-  /// بيرجّع السلال المحفوظة على الموبايل (مرة واحدة عند فتح التطبيق).
-  /// لا نحذف السلال بسبب الوقت. أي بيانات تالفة لا تُستعاد.
+  /// بيرجّع السلات المحفوظة على الموبايل (مرة واحدة عند فتح التطبيق).
+  /// لا نحذف السلات بسبب الوقت. أي بيانات تالفة لا تُستعاد.
   Future<void> load({DateTime? now}) async {
     if (_loaded) return;
     try {
@@ -277,7 +277,7 @@ class CartBook extends ChangeNotifier {
         restoredCount = restored;
       }
     } catch (_) {
-      // تخزين تالف أو غير متاح: نكمل من غير سلال محفوظة.
+      // تخزين تالف أو غير متاح: نكمل من غير سلات محفوظة.
     }
     _loaded = true;
     notifyListeners();
@@ -303,7 +303,7 @@ class CartBook extends ChangeNotifier {
         await _storage.write(all.isEmpty ? null : jsonEncode(encodeCarts(all, active.storeId, _touched)));
       } while (_saveAgain);
     } catch (_) {
-      // الحفظ فشل: السلال لسه في الذاكرة طول ما التطبيق مفتوح.
+      // الحفظ فشل: السلات لسه في الذاكرة طول ما التطبيق مفتوح.
     } finally {
       _saving = false;
     }
@@ -335,7 +335,7 @@ bool _jsonSafe(Object value) {
   }
 }
 
-/// تحويل السلال لـJSON للحفظ على الموبايل.
+/// تحويل السلات لـJSON للحفظ على الموبايل.
 Map<String, dynamic> encodeCarts(
   List<CartSnapshot> all,
   String? activeStoreId,
@@ -364,7 +364,7 @@ Map<String, dynamic> encodeCarts(
   };
 }
 
-/// قراءة السلال المحفوظة. لا تُحذف السلال بسبب العمر؛ غير الصالح فقط يُتجاهل.
+/// قراءة السلات المحفوظة. لا تُحذف السلات بسبب العمر؛ غير الصالح فقط يُتجاهل.
 Map<String, StoredCart> decodeCarts(Object? data, {required DateTime now}) {
   final result = <String, StoredCart>{};
   if (data is! Map || data['v'] != 1 || data['carts'] is! List) return result;

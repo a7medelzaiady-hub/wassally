@@ -13,7 +13,7 @@ import 'cart_page.dart';
 import 'store_directory_page.dart';
 import 'store_page.dart';
 
-/// «سلّاتي»: كل سلال العميل (سلة لكل محل) في صفحة واحدة.
+/// «سلّاتي»: كل سلات العميل (سلة لكل محل) في صفحة واحدة.
 /// العميل يراجع كل سلة ويأكدها أو يعدّلها أو يمسحها، وكل سلة بتتطلب كطلب مستقل.
 class MyCartsPage extends StatelessWidget {
   final CartBook? _book;
@@ -29,7 +29,7 @@ class MyCartsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // العميل شاف سلاله الراجعة من آخر مرة: التنبيه يختفي.
+    // العميل شاف سلاته الراجعة من آخر مرة: التنبيه يختفي.
     if (book.restoredCount > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) => book.markRestoredSeen());
     }
@@ -41,7 +41,7 @@ class MyCartsPage extends StatelessWidget {
             if (!book.active.isEmpty) book.active.snapshot(),
             ...book.parked,
           ];
-          // السلال اللي لسه ما اتبعتتش الأول، واللي اتبعت طلبها في الآخر (بنفس ترتيبها).
+          // السلات اللي لسه ما اتبعتتش الأول، واللي اتبعت طلبها في الآخر (بنفس ترتيبها).
           final all = <CartSnapshot>[
             ...list.where((c) => c.submittedOrderId == null),
             ...list.where((c) => c.submittedOrderId != null),
@@ -53,7 +53,7 @@ class MyCartsPage extends StatelessWidget {
                 child: all.isEmpty
                     ? EmptyState(
                         icon: Icons.shopping_basket_outlined,
-                        title: 'مفيش سلال',
+                        title: 'مفيش سلات',
                         message: 'ضيف منتجات من أي محل وهتظهر هنا.',
                         actionLabel: 'تصفّح المحلات',
                         onAction: () => Navigator.of(context).push(
@@ -91,8 +91,8 @@ class MyCartsPage extends StatelessWidget {
                                 ),
                                 subtitle: Text(
                                   book.groupingOn
-                                      ? 'مفعّل: مندوب واحد هيجيب السلال مع بعض'
-                                      : 'اختياري: مندوب واحد يجيب السلال مع بعض',
+                                      ? 'مفعّل: مندوب واحد هيجيب السلات مع بعض'
+                                      : 'اختياري: مندوب واحد يجيب السلات مع بعض',
                                   style: TextStyle(fontSize: 12, color: kMuted),
                                 ),
                               ),
@@ -347,7 +347,7 @@ class _SquareIcon extends StatelessWidget {
   }
 }
 
-/// سطر تعريفي قصير فوق السلال (بدل فقرة الشرح الطويلة).
+/// سطر تعريفي قصير فوق السلات (بدل فقرة الشرح الطويلة).
 class _CartsNote extends StatelessWidget {
   final int count;
   const _CartsNote({required this.count});
@@ -365,7 +365,7 @@ class _CartsNote extends StatelessWidget {
             child: Text(
               count == 1
                   ? 'سلتك محفوظة على موبايلك لحد ما تفرّغها بنفسك.'
-                  : 'عندك $count سلال، كل سلة بتتطلب لوحدها برسوم توصيلها. محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
+                  : 'عندك $count سلات، كل سلة بتتطلب لوحدها برسوم توصيلها. محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
               style: TextStyle(fontSize: 12.5, color: kMuted, height: 1.45),
             ),
           ),

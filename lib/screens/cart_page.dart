@@ -528,7 +528,7 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-/// تنبيه في السلة: عند العميل سلال تانية محفوظة في «سلّاتي».
+/// تنبيه في السلة: عند العميل سلات تانية محفوظة في «سلّاتي».
 class MyCartsBanner extends StatelessWidget {
   const MyCartsBanner({super.key});
 
@@ -560,10 +560,10 @@ class MyCartsBanner extends StatelessWidget {
                 Expanded(
                   child: Text(
                     restored > 0
-                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
+                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلات'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
                         : others == 1
                             ? 'عندك سلة تانية محفوظة'
-                            : 'عندك $others سلال تانية محفوظة',
+                            : 'عندك $others سلات تانية محفوظة',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.4),
                   ),
                 ),

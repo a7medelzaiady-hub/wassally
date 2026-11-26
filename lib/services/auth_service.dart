@@ -180,7 +180,7 @@ class AuthService {
     // On any failure the account remains available and app listeners stay active.
     await OrderGateway.deleteAccount(idToken: idToken);
     await NotificationService.dispose();
-    carts.clearAll(); // حذف الحساب: امسح سلال الحساب المحفوظة.
+    carts.clearAll(); // حذف الحساب: امسح سلات الحساب المحفوظة.
     await carts.flush();
     shellTab.value = 0;
     await WasallyImageCache.clear();
