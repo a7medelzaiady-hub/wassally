@@ -37,7 +37,6 @@ import 'store_page.dart';
 import 'store_directory_page.dart';
 import '../widgets/closed_badge.dart';
 import '../widgets/cached_net_image.dart';
-import '../widgets/app_snack.dart';
 
 /// المحل + بياناته الخام (للصورة والتقييم ومدة التوصيل).
 class _StoreItem {
@@ -176,13 +175,6 @@ class _HomePageState extends State<HomePage>
   void _openStore(Store s, {String? focusProduct}) {
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => StorePage(store: s, focusProduct: focusProduct)));
-  }
-
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(appSnack(msg));
   }
 
   // ───────────────────────── الموقع ─────────────────────────
