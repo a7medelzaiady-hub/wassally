@@ -18,6 +18,10 @@ class _PhotoRule {
 
 const _base = 'https://images.unsplash.com/';
 
+// رابط تنزيل صورة محددة (مش البحث العشوائي) لصنف مصري غير موجود في الصور العامة.
+String _unsplashPhoto(String id) =>
+    'https://unsplash.com/photos/$id/download?force=true&w=360';
+
 String _unsplash(String id) =>
     '$_base$id?w=360&h=360&fit=crop&auto=format&q=75';
 
@@ -36,15 +40,15 @@ String _normalizeProductName(String raw) => raw
 final _rules = <_PhotoRule>[
   // صورة طبق باذنجان مطبوخ، وليست وعدًا أن المسقعة من نفس الوصفة.
   _PhotoRule(['مسقعه', 'moussaka'],
-      _unsplash('photo-1546069901-ba9599a7e63c')),
+      _unsplashPhoto('TGNW6qxGrOw')),
   _PhotoRule(['كشري', 'koshari'],
-      _unsplash('photo-1547592180-85f173990554')),
+      _unsplashPhoto('9Tz8JEXfNQU')),
   _PhotoRule(['ساندوتش بطاطس', 'سندوتش بطاطس', 'سندويتش بطاطس'],
       _unsplash('photo-1553909489-cd47e0ef937f')),
   _PhotoRule(['فرايز', 'بطاطس محمره', 'بطاطس مقليه', 'fries'],
       _unsplash('photo-1573080496219-bb080dd4f877')),
   _PhotoRule(['فلافل', 'طعميه', 'falafel'],
-      _unsplash('photo-1546069901-ba9599a7e63c')),
+      _unsplashPhoto('V3OnqusloQE')),
   _PhotoRule(['بيتزا', 'pizza'],
       _unsplash('photo-1513104890138-7c749659a591')),
   _PhotoRule(['برجر', 'بورجر', 'برغر', 'burger'],
