@@ -16,6 +16,7 @@ import 'package:city_store/widgets/offer_carousel.dart';
 import 'package:city_store/widgets/quick_order_promo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'harness.dart';
 
@@ -158,6 +159,7 @@ void main() {
   });
 
   testWidgets('cart with items + my carts', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     carts.clearAll();
     cart.add(const Product('بطاطس', 33), storeId: 'veg', storeName: 'فواكه وخضروات', qty: 5);
     carts.switchTo('ph');

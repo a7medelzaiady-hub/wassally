@@ -487,19 +487,12 @@ class _CartFooterState extends State<_CartFooter> {
 class _SummaryRow extends StatelessWidget {
   final String label;
   final String value;
-  final bool strong;
-  const _SummaryRow({
-    required this.label,
-    required this.value,
-    this.strong = false,
-  });
+  const _SummaryRow({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).textTheme.bodyLarge;
-    final style = strong
-        ? base?.copyWith(fontWeight: FontWeight.w800, fontSize: 17)
-        : base?.copyWith(color: kMuted, fontWeight: FontWeight.w600);
+    final style = Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(color: kMuted, fontWeight: FontWeight.w600);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
