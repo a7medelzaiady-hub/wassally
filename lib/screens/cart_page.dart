@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/cart_book.dart';
@@ -10,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/cart_share.dart';
+import '../widgets/order_receipt_sheet.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/qty_stepper.dart';
@@ -110,19 +109,10 @@ class _CartBodyState extends State<_CartBody> {
     });
   }
 
+  /// مشاركة السلة كصورة فاتورة حرارية (بتترسم على الموبايل، صفر قراءات).
   Future<void> _shareCart() async {
-    final text = buildCartShareText(cart);
-    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
-    try {
-      if (await launchUrl(url, mode: LaunchMode.externalApplication)) return;
-    } catch (_) {}
-    // في حالة عدم وجود واتساب أو متصفح، يفضل للعميل نص جاهز ينسخه.
-    await Clipboard.setData(ClipboardData(text: text));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم نسخ قائمة السلة. تقدر تشاركها على واتساب.')),
-      );
-    }
+    if (cart.items.isEmpty) return;
+    await showReceiptSheet(context, buildCartReceipt(cart));
   }
 
   Future<void> _toggleSuggestions(bool enabled) async {

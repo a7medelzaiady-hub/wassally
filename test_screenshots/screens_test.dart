@@ -1,6 +1,8 @@
 import 'package:city_store/screens/admin_navigation_page.dart';
 import 'package:city_store/models/product.dart';
 import 'package:city_store/screens/cart_page.dart';
+import 'package:city_store/utils/cart_share.dart';
+import 'package:city_store/widgets/order_receipt_sheet.dart';
 import 'package:city_store/screens/my_carts_page.dart';
 import 'package:city_store/services/cart_book.dart';
 import 'package:city_store/services/cart_model.dart';
@@ -171,6 +173,8 @@ void main() {
       bottomNavigationBar: CustomerBottomNav(currentTab: 1),
     ));
     await shoot(tester, 'my_carts_390x844', const MyCartsPage(allowGrouping: true));
+    await shoot(tester, 'cart_thermal_receipt_390x844',
+        Scaffold(backgroundColor: const Color(0xFFE9E9EC), body: OrderReceiptSheet(receipt: buildCartReceipt(cart))));
     cart.markSubmitted('order_shot');
     await shoot(tester, 'cart_submitted_390x844', const Scaffold(
       body: CartPage(),

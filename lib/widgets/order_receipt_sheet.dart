@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/order.dart';
@@ -15,12 +16,16 @@ import 'app_snack.dart';
 
 /// بيفتح معاينة الإيصال، ومنها العميل يشاركه أو يحفظه كصورة.
 /// الصورة بتترسم على الموبايل من بيانات الطلب: صفر قراءات وصفر كتابات.
-Future<void> showOrderReceiptSheet(BuildContext context, AppOrder order) {
+Future<void> showOrderReceiptSheet(BuildContext context, AppOrder order) =>
+    showReceiptSheet(context, OrderReceipt.of(order));
+
+/// نفس المعاينة لأي إيصال (طلب أو سلة).
+Future<void> showReceiptSheet(BuildContext context, OrderReceipt receipt) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => OrderReceiptSheet(receipt: OrderReceipt.of(order)),
+    builder: (_) => OrderReceiptSheet(receipt: receipt),
   );
 }
 
@@ -54,7 +59,7 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
     await file.writeAsBytes(bytes, flush: true);
     await SharePlus.instance.share(ShareParams(
       files: [XFile(file.path, mimeType: 'image/png')],
-      text: 'إيصال طلب ${widget.receipt.orderNumber} من وصّلي',
+      text: widget.receipt.shareText,
     ));
   }
 
@@ -105,7 +110,13 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    // خلفية رمادي فاتح عشان الورقة البيضا وحوافها المقصوصة تبان.
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFE9E9EC),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(
@@ -154,19 +165,28 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
           ],
         ),
       ),
+      ),
     );
   }
 }
 
-/// شكل الإيصال نفسه (هو اللي بيتحوّل لصورة).
+/// شكل الإيصال نفسه (هو اللي بيتحوّل لصورة): ورقة فاتورة حرارية
+/// (ورق أبيض ضيق، حواف مقصوصة، خطوط متقطعة، أبيض وأسود، وQR لتحميل التطبيق).
 class OrderReceiptCard extends StatelessWidget {
   final OrderReceipt receipt;
   const OrderReceiptCard({super.key, required this.receipt});
 
+  static const _ink = Color(0xFF1B1B1B);
+  static const _faded = Color(0xFF5E5E5E);
+  static const _paper = Color(0xFFFFFEFA);
+
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    Widget row(ReceiptLine l) => Padding(
+    const numbers = [FontFeature.tabularFigures()];
+    TextStyle base(double size, {FontWeight w = FontWeight.w500, Color c = _ink}) =>
+        TextStyle(fontSize: size, fontWeight: w, color: c, height: 1.35, fontFeatures: numbers);
+
+    Widget row(ReceiptLine l, {double size = 13.5}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -174,81 +194,135 @@ class OrderReceiptCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   l.label,
-                  style: l.strong
-                      ? text.titleSmall?.copyWith(fontWeight: FontWeight.w800)
-                      : text.bodyMedium,
+                  style: base(l.strong ? 15.5 : size, w: l.strong ? FontWeight.w900 : FontWeight.w500),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                l.value,
-                style: l.strong
-                    ? text.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: Brand.goldDeep,
-                      )
-                    : text.bodyMedium,
-              ),
+              if (l.value.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Text(
+                  l.value,
+                  style: base(l.strong ? 15.5 : size, w: l.strong ? FontWeight.w900 : FontWeight.w700),
+                ),
+              ],
             ],
           ),
         );
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            color: Brand.green,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Text(
-                  'وصّلي',
-                  style: text.titleLarge?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  'إيصال طلب',
-                  style: text.titleSmall?.copyWith(color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 330),
+        child: ClipPath(
+          clipper: const _TornEdges(),
+          child: Container(
+            color: _paper,
+            padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                row(ReceiptLine('رقم الطلب', receipt.orderNumber)),
-                if (receipt.date.isNotEmpty)
-                  row(ReceiptLine('التاريخ', receipt.date)),
-                if (receipt.storeName.isNotEmpty)
-                  row(ReceiptLine('المحل', receipt.storeName)),
-                const Divider(height: 18),
+                Text('وصّلي', textAlign: TextAlign.center, style: base(26, w: FontWeight.w900)),
+                Text(receipt.title, textAlign: TextAlign.center, style: base(13, c: _faded)),
+                if (receipt.storeName.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(receipt.storeName, textAlign: TextAlign.center, style: base(15, w: FontWeight.w800)),
+                ],
+                const _Dashes(),
+                if (receipt.orderNumber.isNotEmpty) row(ReceiptLine('رقم الطلب', receipt.orderNumber), size: 12.5),
+                if (receipt.date.isNotEmpty) row(ReceiptLine('التاريخ', receipt.date), size: 12.5),
+                const _Dashes(),
                 for (final l in receipt.items) row(l),
-                const Divider(height: 18),
+                const _Dashes(),
                 for (final l in receipt.totals) row(l),
-                const SizedBox(height: 12),
-                Text(
-                  'شكرًا لاستخدامك وصّلي',
-                  textAlign: TextAlign.center,
-                  style: text.bodySmall?.copyWith(color: Brand.green),
-                ),
+                if (receipt.note.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(receipt.note, textAlign: TextAlign.center, style: base(11, c: _faded)),
+                ],
+                const _Dashes(),
+                if (receipt.qrLink.isNotEmpty) ...[
+                  Center(
+                    child: QrImageView(
+                      key: const Key('receipt-qr'),
+                      data: receipt.qrLink,
+                      size: 92,
+                      padding: EdgeInsets.zero,
+                      backgroundColor: _paper,
+                      eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _ink),
+                      dataModuleStyle: const QrDataModuleStyle(
+                        dataModuleShape: QrDataModuleShape.square,
+                        color: _ink,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('امسح الكود وحمّل التطبيق', textAlign: TextAlign.center, style: base(11, c: _faded)),
+                  const SizedBox(height: 8),
+                ],
+                Text('شكرًا لاستخدامك وصّلي', textAlign: TextAlign.center, style: base(12.5, w: FontWeight.w700)),
               ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
+}
+
+/// خط متقطع زي ورق الكاشير.
+class _Dashes extends StatelessWidget {
+  const _Dashes();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final count = (c.maxWidth / 7).floor();
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(
+              count,
+              (_) => const SizedBox(
+                width: 4,
+                height: 1.2,
+                child: ColoredBox(color: Color(0xFF8A8A8A)),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// حواف فوق وتحت مقصوصة على شكل سنون (زي الورقة المقطوعة من الماكينة).
+class _TornEdges extends CustomClipper<Path> {
+  const _TornEdges();
+
+  @override
+  Path getClip(Size size) {
+    const tooth = 8.0;
+    const depth = 5.0;
+    final path = Path()..moveTo(0, depth);
+    var x = 0.0;
+    var up = true;
+    while (x < size.width) {
+      x = (x + tooth / 2).clamp(0, size.width).toDouble();
+      path.lineTo(x, up ? 0 : depth);
+      up = !up;
+    }
+    path.lineTo(size.width, size.height - depth);
+    x = size.width;
+    up = true;
+    while (x > 0) {
+      x = (x - tooth / 2).clamp(0, size.width).toDouble();
+      path.lineTo(x, up ? size.height : size.height - depth);
+      up = !up;
+    }
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
