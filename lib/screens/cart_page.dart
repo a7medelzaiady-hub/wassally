@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
+import '../services/navigation.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
@@ -390,7 +391,7 @@ class _CartFooterState extends State<_CartFooter> {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'طلبك اتبعت بنجاح، ومش هيتبعت مرتين.',
+                        'الطلب ده اتبعت. تابعه من «طلباتي».',
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -453,30 +454,54 @@ class _CartFooterState extends State<_CartFooter> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  height: 48,
-                  child: locked
-                      ? OutlinedButton.icon(
-                          key: const Key('cart-reorder-explicit'),
-                          onPressed: _reorder,
-                          icon: const Icon(Icons.replay_rounded, size: 19),
-                          label: const Text('طلب جديد بنفس الأصناف'),
-                        )
-                      : FilledButton(
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 28),
-                          ),
-                          onPressed: cart.items.isEmpty
-                              ? null
-                              : () => Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => const CheckoutPage()),
-                                ),
-                          child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
-                        ),
-                ),
+                if (!locked) ...[
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                      ),
+                      onPressed: cart.items.isEmpty
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const CheckoutPage()),
+                            ),
+                      child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
+                    ),
+                  ),
+                ],
               ],
             ),
+            if (locked) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: FilledButton.icon(
+                        key: const Key('cart-track-order'),
+                        onPressed: () => openCustomerTab(context, 2),
+                        icon: const Icon(Icons.receipt_long_rounded, size: 19),
+                        label: const Text('تابع طلبك'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: OutlinedButton(
+                        key: const Key('cart-reorder-explicit'),
+                        onPressed: _reorder,
+                        child: const Text('اطلبه تاني', maxLines: 1),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -503,7 +528,7 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-/// تنبيه في السلة: عند العميل سلال تانية محفوظة في «سلّاتي».
+/// تنبيه في السلة: عند العميل سلات تانية محفوظة في «سلّاتي».
 class MyCartsBanner extends StatelessWidget {
   const MyCartsBanner({super.key});
 
@@ -535,10 +560,10 @@ class MyCartsBanner extends StatelessWidget {
                 Expanded(
                   child: Text(
                     restored > 0
-                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلال'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
+                        ? 'رجّعنالك ${restored == 1 ? 'سلتك' : '$restored سلات'} من آخر مرة (بتفضل محفوظة على موبايلك لحد ما تفرّغها بنفسك). افتح «سلّاتي» وراجعها؛ الأسعار بتتراجع تاني قبل الطلب.'
                         : others == 1
                             ? 'عندك سلة تانية محفوظة'
-                            : 'عندك $others سلال تانية محفوظة',
+                            : 'عندك $others سلات تانية محفوظة',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.4),
                   ),
                 ),

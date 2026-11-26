@@ -6,7 +6,7 @@ import 'order_gateway.dart';
 import 'wasally_service_fee.dart';
 
 /// حالة السلة الحالية. الطلب الواحد بيكون من محل واحد بس (رسوم التوصيل والتحضير لكل محل).
-/// السلال التانية (محل لكل سلة) بتتحفظ في «سلّاتي» (CartBook) والعميل يرجع لها في أي وقت.
+/// السلات التانية (محل لكل سلة) بتتحفظ في «سلّاتي» (CartBook) والعميل يرجع لها في أي وقت.
 class CartModel extends ChangeNotifier {
   /// رسوم التوصيل الافتراضية وقت الطلب. الأدمن يحدد الرسوم النهائية (finalDeliveryFee) لما يوافق على الطلب.
   static const double deliveryFee = 20;
@@ -203,7 +203,7 @@ class CartModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// بيراجع أسعار السلة الحالية على قائمة المحل اللي اتحملت (مهم للسلال الراجعة من آخر مرة).
+  /// بيراجع أسعار السلة الحالية على قائمة المحل اللي اتحملت (مهم للسلات الراجعة من آخر مرة).
   /// الصنف اللي سعره اتغير بيتحدث، واللي مبقاش موجود بيتشال. بيرجع رسالة لكل تغيير.
   List<String> syncWithMenu(String storeId, List<Product> menu) {
     if (_storeId != storeId || _items.isEmpty || menu.isEmpty) return const [];

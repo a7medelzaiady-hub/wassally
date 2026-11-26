@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
+import '../services/navigation.dart';
 import '../services/order_gateway.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -12,7 +13,7 @@ import 'cart_page.dart';
 import 'store_directory_page.dart';
 import 'store_page.dart';
 
-/// «سلّاتي»: كل سلال العميل (سلة لكل محل) في صفحة واحدة.
+/// «سلّاتي»: كل سلات العميل (سلة لكل محل) في صفحة واحدة.
 /// العميل يراجع كل سلة ويأكدها أو يعدّلها أو يمسحها، وكل سلة بتتطلب كطلب مستقل.
 class MyCartsPage extends StatelessWidget {
   final CartBook? _book;
@@ -28,7 +29,7 @@ class MyCartsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // العميل شاف سلاله الراجعة من آخر مرة: التنبيه يختفي.
+    // العميل شاف سلاته الراجعة من آخر مرة: التنبيه يختفي.
     if (book.restoredCount > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) => book.markRestoredSeen());
     }
@@ -36,9 +37,14 @@ class MyCartsPage extends StatelessWidget {
       body: ListenableBuilder(
         listenable: Listenable.merge([book, book.active]),
         builder: (context, _) {
-          final all = <CartSnapshot>[
+          final list = <CartSnapshot>[
             if (!book.active.isEmpty) book.active.snapshot(),
             ...book.parked,
+          ];
+          // السلات اللي لسه ما اتبعتتش الأول، واللي اتبعت طلبها في الآخر (بنفس ترتيبها).
+          final all = <CartSnapshot>[
+            ...list.where((c) => c.submittedOrderId == null),
+            ...list.where((c) => c.submittedOrderId != null),
           ];
           return Column(
             children: [
@@ -47,7 +53,7 @@ class MyCartsPage extends StatelessWidget {
                 child: all.isEmpty
                     ? EmptyState(
                         icon: Icons.shopping_basket_outlined,
-                        title: 'مفيش سلال',
+                        title: 'مفيش سلات',
                         message: 'ضيف منتجات من أي محل وهتظهر هنا.',
                         actionLabel: 'تصفّح المحلات',
                         onAction: () => Navigator.of(context).push(
@@ -85,8 +91,8 @@ class MyCartsPage extends StatelessWidget {
                                 ),
                                 subtitle: Text(
                                   book.groupingOn
-                                      ? 'مفعّل: مندوب واحد هيجيب السلال مع بعض'
-                                      : 'اختياري: مندوب واحد يجيب السلال مع بعض',
+                                      ? 'مفعّل: مندوب واحد هيجيب السلات مع بعض'
+                                      : 'اختياري: مندوب واحد يجيب السلات مع بعض',
                                   style: TextStyle(fontSize: 12, color: kMuted),
                                 ),
                               ),
@@ -172,7 +178,7 @@ class _CartCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isActive ? kPrimary.withValues(alpha: 0.55) : kLine),
+        border: Border.all(color: isActive && !submitted ? kPrimary.withValues(alpha: 0.55) : kLine),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 3)),
         ],
@@ -208,7 +214,26 @@ class _CartCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (isActive)
+              if (submitted)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: kSuccess.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.check_rounded, size: 13, color: kSuccess),
+                      SizedBox(width: 3),
+                      Text(
+                        'اتبعت',
+                        style: TextStyle(fontSize: 11, color: kSuccess, fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                )
+              else if (isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -228,57 +253,60 @@ class _CartCard extends StatelessWidget {
           ),
           Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatPrice(snap.subtotal),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      snap.fee > 0
-                          ? '$kinds صنف • توصيل ${formatPrice(snap.fee)}'
-                          : '$kinds صنف',
-                      style: TextStyle(fontSize: 12, color: kMuted),
-                    ),
-                  ],
-                ),
-              ),
-              if (canAddMore)
-                IconButton(
-                  key: Key('cart-add-more-$_storeId'),
-                  tooltip: 'إضافة منتجات من نفس المحل',
-                  onPressed: () => _addMore(context),
-                  icon: Icon(Icons.add_shopping_cart_rounded, color: kAccent),
-                  style: IconButton.styleFrom(
-                    side: BorderSide(color: kLine),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              const SizedBox(width: 6),
-              IconButton(
-                key: Key('cart-delete-$_storeId'),
-                tooltip: 'امسح السلة',
-                onPressed: () => _delete(context),
-                icon: Icon(Icons.delete_outline_rounded, color: kDanger),
-                style: IconButton.styleFrom(
-                  side: BorderSide(color: kLine),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+              Text(
+                formatPrice(snap.subtotal),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(width: 8),
-              SizedBox(
-                height: 44,
-                child: FilledButton(
-                  key: Key('cart-review-$_storeId'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => _review(context),
-                  child: Text(submitted ? 'عرض' : 'أكمل الطلب'),
+              Expanded(
+                child: Text(
+                  snap.fee > 0
+                      ? '$kinds صنف • توصيل ${formatPrice(snap.fee)}'
+                      : '$kinds صنف',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: kMuted),
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 44,
+                  child: submitted
+                      ? OutlinedButton.icon(
+                          key: Key('cart-review-$_storeId'),
+                          icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                          label: const Text('تابع في «طلباتي»'),
+                          onPressed: () => openCustomerTab(context, 2),
+                        )
+                      : FilledButton(
+                          key: Key('cart-review-$_storeId'),
+                          onPressed: () => _review(context),
+                          child: const Text('أكمل الطلب'),
+                        ),
+                ),
+              ),
+              if (canAddMore && !submitted) ...[
+                const SizedBox(width: 8),
+                _SquareIcon(
+                  key: Key('cart-add-more-$_storeId'),
+                  tooltip: 'إضافة منتجات من نفس المحل',
+                  icon: Icons.add_shopping_cart_rounded,
+                  color: kAccent,
+                  onPressed: () => _addMore(context),
+                ),
+              ],
+              const SizedBox(width: 8),
+              _SquareIcon(
+                key: Key('cart-delete-$_storeId'),
+                tooltip: 'امسح السلة',
+                icon: Icons.delete_outline_rounded,
+                color: kDanger,
+                onPressed: () => _delete(context),
               ),
             ],
           ),
@@ -288,7 +316,38 @@ class _CartCard extends StatelessWidget {
   }
 }
 
-/// سطر تعريفي قصير فوق السلال (بدل فقرة الشرح الطويلة).
+class _SquareIcon extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+  const _SquareIcon({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, color: color, size: 21),
+        style: IconButton.styleFrom(
+          side: BorderSide(color: kLine),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+}
+
+/// سطر تعريفي قصير فوق السلات (بدل فقرة الشرح الطويلة).
 class _CartsNote extends StatelessWidget {
   final int count;
   const _CartsNote({required this.count});
@@ -306,7 +365,7 @@ class _CartsNote extends StatelessWidget {
             child: Text(
               count == 1
                   ? 'سلتك محفوظة على موبايلك لحد ما تفرّغها بنفسك.'
-                  : 'عندك $count سلال، كل سلة بتتطلب لوحدها برسوم توصيلها. محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
+                  : 'عندك $count سلات، كل سلة بتتطلب لوحدها برسوم توصيلها. محفوظة على موبايلك لحد ما تفرّغها بنفسك.',
               style: TextStyle(fontSize: 12.5, color: kMuted, height: 1.45),
             ),
           ),

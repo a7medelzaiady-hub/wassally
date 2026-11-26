@@ -1463,7 +1463,7 @@ class _StorePageState extends State<StorePage> {
             const SizedBox(height: 8),
             Text(
               'كل سلة بتتطلب لوحدها وليها رسوم توصيل لوحدها. '
-              'قبل التأكيد هتلاقي كل سلالك${otherCarts > 1 ? ' ($otherCarts دلوقتي)' : ''} في «سلّاتي»: تأكد أو تعدّل أو تمسح.',
+              'قبل التأكيد هتلاقي كل سلاتك${otherCarts > 1 ? ' ($otherCarts دلوقتي)' : ''} في «سلّاتي»: تأكد أو تعدّل أو تمسح.',
               style: TextStyle(height: 1.5, color: kMuted),
             ),
           ],

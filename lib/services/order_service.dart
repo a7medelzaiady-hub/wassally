@@ -502,6 +502,10 @@ class OrderService {
       if (kDebugMode) debugPrint('ORDER IDEMPOTENCY CLEANUP ERROR');
     }
 
+    // الطلب اتأكد: السلة تفضى، والعميل يتابع طلبه من «طلباتي».
+    carts.finishSubmitted(storeId);
+    await carts.flush();
+
     // نحفظ البيانات للمرة الجاية. لو فشل الحفظ ده الطلب نفسه ما يتأثرش.
     try {
       await UserService.save(

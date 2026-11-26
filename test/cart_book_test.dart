@@ -123,10 +123,25 @@ void main() {
     });
   });
 
+  group('علامة السلة', () {
+    tearDown(carts.clearAll);
+
+    test('بتعدّ الأصناف المختلفة ومش بتعدّ السلة اللي اتبعت', () {
+      cart.add(_rice, storeId: 'g', storeName: 'بقالة الخير', qty: 6);
+      cart.add(_oil, storeId: 'g', storeName: 'بقالة الخير', qty: 4);
+      expect(carts.totalItems, 2);
+      carts.switchTo('p');
+      cart.add(_chicken, storeId: 'p', storeName: 'دواجن النور', qty: 3);
+      expect(carts.totalItems, 3);
+      cart.markSubmitted('order_1');
+      expect(carts.totalItems, 2);
+    });
+  });
+
   group('صفحة «سلّاتي»', () {
     tearDown(carts.clearAll);
 
-    testWidgets('بتعرض كل السلال، والمسح بيحتاج تأكيد', (tester) async {
+    testWidgets('بتعرض كل السلات، والمسح بيحتاج تأكيد', (tester) async {
       carts.rememberStore(_grocery);
       cart.add(_rice, storeId: 'g', storeName: 'بقالة الخير', qty: 2);
       carts.switchTo('p');
@@ -172,7 +187,7 @@ void main() {
 
 
   group('حفظ «سلّاتي» على الموبايل', () {
-    test('السلال بتتحفظ وترجع بعد فتح التطبيق تاني بكل تفاصيلها', () async {
+    test('السلات بتتحفظ وترجع بعد فتح التطبيق تاني بكل تفاصيلها', () async {
       final storage = _MemoryStorage();
       final first = CartBook(CartModel(), storage: storage);
       await first.load();
@@ -201,7 +216,7 @@ void main() {
       expect(second.restoredCount, 0);
     });
 
-    test('السلال القديمة بتفضل محفوظة حتى يفرغها العميل', () async {
+    test('السلات القديمة بتفضل محفوظة حتى يفرغها العميل', () async {
       final now = DateTime(2026, 11, 22, 12);
       final data = {
         'v': 1,
@@ -227,7 +242,7 @@ void main() {
       expect(book.active.count, 1);
     });
 
-    test('علامة إرسال الطلب محفوظة مع السلة بعد فتح التطبيق وتسجيل الخروج', () async {
+    test('سلة اتبعت طلبها ما بترجعش بعد فتح التطبيق (مكانها «طلباتي»)', () async {
       final storage = _MemoryStorage();
       final first = CartBook(CartModel(), storage: storage);
       await first.load();
@@ -241,8 +256,21 @@ void main() {
       expect(storage.value, isNotNull);
 
       await first.attachAfterSignIn();
-      expect(first.active.submittedOrderId, 'order_123');
-      expect(first.active.count, 1);
+      expect(first.active.isEmpty, isTrue);
+      expect(first.cartsCount, 0);
+    });
+
+    test('بعد تأكيد الطلب سلة المحل بتتمسح والسلات التانية بتفضل', () async {
+      final book = CartBook(CartModel(), storage: _MemoryStorage());
+      await book.load();
+      book.active.add(_rice, storeId: 'g', storeName: 'بقالة الخير');
+      book.switchTo('p');
+      book.active.add(_chicken, storeId: 'p', storeName: 'دواجن النور');
+      book.active.markSubmitted('order_9');
+      book.finishSubmitted('p');
+      expect(book.active.isEmpty, isTrue);
+      expect(book.parkedFor('g')!.count, 1);
+      expect(book.cartsCount, 1);
     });
 
     test('تخزين تالف ما يوقعش التطبيق', () async {
@@ -271,7 +299,7 @@ void main() {
       expect(book.active.count, 1);
     });
 
-    test('تسجيل الخروج بيمسح السلال من الموبايل', () async {
+    test('تسجيل الخروج بيمسح السلات من الموبايل', () async {
       final storage = _MemoryStorage();
       final book = CartBook(CartModel(), storage: storage);
       await book.load();

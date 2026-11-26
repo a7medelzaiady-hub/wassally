@@ -58,7 +58,7 @@ void main() {
       expect(fresh.groupIdFor('g', now: later), isNull);
     });
 
-    test('التجميع بيخلص لوحده لما كل السلال تتأكد أو تتمسح، ومع تسجيل الخروج', () {
+    test('التجميع بيخلص لوحده لما كل السلات تتأكد أو تتمسح، ومع تسجيل الخروج', () {
       final book = _bookWithTwoCarts()..setGrouping(true);
       book.removeParked('g');
       expect(book.groupingOn, isTrue); // لسه فيه سلة
