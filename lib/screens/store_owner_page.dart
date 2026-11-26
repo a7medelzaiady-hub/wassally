@@ -1787,7 +1787,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     await CatalogSync.markPending(widget.storeId);
     try {
       for (var start = 0; start < unique.length; start += 100) {
-        final end = (start + 100).clamp(0, unique.length);
+        final end = start + 100 > unique.length ? unique.length : start + 100;
         final batch = FirebaseFirestore.instance.batch();
         for (final l in unique.sublist(start, end)) {
           final groups = l.suggestion?.optionGroups ?? const <OptionGroup>[];
@@ -3309,6 +3309,147 @@ class _TodaySummaryBar extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// قائمة قوالب محلية، تُراجع الأسعار قبل أي كتابة. لا نضع أسعار تخمينية.
+class _ProductTemplatesSheet extends StatefulWidget {
+  const _ProductTemplatesSheet();
+
+  @override
+  State<_ProductTemplatesSheet> createState() => _ProductTemplatesSheetState();
+}
+
+class _ProductTemplatesSheetState extends State<_ProductTemplatesSheet> {
+  StoreTemplate _template = storeProductTemplates.first;
+  final Set<String> _chosen = {};
+  final Map<String, TextEditingController> _prices = {};
+  String? _error;
+
+  TextEditingController _controller(String name) =>
+      _prices.putIfAbsent(name, () => TextEditingController());
+
+  @override
+  void dispose() {
+    for (final c in _prices.values) { c.dispose(); }
+    super.dispose();
+  }
+
+  void _done() {
+    if (_chosen.isEmpty) {
+      setState(() => _error = 'اختار صنف واحد على الأقل.');
+      return;
+    }
+    final lines = <BulkProductLine>[];
+    for (final name in _template.products) {
+      if (!_chosen.contains(name)) continue;
+      final price = double.tryParse(
+          _controller(name).text.trim().replaceAll(',', '.'));
+      if (price == null || price <= 0 || price > 20000) {
+        setState(() => _error =
+            'اكتب سعرًا صحيحًا لكل صنف مختار (من 1 إلى 20000 جنيه).');
+        return;
+      }
+      final s = suggestProduct(name);
+      lines.add(BulkProductLine(name, price,
+          suggestion: s, priceWarning: priceWarningFor(name, price)));
+    }
+    Navigator.pop(context, lines);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+          child: FractionallySizedBox(
+            heightFactor: .88,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('جهّز محلك بأصناف جاهزة',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  const Text('اختار اللي بتبيعه واكتب سعره بنفسك. '
+                      'مش هنضيف أي صنف إلا بعد تأكيدك.',
+                      style: TextStyle(fontSize: 12.5)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<StoreTemplate>(
+                    key: const Key('template-category'),
+                    value: _template,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'نوع المحل'),
+                    items: [
+                      for (final t in storeProductTemplates)
+                        DropdownMenuItem(value: t, child: Text(t.label)),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _template = value; _chosen.clear(); _error = null;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _template.products.length,
+                      itemBuilder: (context, index) {
+                        final name = _template.products[index];
+                        return Row(children: [
+                          Checkbox(
+                            value: _chosen.contains(name),
+                            onChanged: (value) => setState(() {
+                              if (value == true) { _chosen.add(name); }
+                              else { _chosen.remove(name); }
+                              _error = null;
+                            }),
+                          ),
+                          Expanded(child: Text(name, maxLines: 2,
+                              overflow: TextOverflow.ellipsis)),
+                          SizedBox(
+                            width: 94,
+                            child: TextField(
+                              key: Key('template-price-$index'),
+                              controller: _controller(name),
+                              enabled: _chosen.contains(name),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'السعر', suffixText: 'ج',
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ]);
+                      },
+                    ),
+                  ),
+                  if (_error != null)
+                    Text(_error!, style: TextStyle(color: kDanger)),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    TextButton(onPressed: () => Navigator.pop(context),
+                        child: const Text('إلغاء')),
+                    const Spacer(),
+                    FilledButton.icon(
+                      key: const Key('template-add-selected'),
+                      onPressed: _done,
+                      icon: const Icon(Icons.check),
+                      label: Text('مراجعة وإضافة (${_chosen.length})'),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
