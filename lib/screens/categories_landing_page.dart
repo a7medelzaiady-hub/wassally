@@ -49,6 +49,10 @@ class CustomerEntry extends StatefulWidget {
 class _CustomerEntryState extends State<CustomerEntry> {
   bool _entered = false;
 
+  /// الإعلانات تظهر الأول: صفحة ما بعد الدخول مستخبية لحد ما نعرف هل فيه جولة
+  /// ولحد ما الجولة تتقفل (بدل ما الصفحة تبان لحظة وبعدين الإعلان يطلع فوقها).
+  bool _waitingForTour = OnboardingStore.hasAccount;
+
   bool get _isCustomer => widget.dashboard == null;
 
   @override
@@ -66,6 +70,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
       await _maybeShowTour();
     } catch (e) {
       debugPrint('Welcome tour failed: $e');
+    } finally {
+      if (mounted && _waitingForTour) setState(() => _waitingForTour = false);
     }
     if (!mounted) return;
     await NotificationService.ensurePermissionWithExplanation(context);
@@ -77,9 +83,14 @@ class _CustomerEntryState extends State<CustomerEntry> {
     // صور الإدارة لو موجودة، وإلا الجولة المدمجة.
     final posters = await loadTourPosters();
     if (!mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute<void>(
+    // من غير أنيميشن دخول: الإعلان يبان مكان شاشة البداية على طول.
+    await Navigator.of(context).push(PageRouteBuilder<void>(
       fullscreenDialog: true,
-      builder: (_) => OnboardingPage(posters: posters),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (_, _, _) => OnboardingPage(posters: posters),
+      transitionsBuilder: (_, animation, _, child) =>
+          FadeTransition(opacity: animation, child: child),
     ));
   }
 
@@ -496,6 +507,16 @@ class _CustomerEntryState extends State<CustomerEntry> {
   @override
   Widget build(BuildContext context) {
     if (_entered) return _dashboard;
+    if (_waitingForTour) {
+      // شاشة البداية بلون التطبيق لحد ما الإعلان يظهر (أقل من ثانية غالبًا).
+      return Scaffold(
+        key: const Key('entry-waiting-for-tour'),
+        backgroundColor: AppColors.purpleDeep,
+        body: Center(
+          child: Image.asset(kWasallyLogoLightAsset, width: 150, excludeFromSemantics: true),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(

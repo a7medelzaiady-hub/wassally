@@ -38,7 +38,7 @@ List<String> bannerPostersFor(QuerySnapshot<Map<String, dynamic>>? snap, String 
 Future<List<String>> loadTourPosters() async {
   try {
     final snap = await CatalogService.get(FirebaseFirestore.instance.collection('banners'), 'banners')
-        .timeout(const Duration(seconds: 4));
+        .timeout(const Duration(seconds: 3));
     return bannerPostersFor(snap, kTourPlacement);
   } catch (_) {
     return const [];
