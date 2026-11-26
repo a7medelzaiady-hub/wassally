@@ -2331,6 +2331,58 @@ class _ProductDialogState extends State<_ProductDialog> {
   late String _image = (widget.existing?['image'] ?? '').toString();
   bool _uploading = false;
   String? _error;
+  Timer? _draftTimer;
+  bool _restoringDraft = false;
+  bool _hasDraft = false;
+
+  static String _draftKey(String storeId) =>
+      'owner_product_draft_v1_${FirebaseAuth.instance.currentUser?.uid ?? 'guest'}_$storeId';
+
+  static Future<void> clearNewDraft(String storeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_draftKey(storeId));
+  }
+
+  Future<void> _restoreDraft() async {
+    if (widget.existing != null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_draftKey(widget.storeId));
+    if (raw == null || !mounted || _name.text.isNotEmpty) return;
+    try {
+      final saved = jsonDecode(raw);
+      if (saved is! Map) return;
+      _restoringDraft = true;
+      _name.text = (saved['name'] ?? '').toString();
+      _price.text = (saved['price'] ?? '').toString();
+      _old.text = (saved['oldPrice'] ?? '').toString();
+      _desc.text = (saved['description'] ?? '').toString();
+      _groups = parseOptionGroups(saved['optionGroups']);
+      _best = saved['bestSeller'] == true;
+      _image = (saved['image'] ?? '').toString();
+      _restoringDraft = false;
+      if (mounted) setState(() => _hasDraft = true);
+    } catch (_) {
+      _restoringDraft = false;
+    }
+  }
+
+  Future<void> _writeDraft() async {
+    if (widget.existing != null) return;
+    final raw = jsonEncode({
+      'name': _name.text, 'price': _price.text,
+      'oldPrice': _old.text, 'description': _desc.text,
+      'optionGroups': _groups.map((e) => e.toMap()).toList(),
+      'bestSeller': _best, 'image': _image,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_draftKey(widget.storeId), raw);
+  }
+
+  void _draftChanged() {
+    if (widget.existing != null || _restoringDraft) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 300), _writeDraft);
+  }
 
   /// اقتراح تفاصيل من اسم الصنف (قاموس جوه التطبيق، من غير أي قراءة).
   ProductSuggestion? _suggestion;
@@ -2341,6 +2393,13 @@ class _ProductDialogState extends State<_ProductDialog> {
   void initState() {
     super.initState();
     _name.addListener(_updateSuggestion);
+    if (widget.existing == null) {
+      _name.addListener(_draftChanged);
+      _price.addListener(_draftChanged);
+      _old.addListener(_draftChanged);
+      _desc.addListener(_draftChanged);
+      _restoreDraft();
+    }
   }
 
   void _updateSuggestion() {
@@ -2364,11 +2423,17 @@ class _ProductDialogState extends State<_ProductDialog> {
       if (_groups.isEmpty && s.optionGroups.isNotEmpty) _groups = s.optionGroups;
       _suggestionUsed = true;
     });
+    _draftChanged();
   }
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
     _name.removeListener(_updateSuggestion);
+    _name.removeListener(_draftChanged);
+    _price.removeListener(_draftChanged);
+    _old.removeListener(_draftChanged);
+    _desc.removeListener(_draftChanged);
     _name.dispose();
     _price.dispose();
     _old.dispose();
@@ -2384,7 +2449,10 @@ class _ProductDialogState extends State<_ProductDialog> {
         'products',
         storeId: widget.storeId,
       );
-      if (url != null && mounted) setState(() => _image = url);
+      if (url != null && mounted) {
+        setState(() => _image = url);
+        _draftChanged();
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'تعذر رفع الصورة. جرّب تاني.');
     } finally {
@@ -2431,6 +2499,9 @@ class _ProductDialogState extends State<_ProductDialog> {
       if (!ok || !mounted) return;
     }
     if (!mounted) return;
+    _draftTimer?.cancel();
+    await _writeDraft();
+    if (!mounted) return;
     Navigator.of(context).pop(
       _ProductForm(
         name,
@@ -2456,6 +2527,15 @@ class _ProductDialogState extends State<_ProductDialog> {
               controller: _name,
               decoration: const InputDecoration(labelText: 'اسم الصنف'),
             ),
+            if (widget.existing == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _hasDraft ? 'رجعنالك مسودة الصنف المحفوظة' :
+                    'بيتم حفظ مسودة الصنف على الموبايل تلقائيًا',
+                  style: TextStyle(color: kMuted, fontSize: 11.5),
+                ),
+              ),
             if (_suggestion != null && !_suggestionUsed &&
                 (_desc.text.trim().isEmpty ||
                     (_groups.isEmpty && _suggestion!.optionGroups.isNotEmpty)))
@@ -2496,7 +2576,10 @@ class _ProductDialogState extends State<_ProductDialog> {
             OutlinedButton.icon(
               onPressed: () async {
                 final res = await showOptionGroupsEditor(context, _groups);
-                if (res != null && mounted) setState(() => _groups = res);
+                if (res != null && mounted) {
+                  setState(() => _groups = res);
+                  _draftChanged();
+                }
               },
               icon: const Icon(Icons.tune),
               label: Text(
@@ -2508,7 +2591,10 @@ class _ProductDialogState extends State<_ProductDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _best,
-              onChanged: (v) => setState(() => _best = v),
+              onChanged: (v) {
+                setState(() => _best = v);
+                _draftChanged();
+              },
               title: const Text('الأكثر مبيعًا'),
             ),
             const SizedBox(height: 4),
@@ -2546,6 +2632,11 @@ class _ProductDialogState extends State<_ProductDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('إلغاء'),
+          onPressed: () async {
+            _draftTimer?.cancel();
+            await _writeDraft();
+            if (context.mounted) Navigator.of(context).pop();
+          },
         ),
         FilledButton(onPressed: _save, child: const Text('حفظ')),
       ],
