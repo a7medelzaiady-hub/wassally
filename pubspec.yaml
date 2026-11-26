@@ -42,6 +42,8 @@ dependencies:
 
   http: ^1.2.0
   url_launcher: ^6.3.3
+  # مشاركة صورة إيصال الطلب (والروابط بعد كده) من غير أي قراءات.
+  share_plus: '>=11.0.0 <13.0.0'
 
   shared_preferences: ^2.3.2
 
