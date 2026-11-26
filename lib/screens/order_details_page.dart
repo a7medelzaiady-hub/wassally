@@ -412,10 +412,10 @@ class _Details extends StatelessWidget {
       children: [
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
+            padding: const EdgeInsets.fromLTRB(12, 5, 12, 14),
             children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -429,7 +429,7 @@ class _Details extends StatelessWidget {
                   formatDateTime(order.createdAt!),
                   style: text.bodySmall?.copyWith(color: kMuted),
                 ),
-              const SizedBox(height: 9),
+              const SizedBox(height: 7),
               if (order.status == OrderStatus.cancelled) ...[
                 _CancelledBanner(status: order.status),
                 if (order.referralDiscountMinor > 0)
@@ -557,7 +557,7 @@ class _Details extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -599,7 +599,7 @@ class _Details extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: _card,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -710,7 +710,7 @@ class _Details extends StatelessWidget {
 
   Widget _info(IconData icon, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
