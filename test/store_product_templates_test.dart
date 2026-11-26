@@ -28,6 +28,10 @@ void main() {
           normalizeProductKey('جبنه  رومي'));
       expect(normalizeProductKey('شاي  أخضر'),
           normalizeProductKey('شاي اخضر'));
+      expect(normalizeProductKey('الجبنة الرومي'),
+          normalizeProductKey('جبنه رومي'));
+      expect(normalizeProductKey('الأرز المصري'),
+          normalizeProductKey('ارز مصري'));
     });
 
     test('percentage prices round safely', () {
