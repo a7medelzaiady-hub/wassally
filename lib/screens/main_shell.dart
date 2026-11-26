@@ -16,11 +16,14 @@ import 'orders_page.dart';
 class MainShell extends StatelessWidget {
   const MainShell({super.key});
 
+  // كل تبويب بيتبني أول مرة العميل يفتحه بس، وبعدها بيفضل محفوظ.
+  // قبل كده IndexedStack كان بيبني الأربع صفحات مع فتح التطبيق، فصفحة «طلباتي»
+  // كانت بتفتح مستمع على آخر 50 طلب (قراءات Firestore) حتى لو العميل ما فتحهاش.
   static const _pages = <Widget>[
     HomePage(),
-    CartPage(),
-    OrdersPage(),
-    AccountPage(),
+    _LazyTab(tab: 1, child: CartPage()),
+    _LazyTab(tab: 2, child: OrdersPage()),
+    _LazyTab(tab: 3, child: AccountPage()),
   ];
 
   @override
@@ -80,4 +83,41 @@ class MainShell extends StatelessWidget {
       },
     );
   }
+}
+
+/// بيأجّل بناء التبويب لحد أول مرة يتفتح فيها (shellTab == tab)، وبعدها يفضل مبني.
+class _LazyTab extends StatefulWidget {
+  final int tab;
+  final Widget child;
+  const _LazyTab({required this.tab, required this.child});
+
+  @override
+  State<_LazyTab> createState() => _LazyTabState();
+}
+
+class _LazyTabState extends State<_LazyTab> {
+  bool _opened = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _opened = shellTab.value == widget.tab;
+    shellTab.addListener(_onTab);
+  }
+
+  void _onTab() {
+    if (!_opened && shellTab.value == widget.tab) {
+      setState(() => _opened = true);
+      shellTab.removeListener(_onTab);
+    }
+  }
+
+  @override
+  void dispose() {
+    shellTab.removeListener(_onTab);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _opened ? widget.child : const SizedBox.shrink();
 }
