@@ -61,6 +61,19 @@ void main() {
       }
     });
 
+    test('the leading product noun wins over a flavor or ingredient', () {
+      expect(productPhotoFor(name: 'شيبسي جبنة').url,
+          contains('photo-1566478989037-eec170784d0b'));
+      expect(productPhotoFor(name: 'شاي بلبن').url,
+          contains('photo-1544787219-7f47ccb76574'));
+      expect(productPhotoFor(name: 'بسكويت شوكولاتة').url,
+          contains('photo-1499636136210-6f4ee915583e'));
+      expect(productPhotoFor(name: 'عصير برتقال').url,
+          contains('photo-1613478223719-2ab802602423'));
+      expect(productPhotoFor(name: 'برتقال عصير').url,
+          contains('photo-1547514701-42782101795e'));
+    });
+
     test('specific descriptions win over general product keywords', () {
       final fries = productPhotoFor(name: 'بطاطس مقلية');
       final potato = productPhotoFor(name: 'بطاطس نيّة');
