@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
+import '../utils/product_photo.dart';
 import 'cached_net_image.dart';
 
 /// أقصى كمية بتتضاف من الشاشة دي في المرة الواحدة.
@@ -16,6 +17,7 @@ Future<void> showProductSheet(
   BuildContext context, {
   required Product product,
   required String storeName,
+  String storeCategory = '',
   required Future<void> Function(Product line, int qty) onAdd,
 }) {
   return showModalBottomSheet<void>(
@@ -29,6 +31,7 @@ Future<void> showProductSheet(
     builder: (_) => _ProductSheet(
       product: product,
       storeName: storeName,
+      storeCategory: storeCategory,
       onAdd: onAdd,
     ),
   );
@@ -37,10 +40,12 @@ Future<void> showProductSheet(
 class _ProductSheet extends StatefulWidget {
   final Product product;
   final String storeName;
+  final String storeCategory;
   final Future<void> Function(Product line, int qty) onAdd;
   const _ProductSheet({
     required this.product,
     required this.storeName,
+    required this.storeCategory,
     required this.onAdd,
   });
 
@@ -117,6 +122,11 @@ class _ProductSheetState extends State<_ProductSheet> {
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
+    final photo = productPhotoFor(
+      name: p.name,
+      uploadedUrl: p.imageUrl,
+      storeCategory: widget.storeCategory,
+    );
     final bottom = MediaQuery.viewPaddingOf(context).bottom;
     final fallback = Container(
       width: 84,
@@ -184,15 +194,31 @@ class _ProductSheetState extends State<_ProductSheet> {
                       const SizedBox(width: 12),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: p.imageUrl.isEmpty
-                            ? fallback
-                            : CachedNetImage(
-                                url: thumb(p.imageUrl, w: 300),
-                                width: 84,
-                                height: 84,
-                                memCacheWidth: 300,
-                                errorWidget: fallback,
+                        child: Stack(
+                          children: [
+                            CachedNetImage(
+                              url: thumb(photo.url, w: 300),
+                              width: 84,
+                              height: 84,
+                              memCacheWidth: 300,
+                              errorWidget: fallback,
+                            ),
+                            if (p.imageUrl.trim().isEmpty)
+                              PositionedDirectional(
+                                top: 4,
+                                start: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: const Text('توضيحية',
+                                      style: TextStyle(fontSize: 9, color: Colors.white)),
+                                ),
                               ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
