@@ -3393,6 +3393,7 @@ class _BulkProductsSheetState extends State<_BulkProductsSheet> {
 }
 
 /// «النهارده: 12 طلب • اتسلّم 9 • 1,800 ج.م» من الطلبات اللي ظاهرة أصلًا (صفر قراءات).
+/// سطر واحد مضغوط عشان ما يزقّش أزرار الطلبات لتحت.
 class _TodaySummaryBar extends StatelessWidget {
   final List<AppOrder> orders;
   const _TodaySummaryBar({required this.orders});
@@ -3401,39 +3402,31 @@ class _TodaySummaryBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = StoreTodaySummary.of(orders, DateTime.now());
     if (s.isEmpty) return const SizedBox.shrink();
-    Widget cell(String value, String label, {Color? color}) => Expanded(
-          child: Column(
-            children: [
-              Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color),
-              ),
-              Text(label, style: TextStyle(fontSize: 11.5, color: kMuted)),
-            ],
-          ),
-        );
+    final parts = <String>[
+      '${s.orders} طلب',
+      'اتسلّم ${s.delivered}',
+      formatPrice(s.deliveredGoods),
+      if (s.cancelled > 0) 'ملغي ${s.cancelled}',
+    ];
     return Container(
       key: const Key('owner-today-summary'),
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kLine),
+        color: kPrimary.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Text('النهارده', style: TextStyle(fontSize: 12, color: kMuted, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              cell('${s.orders}', 'طلب'),
-              cell('${s.delivered}', 'اتسلّم', color: kSuccess),
-              cell(formatPrice(s.deliveredGoods), 'بضاعة اتسلّمت', color: kPrimary),
-              if (s.cancelled > 0) cell('${s.cancelled}', 'ملغي', color: kDanger),
-            ],
+          Icon(Icons.today_rounded, size: 16, color: kPrimary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'النهارده: ${parts.join(' • ')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
