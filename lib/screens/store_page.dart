@@ -774,6 +774,18 @@ class _StorePageState extends State<StorePage> {
 
   /// قائمة المنتجات زي طلبات: صف لكل صنف (الاسم والسعر على الجنب، والصورة على الطرف).
   Widget _listSliver(List<Product> products) {
+    // نفس الصورة التوضيحية لو اتكررت أكتر من مرتين في المحل (زي كل أصناف زيوت العربيات)
+    // شكلها مش احترافي؛ من التالتة نعرض بلاطة بأيقونة المحل وأول كلمة من الاسم.
+    final seen = <String, int>{};
+    final repeated = <int>{};
+    for (var i = 0; i < products.length; i++) {
+      final p = products[i];
+      if (p.imageUrl.trim().isNotEmpty) continue;
+      final url = productPhotoFor(name: p.name, storeCategory: store.category).url;
+      final n = (seen[url] ?? 0) + 1;
+      seen[url] = n;
+      if (n > 2) repeated.add(i);
+    }
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       sliver: SliverList.separated(
@@ -784,6 +796,7 @@ class _StorePageState extends State<StorePage> {
           return _ProductRow(
             product: p,
             store: store,
+            repeatedIllustration: repeated.contains(i),
             canEdit: _canEditStore && p.id.isNotEmpty,
             // الصنف اللي له خيارات بيفتح شاشة الاختيار؛ التاني بيتضاف مباشرة.
             onAdd: () =>
@@ -1858,6 +1871,9 @@ class _ProductRow extends StatelessWidget {
   final Product product;
   final Store store;
   final bool canEdit;
+
+  /// الصورة التوضيحية دي اتكررت في المحل؛ نعرض بلاطة بالاسم بدلها.
+  final bool repeatedIllustration;
   final VoidCallback onAdd;
   final VoidCallback? onTap;
   final VoidCallback onEdit;
@@ -1865,6 +1881,7 @@ class _ProductRow extends StatelessWidget {
     required this.product,
     required this.store,
     required this.canEdit,
+    this.repeatedIllustration = false,
     required this.onAdd,
     required this.onEdit,
     this.onTap,
@@ -1875,7 +1892,36 @@ class _ProductRow extends StatelessWidget {
     child: Center(child: Icon(store.icon, color: Brand.green, size: 34)),
   );
 
+  /// بلاطة هادية بأيقونة المحل وأول كلمة من اسم الصنف (بدل تكرار نفس الصورة).
+  Widget _nameTile() {
+    final word = product.name.trim().split(RegExp(r'\s+')).first;
+    return Container(
+      key: const Key('product-name-tile'),
+      color: kAccent.withValues(alpha: 0.07),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(store.icon, color: kAccent.withValues(alpha: 0.55), size: 28),
+          const SizedBox(height: 6),
+          Text(
+            word,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: kAccent.withValues(alpha: 0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _image() {
+    if (repeatedIllustration && product.imageUrl.trim().isEmpty) return _nameTile();
     final photo = productPhotoFor(
       name: product.name,
       uploadedUrl: product.imageUrl,
@@ -2046,10 +2092,11 @@ class _ProductRow extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (product.imageUrl.trim().isEmpty)
+                  // «توضيحية» في الركن التاني عشان ما تتغطاش بزرار التعديل.
+                  if (product.imageUrl.trim().isEmpty && !repeatedIllustration)
                     PositionedDirectional(
                       top: 5,
-                      start: 5,
+                      end: 5,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 3),
