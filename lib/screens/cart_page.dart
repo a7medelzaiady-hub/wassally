@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/cart_book.dart';
@@ -7,6 +9,7 @@ import '../services/navigation.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
+import '../utils/cart_share.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/qty_stepper.dart';
@@ -107,6 +110,21 @@ class _CartBodyState extends State<_CartBody> {
     });
   }
 
+  Future<void> _shareCart() async {
+    final text = buildCartShareText(cart);
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
+    try {
+      if (await launchUrl(url, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {}
+    // في حالة عدم وجود واتساب أو متصفح، يفضل للعميل نص جاهز ينسخه.
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نسخ قائمة السلة. تقدر تشاركها على واتساب.')),
+      );
+    }
+  }
+
   Future<void> _toggleSuggestions(bool enabled) async {
     setState(() => _showSuggestions = enabled);
     final prefs = await SharedPreferences.getInstance();
@@ -159,6 +177,13 @@ class _CartBodyState extends State<_CartBody> {
                           ),
                         ],
                       ),
+                    ),
+                    IconButton(
+                      key: const Key('cart-share-whatsapp'),
+                      tooltip: 'مشاركة السلة على واتساب',
+                      onPressed: _shareCart,
+                      color: kAccent,
+                      icon: const Icon(Icons.share_outlined),
                     ),
                   ],
                 ),
