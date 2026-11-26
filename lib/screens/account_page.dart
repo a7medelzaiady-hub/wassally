@@ -25,6 +25,7 @@ import 'info_pages.dart';
 import 'legal_page.dart';
 import 'user_guide_page.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/data_saver_tile.dart';
 
 // تأكد أن اسم الملف والـ class (LoginScreen) مطابقين عندك.
 
@@ -344,6 +345,11 @@ class _AccountPageState extends State<AccountPage> {
               _joinSection(_profileData),
               if (OrderGateway.referralCampaignEnabled)
                 const ReferralCampaignLink(),
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                decoration: _card,
+                child: const DataSaverTile(),
+              ),
               Container(
                 margin: const EdgeInsets.only(top: 12),
                 decoration: _card,

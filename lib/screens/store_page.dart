@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
 import '../models/product.dart';
@@ -23,12 +24,14 @@ import '../services/store_highlights.dart';
 import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
 import '../services/role_service.dart';
+import '../services/store_shortcuts.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../utils/product_photo.dart';
 import '../utils/share_links.dart';
+import '../utils/shop_search.dart';
 import '../widgets/app_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/option_groups_editor.dart';
@@ -40,6 +43,8 @@ import '../widgets/app_snack.dart';
 import '../widgets/share_actions.dart';
 
 typedef _Json = Map<String, dynamic>;
+
+enum _ProductSort { byName, lowToHigh, highToLow }
 
 /// تحويل نص السعر لرقم (يدعم الفاصلة العربية والأرقام العربية).
 double? _parsePrice(String input) {
@@ -88,6 +93,7 @@ class _StorePageState extends State<StorePage> {
   bool _hasMore = true;
   bool _error = false;
   String _term = '';
+  _ProductSort _sortOrder = _ProductSort.byName;
   int _gen = 0;
 
   bool _collapsed = false; // الغلاف اتطوى: نظهر اسم المحل في الشريط العلوي
@@ -113,13 +119,17 @@ class _StorePageState extends State<StorePage> {
 
   /// الأصناف المعروضة: الأصناف القديمة (المخزنة جوه المحل) + أصناف Firestore.
   List<Product> get _visible {
-    final term = _term.toLowerCase();
-    final legacy = store.products.where(
-      (p) => term.isEmpty || p.name.toLowerCase().contains(term),
-    );
-    // الأصناف الموقوفة (available=false) بتظهر للمدير بس، والعميل ما يشوفهاش.
-    final live = _items.where((p) => p.available || _canEditStore);
-    return [...legacy, ...live];
+    final term = _term;
+    final legacy = store.products.where((p) => matchesShopSearch(p.name, term));
+    final live = _items.where((p) =>
+        (p.available || _canEditStore) && matchesShopSearch(p.name, term));
+    final products = [...legacy, ...live];
+    if (_sortOrder == _ProductSort.lowToHigh) {
+      products.sort((a, b) => a.price.compareTo(b.price));
+    } else if (_sortOrder == _ProductSort.highToLow) {
+      products.sort((a, b) => b.price.compareTo(a.price));
+    }
+    return products;
   }
 
   @override
@@ -129,6 +139,7 @@ class _StorePageState extends State<StorePage> {
       if (mounted) setState(() => _playingVoicePreview = false);
     });
     _checkAdmin();
+    _recordVisit();
 
     _scroll.addListener(() {
       final collapsed = _scroll.hasClients && _scroll.offset > 120;
@@ -138,6 +149,15 @@ class _StorePageState extends State<StorePage> {
     });
 
     _load(reset: true);
+  }
+
+  Future<void> _recordVisit() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await storeShortcuts.recordVisit(uid, store.id);
+    } catch (_) {
+      // حفظ اختياري على الجهاز، لا يجب أن يعطّل تحميل المحل.
+    }
   }
 
   @override
@@ -707,7 +727,7 @@ class _StorePageState extends State<StorePage> {
             ..clear()
             ..addAll(term.isEmpty
                 ? menu
-                : menu.where((p) => p.name.toLowerCase().contains(term)));
+                : menu.where((p) => matchesShopSearch(p.name, term)));
           _hasMore = false;
           _loading = false;
         });
@@ -1003,6 +1023,18 @@ class _StorePageState extends State<StorePage> {
                     ),
                   ),
                 ),
+                PopupMenuButton<_ProductSort>(
+                  key: const Key('store-price-sort'),
+                  tooltip: 'ترتيب المنتجات',
+                  icon: const Icon(Icons.sort_rounded),
+                  initialValue: _sortOrder,
+                  onSelected: (value) => setState(() => _sortOrder = value),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: _ProductSort.byName, child: Text('الترتيب الافتراضي')),
+                    PopupMenuItem(value: _ProductSort.lowToHigh, child: Text('الأرخص أولًا')),
+                    PopupMenuItem(value: _ProductSort.highToLow, child: Text('الأغلى أولًا')),
+                  ],
+                ),
                 if (_canEditStore) ...[
                   const SizedBox(width: 8),
                   IconButton.filled(
@@ -1289,20 +1321,62 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
-  /// نافذة إضافة وتعديل صنف: الصورة بتترفع من معرض الجهاز بدل الرابط.
-  void _showProductDialog(BuildContext context, {Product? product}) {
-    final nameController = TextEditingController(text: product?.name ?? '');
+  /// نافذة إضافة وتعديل صنف: تحفظ مسودة الإضافة على الجهاز فقط.
+  Future<void> _showProductDialog(BuildContext context, {Product? product}) async {
+    final draftKey = 'owner_product_draft_v1_${FirebaseAuth.instance.currentUser?.uid ?? 'guest'}_${store.id}';
+    SharedPreferences? prefs;
+    Map<String, dynamic>? draft;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      if (product == null) {
+        final raw = prefs.getString(draftKey);
+        if (raw != null) {
+          final parsed = jsonDecode(raw);
+          if (parsed is Map) draft = Map<String, dynamic>.from(parsed);
+        }
+      }
+    } catch (_) { /* التخزين المحلي لا يمنع تعديل الصنف. */ }
+    if (!context.mounted) return;
+    final nameController = TextEditingController(
+      text: product?.name ?? (draft?['name'] ?? '').toString());
     final priceController = TextEditingController(
-      text: product != null ? product.price.toString() : '',
+      text: product != null ? product.price.toString() : (draft?['price'] ?? '').toString(),
     );
     final descController = TextEditingController(
-      text: product?.description ?? '',
+      text: product?.description ?? (draft?['description'] ?? '').toString(),
     );
-    var optionGroups = List<OptionGroup>.of(product?.optionGroups ?? const []);
-    var image = product?.imageUrl ?? '';
+    var optionGroups = List<OptionGroup>.of(product?.optionGroups ??
+        parseOptionGroups(draft?['optionGroups']));
+    var image = product?.imageUrl ?? (draft?['image'] ?? '').toString();
     var uploading = false;
+    var savedSuccessfully = false;
+    Timer? draftTimer;
+    Future<void> writeDraft() async {
+      final localPrefs = prefs;
+      if (product != null || savedSuccessfully || localPrefs == null) return;
+      try {
+        await localPrefs.setString(draftKey, jsonEncode({
+          'name': nameController.text,
+          'price': priceController.text,
+          'description': descController.text,
+          'optionGroups': optionGroups.map((e) => e.toMap()).toList(),
+          'image': image,
+        }));
+      } catch (_) {}
+    }
+    void scheduleDraft() {
+      if (product != null || savedSuccessfully) return;
+      draftTimer?.cancel();
+      draftTimer = Timer(const Duration(milliseconds: 300), writeDraft);
+    }
+    if (product == null) {
+      nameController.addListener(scheduleDraft);
+      priceController.addListener(scheduleDraft);
+      descController.addListener(scheduleDraft);
+    }
 
-    showDialog<void>(
+    try {
+    await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setLocal) {
@@ -1314,7 +1388,7 @@ class _StorePageState extends State<StorePage> {
                 'products',
                 storeId: store.id,
               );
-              if (url != null) image = url;
+              if (url != null) { image = url; scheduleDraft(); }
             } catch (e) {
               debugPrint('Product image upload error: $e');
               _say('تعذر رفع الصورة. حاول مرة تانية.');
@@ -1421,7 +1495,7 @@ class _StorePageState extends State<StorePage> {
                         dialogCtx,
                         optionGroups,
                       );
-                      if (res != null) setLocal(() => optionGroups = res);
+                      if (res != null) { setLocal(() => optionGroups = res); scheduleDraft(); }
                     },
                     icon: const Icon(Icons.tune),
                     label: Text(
@@ -1494,6 +1568,11 @@ class _StorePageState extends State<StorePage> {
                             productIds: [savedId],
                           );
 
+                          savedSuccessfully = true;
+                          draftTimer?.cancel();
+                          if (prefs != null && product == null) {
+                            try { await prefs.remove(draftKey); } catch (_) {}
+                          }
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);
                           if (!highlightsOk) {
@@ -1512,6 +1591,13 @@ class _StorePageState extends State<StorePage> {
         },
       ),
     );
+    } finally {
+      draftTimer?.cancel();
+      if (!savedSuccessfully) await writeDraft();
+      nameController.dispose();
+      priceController.dispose();
+      descController.dispose();
+    }
   }
 
   /// بيفتح شاشة الصنف (الوصف والخيارات والكمية) وبيضيف السطر المختار للسلة.

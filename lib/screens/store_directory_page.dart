@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/app_header.dart';
@@ -7,6 +8,7 @@ import '../models/store.dart';
 import '../models/home_category.dart';
 import '../services/catalog_service.dart';
 import '../services/catalog_sync.dart';
+import '../services/store_shortcuts.dart';
 import '../theme/app_tokens.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
@@ -47,6 +49,64 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
   void initState() {
     super.initState();
     _future = _load();
+    storeShortcuts.addListener(_shortcutsChanged);
+    _loadShortcuts();
+  }
+
+  Future<void> _loadShortcuts() async {
+    try {
+      await storeShortcuts.load(FirebaseAuth.instance.currentUser?.uid);
+    } catch (_) {}
+  }
+
+  void _shortcutsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Widget _favoriteButton(Store store) {
+    final favorite = storeShortcuts.isFavorite(store.id);
+    return Material(
+      color: Colors.white.withValues(alpha: .94),
+      shape: const CircleBorder(),
+      child: IconButton(
+        key: Key('favorite-store-${store.id}'),
+        tooltip: favorite ? 'إزالة من المفضلة' : 'أضف للمفضلة',
+        visualDensity: VisualDensity.compact,
+        icon: Icon(favorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: favorite ? Colors.redAccent : AppColors.purple),
+        onPressed: () async {
+          try {
+            final uid = FirebaseAuth.instance.currentUser?.uid;
+            if (uid != null) await storeShortcuts.toggleFavorite(uid, store.id);
+          } catch (_) {}
+        },
+      ),
+    );
+  }
+
+  Widget _shortcutRow(String title, List<Store> stores) {
+    if (stores.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 6, 16, 2),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        SizedBox(height: 36, child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final store in stores)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 6),
+                child: ActionChip(
+                  label: Text(store.name, maxLines: 1),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => StorePage(store: store))),
+                ),
+              ),
+          ],
+        )),
+      ]),
+    );
   }
 
   Future<List<CatalogDoc>> _load() =>
@@ -62,6 +122,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
 
   @override
   void dispose() {
+    storeShortcuts.removeListener(_shortcutsChanged);
     _search.dispose();
     super.dispose();
   }
@@ -102,6 +163,15 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
               return categoryOk &&
                   (q.isEmpty || item.store.name.toLowerCase().contains(q));
             }).toList();
+            final favorites = [
+              for (final item in stores)
+                if (storeShortcuts.isFavorite(item.store.id)) item.store,
+            ];
+            final recentlyVisited = [
+              for (final id in storeShortcuts.recent)
+                for (final item in stores)
+                  if (item.store.id == id) item.store,
+            ];
             final categories = stores
                 .map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category)
                 .where((e) => e.trim().isNotEmpty)
@@ -194,6 +264,14 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                     ),
                   ),
                 ),
+                if (!loading && !snapshot.hasError &&
+                    (favorites.isNotEmpty || recentlyVisited.isNotEmpty))
+                  SliverToBoxAdapter(
+                    child: Column(children: [
+                      _shortcutRow('محلاتي المفضلة', favorites),
+                      _shortcutRow('زرتها مؤخرًا', recentlyVisited),
+                    ]),
+                  ),
                 if (!loading && !snapshot.hasError && visible.isNotEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
@@ -264,19 +342,31 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                               mainAxisSpacing: AppSpacing.md,
                               mainAxisExtent: 282,
                             ),
-                            itemBuilder: (context, index) => _CompactStoreCard(
-                              store: visible[index].store,
-                              data: visible[index].data,
-                            ),
+                            itemBuilder: (context, index) => Stack(children: [
+                              _CompactStoreCard(
+                                store: visible[index].store,
+                                data: visible[index].data,
+                              ),
+                              PositionedDirectional(
+                                top: 6, end: 6,
+                                child: _favoriteButton(visible[index].store),
+                              ),
+                            ]),
                           )
                         : SliverList.separated(
                             itemCount: visible.length,
                             separatorBuilder: (_, _) =>
                                 const SizedBox(height: AppSpacing.md),
-                            itemBuilder: (context, index) => _StoreCard(
-                              store: visible[index].store,
-                              data: visible[index].data,
-                            ),
+                            itemBuilder: (context, index) => Stack(children: [
+                              _StoreCard(
+                                store: visible[index].store,
+                                data: visible[index].data,
+                              ),
+                              PositionedDirectional(
+                                top: 6, end: 6,
+                                child: _favoriteButton(visible[index].store),
+                              ),
+                            ]),
                           ),
                   ),
               ],
