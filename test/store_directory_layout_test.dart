@@ -5,14 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 List<CatalogDoc> _testStores() => [
       CatalogDoc('open', {
-        'name': 'محل مفتوح وله منتجات',
+        'name': 'بقالة الفرح',
         'active': true,
         'isOpen': true,
         'category': 'سوبرماركت',
         'products': [{'name': 'لبن', 'price': 10}],
       }),
       CatalogDoc('closed', {
-        'name': 'محل مغلق وله منتجات',
+        'name': 'مطعم الساحة',
         'active': true,
         'isOpen': false,
         'category': 'سوبرماركت',
