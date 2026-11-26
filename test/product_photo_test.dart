@@ -102,12 +102,15 @@ void main() {
 
     test('cleaning, grooming and shop supplies do not use food pictures', () {
       final cases = <String, String>{
-        'برسيل 3 كيلو': 'photo-1585421514738-01798e348b17',
-        'سائل مواعين فيري': 'photo-1585421514738-01798e348b17',
+        'برسيل 3 كيلو': 'photo-1643107303813-077f2061cec1',
+        'سائل مواعين فيري': 'photo-1643107303813-077f2061cec1',
         'شامبو للشعر': 'photo-1608248543803-ba4f8c70ae0b',
         'معجون اسنان': 'photo-1608248543803-ba4f8c70ae0b',
         'قلم جاف ازرق': 'photo-1455390582262-044cdead277a',
         'كابل شحن': 'photo-1511707171634-5f897ff02aa9',
+        'سمك بلطي': 'photo-1572419324726-bdb79b8b3ad3',
+        'مناديل ورق': 'photo-1618034229737-cb68d1277aa1',
+        'حفاضات اطفال': 'photo-1734599406023-80b2212b713b',
       };
       for (final entry in cases.entries) {
         expect(productPhotoFor(name: entry.key).url, contains(entry.value),
