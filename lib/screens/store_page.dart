@@ -28,6 +28,7 @@ import '../theme/brand.dart';
 import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
+import '../utils/product_photo.dart';
 import '../widgets/app_image.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/option_groups_editor.dart';
@@ -1232,14 +1233,21 @@ class _StorePageState extends State<StorePage> {
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        AppImage(
-                          url: image,
-                          fallbackIcon: Icons.add_a_photo_outlined,
-                          color: kPrimary,
-                          width: 120,
-                          height: 120,
-                          iconSize: 42,
-                          borderRadius: BorderRadius.circular(18),
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: nameController,
+                          builder: (_, nameValue, __) => AppImage(
+                            url: productPhotoFor(
+                              name: nameValue.text,
+                              uploadedUrl: image,
+                              storeCategory: store.category,
+                            ).url,
+                            fallbackIcon: Icons.add_a_photo_outlined,
+                            color: kPrimary,
+                            width: 120,
+                            height: 120,
+                            iconSize: 42,
+                            borderRadius: BorderRadius.circular(18),
+                          ),
                         ),
                         if (uploading)
                           Container(
@@ -1278,8 +1286,8 @@ class _StorePageState extends State<StorePage> {
                   const SizedBox(height: 6),
                   Text(
                     image.isEmpty
-                        ? 'اضغط لاختيار صورة من الجهاز'
-                        : 'اضغط لتغيير الصورة',
+                        ? 'صورة توضيحية حسب الاسم — اضغط لرفع الصورة الحقيقية'
+                        : 'الصورة الأصلية من المحل — اضغط لتغييرها',
                     style: TextStyle(fontSize: 12, color: kMuted),
                   ),
                   const SizedBox(height: 14),
@@ -1679,12 +1687,16 @@ class _ProductRow extends StatelessWidget {
   );
 
   Widget _image() {
-    if (product.imageUrl.isEmpty) return _fallback();
+    final photo = productPhotoFor(
+      name: product.name,
+      uploadedUrl: product.imageUrl,
+      storeCategory: store.category,
+    );
     return CachedNetImage(
-      url: thumb(product.imageUrl, w: 360),
+      url: thumb(photo.url, w: 300),
       width: double.infinity,
       height: double.infinity,
-      memCacheWidth: 360,
+      memCacheWidth: 300,
       placeholder: _fallback(),
       errorWidget: _fallback(),
     );
@@ -1750,7 +1762,7 @@ class _ProductRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           child: Row(
             // الاسم والسعر في نص ارتفاع الصورة: تناغم بين الكلام والصورة.
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -1825,10 +1837,10 @@ class _ProductRow extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             SizedBox(
-              width: 116,
-              height: 116,
+              width: 100,
+              height: 100,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -1845,6 +1857,23 @@ class _ProductRow extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (product.imageUrl.trim().isEmpty)
+                    PositionedDirectional(
+                      top: 5,
+                      start: 5,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'توضيحية',
+                          style: TextStyle(fontSize: 9, color: Colors.white),
+                        ),
+                      ),
+                    ),
                   PositionedDirectional(
                     bottom: -6,
                     end: -6,
