@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_role.dart';
 import '../models/product.dart';
@@ -1308,20 +1309,61 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
-  /// نافذة إضافة وتعديل صنف: الصورة بتترفع من معرض الجهاز بدل الرابط.
-  void _showProductDialog(BuildContext context, {Product? product}) {
-    final nameController = TextEditingController(text: product?.name ?? '');
+  /// نافذة إضافة وتعديل صنف: تحفظ مسودة الإضافة على الجهاز فقط.
+  Future<void> _showProductDialog(BuildContext context, {Product? product}) async {
+    final draftKey = 'owner_product_draft_v1_${FirebaseAuth.instance.currentUser?.uid ?? 'guest'}_${store.id}';
+    SharedPreferences? prefs;
+    Map<String, dynamic>? draft;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      if (product == null) {
+        final raw = prefs.getString(draftKey);
+        if (raw != null) {
+          final parsed = jsonDecode(raw);
+          if (parsed is Map) draft = Map<String, dynamic>.from(parsed);
+        }
+      }
+    } catch (_) { /* التخزين المحلي لا يمنع تعديل الصنف. */ }
+    if (!context.mounted) return;
+    final nameController = TextEditingController(
+      text: product?.name ?? (draft?['name'] ?? '').toString());
     final priceController = TextEditingController(
-      text: product != null ? product.price.toString() : '',
+      text: product != null ? product.price.toString() : (draft?['price'] ?? '').toString(),
     );
     final descController = TextEditingController(
-      text: product?.description ?? '',
+      text: product?.description ?? (draft?['description'] ?? '').toString(),
     );
-    var optionGroups = List<OptionGroup>.of(product?.optionGroups ?? const []);
-    var image = product?.imageUrl ?? '';
+    var optionGroups = List<OptionGroup>.of(product?.optionGroups ??
+        parseOptionGroups(draft?['optionGroups']));
+    var image = product?.imageUrl ?? (draft?['image'] ?? '').toString();
     var uploading = false;
+    var savedSuccessfully = false;
+    Timer? draftTimer;
+    Future<void> writeDraft() async {
+      if (product != null || savedSuccessfully || prefs == null) return;
+      try {
+        await prefs.setString(draftKey, jsonEncode({
+          'name': nameController.text,
+          'price': priceController.text,
+          'description': descController.text,
+          'optionGroups': optionGroups.map((e) => e.toMap()).toList(),
+          'image': image,
+        }));
+      } catch (_) {}
+    }
+    void scheduleDraft() {
+      if (product != null || savedSuccessfully) return;
+      draftTimer?.cancel();
+      draftTimer = Timer(const Duration(milliseconds: 300), writeDraft);
+    }
+    if (product == null) {
+      nameController.addListener(scheduleDraft);
+      priceController.addListener(scheduleDraft);
+      descController.addListener(scheduleDraft);
+    }
 
-    showDialog<void>(
+    try {
+    await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setLocal) {
@@ -1333,7 +1375,7 @@ class _StorePageState extends State<StorePage> {
                 'products',
                 storeId: store.id,
               );
-              if (url != null) image = url;
+              if (url != null) { image = url; scheduleDraft(); }
             } catch (e) {
               debugPrint('Product image upload error: $e');
               _say('تعذر رفع الصورة. حاول مرة تانية.');
@@ -1440,7 +1482,7 @@ class _StorePageState extends State<StorePage> {
                         dialogCtx,
                         optionGroups,
                       );
-                      if (res != null) setLocal(() => optionGroups = res);
+                      if (res != null) { setLocal(() => optionGroups = res); scheduleDraft(); }
                     },
                     icon: const Icon(Icons.tune),
                     label: Text(
@@ -1513,6 +1555,11 @@ class _StorePageState extends State<StorePage> {
                             productIds: [savedId],
                           );
 
+                          savedSuccessfully = true;
+                          draftTimer?.cancel();
+                          if (prefs != null && product == null) {
+                            try { await prefs.remove(draftKey); } catch (_) {}
+                          }
                           if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                           _load(reset: true);
                           if (!highlightsOk) {
@@ -1531,6 +1578,13 @@ class _StorePageState extends State<StorePage> {
         },
       ),
     );
+    } finally {
+      draftTimer?.cancel();
+      if (!savedSuccessfully) await writeDraft();
+      nameController.dispose();
+      priceController.dispose();
+      descController.dispose();
+    }
   }
 
   /// بيفتح شاشة الصنف (الوصف والخيارات والكمية) وبيضيف السطر المختار للسلة.
