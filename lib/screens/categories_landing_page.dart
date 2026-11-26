@@ -413,7 +413,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   List<Widget> _cards(double height) => [
         _serviceCard(
           title: 'خدمة وصّلي ع السريع',
-          subtitle: 'طلباتك اليومية وتوصيلها بسرعة',
+          subtitle: 'اقضى طلباتك من اى مكان  ومن كذا مكان بسرعه    ',
           action: 'اطلب الآن',
           asset: kEntryQuickAsset,
           height: height,

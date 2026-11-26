@@ -25,8 +25,10 @@ appId: com.wassally.app
     timeout: 90000
 - tapOn: ".*ابدأ التجهيز.*"
 - tapOn: "ابدأ التجهيز"
-- extendedWaitUntil:
-    visible: ".*جاهز — إتاحة لمندوب خارجي.*"
+# الزرار ممكن يبقى تحت أول الشاشة على الشاشات الصغيرة.
+- scrollUntilVisible:
+    element: ".*جاهز — إتاحة لمندوب خارجي.*"
+    direction: DOWN
     timeout: 60000
 - tapOn: ".*جاهز — إتاحة لمندوب خارجي.*"
 - tapOn: "جاهز للاستلام"

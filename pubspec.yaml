@@ -48,6 +48,9 @@ dependencies:
   gal: ^2.3.0
   # كود QR لمحل صاحب المحل (بيترسم على الموبايل).
   qr_flutter: ^4.1.0
+  # تذكير السلة المنسية: إشعار محلي متجدول من غير FCM ومن غير Firestore.
+  flutter_local_notifications: ^19.4.0
+  timezone: ^0.10.1
 
   shared_preferences: ^2.3.2
 

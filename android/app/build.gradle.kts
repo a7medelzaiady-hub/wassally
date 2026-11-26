@@ -27,6 +27,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // مطلوب لـ flutter_local_notifications (تذكير السلة).
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -80,6 +82,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // مطلوب مع isCoreLibraryDesugaringEnabled (flutter_local_notifications).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 // فحص مفتاح التوقيع عند تنفيذ مهام إخراج Release فقط، وليس أثناء تقييم إعدادات Gradle.
