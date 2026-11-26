@@ -10,7 +10,6 @@ import '../services/catalog_sync.dart';
 import '../theme/app_tokens.dart';
 import '../utils/img.dart';
 import 'store_page.dart';
-import '../widgets/closed_badge.dart';
 import '../widgets/cached_net_image.dart';
 import '../widgets/curved_nav_bar.dart';
 
@@ -42,6 +41,7 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
   late String? _category = widget.initialCategory;
   final _search = TextEditingController();
   late Future<List<CatalogDoc>> _future;
+  bool _gridMode = false;
 
   @override
   void initState() {
@@ -194,6 +194,37 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                     ),
                   ),
                 ),
+                if (!loading && !snapshot.hasError && visible.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsetsDirectional.fromSTEB(
+                          AppSpacing.page, AppSpacing.xs, AppSpacing.page, 0),
+                      child: Row(
+                        children: [
+                          Text('المحلات (${visible.length})',
+                              style: AppTypography.sectionTitle),
+                          const Spacer(),
+                          Text(_gridMode ? 'عرض شبكي' : 'عرض قائمة',
+                              style: AppTypography.secondary),
+                          IconButton(
+                            key: const Key('directory-layout-toggle'),
+                            tooltip: _gridMode
+                                ? 'عرض المحلات في قائمة'
+                                : 'عرض المحلات اتنين جنب بعض',
+                            onPressed: () =>
+                                setState(() => _gridMode = !_gridMode),
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.purpleSoft,
+                              foregroundColor: AppColors.purple,
+                            ),
+                            icon: Icon(_gridMode
+                                ? Icons.view_agenda_rounded
+                                : Icons.grid_view_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (loading)
                   const SliverFillRemaining(
                     hasScrollBody: false,
@@ -224,14 +255,29 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                   SliverPadding(
                     padding: const EdgeInsets.fromLTRB(
                         AppSpacing.page, AppSpacing.sm, AppSpacing.page, AppSpacing.xxl),
-                    sliver: SliverList.separated(
-                      itemCount: visible.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-                      itemBuilder: (context, index) => _StoreCard(
-                        store: visible[index].store,
-                        data: visible[index].data,
-                      ),
-                    ),
+                    sliver: _gridMode
+                        ? SliverGrid.builder(
+                            itemCount: visible.length,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: AppSpacing.sm,
+                              mainAxisSpacing: AppSpacing.md,
+                              mainAxisExtent: 282,
+                            ),
+                            itemBuilder: (context, index) => _CompactStoreCard(
+                              store: visible[index].store,
+                              data: visible[index].data,
+                            ),
+                          )
+                        : SliverList.separated(
+                            itemCount: visible.length,
+                            separatorBuilder: (_, _) =>
+                                const SizedBox(height: AppSpacing.md),
+                            itemBuilder: (context, index) => _StoreCard(
+                              store: visible[index].store,
+                              data: visible[index].data,
+                            ),
+                          ),
                   ),
               ],
             );
@@ -263,7 +309,6 @@ class _StoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final minOrder = data['minOrder'] ?? data['minimumOrder'];
-    final productCount = store.products.length;
     final ratingCount = (data['ratingCount'] as num?)?.toInt();
     final fallback = ColoredBox(
       color: AppColors.purpleSoft,
@@ -304,20 +349,12 @@ class _StoreCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Flexible(
-                          child: Text(
-                            store.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.sectionTitle,
-                          ),
-                        ),
-                        if (!store.isOpen) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          const ClosedBadge(),
-                        ],
-                      ]),
+                      Text(
+                        store.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.sectionTitle,
+                      ),
                       const SizedBox(height: AppSpacing.xs),
                       Row(children: [
                         const Icon(Icons.star_rounded, color: Color(0xFFFFA000), size: 20),
@@ -356,38 +393,8 @@ class _StoreCard extends StatelessWidget {
                             ),
                           ),
                         const Spacer(),
-                        // عدد الأصناف مش محفوظ على مستند المحل (الأصناف في قايمة منفصلة)،
-                        // فبدل «0 منتج» الغلط بنعرض «مفتوح الآن»؛ والعدد يظهر لو معروف بس.
-                        // المحل المقفول عليه شارة «مغلق» جنب اسمه أصلًا.
-                        if (productCount > 0 || store.isOpen)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.md, vertical: AppSpacing.xxs + 1),
-                          decoration: BoxDecoration(
-                            color: productCount > 0
-                                ? AppColors.orangeSoft
-                                : store.isOpen
-                                    ? AppColors.successSoft
-                                    : AppColors.surfaceAlt,
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                          ),
-                          child: Text(
-                            productCount > 0
-                                ? '$productCount منتج'
-                                : store.isOpen
-                                    ? 'مفتوح الآن'
-                                    : 'مغلق دلوقتي',
-                            style: TextStyle(
-                              color: productCount > 0
-                                  ? AppColors.orangeDeep
-                                  : store.isOpen
-                                      ? AppColors.success
-                                      : AppColors.muted,
-                              fontWeight: FontWeight.w800,
-                              fontSize: AppTypography.caption,
-                            ),
-                          ),
-                        ),
+                        // حالة المحل فقط، ولا نعتمد على عدد أصناف قديم.
+                        _StoreStatusBadge(isOpen: store.isOpen),
                       ]),
                     ],
                   ),
@@ -399,6 +406,144 @@ class _StoreCard extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// عرض مضغوط: محلّين في الصف بدون قطع الاسم أو إخفاء حالة الفتح.
+class _CompactStoreCard extends StatelessWidget {
+  const _CompactStoreCard({required this.store, required this.data});
+
+  final Store store;
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final minOrder = data['minOrder'] ?? data['minimumOrder'];
+    final fallback = ColoredBox(
+      color: AppColors.purpleSoft,
+      child: Icon(store.icon, size: 36, color: AppColors.purple),
+    );
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        side: const BorderSide(color: AppColors.line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => StorePage(store: store))),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                child: SizedBox(
+                  height: 106,
+                  child: store.imageUrl.isEmpty
+                      ? fallback
+                      : CachedNetImage(
+                          url: thumb(store.imageUrl, w: 320),
+                          memCacheWidth: 320,
+                          errorWidget: fallback,
+                        ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                store.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: AppTypography.body,
+                  height: 1.2,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Row(
+                children: [
+                  const Icon(Icons.star_rounded,
+                      color: Color(0xFFFFA000), size: 17),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Text(
+                      store.rating > 0
+                          ? store.rating.toStringAsFixed(1)
+                          : 'جديد',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: AppTypography.bodySmall,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                store.time.isEmpty
+                    ? store.category
+                    : '${store.category} • ${store.time}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.secondary,
+              ),
+              if (minOrder != null) ...[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'الحد الأدنى $minOrder ج',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: AppTypography.caption,
+                    color: AppColors.inkSoft,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: _StoreStatusBadge(isOpen: store.isOpen),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// الشارة ثابتة في كلا العرضين؛ عدد المنتجات ليس دليلًا على حالة المحل.
+class _StoreStatusBadge extends StatelessWidget {
+  const _StoreStatusBadge({required this.isOpen});
+
+  final bool isOpen;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xxs + 1,
+        ),
+        decoration: BoxDecoration(
+          color: isOpen ? AppColors.successSoft : AppColors.dangerSoft,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        child: Text(
+          isOpen ? 'مفتوح الآن' : 'مغلق الآن',
+          style: TextStyle(
+            color: isOpen ? AppColors.success : AppColors.danger,
+            fontWeight: FontWeight.w800,
+            fontSize: AppTypography.caption,
+          ),
+        ),
+      );
 }
 
 class _ChipsHeader extends SliverPersistentHeaderDelegate {
