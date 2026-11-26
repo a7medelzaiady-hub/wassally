@@ -59,13 +59,15 @@ class MyCartsPage extends StatelessWidget {
                         children: [
                           _CartsNote(count: all.length),
                           if (allowGrouping && (all.length >= 2 || book.groupingOn))
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Material(
+                              color: Colors.white,
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: kLine),
+                                side: BorderSide(color: kLine),
                               ),
+                              clipBehavior: Clip.antiAlias,
                               child: SwitchListTile(
                                 key: const Key('carts-group-switch'),
                                 dense: true,
@@ -87,6 +89,7 @@ class MyCartsPage extends StatelessWidget {
                                       : 'اختياري: مندوب واحد يجيب السلال مع بعض',
                                   style: TextStyle(fontSize: 12, color: kMuted),
                                 ),
+                              ),
                               ),
                             ),
                           for (final c in all)

@@ -159,6 +159,7 @@ void main() {
   });
 
   testWidgets('cart with items + my carts', (tester) async {
+    // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({});
     carts.clearAll();
     cart.add(const Product('بطاطس', 33), storeId: 'veg', storeName: 'فواكه وخضروات', qty: 5);
