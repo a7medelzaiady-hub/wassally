@@ -24,6 +24,16 @@ String shortOrderId(String id) {
   return '#${clean.toUpperCase()}';
 }
 
+/// رقم الطلب البسيط (6 أرقام) اللي العميل والمندوب بيتكلموا بيه.
+/// ثابت لكل طلب ومحسوب من معرّف المستند (من غير أي قراءة).
+String simpleOrderNumber(String id) {
+  var number = 0;
+  for (final unit in id.codeUnits) {
+    number = (number * 131 + unit) % 900000;
+  }
+  return (100000 + number).toString();
+}
+
 /// يتأكد إن الرقم موبايل مصري صحيح (01xxxxxxxxx).
 bool isValidEgyptianMobile(String input) {
   final digits = input.replaceAll(RegExp(r'[\s\-]'), '');

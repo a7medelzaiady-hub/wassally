@@ -16,11 +16,13 @@ import '../services/order_gateway.dart';
 import '../theme/app_theme.dart';
 import '../utils/attachment_notice.dart';
 import '../utils/format.dart';
+import '../utils/order_receipt.dart';
 import '../widgets/app_header.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/star_picker.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/order_receipt_sheet.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -590,6 +592,18 @@ class _Details extends StatelessWidget {
                 _line('خصم نقاط الدعوات',
                     '- ${formatPrice(order.referralDiscountMinor / 100)}'),
               _line('الإجمالي', formatPrice(order.payable), strong: true),
+              if (OrderReceipt.available(order)) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const Key('order-receipt'),
+                    onPressed: () => showOrderReceiptSheet(context, order),
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: const Text('حفظ الإيصال'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
