@@ -71,7 +71,7 @@ _NotifKind? _testKind(String s) {
   }
   if (s.contains('في الطريق')) return _NotifKind.onTheWay;
   if (s.contains('تجهيز') || s.contains('تحضير')) return _NotifKind.preparing;
-  if (s.contains('استلام')) return _NotifKind.received;
+  if (s.contains('استلام') || s.contains('المحل استلم')) return _NotifKind.received;
   return null;
 }
 
