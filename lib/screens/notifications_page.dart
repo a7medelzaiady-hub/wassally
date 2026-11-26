@@ -858,18 +858,21 @@ class _StepperState extends State<_Stepper>
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  _labels[i],
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: i == widget.step
-                        ? FontWeight.w800
-                        : FontWeight.w600,
-                    color: i == widget.step
-                        ? widget.color
-                        : (i < widget.step ? Brand.ink : kMuted),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _labels[i],
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: i == widget.step
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                      color: i == widget.step
+                          ? widget.color
+                          : (i < widget.step ? Brand.ink : kMuted),
+                    ),
                   ),
                 ),
               ],
