@@ -116,6 +116,10 @@ void main() {
     });
 
     test('Arabic diacritics and punctuation do not break known names', () {
+      expect(productPhotoFor(name: 'اللبن كامل الدسم').url,
+          productPhotoFor(name: 'لبن كامل الدسم').url);
+      expect(productPhotoFor(name: 'الزيت 1 لتر').url,
+          productPhotoFor(name: 'زيت 1 لتر').url);
       final a = productPhotoFor(name: 'طَمَاطِم، بلدي!');
       final b = productPhotoFor(name: 'طماطم بلدي');
       expect(a.url, b.url);
