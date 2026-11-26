@@ -26,6 +26,7 @@ import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/store_orders_split.dart';
+import '../utils/store_today_summary.dart';
 import '../widgets/customer_rating_dialog.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
@@ -116,6 +117,7 @@ class StoreOwnerPage extends StatelessWidget {
                       if (OrderGateway.referralCampaignEnabled)
                         const ReferralCampaignLink(storeOwner: true),
                       UnansweredOrdersAlert(orders: orders),
+                      _TodaySummaryBar(orders: orders),
                     ],
                   ),
                 ),
@@ -3080,6 +3082,55 @@ class _BulkProductsSheetState extends State<_BulkProductsSheet> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// «النهارده: 12 طلب • اتسلّم 9 • 1,800 ج.م» من الطلبات اللي ظاهرة أصلًا (صفر قراءات).
+class _TodaySummaryBar extends StatelessWidget {
+  final List<AppOrder> orders;
+  const _TodaySummaryBar({required this.orders});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = StoreTodaySummary.of(orders, DateTime.now());
+    if (s.isEmpty) return const SizedBox.shrink();
+    Widget cell(String value, String label, {Color? color}) => Expanded(
+          child: Column(
+            children: [
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color),
+              ),
+              Text(label, style: TextStyle(fontSize: 11.5, color: kMuted)),
+            ],
+          ),
+        );
+    return Container(
+      key: const Key('owner-today-summary'),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kLine),
+      ),
+      child: Column(
+        children: [
+          Text('النهارده', style: TextStyle(fontSize: 12, color: kMuted, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              cell('${s.orders}', 'طلب'),
+              cell('${s.delivered}', 'اتسلّم', color: kSuccess),
+              cell(formatPrice(s.deliveredGoods), 'بضاعة اتسلّمت', color: kPrimary),
+              if (s.cancelled > 0) cell('${s.cancelled}', 'ملغي', color: kDanger),
+            ],
+          ),
+        ],
       ),
     );
   }
