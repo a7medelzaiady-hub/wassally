@@ -123,6 +123,21 @@ void main() {
     });
   });
 
+  group('علامة السلة', () {
+    tearDown(carts.clearAll);
+
+    test('بتعدّ الأصناف المختلفة ومش بتعدّ السلة اللي اتبعت', () {
+      cart.add(_rice, storeId: 'g', storeName: 'بقالة الخير', qty: 6);
+      cart.add(_oil, storeId: 'g', storeName: 'بقالة الخير', qty: 4);
+      expect(carts.totalItems, 2);
+      carts.switchTo('p');
+      cart.add(_chicken, storeId: 'p', storeName: 'دواجن النور', qty: 3);
+      expect(carts.totalItems, 3);
+      cart.markSubmitted('order_1');
+      expect(carts.totalItems, 2);
+    });
+  });
+
   group('صفحة «سلّاتي»', () {
     tearDown(carts.clearAll);
 

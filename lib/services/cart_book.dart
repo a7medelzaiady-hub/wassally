@@ -126,8 +126,15 @@ class CartBook extends ChangeNotifier {
   /// عدد كل السلال اللي فيها حاجة (الحالية + المحفوظة).
   int get cartsCount => (active.isEmpty ? 0 : 1) + _parked.length;
 
-  /// عدد الأصناف في كل السلال (لعلامة السلة في الشريط السفلي).
-  int get totalItems => active.count + _parked.values.fold(0, (a, c) => a + c.count);
+  /// علامة السلة في الشريط السفلي: عدد الأصناف المختلفة في السلال اللي لسه ما اتبعتتش.
+  /// (بطاطس × 6 = صنف واحد، والسلة اللي اتبعت طلبها ما بتتحسبش.)
+  int get totalItems {
+    int kinds(int items, Object? special, String? submitted) =>
+        submitted != null ? 0 : items + (special != null ? 1 : 0);
+    return kinds(active.items.length, active.specialRequest, active.submittedOrderId) +
+        _parked.values.fold(
+            0, (a, c) => a + kinds(c.items.length, c.specialRequest, c.submittedOrderId));
+  }
 
   bool get hasParked => _parked.isNotEmpty;
 

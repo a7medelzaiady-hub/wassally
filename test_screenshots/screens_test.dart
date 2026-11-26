@@ -171,6 +171,12 @@ void main() {
       bottomNavigationBar: CustomerBottomNav(currentTab: 1),
     ));
     await shoot(tester, 'my_carts_390x844', const MyCartsPage(allowGrouping: true));
+    cart.markSubmitted('order_shot');
+    await shoot(tester, 'cart_submitted_390x844', const Scaffold(
+      body: CartPage(),
+      bottomNavigationBar: CustomerBottomNav(currentTab: 1),
+    ));
+    await shoot(tester, 'my_carts_submitted_390x844', const MyCartsPage(allowGrouping: true));
     carts.clearAll();
   });
 

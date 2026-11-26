@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
+import '../services/navigation.dart';
 import '../services/order_gateway.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
@@ -36,9 +37,14 @@ class MyCartsPage extends StatelessWidget {
       body: ListenableBuilder(
         listenable: Listenable.merge([book, book.active]),
         builder: (context, _) {
-          final all = <CartSnapshot>[
+          final list = <CartSnapshot>[
             if (!book.active.isEmpty) book.active.snapshot(),
             ...book.parked,
+          ];
+          // السلال اللي لسه ما اتبعتتش الأول، واللي اتبعت طلبها في الآخر (بنفس ترتيبها).
+          final all = <CartSnapshot>[
+            ...list.where((c) => c.submittedOrderId == null),
+            ...list.where((c) => c.submittedOrderId != null),
           ];
           return Column(
             children: [
@@ -208,7 +214,19 @@ class _CartCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (isActive)
+              if (submitted)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: kSuccess.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'اتبعت ✓',
+                    style: TextStyle(fontSize: 11, color: kSuccess, fontWeight: FontWeight.w800),
+                  ),
+                )
+              else if (isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
@@ -228,61 +246,95 @@ class _CartCard extends StatelessWidget {
           ),
           Row(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatPrice(snap.subtotal),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      snap.fee > 0
-                          ? '$kinds صنف • توصيل ${formatPrice(snap.fee)}'
-                          : '$kinds صنف',
-                      style: TextStyle(fontSize: 12, color: kMuted),
-                    ),
-                  ],
-                ),
-              ),
-              if (canAddMore)
-                IconButton(
-                  key: Key('cart-add-more-$_storeId'),
-                  tooltip: 'إضافة منتجات من نفس المحل',
-                  onPressed: () => _addMore(context),
-                  icon: Icon(Icons.add_shopping_cart_rounded, color: kAccent),
-                  style: IconButton.styleFrom(
-                    side: BorderSide(color: kLine),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              const SizedBox(width: 6),
-              IconButton(
-                key: Key('cart-delete-$_storeId'),
-                tooltip: 'امسح السلة',
-                onPressed: () => _delete(context),
-                icon: Icon(Icons.delete_outline_rounded, color: kDanger),
-                style: IconButton.styleFrom(
-                  side: BorderSide(color: kLine),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+              Text(
+                formatPrice(snap.subtotal),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
               ),
               const SizedBox(width: 8),
-              SizedBox(
-                height: 44,
-                child: FilledButton(
-                  key: Key('cart-review-$_storeId'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => _review(context),
-                  child: Text(submitted ? 'عرض' : 'أكمل الطلب'),
+              Expanded(
+                child: Text(
+                  snap.fee > 0
+                      ? '$kinds صنف • توصيل ${formatPrice(snap.fee)}'
+                      : '$kinds صنف',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: kMuted),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 44,
+                  child: submitted
+                      ? OutlinedButton.icon(
+                          key: Key('cart-review-$_storeId'),
+                          icon: const Icon(Icons.receipt_long_rounded, size: 18),
+                          label: const Text('تابع في «طلباتي»'),
+                          onPressed: () => openCustomerTab(context, 2),
+                        )
+                      : FilledButton(
+                          key: Key('cart-review-$_storeId'),
+                          onPressed: () => _review(context),
+                          child: const Text('أكمل الطلب'),
+                        ),
+                ),
+              ),
+              if (canAddMore && !submitted) ...[
+                const SizedBox(width: 8),
+                _SquareIcon(
+                  key: Key('cart-add-more-$_storeId'),
+                  tooltip: 'إضافة منتجات من نفس المحل',
+                  icon: Icons.add_shopping_cart_rounded,
+                  color: kAccent,
+                  onPressed: () => _addMore(context),
+                ),
+              ],
+              const SizedBox(width: 8),
+              _SquareIcon(
+                key: Key('cart-delete-$_storeId'),
+                tooltip: 'امسح السلة',
+                icon: Icons.delete_outline_rounded,
+                color: kDanger,
+                onPressed: () => _delete(context),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SquareIcon extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+  const _SquareIcon({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, color: color, size: 21),
+        style: IconButton.styleFrom(
+          side: BorderSide(color: kLine),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       ),
     );
   }
