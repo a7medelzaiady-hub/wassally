@@ -281,6 +281,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
             ),
           ),
           const StaffNotificationPermissionBanner(),
+          // Inline tip only: never block the courier's order acceptance controls.
           CourierBatteryGuideEntry(uid: _uid),
           // «الطلبات السريعة»: بيظهر للمناديب المعتمدين (quickEnabled) بس.
           const QuickCourierEntry(),
