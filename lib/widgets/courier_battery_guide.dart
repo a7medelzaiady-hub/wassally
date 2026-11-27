@@ -121,14 +121,17 @@ class CourierBatteryGuideEntry extends StatefulWidget {
 }
 
 class _CourierBatteryGuideEntryState extends State<CourierBatteryGuideEntry> {
+  bool _firstVisit = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || widget.uid.isEmpty) return;
-      if (await CourierBatteryGuidePolicy.shouldShowOnce(widget.uid) && mounted) {
-        await CourierBatteryGuide.show(context);
-      }
+      // Never open a modal over a courier's available order buttons.
+      // Highlight the existing compact guidance button on the first visit.
+      final firstVisit = await CourierBatteryGuidePolicy.shouldShowOnce(widget.uid);
+      if (mounted && firstVisit) setState(() => _firstVisit = true);
     });
   }
 
@@ -139,10 +142,17 @@ class _CourierBatteryGuideEntryState extends State<CourierBatteryGuideEntry> {
       style: TextButton.styleFrom(
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 12),
+        foregroundColor: _firstVisit ? const Color(0xFF985300) : null,
       ),
-      onPressed: () => CourierBatteryGuide.show(context),
+      onPressed: () async {
+        if (_firstVisit) setState(() => _firstVisit = false);
+        await CourierBatteryGuide.show(context);
+      },
       icon: const Icon(Icons.battery_alert_outlined, size: 17),
-      label: const Text('إعدادات استقبال الطلبات', style: TextStyle(fontSize: 12)),
+      label: Text(
+        _firstVisit ? 'تنبيه: إعدادات استقبال الطلبات' : 'إعدادات استقبال الطلبات',
+        style: const TextStyle(fontSize: 12),
+      ),
     ),
   );
 }
