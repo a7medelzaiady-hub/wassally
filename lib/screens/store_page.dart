@@ -1068,6 +1068,8 @@ class _StorePageState extends State<StorePage> {
           ),
         ),
         SliverToBoxAdapter(child: _specialRequestCard()),
+        if (_isMarketPriced(store.category))
+          SliverToBoxAdapter(child: _marketPriceNote()),
         if (_loading && _items.isNotEmpty)
           SliverToBoxAdapter(
             child: LinearProgressIndicator(minHeight: 2, color: kPrimary),
@@ -1094,6 +1096,45 @@ class _StorePageState extends State<StorePage> {
           _listSliver(products),
         ],
       ],
+    );
+  }
+
+  /// محلات أسعارها بتتغير يوميًا مع السوق والوزن الفعلي.
+  static bool _isMarketPriced(String category) {
+    final c = category.trim();
+    return const ['خضار وفاكهة', 'خضار وفواكه', 'لحوم ودواجن', 'أسماك', 'اسماك', 'فاكهة', 'خضار']
+            .contains(c) ||
+        c.contains('خضار') ||
+        c.contains('فاكه') ||
+        c.contains('لحوم') ||
+        c.contains('دواجن') ||
+        c.contains('اسماك') ||
+        c.contains('أسماك');
+  }
+
+  /// تنبيه هادي: السعر النهائي حسب سعر السوق اليومي والوزن الفعلي.
+  Widget _marketPriceNote() {
+    return Container(
+      key: const Key('market-price-note'),
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFFAF2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFE8CB)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.scale_rounded, size: 18, color: Color(0xFF2E7D4F)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'الأسعار بتتغير يوميًا مع السوق. السعر النهائي حسب سعر اليوم والوزن الفعلي، والمحل بيأكده معاك.',
+              style: TextStyle(fontSize: 12.5, height: 1.45, color: Color(0xFF1F5E3A)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
