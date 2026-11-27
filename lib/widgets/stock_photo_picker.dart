@@ -73,7 +73,11 @@ class _StockPhotoPickerState extends State<_StockPhotoPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height * 0.78;
+    // Dialog يظل قابلًا للاستخدام مع ظهور لوحة المفاتيح على شاشة صغيرة.
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    final height = (screenHeight - keyboardHeight - 52)
+        .clamp(200.0, screenHeight * 0.78);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
       child: SizedBox(
