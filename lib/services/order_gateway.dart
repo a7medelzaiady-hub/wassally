@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
+import 'order_event_outbox.dart';
 import 'performance_monitor.dart';
 import 'referral_device.dart';
 
@@ -48,29 +51,123 @@ class OrderGateway {
     defaultValue: false,
   );
 
-  /// Sends a push for a Firestore change that already committed.
-  static Future<void> notifyEvent(
-    String orderId,
-    String event, {
-    String? status,
-  }) async {
+  static final OrderEventOutbox _notificationOutbox = OrderEventOutbox(
+    send: _sendOrderPushOnce,
+  );
+  static Timer? _outboxTimer;
+  static bool _outboxRecoveryInitialized = false;
+  static bool _flushingOutbox = false;
+
+  /// An already committed order change is queued locally before the first request.
+  /// Network errors and Worker 5xx get 3 additional attempts (2, 5, 15 seconds).
+  static Future<void> notifyEvent(String orderId, String event, {String? status}) async {
     if (!isConfigured) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
     try {
-      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-      if (token == null || token.isEmpty) return;
-      await _send(
-        idToken: token,
-        method: 'POST',
-        path: '/v1/order-events',
-        payload: {
-          'orderId': orderId,
-          'event': event,
-          if (status != null) 'status': status,
-        },
-      );
+      await _notificationOutbox.recordAndSend(PendingOrderPush(
+        uid: uid,
+        orderId: orderId,
+        event: event,
+        status: status,
+        occurredAtMs: DateTime.now().millisecondsSinceEpoch,
+      ));
     } catch (_) {
-      debugPrint('تعذر إرسال إشعار حالة الطلب.');
+      debugPrint('تعذر إرسال إشعار حالة الطلب. سيتم الاحتفاظ به مؤقتًا.');
+    } finally {
+      unawaited(_ensureOutboxTimer());
     }
+  }
+
+  @visibleForTesting
+  static bool shouldRetryOrderPushStatus(int status) =>
+      status == 429 || status >= 500;
+
+  /// Only used for order-event pushes; unrelated order and payment APIs are unchanged.
+  static Future<void> _sendOrderPushOnce(PendingOrderPush item) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid != item.uid) {
+      throw const RetryableOrderPushException();
+    }
+    final uri = Uri.tryParse('${baseUrl.trim().replaceFirst(RegExp(r'/+$'), '')}/v1/order-events');
+    if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
+      throw const PermanentOrderPushException();
+    }
+    final token = await user.getIdToken().catchError((Object _) => null);
+    if (token == null || token.isEmpty) throw const RetryableOrderPushException();
+    final client = http.Client();
+    late final http.Response response;
+    try {
+      final request = http.Request('POST', uri)
+        ..headers.addAll({
+          ...await appCheckHeaders(),
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        })
+        ..body = jsonEncode({
+          'orderId': item.orderId,
+          'event': item.event,
+          if (item.status != null) 'status': item.status,
+        });
+      final stream = await client.send(request).timeout(const Duration(seconds: 12));
+      response = await http.Response.fromStream(stream).timeout(const Duration(seconds: 12));
+    } catch (_) {
+      throw const RetryableOrderPushException();
+    } finally {
+      client.close();
+    }
+    // The Worker can enforce a 20-second notification rate limit. A retry
+    // attempted after 2 or 5 seconds may receive 429; keep it in the same
+    // bounded backoff/outbox instead of dropping an unsent notification.
+    if (shouldRetryOrderPushStatus(response.statusCode)) {
+      throw const RetryableOrderPushException();
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw const PermanentOrderPushException();
+    }
+    try {
+      final parsed = jsonDecode(response.body);
+      if (parsed is Map && parsed['orderId'] == item.orderId) return;
+    } catch (_) {
+      // Malformed success from the gateway: keep a bounded retry.
+    }
+    throw const RetryableOrderPushException();
+  }
+
+  /// Called at app start and again on resume; pending entries retry every 25s
+  /// only while they exist. No network listener, Firestore listener or read.
+  static Future<void> startPendingPushRecovery() async {
+    if (!_outboxRecoveryInitialized) {
+      _outboxRecoveryInitialized = true;
+      WidgetsBinding.instance.addObserver(_OrderPushAppObserver());
+    }
+    await replayPendingPushes();
+  }
+
+  static Future<void> replayPendingPushes() async {
+    if (_flushingOutbox) return;
+    _flushingOutbox = true;
+    try {
+      await _notificationOutbox.replay(FirebaseAuth.instance.currentUser?.uid);
+    } catch (_) {
+      debugPrint('تعذر إعادة إرسال الإشعارات المؤجلة.');
+    } finally {
+      _flushingOutbox = false;
+      await _ensureOutboxTimer();
+    }
+  }
+
+  static Future<void> _ensureOutboxTimer() async {
+    final pending = await _notificationOutbox.hasPending;
+    if (!pending) {
+      _outboxTimer?.cancel();
+      _outboxTimer = null;
+      return;
+    }
+    _outboxTimer ??= Timer.periodic(const Duration(seconds: 25), (_) {
+      unawaited(replayPendingPushes());
+    });
   }
 
   static Future<Map<String, dynamic>> referralCampaign({
@@ -464,4 +561,13 @@ class CatalogMismatchError extends StateError {
 /// رقم التجميع اترفض (انتهى، اتملا، محل متكرر، أو مش تبع الحساب). الطلب نفسه ما اتعملش.
 class OrderGroupError extends StateError {
   OrderGroupError(super.message);
+}
+
+class _OrderPushAppObserver extends WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(OrderGateway.replayPendingPushes());
+    }
+  }
 }

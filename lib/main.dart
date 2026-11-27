@@ -16,6 +16,7 @@ import 'services/error_guard.dart';
 import 'screens/main_shell.dart';
 import 'services/navigation.dart' show rootNavigatorKey, customerShellBuilder;
 import 'services/notification_service.dart';
+import 'services/order_gateway.dart';
 import 'services/performance_monitor.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
@@ -55,10 +56,15 @@ Future<void> _bootstrap() async {
     ));
     // تذكير السلة المنسية (إشعار محلي على أندرويد بس؛ أي فشل بيتجاهل).
     if (isAndroid && !E2eSupport.enabled) unawaited(CartReminder.instance.start());
+    // استعادة إشعارات أحداث الطلبات المؤجلة من الموبايل فقط (بدون قراءات Firestore).
+    unawaited(OrderGateway.startPendingPushRecovery());
     // مكتبة صور وصّلي: من الموبايل فورًا، ومن Firestore بعد تسجيل الدخول (مرة كل 6 ساعات).
     unawaited(PhotoLibrary.load());
     FirebaseAuth.instance.authStateChanges().firstWhere((u) => u != null).then(
-          (_) => PhotoLibrary.load(),
+          (_) {
+            unawaited(PhotoLibrary.load());
+            unawaited(OrderGateway.replayPendingPushes());
+          },
           onError: (_) {},
         );
   });
