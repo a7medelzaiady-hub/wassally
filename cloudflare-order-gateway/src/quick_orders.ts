@@ -29,6 +29,7 @@ export const QUICK_ACTIONS = [
   "advance-sent", "advance-received", "receipt", "receipt-remove",
   "submit-summary", "approve-summary", "reject-summary",
   "quote-errand", "approve-errand-quote", "reject-errand-quote",
+  "confirm-errand-pickup",
 ] as const;
 export type QuickAction = typeof QUICK_ACTIONS[number];
 
@@ -393,6 +394,15 @@ export function applyQuickAction(
   };
 
   switch (action as QuickAction) {
+    case "confirm-errand-pickup": {
+      if (!isAssigned) forbidden();
+      if (!isErrand || status !== "purchasing" ||
+          order.errandType === "other" || order.errandPickupConfirmedAt instanceof Date) {
+        wrongState();
+      }
+      return { errandPickupConfirmedAt: now, rev };
+    }
+
     case "quote-errand": {
       if (!isAssigned) forbidden();
       if (!isErrand || status !== "accepted" || order.errandQuoteStatus === "accepted") wrongState();
@@ -595,6 +605,10 @@ export function applyQuickAction(
       // المندوب يكتب الأجرة رقم واحد، والبرنامج يحسب الكشف من الفواتير.
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
+      if (isErrand && order.errandType !== "other" &&
+          !(order.errandPickupConfirmedAt instanceof Date)) {
+        fail(409, "pickup_required", "أكد استلام الغرض من نقطة البداية الأول.");
+      }
       if (!isErrand && receipts.length < 1) fail(409, "no_receipts", "صوّر فاتورة واحدة على الأقل.");
       const delivery = intIn(body.deliveryPiastres, isErrand ? 100 : 0, maxDelivery);
       if (delivery === null) fail(400, "invalid_delivery", "أجرة التوصيل خارج الحد المسموح.");
