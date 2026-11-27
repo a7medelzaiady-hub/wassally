@@ -15,6 +15,7 @@ import 'services/e2e_support.dart';
 import 'services/error_guard.dart';
 import 'screens/main_shell.dart';
 import 'services/navigation.dart' show rootNavigatorKey, customerShellBuilder;
+import 'screens/store_link_page.dart';
 import 'services/notification_service.dart';
 import 'services/order_gateway.dart';
 import 'services/performance_monitor.dart';
@@ -138,6 +139,9 @@ class WasallyApp extends StatelessWidget {
         );
       },
       home: const AuthGate(),
+      // روابط مشاركة المحلات (/s/<id>) بتفتح المحل على طول؛ أي مسار تاني بيتجاهل.
+      onGenerateRoute: StoreLinkPage.routeFor,
+      onUnknownRoute: StoreLinkPage.dismissRoute,
     );
   }
 }

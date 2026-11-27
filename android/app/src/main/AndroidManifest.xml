@@ -84,6 +84,24 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
+            <!-- روابط مشاركة المحلات: https://<worker>/s/<storeId> بتفتح التطبيق على المحل
+                 (بعد ما assetlinks.json على الـWorker يبقى فيه بصمة شهادة التوقيع). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="throbbing-water-4ef7.a7medelzaiady.workers.dev"
+                      android:pathPrefix="/s/"/>
+            </intent-filter>
+            <!-- نفس الرابط من صفحة الـWorker لو التحقق لسه ما تمّش: wasally://open/s/<storeId> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="wasally" android:host="open"/>
+            </intent-filter>
+
         </activity>
 
         <!-- تذكير السلة المنسية (flutter_local_notifications): استقبال الإشعار المتجدول. -->

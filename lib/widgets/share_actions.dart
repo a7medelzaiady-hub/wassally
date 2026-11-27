@@ -80,7 +80,9 @@ class _StoreQrSheetState extends State<StoreQrSheet> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final link = ShareLinks.playLink(storeId: widget.storeId);
+    final link = widget.storeId.trim().isEmpty
+        ? ShareLinks.playLink()
+        : ShareLinks.storeLink(widget.storeId);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
