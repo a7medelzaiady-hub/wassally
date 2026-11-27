@@ -360,3 +360,69 @@ describe("receipt upload folder", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("مشوارك علينا end-to-end Worker privacy and consent", () => {
+  it("stores pickup, destination and photos privately; public couriers cannot see them", async () => {
+    const folder = await quickRequestFolder("cust1");
+    const image = `https://res.cloudinary.com/demo/image/upload/v1/${folder}/parcel.jpg`;
+    firebase({ "app_info/quick_settings": { enabled: true } });
+    const result = await call("cust1", "/v1/quick", {
+      ...createBody,
+      kind: "errand",
+      errandType: "parcel",
+      stores: [{ name: "", items: "استلم الطرد من المحل وسلمه على العنوان المرفق" }],
+      customerImages: [image],
+      contact: { ...createBody.contact, pickupAddress: "سوق البلد جنب المخبز" },
+    });
+    expect(result.status).toBe(200);
+    const [publicWrite, privateWrite] = commits[0].writes;
+    expect(publicWrite.update.fields.kind).toEqual({ stringValue: "errand" });
+    expect(publicWrite.update.fields.hasCustomerImages).toEqual({ booleanValue: true });
+    expect(JSON.stringify(publicWrite)).not.toContain("سوق البلد");
+    expect(JSON.stringify(publicWrite)).not.toContain("شارع التحرير");
+    expect(JSON.stringify(publicWrite)).not.toContain(image);
+    expect(privateWrite.update.fields.pickupAddress).toEqual({ stringValue: "سوق البلد جنب المخبز" });
+    expect(JSON.stringify(privateWrite.update.fields.customerImages)).toContain(image);
+    expect(pushes[0].message.notification.title).toContain("مشوار");
+  });
+
+  it("rejects invalid pickup or unexpected service type before writing", async () => {
+    firebase({});
+    const body = {
+      ...createBody,
+      kind: "errand",
+      errandType: "documents",
+      stores: [{ name: "", items: "استلم الأوراق من المكتب وسلمها على عنواني" }],
+      contact: { ...createBody.contact, pickupAddress: "xx" },
+    };
+    expect((await call("cust1", "/v1/quick", body)).status).toBe(400);
+    expect(commits).toHaveLength(0);
+    expect((await call("cust1", "/v1/quick", {
+      ...body, errandType: "forbidden_type", contact: { ...body.contact, pickupAddress: "شارع النخيل" },
+    })).status).toBe(400);
+    expect(commits).toHaveLength(0);
+  });
+
+  it("uses updateTime precondition when courier quotes and customer approves", async () => {
+    const errand = newQuickOrder({
+      uid: "cust1", customerFirstName: "Ali", area: "وسط البلد", notes: "",
+      stores: [{ name: "", items: "استلم الطرد من محل جنب المدرسة" }],
+      kind: "errand", errandType: "parcel", settings: resolveQuickSettings({}),
+    });
+    firebase({
+      [`quick_orders/${ID}`]: {
+        ...errand, status: "accepted", courierId: "cour1", courierName: "Mido",
+      },
+      "couriers/cour1": { name: "Mido", active: true, quickEnabled: true },
+    });
+    expect((await call("cust1", `/v1/quick/${ID}/approve-errand-quote`,
+      { expectedQuotePiastres: 3200 })).status).toBe(409);
+    const result = await call("cour1", `/v1/quick/${ID}/quote-errand`,
+      { deliveryPiastres: 3200 });
+    expect(result.status).toBe(200);
+    const write = commits[0].writes[0];
+    expect(write.currentDocument).toEqual({ updateTime: UPDATE_TIME });
+    expect(write.update.fields.errandQuoteStatus).toEqual({ stringValue: "pending" });
+    expect(write.update.fields.errandQuotePiastres).toEqual({ integerValue: "3200" });
+  });
+});
