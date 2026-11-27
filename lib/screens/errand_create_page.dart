@@ -205,7 +205,7 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
   Future<void> _submit() async {
     if (_submitting || _uploading || _recording) return;
     final name = _name.text.trim();
-    final phone = _phone.text.replaceAll(RegExp(r'[\\s-]'), '');
+    final phone = _phone.text.replaceAll(RegExp(r'[\s-]'), '');
     final area = _area.text.trim();
     final pickup = _pickup.text.trim();
     final destination = _destination.text.trim();
