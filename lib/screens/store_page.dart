@@ -24,6 +24,7 @@ import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
 import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
+import '../services/order_edit_session.dart';
 import '../services/resume_session.dart';
 import '../services/role_service.dart';
 import '../services/store_shortcuts.dart';
@@ -64,7 +65,11 @@ class StorePage extends StatefulWidget {
 
   /// اسم الصنف اللي يتفتح أول ما المحل يحمّل (مثلًا من بانر عرض في الرئيسية).
   final String? focusProduct;
-  const StorePage({super.key, required this.store, this.focusProduct});
+
+  /// مفتوحة من «تعديل الطلب»: الإضافة بتروح للطلب ده بدل السلة، وزرار تحت
+  /// بيرجّع لصفحة التعديل.
+  final OrderEditSession? editSession;
+  const StorePage({super.key, required this.store, this.focusProduct, this.editSession});
 
   @override
   State<StorePage> createState() => _StorePageState();
@@ -141,8 +146,10 @@ class _StorePageState extends State<StorePage> {
   void initState() {
     super.initState();
     // الرجوع لنفس المحل لو أندرويد قفل التطبيق في الخلفية (#326).
-    _resumePrevious = ResumeSession.current;
-    ResumeSession.setLocation(FirebaseAuth.instance.currentUser?.uid ?? '', 'store:${widget.store.id}');
+    if (widget.editSession == null) {
+      _resumePrevious = ResumeSession.current;
+      ResumeSession.setLocation(FirebaseAuth.instance.currentUser?.uid ?? '', 'store:${widget.store.id}');
+    }
     // وقت توصيل المحل لصفحة الدفع وتفاصيل الطلب (من غير قراءات).
     StoreEta.remember(widget.store.id, widget.store.time);
     _voicePreviewCompleteSub = _voicePreviewPlayer.onPlayerComplete.listen((_) {
@@ -813,6 +820,7 @@ class _StorePageState extends State<StorePage> {
             store: store,
             repeatedIllustration: repeated.contains(i),
             canEdit: _canEditStore && p.id.isNotEmpty,
+            editSession: widget.editSession,
             // الصنف اللي له خيارات بيفتح شاشة الاختيار؛ التاني بيتضاف مباشرة.
             onAdd: () =>
                 p.hasOptions ? _openSheet(context, p) : _add(context, p),
@@ -1131,7 +1139,7 @@ class _StorePageState extends State<StorePage> {
             ),
           ),
         ),
-        SliverToBoxAdapter(child: _specialRequestCard()),
+        if (widget.editSession == null) SliverToBoxAdapter(child: _specialRequestCard()),
         if (_isMarketPriced(store.category))
           SliverToBoxAdapter(child: _marketPriceNote()),
         if (_loading && _items.isNotEmpty)
@@ -1754,6 +1762,11 @@ class _StorePageState extends State<StorePage> {
   }
 
   Future<void> _add(BuildContext context, Product p, {int qty = 1}) async {
+    final edit = widget.editSession;
+    if (edit != null) {
+      edit.add(p, qty: qty);
+      return;
+    }
     if (!store.isOpen) {
       ScaffoldMessenger.of(context).showSnackBar(appSnack('المحل مغلق الآن. تقدر تتفرج على الأصناف وتطلب لما يفتح.'));
       return;
@@ -1848,7 +1861,9 @@ class _StorePageState extends State<StorePage> {
                 ),
               ],
             ),
-      bottomNavigationBar: ListenableBuilder(
+      bottomNavigationBar: widget.editSession != null
+          ? _EditReturnBar(session: widget.editSession!)
+          : ListenableBuilder(
         listenable: cart,
         builder: (context, _) {
           if (cart.isEmpty) return const SizedBox.shrink();
@@ -1888,6 +1903,42 @@ class _StorePageState extends State<StorePage> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// تحت صفحة المحل وهي مفتوحة من «تعديل الطلب»: رجوع لنفس صفحة التعديل.
+class _EditReturnBar extends StatelessWidget {
+  final OrderEditSession session;
+  const _EditReturnBar({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: ListenableBuilder(
+          listenable: session,
+          builder: (context, _) => FilledButton(
+            key: const Key('edit-order-return'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            onPressed: () => Navigator.of(context).pop(),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('رجوع لتعديل الطلب (${session.count})'),
+                Text(
+                  formatPrice(session.subtotal),
+                  style: TextStyle(color: Brand.gold, fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2008,10 +2059,14 @@ class _ProductRow extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback? onTap;
   final VoidCallback onEdit;
+
+  /// وضع «تعديل الطلب»: الكمية من الطلب مش من السلة.
+  final OrderEditSession? editSession;
   const _ProductRow({
     required this.product,
     required this.store,
     required this.canEdit,
+    this.editSession,
     this.repeatedIllustration = false,
     this.grid = false,
     required this.onAdd,
@@ -2070,10 +2125,11 @@ class _ProductRow extends StatelessWidget {
   }
 
   Widget _addControl() {
+    final edit = editSession;
     return ListenableBuilder(
-      listenable: cart,
+      listenable: edit ?? cart,
       builder: (context, _) {
-        final qty = cart.qtyOf(product);
+        final qty = edit != null ? edit.qtyOf(product) : cart.qtyOf(product);
         if (qty == 0) {
           return Material(
             color: Colors.white,
@@ -2111,7 +2167,7 @@ class _ProductRow extends StatelessWidget {
           child: QtyStepper(
             qty: qty,
             onAdd: onAdd,
-            onRemove: () => cart.remove(product),
+            onRemove: () => edit != null ? edit.removeOne(product) : cart.remove(product),
           ),
         );
       },

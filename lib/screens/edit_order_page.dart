@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/order.dart';
+import '../services/order_edit_session.dart';
 import '../services/order_service.dart';
 import '../services/wasally_service_fee.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/qty_stepper.dart';
+import 'store_link_page.dart';
+import 'store_page.dart';
 
 /// تعديل الطلب قبل استلام المندوب: في حالتي new وpreparing طالما courierId فارغ.
 /// القواعد (firestore.rules) هي اللي بتمنع التعديل لو الحالة اتغيّرت.
@@ -44,11 +48,38 @@ class _EditOrderPageState extends State<EditOrderPage> {
   );
   // الأصناف اللي المحل علّمها «غير متاحة» بتبدأ بكمية صفر (العميل يقدر يرجّعها لو حب).
   // والبدائل اللي العميل وافق عليها بتتضاف بنفس كمية الصنف الناقص.
-  late final List<OrderLine> _lines = linesWithSubstitutes(
-    widget.order,
-    widget.acceptedSubstitutes,
-  );
+  late final OrderEditSession _session = OrderEditSession(
+    linesWithSubstitutes(widget.order, widget.acceptedSubstitutes),
+  )..addListener(_onLinesChanged);
+  List<OrderLine> get _lines => _session.lines;
   bool _saving = false;
+  bool _openingStore = false;
+
+  void _onLinesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// يفتح المحل نفسه للإضافة على الطلب، ويرجع لنفس الصفحة دي بالأصناف الجديدة.
+  Future<void> _addFromStore() async {
+    if (_openingStore) return;
+    setState(() => _openingStore = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final store = await StoreLinkPage.loadActiveStore(widget.order.storeId);
+      if (!mounted) return;
+      if (store == null) {
+        messenger.showSnackBar(appSnack('المحل مش متاح دلوقتي.'));
+        return;
+      }
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => StorePage(store: store, editSession: _session),
+      ));
+    } catch (_) {
+      messenger.showSnackBar(appSnack('تعذر فتح المحل. جرّب تاني.'));
+    } finally {
+      if (mounted) setState(() => _openingStore = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -57,10 +88,13 @@ class _EditOrderPageState extends State<EditOrderPage> {
     _address.dispose();
     _notes.dispose();
     _courierNotes.dispose();
+    _session
+      ..removeListener(_onLinesChanged)
+      ..dispose();
     super.dispose();
   }
 
-  double get _subtotal => _lines.fold(0.0, (a, l) => a + l.price * l.qty);
+  double get _subtotal => _session.subtotal;
 
   double get _discount {
     final o = widget.order;
@@ -78,10 +112,7 @@ class _EditOrderPageState extends State<EditOrderPage> {
         order.referralDiscountMinor / 100;
   }
 
-  void _setQty(int index, int qty) {
-    if (qty < 0 || qty > kMaxLineQty) return;
-    setState(() => _lines[index] = _lines[index].withQty(qty));
-  }
+  void _setQty(int index, int qty) => _session.setQty(index, qty);
 
   Future<void> _save() async {
     if (!(_form.currentState?.validate() ?? false)) return;
@@ -140,6 +171,26 @@ class _EditOrderPageState extends State<EditOrderPage> {
                   ),
                   const SizedBox(height: 8),
                   for (var i = 0; i < _lines.length; i++) _lineRow(i),
+                  if (widget.order.storeId.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: OutlinedButton.icon(
+                        key: const Key('edit-order-add-from-store'),
+                        onPressed: _openingStore ? null : _addFromStore,
+                        icon: _openingStore
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.storefront_outlined),
+                        label: Text(
+                          widget.order.storeName.isNotEmpty
+                              ? 'أضف أصناف من ${widget.order.storeName}'
+                              : 'أضف أصناف من المحل',
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 4),
                   Text(
                     'المجموع: ${formatPrice(_subtotal)}'
@@ -280,25 +331,28 @@ class _EditOrderPageState extends State<EditOrderPage> {
               ],
             ),
           ),
-          IconButton(
-            onPressed: removed ? null : () => _setQty(i, l.qty - 1),
-            icon: Icon(
-              l.qty == 1 ? Icons.delete_outline : Icons.remove_circle_outline,
-              color: l.qty == 1 ? kDanger : null,
+          // نفس عداد السلة (− الكمية +)، وزرار حذف ثابت جنبه.
+          if (removed)
+            TextButton.icon(
+              key: ValueKey<String>('edit-line-restore-$i'),
+              onPressed: () => _setQty(i, 1),
+              icon: const Icon(Icons.undo_rounded, size: 18),
+              label: const Text('رجّعه'),
+            )
+          else ...[
+            QtyStepper(
+              key: ValueKey<String>('edit-line-qty-$i'),
+              qty: l.qty,
+              onAdd: () => _setQty(i, l.qty + 1),
+              onRemove: () => _setQty(i, l.qty - 1),
             ),
-          ),
-          SizedBox(
-            width: 28,
-            child: Text(
-              '${l.qty}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+            IconButton(
+              key: ValueKey<String>('edit-line-delete-$i'),
+              tooltip: 'شيل الصنف',
+              onPressed: () => _setQty(i, 0),
+              icon: Icon(Icons.delete_outline_rounded, color: kDanger, size: 21),
             ),
-          ),
-          IconButton(
-            onPressed: l.qty >= kMaxLineQty ? null : () => _setQty(i, l.qty + 1),
-            icon: Icon(Icons.add_circle_outline, color: kPrimary),
-          ),
+          ],
         ],
       ),
     );
