@@ -174,7 +174,10 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
 /// (ورق أبيض ضيق، حواف مقصوصة، خطوط متقطعة، أبيض وأسود، وQR لتحميل التطبيق).
 class OrderReceiptCard extends StatelessWidget {
   final OrderReceipt receipt;
-  const OrderReceiptCard({super.key, required this.receipt});
+
+  /// جوه صفحة تفاصيل الطلب: من غير QR وسطر الشكر (بيظهروا في الصورة بس).
+  final bool inline;
+  const OrderReceiptCard({super.key, required this.receipt, this.inline = false});
 
   static const _ink = Color(0xFF1B1B1B);
   static const _faded = Color(0xFF5E5E5E);
@@ -237,8 +240,8 @@ class OrderReceiptCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(receipt.note, textAlign: TextAlign.center, style: base(11, c: _faded)),
                 ],
-                const _Dashes(),
-                if (receipt.qrLink.isNotEmpty) ...[
+                if (!inline) const _Dashes(),
+                if (!inline && receipt.qrLink.isNotEmpty) ...[
                   Center(
                     child: QrImageView(
                       key: const Key('receipt-qr'),
@@ -257,7 +260,8 @@ class OrderReceiptCard extends StatelessWidget {
                   Text('امسح الكود وحمّل التطبيق', textAlign: TextAlign.center, style: base(11, c: _faded)),
                   const SizedBox(height: 8),
                 ],
-                Text('شكرًا لاستخدامك وصّلي', textAlign: TextAlign.center, style: base(12.5, w: FontWeight.w700)),
+                if (!inline)
+                  Text('شكرًا لاستخدامك وصّلي', textAlign: TextAlign.center, style: base(12.5, w: FontWeight.w700)),
               ],
             ),
           ),

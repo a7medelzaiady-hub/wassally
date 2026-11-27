@@ -558,52 +558,24 @@ class _Details extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 8),
+        // الأصناف والحساب بشكل فاتورة حرارية (نفس شكل الإيصال اللي بيتشارك).
         Container(
-          padding: const EdgeInsets.all(10),
-          decoration: _card,
+          key: const Key('order-thermal-items'),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9E9EC),
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'المنتجات',
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 5),
-              for (final item in order.items)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text('${item.qty} × ${item.name}')),
-                      Text(formatPrice(item.total)),
-                    ],
-                  ),
+              OrderReceiptCard(receipt: OrderReceipt.of(order), inline: true),
+              if (OrderReceipt.available(order))
+                TextButton.icon(
+                  key: const Key('order-receipt'),
+                  onPressed: () => showOrderReceiptSheet(context, order),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('حفظ الإيصال كصورة'),
                 ),
-              const Divider(height: 14),
-              _line('المجموع', formatPrice(order.subtotal)),
-              const SizedBox(height: 4),
-              _line('رسوم التوصيل', formatPrice(order.courierFee)),
-              if ((order.serviceFee ?? 0) > 0) ...[
-                const SizedBox(height: 4),
-                _line('رسوم الخدمة', formatPrice(order.serviceFee!)),
-              ],
-              const SizedBox(height: 8),
-              if (order.referralDiscountMinor > 0)
-                _line('خصم نقاط الدعوات',
-                    '- ${formatPrice(order.referralDiscountMinor / 100)}'),
-              _line('الإجمالي', formatPrice(order.payable), strong: true),
-              if (OrderReceipt.available(order)) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: TextButton.icon(
-                    key: const Key('order-receipt'),
-                    onPressed: () => showOrderReceiptSheet(context, order),
-                    icon: const Icon(Icons.receipt_long_outlined),
-                    label: const Text('حفظ الإيصال'),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -733,19 +705,6 @@ class _Details extends StatelessWidget {
           Expanded(child: Text(value)),
         ],
       ),
-    );
-  }
-
-  Widget _line(String label, String value, {bool strong = false}) {
-    final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
-        : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(value, style: style),
-      ],
     );
   }
 }
