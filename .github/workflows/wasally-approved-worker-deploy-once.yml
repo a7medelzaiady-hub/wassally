@@ -3,8 +3,8 @@
 # Reuses existing secret validation, typecheck, unit tests, Wrangler deploy and health check.
 name: Deploy approved notification Worker fixes (one-time)
 
-# نشر الـ Worker على Cloudflare من GitHub بدل جهازك. بيشتغل يدوي بس (Actions ← Run workflow)،
-# من main بس، وبعد نجاح الفحص والاختبارات. أسرار الـ Worker نفسها (Firebase/Cloudinary)
+# نشر Worker الإشعارات معتمد مرة واحدة عند دمج هذا الملف في main؛
+# من main فقط بعد فحص واختبارات الـ Worker. أسرار الـ Worker نفسها (Firebase/Cloudinary)
 # متخزنة على Cloudflare ومش بتتلمس هنا. الاستثناء الوحيد: DELIVERY_PIN_SECRET بيتعمل تلقائي
 # مرة واحدة لو مش موجود (قيمة عشوائية مخفية)، ومش بيتغير بعد كده.
 #
