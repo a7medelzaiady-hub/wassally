@@ -25,6 +25,7 @@ import 'services/cart_book.dart';
 import 'services/cart_reminder.dart';
 import 'services/data_saver.dart';
 import 'services/photo_library.dart';
+import 'services/resume_session.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -46,10 +47,12 @@ Future<void> _bootstrap() async {
     ThemeController.instance.load(), // هوية وصّلي الموحدة حتى بعد تحديث النسخة
     carts.load(), // «سلّاتي» المحفوظة على الموبايل من آخر مرة
     DataSaver.load(), // «وضع توفير الباقة» (اختيار محلي)
+    ResumeSession.load(), // رجوع بعد ما أندرويد قفل التطبيق في الخلفية؟ (#326)
   ]);
   final bootstrap = startup.elapsed;
   customerShellBuilder = (_) => const MainShell();
   runApp(const WasallyApp());
+  ResumeSession.startObserving();
   WidgetsBinding.instance.addPostFrameCallback((_) {
     PerformanceMonitor.recordStartup(PerformanceMonitor.startupMetrics(
       bootstrap: bootstrap,

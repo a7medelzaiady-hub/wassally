@@ -7,12 +7,12 @@ import '../models/app_role.dart';
 import '../services/live_alerts_service.dart';
 import '../services/auth_service.dart';
 import '../services/order_gateway.dart';
+import '../widgets/brand_splash.dart';
 import '../widgets/referral_registration_card.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/role_service.dart';
 import '../services/update_service.dart';
-import '../theme/app_theme.dart';
 import 'admin_orders_page.dart';
 import 'courier_orders_page.dart';
 import 'categories_landing_page.dart';
@@ -177,11 +177,8 @@ class _RoleGateState extends State<RoleGate> {
     if (_uid != user.uid) _start(user.uid);
 
     final info = _info;
-    if (info == null) {
-      return Scaffold(
-        body: Center(child: CircularProgressIndicator(color: kPrimary)),
-      );
-    }
+    // أول فتح من غير دور محفوظ: نفس شاشة البداية البنفسجي بدل صفحة بيضا (#326).
+    if (info == null) return const BrandSplash();
     return ValueListenableBuilder<AppRole?>(
       valueListenable: activePanel,
       builder: (context, panel, _) {

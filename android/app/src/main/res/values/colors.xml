@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- لون شاشة البداية (نفس BrandSplash.color في Dart). -->
+    <color name="wasally_splash">#452080</color>
+</resources>

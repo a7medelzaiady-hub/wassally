@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- أندرويد 12+: شاشة البداية بتاعة النظام بتتجاهل windowBackground، ولونها الافتراضي
+         أبيض في الوضع الفاتح. هنا بنخليها بنفسجي وصّلي (والأيقونة هي أيقونة التطبيق). -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">@color/wasally_splash</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/wasally_splash</item>
+    </style>
+</resources>

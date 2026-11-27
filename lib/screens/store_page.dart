@@ -24,6 +24,7 @@ import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
 import '../services/catalog_sync.dart';
 import '../services/image_service.dart';
+import '../services/resume_session.dart';
 import '../services/role_service.dart';
 import '../services/store_shortcuts.dart';
 import '../theme/app_theme.dart';
@@ -139,6 +140,9 @@ class _StorePageState extends State<StorePage> {
   @override
   void initState() {
     super.initState();
+    // الرجوع لنفس المحل لو أندرويد قفل التطبيق في الخلفية (#326).
+    _resumePrevious = ResumeSession.current;
+    ResumeSession.setLocation(FirebaseAuth.instance.currentUser?.uid ?? '', 'store:${widget.store.id}');
     // وقت توصيل المحل لصفحة الدفع وتفاصيل الطلب (من غير قراءات).
     StoreEta.remember(widget.store.id, widget.store.time);
     _voicePreviewCompleteSub = _voicePreviewPlayer.onPlayerComplete.listen((_) {
@@ -170,8 +174,13 @@ class _StorePageState extends State<StorePage> {
     }
   }
 
+  String? _resumePrevious;
+
   @override
   void dispose() {
+    if (ResumeSession.current == 'store:${widget.store.id}') {
+      ResumeSession.setLocation(ResumeSession.uid, _resumePrevious);
+    }
     _debounce?.cancel();
     _scroll.dispose();
     _searchCtrl.dispose();
