@@ -22,6 +22,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/staff_notification_permission_banner.dart';
+import '../widgets/courier_battery_guide.dart';
 import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
 import 'quick_courier_orders_page.dart';
@@ -373,6 +374,8 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                     _Tab.current => 'الطلبات اللي تستلمها هتظهر هنا.',
                                     _Tab.history => 'الطلبات المكتملة هتظهر هنا، وتقدر تقيّم تعامل العميل بعد التسليم.',
                                   },
+                                  actionLabel: 'إعدادات استقبال الطلبات',
+                                  onAction: () => CourierBatteryGuide.show(context),
                                 )
                               : ListView.separated(
                                   padding: const EdgeInsets.fromLTRB(
@@ -381,11 +384,13 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                     16,
                                     90,
                                   ),
-                                  itemCount: shown.length,
+                                  itemCount: shown.length + 1,
                                   separatorBuilder: (_, _) =>
                                       const SizedBox(height: 12),
                                   itemBuilder: (context, i) =>
-                                      _tab == _Tab.available
+                                      i == shown.length
+                                          ? CourierBatteryGuideEntry(uid: _uid)
+                                          : _tab == _Tab.available
                                       ? _AvailableOrderCard(order: shown[i])
                                       : _CourierOrderCard(
                                           key: ValueKey(shown[i].id),

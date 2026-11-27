@@ -48,6 +48,20 @@ class MainActivity : FlutterActivity() {
                         result.error("SETTINGS_UNAVAILABLE", "Cannot open notification settings", null)
                     }
                 }
+                "batterySettings" -> {
+                    try {
+                        // App details is safe on Play and lets the user choose Battery >
+                        // Unrestricted manually. No REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission.
+                        val intent = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName"),
+                        )
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (error: Exception) {
+                        result.error("SETTINGS_UNAVAILABLE", "Cannot open battery settings", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
