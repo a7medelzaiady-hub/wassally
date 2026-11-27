@@ -33,6 +33,59 @@ class StockPhotoSearch {
   static const cacheFor = Duration(hours: 24);
   static const maxResults = 9;
   static final Map<String, _CachedSearch> _cache = {};
+ 
+  /// اقتراح بحث بالإنجليزي لأسماء الأصناف المصرية الشائعة. المعاينة فقط؛
+  /// الاسم والسعر والعلامة التجارية في الكتالوج لا تتغير.
+  /// التركيبات الخاصة قبل الكلمات العامة لتقليل الصور غير المناسبة.
+  static String suggestedQuery(String productName) {
+    final name = productName.toLowerCase()
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
+        .replaceAll(RegExp(r'[^a-z0-9\u0621-\u064A]+'), ' ').trim();
+    const terms = <String, String>{
+      'زيت موتور': 'motor engine oil bottle',
+      'زيت محرك': 'motor engine oil bottle',
+      'لبن بودره': 'powdered milk package',
+      'بطاطس مقليه': 'french fries food',
+      'عصير برتقال': 'orange juice glass',
+      'مسحوق غسيل': 'laundry detergent',
+      'زيت شعر': 'hair oil bottle',
+      'بيبسي': 'soda drink bottle',
+      'كوكا كولا': 'soda drink bottle',
+      'شيبسي': 'potato chips snacks',
+      'لبن': 'milk carton',
+      'حليب': 'milk carton',
+      'بيض': 'chicken eggs',
+      'جبنه': 'cheese',
+      'جبنة': 'cheese',
+      'طماطم': 'tomatoes',
+      'بطاطس': 'potato vegetables',
+      'موز': 'bananas',
+      'تفاح': 'apples',
+      'برتقال': 'oranges',
+      'بصل': 'onions',
+      'رز': 'rice grains',
+      'ارز': 'rice grains',
+      'سكر': 'sugar',
+      'قهوه': 'coffee beans',
+      'قهوة': 'coffee beans',
+      'شاي': 'tea leaves',
+      'عيش': 'bread loaf',
+      'خبز': 'bread loaf',
+      'فراخ': 'chicken meat',
+      'دجاج': 'chicken meat',
+      'بيتزا': 'pizza',
+      'برجر': 'hamburger',
+      'شاورما': 'shawarma sandwich',
+      'مناديل': 'tissue paper',
+      'صابون': 'soap bar',
+    };
+    final padded = ' $name ';
+    for (final term in terms.entries) {
+      if (padded.contains(' ${term.key} ')) return term.value;
+    }
+    return productName.trim();
+  }
 
   /// تُنفّذ فقط بعد ضغط المستخدم «ابحث عن صورة»؛ ليس مع كل ضغطة حرف.
   static Future<List<StockPhotoCandidate>> search(
