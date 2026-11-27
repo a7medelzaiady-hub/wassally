@@ -1,6 +1,7 @@
 /// تنسيق السعر: 35 ج.م أو 12.5 ج.م
 String formatPrice(num value) {
-  final v = value.toDouble();
+  // تقريب لرقم عشري واحد الأول، عشان 104.96 تبان «105» مش «105.0».
+  final v = (value.toDouble() * 10).round() / 10;
   final text = v == v.roundToDouble()
       ? v.toInt().toString()
       : v.toStringAsFixed(1);

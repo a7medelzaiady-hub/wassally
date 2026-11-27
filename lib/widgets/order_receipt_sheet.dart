@@ -277,7 +277,7 @@ class OrderReceiptCard extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 390),
         child: ClipPath(
-          clipper: const _TornEdges(),
+          clipper: const ReceiptTornEdges(),
           child: Container(
             color: _paper,
             padding: const EdgeInsets.fromLTRB(12, 15, 12, 16),
@@ -291,10 +291,10 @@ class OrderReceiptCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(receipt.storeName, textAlign: TextAlign.center, style: base(14, w: FontWeight.w800)),
                 ],
-                const _Dashes(),
+                const ReceiptDashes(),
                 if (receipt.orderNumber.isNotEmpty) row(ReceiptLine('رقم الطلب', receipt.orderNumber), size: 12.5),
                 if (receipt.date.isNotEmpty) row(ReceiptLine('التاريخ', receipt.date), size: 12.5),
-                const _Dashes(),
+                const ReceiptDashes(),
                 if (receipt.items.any((l) => l.hasItemColumns))
                   receiptTableRow(
                     'الصنف', 'الكمية', 'السعر', 'الإجمالي',
@@ -312,13 +312,13 @@ class OrderReceiptCard extends StatelessWidget {
                     )
                   else
                     row(receipt.items[i]),
-                const _Dashes(),
+                const ReceiptDashes(),
                 for (final l in receipt.totals) row(l),
                 if (receipt.note.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(receipt.note, textAlign: TextAlign.center, style: base(11, c: _faded)),
                 ],
-                if (!inline) const _Dashes(),
+                if (!inline) const ReceiptDashes(),
                 if (!inline && receipt.qrLink.isNotEmpty) ...[
                   Center(
                     child: QrImageView(
@@ -350,8 +350,8 @@ class OrderReceiptCard extends StatelessWidget {
 }
 
 /// خط متقطع زي ورق الكاشير.
-class _Dashes extends StatelessWidget {
-  const _Dashes();
+class ReceiptDashes extends StatelessWidget {
+  const ReceiptDashes({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -378,8 +378,8 @@ class _Dashes extends StatelessWidget {
 }
 
 /// حواف فوق وتحت مقصوصة على شكل سنون (زي الورقة المقطوعة من الماكينة).
-class _TornEdges extends CustomClipper<Path> {
-  const _TornEdges();
+class ReceiptTornEdges extends CustomClipper<Path> {
+  const ReceiptTornEdges();
 
   @override
   Path getClip(Size size) {
