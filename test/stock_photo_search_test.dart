@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:city_store/services/stock_photo_search.dart';
+import 'package:city_store/services/image_service.dart';
 
 void main() {
   setUp(StockPhotoSearch.clearCacheForTesting);
@@ -70,6 +71,16 @@ void main() {
     expect(requests, 1);
     expect(a.single.id, b.single.id);
     client.close();
+  });
+
+  test('import accepts JPEG/PNG/WebP signatures only', () {
+    expect(suggestedPhotoExtension([0xff, 0xd8, 0xff, 0x1f]), 'jpg');
+    expect(suggestedPhotoExtension(
+      [0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]), 'png');
+    expect(suggestedPhotoExtension(
+      [82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80]), 'webp');
+    expect(suggestedPhotoExtension([60, 104, 116, 109, 108, 62]), isNull);
+    expect(suggestedPhotoExtension([]), isNull);
   });
 
   test('invalid names never call the API', () async {
