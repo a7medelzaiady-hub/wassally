@@ -37,6 +37,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   int _loadGeneration = 0;
   String? _error;
   final _estimateCtrl = TextEditingController();
+  final _agreedCtrl = TextEditingController();
   final _deliveryCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
   final _voicePlayer = audio.AudioPlayer();
@@ -54,6 +55,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   @override
   void dispose() {
     _estimateCtrl.dispose();
+    _agreedCtrl.dispose();
     _deliveryCtrl.dispose();
     _pinCtrl.dispose();
     _voicePlayer.dispose();
@@ -359,6 +361,38 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ),
+      if (o.callMe && o.step != QuickCourierStep.delivered &&
+          o.step != QuickCourierStep.cancelled)
+        Container(
+          key: const Key('quick-call-me-banner'),
+          margin: const EdgeInsets.only(top: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Brand.green.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(children: [
+            Icon(Icons.phone_callback_rounded, color: Brand.green),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                o.step == QuickCourierStep.available
+                    ? '📞 العميل اختار «كلّمني»: اقبل الطلب ورقمه هيظهرلك، اتصل بيه وخد الطلب منه.'
+                    : o.step == QuickCourierStep.estimate
+                        ? '📞 العميل اختار «كلّمني» ومستني مكالمتك. اتصل بيه، خد طلبه، واكتبه تحت.'
+                        : '📞 طلب «كلّمني»: اللي اتفقتوا عليه في المكالمة مكتوب تحت.',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.4),
+              ),
+            ),
+          ]),
+        ),
+      if (o.agreedItems.isNotEmpty && o.hasOwnRequest) ...[
+        _requestDivider(),
+        const Text('اللي اتفقتوا عليه في المكالمة',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+        const SizedBox(height: 4),
+        Text(o.agreedItems, style: const TextStyle(fontSize: 16, height: 1.45)),
+      ],
       if (!o.hasCustomerRequest)
         const Padding(
           padding: EdgeInsets.only(top: 10),
@@ -619,8 +653,32 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           ];
         }
         final estimate = parsePoundsToPiastres(_estimateCtrl.text);
+        final agreed = _agreedCtrl.text.trim();
+        final agreedMissing = o.needsAgreedItems && agreed.length < 3;
         return [
           _card(children: [
+            if (o.callMe) ...[
+              Text(
+                o.needsAgreedItems
+                    ? 'العميل قالك إيه في المكالمة؟'
+                    : 'اتفقتوا على حاجة زيادة في المكالمة؟ (اختياري)',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('quick-agreed-items'),
+                controller: _agreedCtrl,
+                minLines: 2,
+                maxLines: 5,
+                maxLength: 500,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText: 'مثال: 2 كيلو طماطم، علبة زيت، عيش بـ20',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
             const Text('بعد المكالمة: المشتريات تقريبًا كام جنيه؟',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
@@ -639,9 +697,12 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           _bigButton(
             'ابدأ الشراء',
             Icons.shopping_cart,
-            estimate == null || estimate <= 0
+            estimate == null || estimate <= 0 || agreedMissing
                 ? null
-                : () => _act('start-purchase', {'estimatedPurchasesPiastres': estimate}),
+                : () => _act('start-purchase', {
+                      'estimatedPurchasesPiastres': estimate,
+                      if (agreed.isNotEmpty) 'agreedItems': agreed,
+                    }),
             key: const Key('quick-start'),
           ),
         ];

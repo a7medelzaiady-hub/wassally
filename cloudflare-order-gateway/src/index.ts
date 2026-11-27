@@ -3705,7 +3705,8 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
       (url) => isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME));
     customerVoiceUrl = validateQuickVoice(input.customerVoiceUrl,
       (url) => isOwnQuickVoice(url, folder + "/voice", env.CLOUDINARY_CLOUD_NAME));
-    stores = validateQuickStores(input.stores, customerImages.length > 0 || !!customerVoiceUrl);
+    stores = validateQuickStores(input.stores,
+      customerImages.length > 0 || !!customerVoiceUrl || (kind === "quick" && input.callMe === true));
     if (kind === "errand" && (
       stores.length !== 1 ||
       stores[0].name !== "" ||
@@ -3755,7 +3756,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
 
   const order = newQuickOrder({
     uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages, customerVoiceUrl,
-    kind, errandType,
+    kind, errandType, callMe: kind === "quick" && input.callMe === true,
   });
   await commitOrConflict(env, token, [
     {

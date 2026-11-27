@@ -4,15 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:city_store/screens/quick_order_create_page.dart';
 import 'package:city_store/utils/maps.dart';
 
-Future<void> _pump(WidgetTester tester) async {
+Future<void> _pump(WidgetTester tester, {QuickOrderMethod? method}) async {
   SharedPreferences.setMockInitialValues({});
   tester.view.physicalSize = const Size(1080, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(const MaterialApp(
+  await tester.pumpWidget(MaterialApp(
     home: Directionality(
       textDirection: TextDirection.rtl,
-      child: QuickOrderCreatePage(prefillFromAccount: false),
+      child: QuickOrderCreatePage(prefillFromAccount: false, initialMethod: method),
     ),
   ));
   await tester.pumpAndSettle();
@@ -70,6 +70,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('اختار تبعت طلبك إزاي'), findsOneWidget);
     expect(find.text('تكتبه'), findsOneWidget, reason: 'القايمة اتفتحت تاني');
+  });
+
+  testWidgets('«كلّمني» ظاهر ضمن طرق الطلب', (tester) async {
+    await _pump(tester);
+    expect(find.text('كلّمني'), findsOneWidget);
+    expect(find.byKey(const Key('quick-method-callMe')), findsOneWidget);
+  });
+
+  testWidgets('«كلّمني»: من غير كتابة، والإرسال بيكمل لخطوة العنوان', (tester) async {
+    await _pump(tester, method: QuickOrderMethod.callMe);
+    expect(find.text('المندوب هيكلمك ياخد طلبك'), findsOneWidget);
+    expect(find.byKey(const Key('quick-call-me-section')), findsOneWidget);
+    expect(find.text('اكتب رقمك تحت عشان المندوب يكلمك'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('quick-submit')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('اختار تبعت طلبك إزاي'), findsNothing,
+        reason: '«كلّمني» كفاية كطلب');
+    expect(find.textContaining('اكتب الحي'), findsOneWidget);
   });
 
   test('إحداثيات الموقع في العنوان بتفتح النقطة بالظبط على الخريطة', () {

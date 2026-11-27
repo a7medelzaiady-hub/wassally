@@ -426,6 +426,15 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
             else ...[
               _StatusHeader(status: status, area: area, isErrand: isErrand),
               const SizedBox(height: AppSpacing.md),
+              if (!isErrand && order['callMe'] == true && (status == 'open' || status == 'accepted')) ...[
+                AppNotice(
+                  key: const Key('quick-customer-call-me-notice'),
+                  type: AppNoticeType.info,
+                  status == 'open'
+                      ? '📞 اخترت «كلّمني»: أول مندوب يقبل طلبك هيتصل بيك على رقمك، تقوله محتاج إيه.'
+                      : '📞 المندوب قبل طلبك وهيتصل بيك دلوقتي ياخد منك الطلب.',
+                ),
+              ],
               if ((status == 'summary_pending' || status == 'summary_approved') && (_pin == null || _pin!.isEmpty))
                 const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
               _card(
@@ -458,6 +467,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   if (notes.isNotEmpty) ...[
                     const SizedBox(height: AppSpacing.sm),
                     Text('ملاحظات: $notes', style: AppTypography.secondary),
+                  ],
+                  if ((order['agreedItems'] ?? '').toString().trim().isNotEmpty &&
+                      !stores.any((raw) => raw is Map &&
+                          (raw['items'] ?? '').toString().trim() ==
+                              (order['agreedItems'] ?? '').toString().trim())) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    Text('اتفقت مع المندوب في المكالمة على: ${(order['agreedItems'] ?? '').toString().trim()}',
+                        style: AppTypography.secondary),
                   ],
                   if (!hasFinalBill) ...[
                     _receiptDivider(),

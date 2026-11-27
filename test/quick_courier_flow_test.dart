@@ -295,4 +295,39 @@ void main() {
     await _show(tester, find.text('الطلب اتسلّم'));
     expect(find.text('الطلب اتسلّم'), findsOneWidget);
   });
+
+  testWidgets('«كلّمني»: المندوب لازم يكتب اللي اتفقوا عليه في المكالمة قبل الشراء', (tester) async {
+    final callMe = {
+      'callMe': true,
+      'stores': [
+        {'name': '', 'items': ''},
+      ],
+    };
+    final backend = _FakeBackend(_doc('accepted', callMe))
+      ..next = (_, body) => _doc('purchasing', {
+            'callMe': true,
+            'agreedItems': body['agreedItems'],
+            'stores': [
+              {'name': '', 'items': body['agreedItems']},
+            ],
+          });
+    await _pumpPage(tester, backend);
+    expect(find.byKey(const Key('quick-call-me-banner')), findsOneWidget);
+    expect(find.byKey(const Key('quick-request-empty-warning')), findsNothing);
+
+    final estimate = find.descendant(of: find.byKey(const Key('quick-estimate')), matching: find.byType(TextField));
+    await _show(tester, estimate);
+    await tester.enterText(estimate, '200');
+    await tester.pumpAndSettle();
+    await _show(tester, find.byKey(const Key('quick-start')));
+    expect(_enabled(tester, const Key('quick-start')), isFalse, reason: 'لسه ما كتبش الطلب');
+
+    await _show(tester, find.byKey(const Key('quick-agreed-items')));
+    await tester.enterText(find.byKey(const Key('quick-agreed-items')), '2 كيلو طماطم، علبة زيت');
+    await tester.pumpAndSettle();
+    await _tap(tester, const Key('quick-start'));
+    expect(backend.calls.single.key, 'start-purchase');
+    expect(backend.calls.single.value['agreedItems'], '2 كيلو طماطم، علبة زيت');
+    expect(backend.calls.single.value['estimatedPurchasesPiastres'], 20000);
+  });
 }

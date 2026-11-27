@@ -71,6 +71,17 @@ void main() {
     }).hasCustomerRequest, isTrue);
   });
 
+  test('«كلّمني»: الطلب مش فاضي، والمندوب لازم يكتب المتفق عليه لو العميل ما كتبش', () {
+    final empty = {'stores': [{'name': '', 'items': ''}], 'notes': ''};
+    final callMe = _order({...empty, 'callMe': true});
+    expect(callMe.callMe, isTrue);
+    expect(callMe.hasCustomerRequest, isTrue);
+    expect(callMe.needsAgreedItems, isTrue);
+    expect(_order({'callMe': true}).needsAgreedItems, isFalse, reason: 'العميل كتب أصناف');
+    expect(_order({...empty, 'callMe': true, 'kind': 'errand'}).callMe, isFalse);
+    expect(_order(empty).needsAgreedItems, isFalse);
+  });
+
   test('كل حالة بتودّي لخطوة واحدة واضحة', () {
     expect(_order().step, QuickCourierStep.available);
     expect(_order({'status': 'accepted'}).step, QuickCourierStep.estimate);
