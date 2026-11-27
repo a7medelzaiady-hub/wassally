@@ -19,17 +19,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('مشوارك علينا'), findsOneWidget);
-    expect(find.byKey(const Key('errand-pickup')), findsOneWidget);
-    expect(find.byKey(const Key('errand-destination')), findsOneWidget);
-    expect(find.byKey(const Key('errand-mission')), findsOneWidget);
     expect(find.byKey(const Key('errand-submit')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-
     await tester.tap(find.byKey(const Key('errand-type-documents')));
     await tester.pumpAndSettle();
     final chip = tester.widget<ChoiceChip>(find.byKey(const Key('errand-type-documents')));
     expect(chip.selected, isTrue);
-    expect(find.textContaining('أجرة'), findsWidgets);
+
+    final scrollable = find.descendant(
+      of: find.byKey(const Key('errand-create-list')),
+      matching: find.byType(Scrollable),
+    ).first;
+    for (final key in [
+      const Key('errand-pickup'),
+      const Key('errand-destination'),
+      const Key('errand-mission'),
+    ]) {
+      await tester.scrollUntilVisible(find.byKey(key), 210, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(find.byKey(key), findsOneWidget);
+    }
+    await tester.scrollUntilVisible(
+      find.textContaining('الأجرة تتحدد'), 180, scrollable: scrollable);
+    expect(find.textContaining('الأجرة تتحدد'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('مشوار ناقص: لا يحاول إرسال بيانات غير صحيحة', (tester) async {
