@@ -444,9 +444,9 @@ class _CustomerEntryState extends State<CustomerEntry> {
     const gap = AppSpacing.md;
     final minCard = _minCardHeight(context);
     return LayoutBuilder(builder: (context, box) {
-      // مكان خدمة المشاوير المختصرة، مع الحفاظ على الكروت الثلاثة المعتمدة.
-      final available = box.maxHeight - gap * 4 - 62;
-      var card = available / 3;
+      // أربع خدمات بكروت متساوية؛ نسمح بالتمرير عند ضيق الشاشة.
+      final available = box.maxHeight - gap * 5;
+      var card = available / 4;
       final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
       if (card > maxCard) card = maxCard;
       final fits = card >= minCard;
@@ -456,30 +456,83 @@ class _CustomerEntryState extends State<CustomerEntry> {
         physics: fits ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.only(bottom: gap),
         children: [
-          for (final (index, service) in _cards(card).indexed) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
+            child: _serviceCard(
+              title: 'خدمة وصّلي ع السريع',
+              subtitle: 'اطلب احتياجاتك من أي مكان',
+              action: 'اطلب الآن',
+              asset: kEntryQuickAsset,
+              height: card,
+              onTap: () => _enter(const QuickOrderCreatePage()),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
+            child: SizedBox(
+              height: card,
+              child: Material(
+                elevation: 3,
+                color: AppColors.purpleSoft,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.xl),
+                  side: const BorderSide(color: AppColors.line),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  key: const Key('entry-errand'),
+                  onTap: () => _enter(const ErrandCreatePage()),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.delivery_dining_rounded,
+                            color: AppColors.purple, size: 52),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('مشاويرك علينا',
+                                  style: TextStyle(fontSize: 19,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.ink)),
+                              const SizedBox(height: 5),
+                              const Text('مندوب لأي مشوار داخل مدينتك',
+                                  style: TextStyle(color: AppColors.muted)),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: AppColors.purple,
+                                    borderRadius: BorderRadius.circular(22),
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 18, vertical: 7),
+                                    child: Text('اطلب مشوار',
+                                        style: TextStyle(color: Colors.white,
+                                            fontWeight: FontWeight.w800)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          for (final service in _cards(card).skip(1))
             Padding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
               child: service,
             ),
-            if (index == 0)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(AppSpacing.md, 6, AppSpacing.md, 0),
-                child: OutlinedButton.icon(
-                  key: const Key('entry-errand'),
-                  onPressed: () => _enter(const ErrandCreatePage()),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: AppColors.purpleSoft,
-                    foregroundColor: AppColors.purple,
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                  ),
-                  icon: const Icon(Icons.delivery_dining_outlined),
-                  label: const Text('مشوارك علينا • اطلب مندوب لأي مشوار'),
-                ),
-              ),
-          ],
         ],
       );
     });
