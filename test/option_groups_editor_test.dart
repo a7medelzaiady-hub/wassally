@@ -151,9 +151,14 @@ void main() {
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'إضافات');
     await tester.enterText(fields.at(1), 'جبنة = 5\nبيض = 5\nصوص');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('اختيار متعدد'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('اختيار متعدد'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byIcon(Icons.add_circle_outline));
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add_circle_outline));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
