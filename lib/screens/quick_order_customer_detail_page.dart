@@ -472,6 +472,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   ],
                 ],
               ),
+              if (isErrand && status == 'purchasing' &&
+                  order['errandPickupConfirmedAt'] != null)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('✅ المندوب أكّد استلام الغرض من نقطة البداية.',
+                      key: Key('errand-picked-up-customer'),
+                      style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
+                ),
               if (isErrand)
                 _card(
                   key: const Key('errand-customer-addresses'),
