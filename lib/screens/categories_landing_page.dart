@@ -449,8 +449,10 @@ class _CustomerEntryState extends State<CustomerEntry> {
       var card = available / 4;
       final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
       if (card > maxCard) card = maxCard;
-      final fits = card >= minCard;
+      final fits = card >= minCard && card >= 150;
       if (!fits) card = minCard;
+      // مساحة كافية لكارت المشاوير حتى عند تكبير خط النظام.
+      if (card < 150) card = 150;
       return ListView(
         key: const Key('entry-list'),
         physics: fits ? const NeverScrollableScrollPhysics() : null,
@@ -494,13 +496,23 @@ class _CustomerEntryState extends State<CustomerEntry> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('مشاويرك علينا',
-                                  style: TextStyle(fontSize: 19,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppColors.ink)),
+                              const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text('مشاويرك علينا',
+                                    maxLines: 1,
+                                    style: TextStyle(fontSize: 19,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.ink)),
+                              ),
                               const SizedBox(height: 5),
-                              const Text('مندوب لأي مشوار داخل مدينتك',
-                                  style: TextStyle(color: AppColors.muted)),
+                              const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text('مندوب لأي مشوار داخل مدينتك',
+                                    maxLines: 1,
+                                    style: TextStyle(color: AppColors.muted)),
+                              ),
                               const SizedBox(height: 8),
                               Align(
                                 alignment: AlignmentDirectional.centerStart,
