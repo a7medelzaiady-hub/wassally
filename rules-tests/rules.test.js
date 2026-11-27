@@ -349,7 +349,8 @@ test('claim/edit race: التزامن الفعلي لا يترك feed قديمً
     const [editResult, claimResult] = await Promise.allSettled([edit.commit(), claim.commit()]);
     assert.equal(claimResult.status, 'fulfilled');
     const finalOrder = (await getDoc(doc(courierDb, `orders/${orderId}`))).data();
-    const finalContact = (await getDoc(doc(courierDb, `orders/${orderId}/private/contact`))).data();
+    // المندوب لسه ما استلمش من المحل، فبنقرا بيانات التواصل بحساب العميل.
+    const finalContact = (await getDoc(doc(customerDb, `orders/${orderId}/private/contact`))).data();
     assert.equal(finalOrder.courierId, 'cour1');
     assert.equal((await getDoc(doc(courierDb, `courier_available_orders/${orderId}`))).exists(), false);
     if (editResult.status === 'fulfilled') {
@@ -1637,12 +1638,13 @@ test('خصوصية: صاحب المحل لا يقرأ بيانات تواصل ا
   await assertFails(getDoc(doc(as('owner2'), contactPath)));
 });
 
-test('خصوصية: المندوب يقرأ بيانات التواصل فقط وهو مكلّف بالطلب وجاري', async () => {
+test('خصوصية: المندوب يقرأ بيانات التواصل فقط بعد ما يستلم من المحل وهو مكلّف بالطلب', async () => {
   await setOrderState({ status: 'preparing' });
   await assertFails(getDoc(doc(as('cour1'), contactPath))); // طلب متاح لسه ماستلمهوش
-  await setOrderState({ status: 'preparing', courierId: 'cour1', pickedUpAt: new Date() });
-  await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
-  await setOrderState({ status: 'on_the_way' });
+  // مكلّف بس لسه ما استلمش من المحل: العنوان والتليفون مقفولين.
+  await setOrderState({ status: 'preparing', courierId: 'cour1' });
+  await assertFails(getDoc(doc(as('cour1'), contactPath)));
+  await setOrderState({ status: 'on_the_way', pickedUpAt: new Date() });
   await assertSucceeds(getDoc(doc(as('cour1'), contactPath)));
   // An external courier can still settle cash after PIN confirmation.
   await setOrderState({ deliveryMode: 'external', customerConfirmedAt: new Date() });
@@ -2683,7 +2685,12 @@ test('groups: استلام طلب من المجموعة ما بيستلمش با
   assert.equal(second.groupCode, 'OPQR12');
   const secondOrder = (await getDoc(doc(as('admin1'), 'orders/g2'))).data();
   assert.equal(secondOrder.courierId ?? '', '');
-  // بعد التعيين: المندوب يشوف بيانات تواصل طلبه هو بس.
+  // بعد التعيين وقبل الاستلام من المحل: لسه مفيش بيانات تواصل.
+  await assertFails(getDoc(doc(courierDb, 'orders/g1/private/contact')));
+  // بعد الاستلام: المندوب يشوف بيانات تواصل طلبه هو بس.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/g1'), { status: 'on_the_way', pickedUpAt: new Date() });
+  });
   await assertSucceeds(getDoc(doc(courierDb, 'orders/g1/private/contact')));
   await assertFails(getDoc(doc(courierDb, 'orders/g2/private/contact')));
 });
