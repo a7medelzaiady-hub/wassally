@@ -108,6 +108,7 @@ class QuickCourierOrder {
   final String errandType;
   final int? errandQuotePiastres;
   final String errandQuoteStatus;
+  final DateTime? errandPickupConfirmedAt;
   final String courierId;
   final String customerFirstName;
   final String area;
@@ -141,6 +142,7 @@ class QuickCourierOrder {
     this.errandType = '',
     this.errandQuotePiastres,
     this.errandQuoteStatus = '',
+    this.errandPickupConfirmedAt,
     this.courierId = '',
     this.customerFirstName = '',
     this.area = '',
@@ -180,6 +182,7 @@ class QuickCourierOrder {
       errandType: _str(m['errandType']),
       errandQuotePiastres: _int(m['errandQuotePiastres']),
       errandQuoteStatus: _str(m['errandQuoteStatus']),
+      errandPickupConfirmedAt: _date(m['errandPickupConfirmedAt']),
       courierId: _str(m['courierId']),
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
