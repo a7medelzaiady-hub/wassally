@@ -1372,6 +1372,19 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
             title: const Text('تفاصيل الطلب'),
             subtitle: Text('عدد الأصناف: ${o.items.length}'),
             children: [
+              // نفس شكل الفاتورة الحرارية (ورق أبيض وخط متقطع)، بس نص عادي
+              // عشان المحل يقدر يعلّم على الأصناف الناقصة.
+              Container(
+                key: const Key('owner-thermal-items'),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFEFA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: kLine),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
               for (final line in o.items)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1431,22 +1444,23 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                 const SizedBox(height: 8),
                 Text('ملاحظات العميل: ${o.notes}'),
               ],
-              const SizedBox(height: 8),
+              const Divider(height: 18),
               Row(
                 children: [
-                  Text(
-                    'إجمالي الأصناف:',
-                    style: text.bodyMedium?.copyWith(color: kMuted),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    formatPrice(o.subtotal),
-                    style: text.titleMedium?.copyWith(
-                      color: kPrimary,
-                      fontWeight: FontWeight.w800,
+                  Expanded(
+                    child: Text(
+                      'إجمالي الأصناف',
+                      style: text.titleSmall?.copyWith(fontWeight: FontWeight.w900),
                     ),
                   ),
+                  Text(
+                    formatPrice(o.subtotal),
+                    style: text.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                  ),
                 ],
+              ),
+                  ],
+                ),
               ),
             ],
           ),
