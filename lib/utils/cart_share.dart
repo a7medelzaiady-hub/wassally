@@ -39,8 +39,13 @@ OrderReceipt buildCartReceipt(CartModel cart, {DateTime? now}) {
     storeName: store,
     items: [
       for (final entry in cart.items.entries)
-        ReceiptLine('${entry.value} × ${entry.key.name}',
-            formatPrice(entry.key.price * entry.value)),
+        ReceiptLine(
+          '${entry.value} × ${entry.key.name}',
+          formatPrice(entry.key.price * entry.value),
+          itemName: entry.key.name,
+          quantity: entry.value,
+          unitPrice: entry.key.price,
+        ),
       if (note.isNotEmpty) ReceiptLine('طلب خاص: $note', ''),
     ],
     totals: [

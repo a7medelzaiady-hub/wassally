@@ -23,6 +23,9 @@ void main() {
       '2 × ليبي 1 لتر|500 ج.م',
     ]);
     expect(r.totals.single.value, '1800 ج.م');
+    expect(r.items.map((l) => l.itemName), ['فالي توك توك', 'ليبي 1 لتر']);
+    expect(r.items.map((l) => l.quantity), [1, 2]);
+    expect(r.items.map((l) => l.unitPrice), [1300, 250]);
     expect(r.qrLink, contains('com.wassally.app'));
     expect(r.shareText, contains('الزيادي لزيوت السيارات'));
     expect(r.fileName, endsWith('.png'));
@@ -35,7 +38,37 @@ void main() {
     expect(find.text('وصّلي'), findsOneWidget);
     expect(find.text('سلتي'), findsOneWidget);
     expect(find.text('1800 ج.م'), findsOneWidget);
+    expect(find.byKey(const Key('receipt-table-header')), findsOneWidget);
+    expect(find.text('الصنف'), findsOneWidget);
+    expect(find.text('الكمية'), findsOneWidget);
+    expect(find.text('السعر'), findsOneWidget);
+    expect(find.byKey(const Key('receipt-line-1')), findsOneWidget);
+    expect(find.text('250'), findsOneWidget);
+    expect(find.text('500'), findsOneWidget);
     expect(find.byKey(const Key('receipt-qr')), findsOneWidget);
     expect(find.text('رقم الطلب'), findsNothing);
+  });
+
+  testWidgets('أعمدة الإيصال لا تتداخل على شاشة 320 ومع أسماء طويلة', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final c = CartModel();
+    c.add(const Product('فلفل أخضر بلدي طويل الاسم ومعبأ طازج', 13.5),
+        storeId: 'veg', storeName: 'فواكه وخضروات', qty: 12);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: OrderReceiptCard(receipt: buildCartReceipt(c)),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('receipt-table-header')), findsOneWidget);
+    expect(find.byKey(const Key('receipt-line-0')), findsOneWidget);
+    expect(find.text('13.5'), findsOneWidget);
+    expect(find.text('162'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

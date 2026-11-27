@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/order.dart';
 import '../theme/brand.dart';
+import '../utils/format.dart';
 import '../utils/order_receipt.dart';
 import 'app_snack.dart';
 
@@ -118,7 +119,7 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
       ),
       child: SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -130,7 +131,7 @@ class _OrderReceiptSheetState extends State<OrderReceiptSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
@@ -190,7 +191,7 @@ class OrderReceiptCard extends StatelessWidget {
         TextStyle(fontSize: size, fontWeight: w, color: c, height: 1.35, fontFeatures: numbers);
 
     Widget row(ReceiptLine l, {double size = 13.5}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -211,29 +212,106 @@ class OrderReceiptCard extends StatelessWidget {
           ),
         );
 
+    // أربعة أعمدة فعلية: الصنف يمينًا ثم الكمية وسعر الوحدة وإجمالي السطر.
+    // أرقام الأسعار بلا تكرار «ج.م» داخل كل خلية لتوفير عرض الورقة.
+    String amountOnly(String value) => value.replaceAll(' ج.م', '');
+
+    Widget receiptTableRow(
+      String name,
+      String qty,
+      String unitPrice,
+      String lineTotal, {
+      bool header = false,
+      Key? key,
+    }) {
+      Widget cell(String value, int flex, {bool product = false}) => Expanded(
+            flex: flex,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: product
+                  ? Text(
+                      value,
+                      style: base(header ? 11.5 : 12,
+                          w: header ? FontWeight.w900 : FontWeight.w600),
+                      softWrap: true,
+                    )
+                  : FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        textDirection: header ? TextDirection.rtl : TextDirection.ltr,
+                        style: base(header ? 11.5 : 11.8,
+                            w: header ? FontWeight.w900 : FontWeight.w700),
+                      ),
+                    ),
+            ),
+          );
+
+      return Container(
+        key: key,
+        padding: EdgeInsets.symmetric(vertical: header ? 5 : 4),
+        decoration: BoxDecoration(
+          color: header ? const Color(0xFFF3F2ED) : null,
+          border: const Border(
+            bottom: BorderSide(color: Color(0xFFE1DFD8), width: 0.65),
+          ),
+        ),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              cell(name, 9, product: true),
+              cell(qty, 3),
+              cell(unitPrice, 4),
+              cell(lineTotal, 4),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 330),
+        constraints: const BoxConstraints(maxWidth: 390),
         child: ClipPath(
           clipper: const _TornEdges(),
           child: Container(
             color: _paper,
-            padding: const EdgeInsets.fromLTRB(18, 22, 18, 22),
+            padding: const EdgeInsets.fromLTRB(12, 15, 12, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('وصّلي', textAlign: TextAlign.center, style: base(26, w: FontWeight.w900)),
+                Text('وصّلي', textAlign: TextAlign.center, style: base(24, w: FontWeight.w900)),
                 Text(receipt.title, textAlign: TextAlign.center, style: base(13, c: _faded)),
                 if (receipt.storeName.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Text(receipt.storeName, textAlign: TextAlign.center, style: base(15, w: FontWeight.w800)),
+                  Text(receipt.storeName, textAlign: TextAlign.center, style: base(14, w: FontWeight.w800)),
                 ],
                 const _Dashes(),
                 if (receipt.orderNumber.isNotEmpty) row(ReceiptLine('رقم الطلب', receipt.orderNumber), size: 12.5),
                 if (receipt.date.isNotEmpty) row(ReceiptLine('التاريخ', receipt.date), size: 12.5),
                 const _Dashes(),
-                for (final l in receipt.items) row(l),
+                if (receipt.items.any((l) => l.hasItemColumns))
+                  receiptTableRow(
+                    'الصنف', 'الكمية', 'السعر', 'الإجمالي',
+                    header: true,
+                    key: const Key('receipt-table-header'),
+                  ),
+                for (var i = 0; i < receipt.items.length; i++)
+                  if (receipt.items[i].hasItemColumns)
+                    receiptTableRow(
+                      receipt.items[i].itemName!,
+                      '${receipt.items[i].quantity}',
+                      amountOnly(formatPrice(receipt.items[i].unitPrice!)),
+                      amountOnly(receipt.items[i].value),
+                      key: Key('receipt-line-$i'),
+                    )
+                  else
+                    row(receipt.items[i]),
                 const _Dashes(),
                 for (final l in receipt.totals) row(l),
                 if (receipt.note.isNotEmpty) ...[
@@ -246,7 +324,7 @@ class OrderReceiptCard extends StatelessWidget {
                     child: QrImageView(
                       key: const Key('receipt-qr'),
                       data: receipt.qrLink,
-                      size: 92,
+                      size: 78,
                       padding: EdgeInsets.zero,
                       backgroundColor: _paper,
                       eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _ink),
@@ -278,7 +356,7 @@ class _Dashes extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: LayoutBuilder(
         builder: (context, c) {
           final count = (c.maxWidth / 7).floor();
