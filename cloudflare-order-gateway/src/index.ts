@@ -834,6 +834,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   // Remove user-authored support, complaints, applications, and notifications.
   for (const [collection, field] of [
     ["complaints", "userId"],
+    ["order_issues", "customerId"],
     ["role_requests", "userId"],
     ["notifications", "userId"],
   ]) {
@@ -3208,14 +3209,16 @@ async function deliverWithPin(request: Request, env: Env, orderId: string, ctx?:
 
 // ───────────── إشعار الإدارة بطلب انضمام أو بلاغ تعذر تسليم ─────────────
 
-export type AdminNoticeKind = "join_request" | "delivery_issue";
+export type AdminNoticeKind = "join_request" | "delivery_issue" | "order_issue";
 const ADMIN_NOTICE_MAX_AGE_MS = 10 * 60 * 1000;
 
 /** نص الإشعار من غير أي بيانات شخصية (توبيك admins مش محمي، فالمحتوى عام). */
 export function adminNoticeMessage(kind: AdminNoticeKind, detail: string) {
-  const title = kind === "join_request" ? "طلب انضمام جديد" : "بلاغ تعذر تسليم جديد";
+  const title = kind === "join_request" ? "طلب انضمام جديد"
+    : kind === "order_issue" ? "عميل بلّغ عن مشكلة في طلب" : "بلاغ تعذر تسليم جديد";
   const body = kind === "join_request"
     ? (detail === "store_owner" ? "صاحب محل" : detail === "courier" ? "مندوب" : "طلب") + " • افتح الطلبات والرسائل للمراجعة"
+    : kind === "order_issue" ? "افتح الطلبات والرسائل ← مشاكل للمراجعة"
     : "مندوب سجّل تعذر تسليم • افتح الطلبات والرسائل";
   return {
     message: {
@@ -3254,11 +3257,13 @@ async function notifyAdmins(request: Request, env: Env): Promise<Response> {
   }
   const kind = body?.kind;
   const id = typeof body?.id === "string" ? body.id : "";
-  if ((kind !== "join_request" && kind !== "delivery_issue") || !/^[A-Za-z0-9_-]{1,160}$/.test(id)) {
+  if ((kind !== "join_request" && kind !== "delivery_issue" && kind !== "order_issue") ||
+      !/^[A-Za-z0-9_-]{1,160}$/.test(id)) {
     throw new HttpError(400, "بيانات غير صالحة.");
   }
   const token = await googleAccessToken(env);
-  const col = kind === "join_request" ? "role_requests" : "delivery_issues";
+  const col = kind === "join_request" ? "role_requests"
+    : kind === "order_issue" ? "order_issues" : "delivery_issues";
   const docRaw = await getDocument(env, `${col}/${encodeURIComponent(id)}`, token);
   const doc = docRaw ? decodeFields(docRaw.fields ?? {}) : null;
   const blocker = adminNoticeBlocker(kind, id, doc, uid);

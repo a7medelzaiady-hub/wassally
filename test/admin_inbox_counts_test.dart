@@ -11,5 +11,8 @@ void main() {
         'محتاج مراجعتك: 2 طلب انضمام و1 بلاغ تعذر تسليم.');
     expect(AdminInboxCounts.alertText(const AdminInboxCounts(deliveryIssues: 4)),
         'محتاج مراجعتك: 4 بلاغ تعذر تسليم.');
+    expect(const AdminInboxCounts(deliveryIssues: 1, orderIssues: 2).total, 3);
+    expect(AdminInboxCounts.alertText(const AdminInboxCounts(orderIssues: 2)),
+        'محتاج مراجعتك: 2 مشكلة في طلب.');
   });
 }
