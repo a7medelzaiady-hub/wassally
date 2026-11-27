@@ -10,6 +10,7 @@ import 'admin_stores_page.dart';
 import 'admin_roles_page.dart';
 import 'admin_store_owners_page.dart';
 import 'admin_tools_page.dart';
+import 'admin_photo_library_page.dart';
 import 'admin_couriers_board_page.dart';
 import 'admin_operations_report_page.dart';
 import 'admin_inbox_page.dart';
@@ -38,6 +39,7 @@ class AdminNavigationPage extends StatelessWidget {
       if (OrderGateway.referralCampaignEnabled)
         (title: 'إدارة الدعوات', subtitle: 'أكواد المسوقين والمكافآت', icon: Icons.card_giftcard, page: const AdminReferralCampaignPage()),
       (title: 'إعدادات التشغيل', subtitle: 'إعدادات التطبيق والخدمة', icon: Icons.tune_rounded, page: const AdminToolsPage()),
+      (title: 'مكتبة صور وصّلي', subtitle: 'صور حقيقية للأصناف الشائعة لكل المحلات', icon: Icons.photo_library_outlined, page: const AdminPhotoLibraryPage()),
       (title: 'ترتيب المناديب', subtitle: 'متابعة أداء المناديب', icon: Icons.leaderboard_outlined, page: const AdminCouriersBoardPage()),
       (title: 'تقرير التشغيل', subtitle: 'إحصائيات وتقارير', icon: Icons.assessment_outlined, page: const AdminOperationsReportPage()),
       (title: 'طلبات الانضمام والمراجعات', subtitle: 'الطلبات التي تحتاج مراجعة', icon: Icons.inbox_outlined, page: const AdminInboxPage()),

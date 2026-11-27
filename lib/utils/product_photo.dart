@@ -8,7 +8,10 @@ class ProductPhoto {
 
   /// true لو وجدنا اسم منتج واضح؛ false لو استخدمنا صورة القسم العامة.
   final bool matchedName;
-  const ProductPhoto(this.url, {this.matchedName = false});
+
+  /// true لو الصورة من «مكتبة صور وصّلي» (صورة حقيقية رفعتها الإدارة).
+  final bool fromLibrary;
+  const ProductPhoto(this.url, {this.matchedName = false, this.fromLibrary = false});
 }
 
 class _PhotoRule {
@@ -33,6 +36,20 @@ String _unsplash(String id) =>
 // إبقاء روابط الأطباق المصرية الحالية؛ الروابط ثابتة وليست طلب بحث.
 String _unsplashPhoto(String id) =>
     'https://unsplash.com/photos/$id/download?force=true&w=320';
+
+/// مكتبة صور وصّلي (الإدارة): {اسم مطبّع: رابط}. بتتملا من PhotoLibrary.
+Map<String, String> _library = const {};
+List<String> _libraryKeys = const [];
+
+/// بتتنادى من PhotoLibrary بعد التحميل.
+void setProductPhotoLibrary(Map<String, String> entries) {
+  _library = Map.unmodifiable(entries);
+  // الأطول الأول: «زيت موبيل» قبل «زيت».
+  _libraryKeys = entries.keys.toList()..sort((a, b) => b.length.compareTo(a.length));
+}
+
+/// نفس تطبيع أسماء الأصناف (للمفاتيح في المكتبة).
+String normalizeProductPhotoKey(String raw) => _normalizeProductName(raw);
 
 String _normalizeProductName(String raw) => raw
     .toLowerCase()
@@ -267,6 +284,16 @@ ProductPhoto productPhotoFor({
 
   final normalized = _normalizeProductName(name);
   final category = _normalizeProductName(storeCategory);
+
+  // صور مكتبة وصّلي الحقيقية (الإدارة) قبل أي صورة توضيحية عامة.
+  if (_libraryKeys.isNotEmpty) {
+    final padded = ' $normalized ';
+    for (final key in _libraryKeys) {
+      if (padded.contains(' $key ')) {
+        return ProductPhoto(_library[key]!, matchedName: true, fromLibrary: true);
+      }
+    }
+  }
 
   // "زيت" لوحدها في محل قطع غيار لا يجب أن تظهر كزيت طعام.
   if (_inVehicleStore(category) && _hasPhrase(normalized, 'زيت')) {

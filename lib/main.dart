@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb, debugPrint;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -21,6 +22,7 @@ import 'theme/theme_controller.dart';
 import 'services/cart_book.dart';
 import 'services/cart_reminder.dart';
 import 'services/data_saver.dart';
+import 'services/photo_library.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -53,6 +55,12 @@ Future<void> _bootstrap() async {
     ));
     // تذكير السلة المنسية (إشعار محلي على أندرويد بس؛ أي فشل بيتجاهل).
     if (isAndroid && !E2eSupport.enabled) unawaited(CartReminder.instance.start());
+    // مكتبة صور وصّلي: من الموبايل فورًا، ومن Firestore بعد تسجيل الدخول (مرة كل 6 ساعات).
+    unawaited(PhotoLibrary.load());
+    FirebaseAuth.instance.authStateChanges().firstWhere((u) => u != null).then(
+          (_) => PhotoLibrary.load(),
+          onError: (_) {},
+        );
   });
 }
 
