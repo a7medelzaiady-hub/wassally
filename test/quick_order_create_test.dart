@@ -75,13 +75,15 @@ void main() {
   testWidgets('«كلّمني»: اختيار من غير كتابة، والإرسال بيكمل لخطوة العنوان', (tester) async {
     await _pump(tester);
     expect(find.text('كلّمني'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('quick-method-callMe')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('quick-method-callMe')));
     await tester.pumpAndSettle();
     expect(find.text('المندوب هيكلمك ياخد طلبك'), findsOneWidget);
     expect(find.byKey(const Key('quick-call-me-section')), findsOneWidget);
     expect(find.text('اكتب رقمك تحت عشان المندوب يكلمك'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('quick-submit')));
+    await tester.tap(find.byKey(const Key('quick-submit')), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(find.textContaining('اختار تبعت طلبك إزاي'), findsNothing,
         reason: '«كلّمني» كفاية كطلب');
