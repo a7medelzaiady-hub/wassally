@@ -11,18 +11,18 @@ import '../utils/product_photo.dart';
 /// قبل الصور التوضيحية العامة.
 ///
 /// المستند: app_info/photo_library = { photos: { <اسم مطبّع>: {name, url} }, updatedAt }.
-/// القراءة: مرة كل 6 ساعات بالكتير (متخزنة على الموبايل). الكتابة: الإدارة بس (القواعد).
+/// القراءة: مرة في اليوم بالكتير (متخزنة على الموبايل). الكتابة: الإدارة بس (القواعد).
 class PhotoLibrary {
   PhotoLibrary._();
 
   static const _prefsKey = 'photo_library_v1';
   static const _prefsAtKey = 'photo_library_at_v1';
-  static const _refreshEvery = Duration(hours: 6);
+  static const _refreshEvery = Duration(hours: 24);
 
   static DocumentReference<Map<String, dynamic>> get doc =>
       FirebaseFirestore.instance.collection('app_info').doc('photo_library');
 
-  /// بيحمّل من الموبايل فورًا، وبيحدّث من Firestore لو آخر تحديث أقدم من 6 ساعات.
+  /// بيحمّل من الموبايل فورًا، وبيحدّث من Firestore لو آخر تحديث أقدم من يوم.
   static Future<void>? _inflight;
 
   static Future<void> load({bool force = false}) {
