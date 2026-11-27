@@ -7,7 +7,22 @@ class ReceiptLine {
   final String label;
   final String value;
   final bool strong;
-  const ReceiptLine(this.label, this.value, {this.strong = false});
+
+  /// بيانات أعمدة الفاتورة، من غير ما نكسر استهلاك label/value القديم.
+  /// السعر للوحدة شامل الخيارات، والقيمة value هي إجمالي السطر.
+  final String? itemName;
+  final int? quantity;
+  final double? unitPrice;
+  bool get hasItemColumns => itemName != null && quantity != null && unitPrice != null;
+
+  const ReceiptLine(
+    this.label,
+    this.value, {
+    this.strong = false,
+    this.itemName,
+    this.quantity,
+    this.unitPrice,
+  });
 }
 
 /// بيانات الإيصال محسوبة من الطلب اللي قدام العميل أصلًا: صفر قراءات.
@@ -62,6 +77,10 @@ class OrderReceipt {
             '${item.qty} × ${item.name}'
             '${item.options.isEmpty ? '' : ' (${item.options.join('، ')})'}',
             formatPrice(item.total),
+            itemName: '${item.name}'
+                '${item.options.isEmpty ? '' : ' (${item.options.join('، ')})'}',
+            quantity: item.qty,
+            unitPrice: item.price,
           ),
       ],
       totals: [
