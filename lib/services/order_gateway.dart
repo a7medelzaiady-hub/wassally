@@ -89,7 +89,7 @@ class OrderGateway {
     if (user == null || user.uid != item.uid) {
       throw const RetryableOrderPushException();
     }
-    final uri = Uri.tryParse('${baseUrl.trim().replaceFirst(RegExp(r'/+, '')}/v1/order-events');
+    final uri = Uri.tryParse('${baseUrl.trim().replaceFirst(RegExp(r'/+}/v1/order-events');
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw const PermanentOrderPushException();
     }
@@ -570,8 +570,7 @@ class _OrderPushAppObserver extends WidgetsBindingObserver {
       unawaited(OrderGateway.replayPendingPushes());
     }
   }
-}
-), '')}/v1/order-events');
+}), ''}/v1/order-events');
     if (uri == null || uri.scheme != 'https' || !uri.hasAuthority) {
       throw const PermanentOrderPushException();
     }
@@ -599,7 +598,12 @@ class _OrderPushAppObserver extends WidgetsBindingObserver {
     } finally {
       client.close();
     }
-    if (response.statusCode >= 500) throw const RetryableOrderPushException();
+    // The Worker can enforce a 20-second notification rate limit. A retry
+    // attempted after 2 or 5 seconds may receive 429; keep it in the same
+    // bounded backoff/outbox instead of dropping an unsent notification.
+    if (shouldRetryOrderPushStatus(response.statusCode)) {
+      throw const RetryableOrderPushException();
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const PermanentOrderPushException();
     }
