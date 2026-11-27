@@ -276,7 +276,9 @@ export function newQuickOrder(input: {
       errandQuoteStatus: "",
     } : {}),
     // صور «صوّر طلبك» (Cloudinary). بتتمسح مراجعها وملفاتها عند التسليم.
-    customerImages: input.customerImages ?? [],
+    // صور المشاوير قد تحمل بيانات على ملصق الطرد؛ لا تظهر قبل قبول المندوب.
+    customerImages: input.kind === "errand" ? [] : (input.customerImages ?? []),
+    ...(input.kind === "errand" ? { hasCustomerImages: (input.customerImages?.length ?? 0) > 0 } : {}),
     // الصوت في private/contact بس لحماية خصوصية محتواه قبل قبول المندوب.
     hasCustomerVoice: Boolean(input.customerVoiceUrl),
     approxTotalPiastres: quickApproxTotal(input.stores),
@@ -421,7 +423,12 @@ export function applyQuickAction(
         fail(409, "edit_after_accept", "المندوب قبل الطلب. كلّمه بالتليفون لأي تغيير.");
       }
       const stores = validateQuickStores(body.stores,
-        order.hasCustomerVoice === true || quickCustomerImages(order).length > 0);
+        order.hasCustomerVoice === true || order.hasCustomerImages === true ||
+        quickCustomerImages(order).length > 0);
+      if (isErrand && (stores.length !== 1 || stores[0].name !== "" ||
+          stores[0].pricedItems?.length || stores[0].items.length < 10)) {
+        fail(400, "invalid_errand", "تفاصيل المشوار لازم تكون 10 أحرف على الأقل.");
+      }
       return { stores, approxTotalPiastres: quickApproxTotal(stores), notes: validateQuickNotes(body.notes), rev };
     }
 
@@ -437,7 +444,8 @@ export function applyQuickAction(
       }
       const voice = body.customerVoiceUrl;
       // لازم يفضل فيه طلب مكتوب أو صورة أو تسجيل بعد الحذف.
-      validateQuickStores(order.stores, quickCustomerImages(order).length > 0 || voice.length > 0);
+      validateQuickStores(order.stores, quickCustomerImages(order).length > 0 ||
+        order.hasCustomerImages === true || voice.length > 0);
       return { hasCustomerVoice: voice.length > 0, rev };
     }
 
@@ -664,6 +672,7 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
     collectedPiastres: numOrNull(totals.due) ?? 0,
     // صور العميل بتتشال من الطلب لحظة تأكيد الاستلام (والملفات بتتمسح من Cloudinary).
     customerImages: [],
+    hasCustomerImages: false,
     hasCustomerVoice: false,
     rev: (numOrNull(order.rev) ?? 0) + 1,
   };
