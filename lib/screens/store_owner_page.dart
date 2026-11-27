@@ -1816,14 +1816,16 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     }
     var added = 0;
     Object? error;
-    await CatalogSync.markPending(widget.storeId);
+    final refs = [for (var i = 0; i < unique.length; i++) _col.doc()];
+    await CatalogSync.markPending(widget.storeId, refs.map((r) => r.id).toList());
     try {
       for (var start = 0; start < unique.length; start += 100) {
         final end = start + 100 > unique.length ? unique.length : start + 100;
         final batch = FirebaseFirestore.instance.batch();
-        for (final l in unique.sublist(start, end)) {
+        for (var i = start; i < end; i++) {
+          final l = unique[i];
           final groups = l.suggestion?.optionGroups ?? const <OptionGroup>[];
-          batch.set(_col.doc(), {
+          batch.set(refs[i], {
             'name': l.name,
             'price': l.price,
             'image': '',
@@ -1844,7 +1846,10 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
     }
     if (added > 0) {
       try { await _syncCount(); } catch (_) {}
-      final ok = await CatalogSync.afterProductsChanged(widget.storeId);
+      final ok = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: refs.map((r) => r.id).toList(),
+      );
       await _load(fromCache: true);
       _say(error == null
           ? StoreHighlights.withNote('تم إضافة $added صنف', ok)
@@ -1969,7 +1974,10 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         }
         await batch.commit();
       }
-      final ok = await CatalogSync.afterProductsChanged(widget.storeId);
+      final ok = await CatalogSync.afterProductsChanged(
+        widget.storeId,
+        productIds: changes.map((e) => e.$1.id).toList(),
+      );
       await _load(fromCache: true);
       _say(StoreHighlights.withNote('تم تعديل ${changes.length} سعر', ok));
     } catch (e) {
