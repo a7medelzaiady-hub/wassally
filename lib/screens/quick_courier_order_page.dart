@@ -291,9 +291,9 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     return _card(children: [
       Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
       const SizedBox(height: 6),
-      _row('الفواتير', formatPiastres(t.purchases)),
+      if (t.purchases > 0) _row('الفواتير', formatPiastres(t.purchases)),
       _row('أجرة التوصيل', formatPiastres(t.delivery)),
-      _row('رسوم وصّلي', formatPiastres(t.serviceFee)),
+      if (t.serviceFee > 0) _row('رسوم وصّلي', formatPiastres(t.serviceFee)),
       if (t.prepaid > 0) _row('المقدم المحوّل', '- ${formatPiastres(t.prepaid)}'),
       const Divider(),
       t.due >= 0
@@ -323,16 +323,23 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         children: [
           Icon(Icons.receipt_long_rounded, color: Brand.green, size: 30),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
-              'فاتورة مشتريات العميل',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              o.isErrand ? 'مشوارك علينا • ${o.errandTypeLabel}' : 'فاتورة مشتريات العميل',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
             ),
           ),
         ],
       ),
       const SizedBox(height: 4),
-      Text(quickStepLabel(o.step), style: TextStyle(color: kMuted)),
+      Text(
+        o.isErrand
+          ? (o.step == QuickCourierStep.estimate ? 'اتفق على الأجرة قبل ما تبدأ'
+            : o.step == QuickCourierStep.purchasing ? 'المشوار جاري التنفيذ'
+            : quickStepLabel(o.step))
+          : quickStepLabel(o.step),
+        style: TextStyle(color: kMuted),
+      ),
       if (o.step == QuickCourierStep.available)
         const Padding(
           padding: EdgeInsets.only(top: 8),
@@ -496,6 +503,27 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
     }
     return _card(children: [
       if (c.name.isNotEmpty) Text(c.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+      if (o.isErrand && c.pickupAddress.isNotEmpty) ...[
+        const Text('استلم من:', style: TextStyle(fontWeight: FontWeight.w900)),
+        Text(c.pickupAddress, style: const TextStyle(height: 1.4)),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: const Key('errand-pickup-map'),
+            onPressed: () async {
+              try {
+                final opened = await openInMaps(c.pickupAddress);
+                if (!opened && mounted) _toast('تعذر فتح خريطة الاستلام.');
+              } catch (_) {
+                if (mounted) _toast('تعذر فتح خريطة الاستلام.');
+              }
+            },
+            icon: const Icon(Icons.map_outlined),
+            label: const Text('خريطة الاستلام'),
+          ),
+        ),
+      ],
+      if (o.isErrand) const Text('سلّم إلى:', style: TextStyle(fontWeight: FontWeight.w900)),
       if (c.address.isNotEmpty) Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Text(c.address, style: const TextStyle(height: 1.5)),
@@ -545,6 +573,50 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ];
 
       case QuickCourierStep.estimate:
+        if (o.isErrand) {
+          final price = parsePoundsToPiastres(_deliveryCtrl.text);
+          final approved = o.quoteApproved;
+          return [
+            _card(children: [
+              Text(o.errandTypeLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+              const SizedBox(height: 6),
+              const Text('اتصل بالعميل واتفقوا على أجرة المشوار. التنفيذ مش هيبدأ غير لما يوافق داخل التطبيق.'),
+              if (o.errandQuotePiastres != null) ...[
+                const SizedBox(height: 6),
+                _row('آخر أجرة معروضة', formatPiastres(o.errandQuotePiastres!), bold: true),
+                Text(
+                  approved ? '✅ العميل وافق على الأجرة'
+                    : o.errandQuoteStatus == 'pending' ? 'في انتظار موافقة العميل'
+                    : 'العميل رفض العرض. اتفق معاه على سعر تاني.',
+                  key: const Key('errand-quote-status'),
+                  style: TextStyle(color: approved ? Brand.green : kMuted,
+                      fontWeight: FontWeight.w800),
+                ),
+              ],
+              if (!approved) ...[
+                const SizedBox(height: 8),
+                const Text('أجرة المشوار بالجنيه',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                _MoneyField(
+                  key: const Key('errand-quote-price'),
+                  controller: _deliveryCtrl,
+                  onChanged: () => setState(() {}),
+                ),
+              ],
+            ]),
+            if (approved)
+              _bigButton('ابدأ المشوار', Icons.delivery_dining_rounded,
+                () => _act('start-purchase', {'estimatedPurchasesPiastres': 0}),
+                key: const Key('errand-start'))
+            else if (o.errandQuoteStatus != 'pending')
+              _bigButton('اعرض الأجرة على العميل', Icons.price_check_rounded,
+                price == null || price < 100 || price > o.maximumDeliveryPiastres
+                  ? null
+                  : () => _act('quote-errand', {'deliveryPiastres': price}),
+                key: const Key('errand-quote')),
+          ];
+        }
         final estimate = parsePoundsToPiastres(_estimateCtrl.text);
         return [
           _card(children: [
@@ -574,6 +646,22 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ];
 
       case QuickCourierStep.purchasing:
+        if (o.isErrand) {
+          final fare = o.errandQuotePiastres;
+          return [
+            _card(children: [
+              const Text('نفّذ المشوار بالاتفاق مع العميل، وبعد ما تبقى جاهز للتسليم اضغط الزر.',
+                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.5)),
+              if (fare != null) _row('الأجرة المتفق عليها', formatPiastres(fare), bold: true),
+            ]),
+            _bigButton('المشوار جاهز للتسليم', Icons.check_circle_outline,
+              fare == null || !o.quoteApproved
+                ? null
+                : () => _act('submit-summary', {'deliveryPiastres': fare},
+                     'المشوار جاهز. استلم رمز التسليم من العميل.'),
+              key: const Key('errand-ready')),
+          ];
+        }
         final delivery = parsePoundsToPiastres(_deliveryCtrl.text);
         final preview = delivery == null ? null : o.previewTotals(delivery);
         final deliveryTooHigh = delivery != null && delivery > o.maximumDeliveryPiastres;
@@ -717,7 +805,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       textDirection: TextDirection.rtl,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('تفاصيل الطلب السريع'),
+          title: Text(o?.isErrand == true ? 'تفاصيل المشوار' : 'تفاصيل الطلب السريع'),
           actions: [
             if (o != null && o.canRelease)
               TextButton(
