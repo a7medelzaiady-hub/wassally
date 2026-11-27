@@ -31,6 +31,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   String _customerVoiceUrl = '';
   String _pickupAddress = '';
   String _destinationAddress = '';
+  List<String> _privateImages = const [];
 
   @override
   void initState() {
@@ -75,6 +76,7 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
       String voiceUrl = '';
       String pickup = '';
       String destination = '';
+      List<String> privateImages = const [];
       final isErrand = doc.data()?['kind'] == 'errand';
       // قراءة واحدة إضافية فقط للمشاوير: العناوين خاصة وليست في المستند العام.
       if (doc.data()?['hasCustomerVoice'] == true || isErrand) {
@@ -84,12 +86,18 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         if (isErrand) {
           pickup = (contact.data()?['pickupAddress'] ?? '').toString();
           destination = (contact.data()?['address'] ?? '').toString();
+          final raw = contact.data()?['customerImages'];
+          privateImages = raw is List
+              ? [for (final image in raw)
+                  if (image is String && image.startsWith('https://')) image]
+              : const [];
         }
       }
       if (!mounted) return;
       setState(() {
         _order = doc.data(); _customerVoiceUrl = voiceUrl;
-        _pickupAddress = pickup; _destinationAddress = destination; _pin = null;
+        _pickupAddress = pickup; _destinationAddress = destination;
+        _privateImages = privateImages; _pin = null;
       });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -376,6 +384,13 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         delivered || status == 'summary_pending' || status == 'summary_approved';
     final due = (totals['due'] as num?) ?? 0;
     final area = (order?['area'] ?? '').toString().trim();
+    final customerImages = isErrand
+        ? _privateImages
+        : [
+            if (order?['customerImages'] is List)
+              for (final image in order!['customerImages'] as List)
+                if (image is String) image,
+          ];
     final receiptImages = [
       for (final raw in receipts)
         if (raw is Map && raw['imageUrl'] is String) raw,
@@ -519,15 +534,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                         style: AppTypography.secondary),
                   ],
                 ),
-              if (order['customerImages'] is List &&
-                  (order['customerImages'] as List).isNotEmpty)
+              if (customerImages.isNotEmpty)
                 _card(
                   key: const Key('quick-customer-images'),
                   title: 'صور طلبك',
                   icon: Icons.photo_camera_outlined,
                   children: [
                     Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
-                      for (final url in (order['customerImages'] as List).whereType<String>())
+                      for (final url in customerImages)
                         InkWell(
                           borderRadius: BorderRadius.circular(AppRadius.md),
                           onTap: () => _openReceipt(url),
