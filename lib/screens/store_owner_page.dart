@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/owner_products_freshness.dart';
+import '../widgets/substitute_picker.dart';
 
 import '../utils/bulk_products.dart';
 import '../widgets/share_actions.dart';
@@ -1014,6 +1015,9 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
   /// الأصناف اللي المحل اختارها «غير متاحة» (محلي لحد ما يضغط «بلّغ العميل»).
   late Set<String> _unavailable = {...widget.order.unavailableItems};
 
+  /// البدائل اللي المحل اقترحها للأصناف الناقصة (محلي لحد «بلّغ العميل»).
+  late Map<String, OrderSubstitute> _subs = {...widget.order.substitutions};
+
   @override
   void didUpdateWidget(covariant _OwnerOrderCard old) {
     super.didUpdateWidget(old);
@@ -1021,12 +1025,36 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     if (old.order.unavailableItems.join('|') !=
         widget.order.unavailableItems.join('|')) {
       _unavailable = {...widget.order.unavailableItems};
+      _subs = {...widget.order.substitutions};
     }
+  }
+
+  bool get _subsChanged {
+    final saved = widget.order.substitutions;
+    final mine = {
+      for (final e in _subs.entries)
+        if (_unavailable.contains(e.key)) e.key: e.value.productId,
+    };
+    if (mine.length != saved.length) return true;
+    return mine.entries.any((e) => saved[e.key]?.productId != e.value);
+  }
+
+  Future<void> _suggestSubstitute(OrderLine line) async {
+    final picked = await pickSubstitute(
+      context,
+      storeId: widget.order.storeId,
+      missingName: line.name,
+      excludeIds: {if (line.productId.isNotEmpty) line.productId},
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _subs[line.name] = picked);
   }
 
   bool get _unavailableChanged {
     final saved = widget.order.unavailableItems.toSet();
-    return saved.length != _unavailable.length || !saved.containsAll(_unavailable);
+    return saved.length != _unavailable.length ||
+        !saved.containsAll(_unavailable) ||
+        _subsChanged;
   }
 
   Future<void> _sendUnavailable() async {
@@ -1034,7 +1062,11 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      await StaffOrderService.setUnavailableItems(widget.order, _unavailable);
+      await StaffOrderService.setUnavailableItems(
+        widget.order,
+        _unavailable,
+        substitutes: _subs,
+      );
       messenger.showSnackBar(
         appSnack(_unavailable.isEmpty
                 ? 'تم شيل علامة النقص.'
@@ -1412,6 +1444,37 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                             ),
                             if (line.options.isNotEmpty)
                               Text(line.options.join('، '), style: text.bodySmall),
+                            // اقتراح بديل للصنف الناقص (العميل يوافق أو يرفض).
+                            if (isNew && _unavailable.contains(line.name))
+                              _subs[line.name] == null
+                                  ? TextButton.icon(
+                                      key: Key('suggest-substitute-${line.name}'),
+                                      style: TextButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                      onPressed: _busy ? null : () => _suggestSubstitute(line),
+                                      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                                      label: const Text('اقترح بديل'),
+                                    )
+                                  : Row(
+                                      children: [
+                                        const Icon(Icons.swap_horiz_rounded, size: 16, color: AppColors.success),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            'البديل: ${_subs[line.name]!.name} • ${formatPrice(_subs[line.name]!.price)}',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.success),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'شيل البديل',
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: _busy ? null : () => setState(() => _subs.remove(line.name)),
+                                          icon: const Icon(Icons.close, size: 16),
+                                        ),
+                                      ],
+                                    ),
                           ],
                         ),
                       ),
@@ -1427,6 +1490,8 @@ class _OwnerOrderCardState extends State<_OwnerOrderCard> {
                               : () => setState(() {
                                   if (!_unavailable.remove(line.name)) {
                                     _unavailable.add(line.name);
+                                  } else {
+                                    _subs.remove(line.name);
                                   }
                                 }),
                           icon: Icon(

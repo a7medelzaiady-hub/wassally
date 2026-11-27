@@ -727,14 +727,15 @@ service cloud.firestore {
         let cid = od.get('courierId', '');
         let dm = od.get('deliveryMode', '');
         let editKeys = ['items', 'subtotal', 'total', 'notes', 'discount',
-          'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'verifiedTotal', 'verifiedAt'];
+          'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'substitutions',
+          'verifiedTotal', 'verifiedAt'];
         return k.hasOnly(editKeys) ? (
           !securityFlag('serverOrders') &&
           !('serviceFee' in od) &&
           st in ['new', 'preparing'] &&
           cid == '' &&
           'editedAt' in k &&
-          !('unavailableItems' in nd) &&
+          !('unavailableItems' in nd) && !('substitutions' in nd) &&
           !('verifiedTotal' in nd) && !('verifiedAt' in nd) &&
           validCustomerEdit(nd, od) &&
           (st != 'preparing' || feedUpdatedForCustomerEdit(orderId))
@@ -836,13 +837,20 @@ service cloud.firestore {
           nst in ['preparing', 'cancelled'] &&
           (nst == 'cancelled' || !('unavailableItems' in od)) &&
           historyGate(nd, orderId, k)
-        ) : k.hasOnly(['unavailableItems']) ? (
+        ) : k.hasOnly(['unavailableItems', 'substitutions']) ? (
           st == 'new' &&
           cid == '' &&
           (!('unavailableItems' in nd) ||
             (nd.unavailableItems is list &&
              nd.unavailableItems.size() >= 1 &&
-             nd.unavailableItems.size() <= 20))
+             nd.unavailableItems.size() <= 20)) &&
+          // بدائل الأصناف الناقصة: مفاتيحها لازم تكون من الأصناف الناقصة نفسها.
+          // السعر للعرض بس؛ الـWorker بيحسب السعر من الكتالوج لما العميل يوافق.
+          (!('substitutions' in nd) ||
+            ('unavailableItems' in nd &&
+             nd.substitutions is map &&
+             nd.substitutions.size() <= 20 &&
+             nd.substitutions.keys().hasOnly(nd.unavailableItems)))
         ) : k.hasOnly(['ready', 'readyAt']) ? (
           st == 'preparing' &&
           nd.get('ready', false) == true &&
@@ -953,14 +961,14 @@ service cloud.firestore {
         let uid = request.auth.uid;
         let k = nd.diff(od).affectedKeys();
         let customerKeys = ['customerHidden', 'items', 'subtotal', 'total', 'notes',
-          'discount', 'promoCode', 'customerName', 'editedAt', 'unavailableItems',
+          'discount', 'promoCode', 'customerName', 'editedAt', 'unavailableItems', 'substitutions',
           'status', 'customerConfirmedAt', 'deliveredBy', 'deliveredAt',
           'collectedAmount', 'courierEarning'];
         let courierKeys = ['courierId', 'courierName', 'courierPhone', 'courierAt',
           'deliveryMode', 'courierArrivedAt', 'activeDeliveryIssueId', 'pickedUpAt',
           'customerDeliveryReportedAt', 'customerDeliveryReportedBy',
           'cashHandedToStoreAt', 'cashHandedToStoreBy'];
-        let ownerKeys = ['status', 'unavailableItems', 'ready', 'readyAt', 'courierId',
+        let ownerKeys = ['status', 'unavailableItems', 'substitutions', 'ready', 'readyAt', 'courierId',
           'courierName', 'courierPhone', 'courierAt', 'deliveryMode', 'deliveredBy',
           'deliveredAt', 'collectedAmount', 'courierEarning'];
         let adminKeys = ['status', 'pickedUpAt', 'courierId', 'courierName',

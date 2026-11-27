@@ -791,6 +791,37 @@ test('صنف غير متاح: المحل يعلّم، والعميل يكمّل 
   await assertSucceeds(changeStatus(owner, 'o1', 'new', 'preparing', 'owner'));
 });
 
+test('بديل الصنف الناقص: المحل يقترح لأصناف ناقصة بس، والعميل يوافق في التعديل ويشيل الاقتراح', async () => {
+  const owner = as('owner1');
+  const cust = as('cust1');
+  const sub = { p: { productId: 'p2', name: 'q', price: 12 } };
+  // البديل لازم يبقى لصنف معلّم ناقص في نفس الكتابة، ومن المحل بس.
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), { substitutions: sub }));
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), {
+    unavailableItems: ['p'], substitutions: { notMissing: sub.p },
+  }));
+  await assertFails(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'], substitutions: 'p2' }));
+  await assertFails(updateDoc(doc(cust, 'orders/o1'), { unavailableItems: ['p'], substitutions: sub }));
+  await assertFails(updateDoc(doc(as('owner2'), 'orders/o1'), { unavailableItems: ['p'], substitutions: sub }));
+  await assertSucceeds(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'], substitutions: sub }));
+
+  // العميل يكمّل بالبديل: لازم يشيل العلامة والاقتراح في نفس التعديل.
+  const edit = (over) => {
+    const b = writeBatch(cust);
+    b.update(doc(cust, 'orders/o1'), {
+      items: [{ name: 'q', price: 10, qty: 2, productId: 'p2' }],
+      subtotal: 20, total: 40, editedAt: serverTimestamp(), unavailableItems: deleteField(), ...over,
+    });
+    b.update(doc(cust, 'orders/o1/private/contact'), { address: 'عنوان تجريبي 3' });
+    return b;
+  };
+  await assertFails(edit({}).commit());
+  await assertSucceeds(edit({ substitutions: deleteField() }).commit());
+  const after = (await getDoc(doc(owner, 'orders/o1'))).data();
+  assert.equal('substitutions' in after, false);
+  assert.equal('unavailableItems' in after, false);
+});
+
 test('صنف غير متاح: المحل يرفض الطلب المعلّم، ولا يعلّم طلبًا اتقبل', async () => {
   const owner = as('owner1');
   await assertSucceeds(updateDoc(doc(owner, 'orders/o1'), { unavailableItems: ['p'] }));

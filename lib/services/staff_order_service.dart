@@ -670,8 +670,9 @@ class StaffOrderService {
   /// الطلب بيفضل «جديد» والعميل بيتبلّغ يقرر: يكمّل من غيرها أو يلغي.
   static Future<void> setUnavailableItems(
     AppOrder order,
-    Iterable<String> names,
-  ) async {
+    Iterable<String> names, {
+    Map<String, OrderSubstitute> substitutes = const {},
+  }) async {
     final clean = <String>[];
     for (final n in names) {
       final t = n.trim();
@@ -681,8 +682,16 @@ class StaffOrderService {
       throw StateError('عدد الأصناف غير المتاحة أكبر من المسموح.');
     }
     try {
+      // البدائل لازم تكون لأصناف ناقصة بس (نفس شرط القواعد).
+      final subs = <String, dynamic>{
+        for (final e in substitutes.entries)
+          if (clean.contains(e.key)) e.key: e.value.toMap(),
+      };
       await _orders.doc(order.id).update({
         'unavailableItems': clean.isEmpty ? FieldValue.delete() : clean,
+        if (subs.isNotEmpty) 'substitutions': subs,
+        if (subs.isEmpty && order.substitutions.isNotEmpty)
+          'substitutions': FieldValue.delete(),
       });
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
@@ -698,6 +707,7 @@ class StaffOrderService {
       order.userId,
       'صنف غير متاح في طلبك',
       '${order.storeName}: ${clean.join('، ')} غير متاح حاليًا. '
+          '${substitutes.keys.any(clean.contains) ? 'المحل اقترح بديل، ' : ''}'
           'افتح الطلب وكمّل من غيره أو ألغيه.',
       order.id,
     );

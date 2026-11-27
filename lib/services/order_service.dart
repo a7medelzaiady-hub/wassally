@@ -639,6 +639,8 @@ class OrderService {
         'verifiedAt': FieldValue.delete(),
         if (order.unavailableItems.isNotEmpty)
           'unavailableItems': FieldValue.delete(),
+        if (order.substitutions.isNotEmpty)
+          'substitutions': FieldValue.delete(),
       });
       batch.update(OrderContactService.ref(order.id), {
         'userName': name,
