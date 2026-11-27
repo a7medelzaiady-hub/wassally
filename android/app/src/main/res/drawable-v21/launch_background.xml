@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- شاشة البداية: بنفسجي وصّلي + اللوجو (بدل الأبيض ?android:colorBackground).
+<!-- شاشة البداية: بنفسجي وصّلي + اللوجو (بدل لون الثيم الأبيض).
      بتظهر لحد أول فريم من Flutter، وبعدها BrandSplash بنفس اللون، فمفيش وميض أبيض. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/wasally_splash" />
