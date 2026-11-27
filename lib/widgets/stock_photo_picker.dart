@@ -25,7 +25,7 @@ class _StockPhotoPicker extends StatefulWidget {
 
 class _StockPhotoPickerState extends State<_StockPhotoPicker> {
   late final TextEditingController _query = TextEditingController(
-    text: widget.initialName.trim(),
+    text: StockPhotoSearch.suggestedQuery(widget.initialName),
   );
   List<StockPhotoCandidate> _results = const [];
   String? _error;
