@@ -41,4 +41,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('افتح إعدادات التطبيق'), findsNothing);
   });
+
+  testWidgets('courier entry never opens a blocking modal on first visit', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Column(children: [
+          const CourierBatteryGuideEntry(uid: 'courier_a'),
+          const Text('استلم الطلب'),
+        ]),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('استلم الطلب'), findsOneWidget);
+    expect(find.textContaining('إعدادات استقبال الطلبات'), findsOneWidget);
+    expect(find.textContaining('شاومي / بوكو', findRichText: true), findsNothing);
+  });
+
 }
