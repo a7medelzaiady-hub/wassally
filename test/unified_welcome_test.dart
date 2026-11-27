@@ -56,12 +56,14 @@ void main() {
         'تصفح المحلات',
       ]) {
         final art = find.byKey(ValueKey<String>('entry-art-$label'));
-        await tester.scrollUntilVisible(art, 120,
-            scrollable: find.descendant(
-              of: find.byKey(const Key('entry-list')),
-              matching: find.byType(Scrollable),
-            ));
-        await tester.pump();
+        // ListView builds off-screen children lazily: scroll by pixels until
+        // the image exists, rather than requiring an unbuilt element.
+        for (var attempt = 0; attempt < 12 && art.evaluate().isEmpty; attempt++) {
+          await tester.drag(find.byKey(const Key('entry-list')),
+              const Offset(0, -100));
+          await tester.pump();
+        }
+        expect(art, findsOneWidget);
         expect(tester.getSize(art).width, greaterThan(120));
       }
       expect(tester.takeException(), isNull, reason: 'textScale $scale');
