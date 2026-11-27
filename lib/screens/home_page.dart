@@ -22,6 +22,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
+import '../widgets/service_entry_card.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
@@ -1065,7 +1066,27 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها.
+              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها، بنفس كارت
+              // صفحة ما بعد الدخول (ثابت، مش جوه البوسترات المتحركة).
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: ServiceEntryCard(
+                    key: const Key('home-quick-order'),
+                    title: 'خدمة وصّلي ع السريع',
+                    subtitle: 'اطلب احتياجاتك من أي مكان',
+                    action: 'اطلب الآن',
+                    asset: 'assets/images/entry_quick.jpg',
+                    height: 118,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

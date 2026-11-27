@@ -14,6 +14,7 @@ import '../services/order_gateway.dart';
 import '../widgets/home_top_ads.dart' show loadTourPosters;
 import '../widgets/curved_nav_bar.dart';
 import '../widgets/invite_code_field.dart';
+import '../widgets/service_entry_card.dart';
 import 'account_page.dart';
 import 'home_page.dart';
 import 'main_shell.dart';
@@ -317,9 +318,6 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   // ───────────────────────── كروت الخدمات ─────────────────────────
 
-  /// كارت زي التصميم المرجعي: الصورة على اليسار بألوانها كاملة، وحرفها بس
-  /// بيسيح تدريجي في الأبيض ناحية النص (من غير فاصل)، والعنوان والوصف والزر على اليمين.
-  /// [asset] فاضي = لوحة بنفسجي بأيقونة [icon] لحد ما تتحط صورة حقيقية للخدمة.
   Widget _serviceCard({
     required String title,
     required String subtitle,
@@ -328,152 +326,16 @@ class _CustomerEntryState extends State<CustomerEntry> {
     IconData icon = Icons.delivery_dining_rounded,
     required VoidCallback onTap,
     required double height,
-  }) {
-    return SizedBox(
-      height: height,
-      child: Material(
-        elevation: 3,
-        shadowColor: AppColors.ink.withValues(alpha: 0.12),
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.xl),
-          side: const BorderSide(color: AppColors.line),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          key: ValueKey<String>('entry-card-$title'),
-          onTap: onTap,
-          splashColor: AppColors.purple.withValues(alpha: 0.08),
-          highlightColor: AppColors.purple.withValues(alpha: 0.04),
-          child: LayoutBuilder(builder: (context, box) {
-            final artWidth = box.maxWidth * 0.66;
-            return Stack(
-              children: [
-                // الصورة واضحة لحد ~نص الكارت، وبعدها بس بتذوب في الأبيض
-                // (شفافية مش طبقة بيضا فوقها)، فمفيش حد ظاهر ولا صورة باهتة.
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: artWidth,
-                  child: ShaderMask(
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (rect) => const LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      stops: [0.0, 0.72, 0.86, 1.0],
-                      colors: [Colors.black, Colors.black, Color(0x80000000), Color(0x00000000)],
-                    ).createShader(rect),
-                    child: asset != null
-                        ? Image.asset(
-                            asset,
-                            key: ValueKey<String>('entry-art-$title'),
-                            fit: BoxFit.cover,
-                            alignment: Alignment.centerLeft,
-                            excludeFromSemantics: true,
-                          )
-                        : DecoratedBox(
-                            key: ValueKey<String>('entry-art-$title'),
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [AppColors.purpleDarker, AppColors.purple],
-                              ),
-                            ),
-                            child: Align(
-                              alignment: const Alignment(-0.45, 0),
-                              child: FractionallySizedBox(
-                                heightFactor: 0.6,
-                                child: FittedBox(
-                                  child: Icon(icon, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                PositionedDirectional(
-                  start: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: box.maxWidth * 0.56,
-                  child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(
-                        AppSpacing.md, AppSpacing.sm, AppSpacing.xs, AppSpacing.sm),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            style: const TextStyle(
-                              color: AppColors.ink,
-                              fontSize: 17,
-                              height: 1.2,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(
-                            subtitle,
-                            maxLines: 1,
-                            style: const TextStyle(
-                              color: AppColors.muted,
-                              fontSize: AppTypography.caption - 1,
-                              height: 1.25,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          height: 34,
-                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [AppColors.orangeLight, AppColors.orange, AppColors.orangeDeep],
-                            ),
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.orange.withValues(alpha: 0.25),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          // يفضل في سطر واحد كامل من غير «...» حتى في الشاشات الضيقة.
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              action,
-                              maxLines: 1,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: AppTypography.label - 1,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }),
-        ),
-      ),
-    );
-  }
+  }) =>
+      ServiceEntryCard(
+        title: title,
+        subtitle: subtitle,
+        action: action,
+        asset: asset,
+        icon: icon,
+        onTap: onTap,
+        height: height,
+      );
 
   /// أقل ارتفاع للكارت يكفي العنوان والوصف والزر (حسب حجم الخط).
   double _minCardHeight(BuildContext context) {
