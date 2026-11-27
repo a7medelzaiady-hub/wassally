@@ -118,6 +118,12 @@ class QuickCourierOrder {
   /// صور «صوّر طلبك» اللي العميل رفعها (بتتمسح بعد التسليم).
   final List<String> customerImages;
   final bool hasCustomerVoice;
+
+  /// «كلّمني»: العميل مش كاتب حاجة، المندوب يتصل بيه وياخد الطلب في المكالمة.
+  final bool callMe;
+
+  /// اللي المندوب كتبه بعد مكالمة «كلّمني».
+  final String agreedItems;
   final int? approxTotalPiastres;
   final int prepaidThresholdPiastres;
   final int maximumAdvancePiastres;
@@ -150,6 +156,8 @@ class QuickCourierOrder {
     this.stores = const [],
     this.customerImages = const [],
     this.hasCustomerVoice = false,
+    this.callMe = false,
+    this.agreedItems = '',
     this.approxTotalPiastres,
     this.prepaidThresholdPiastres = 20000,
     this.maximumAdvancePiastres = 100000,
@@ -188,6 +196,8 @@ class QuickCourierOrder {
       area: _str(m['area']),
       notes: _str(m['notes']),
       hasCustomerVoice: m['hasCustomerVoice'] == true,
+      callMe: m['callMe'] == true && _str(m['kind']) != 'errand',
+      agreedItems: _str(m['agreedItems']),
       customerImages: rawImages is List
           ? [for (final u in rawImages) if (u is String && u.startsWith('https://')) u]
           : const [],
@@ -235,6 +245,16 @@ class QuickCourierOrder {
   }
 
   bool get isErrand => kind == 'errand';
+
+  /// العميل كتب أو صوّر أو سجّل حاجة بنفسه (غير «كلّمني»).
+  bool get hasOwnRequest =>
+      customerImages.isNotEmpty || hasCustomerVoice ||
+      stores.any((s) =>
+          s.items.trim().isNotEmpty ||
+          s.pricedItems.any((line) => line.name.trim().isNotEmpty));
+
+  /// قبل الشراء في طلب «كلّمني»: لازم المندوب يكتب اللي اتفقوا عليه لو العميل ما كتبش حاجة.
+  bool get needsAgreedItems => callMe && !hasOwnRequest;
   bool get quoteApproved => isErrand && errandQuoteStatus == 'accepted';
 
   String get errandTypeLabel => switch (errandType) {
@@ -269,7 +289,7 @@ class QuickCourierOrder {
   /// Explains an empty quick-order receipt instead of presenting an empty
   /// details screen. Items can be written freely or priced in a store group.
   bool get hasCustomerRequest =>
-      customerImages.isNotEmpty || hasCustomerVoice || notes.trim().isNotEmpty ||
+      callMe || customerImages.isNotEmpty || hasCustomerVoice || notes.trim().isNotEmpty ||
       stores.any((s) =>
           s.items.trim().isNotEmpty ||
           s.pricedItems.any((line) => line.name.trim().isNotEmpty));

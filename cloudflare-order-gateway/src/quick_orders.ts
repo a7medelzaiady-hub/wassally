@@ -229,6 +229,29 @@ export function validateQuickStores(input: unknown, hasImages = false): QuickSto
   });
 }
 
+/** طلب «كلّمني»: الطلب نفسه بيتكتب بعد مكالمة المندوب، فالأصناف اختيارية عند الإنشاء. */
+export function isCallMeOrder(order: JsonMap): boolean {
+  return order.callMe === true && order.kind !== "errand";
+}
+
+/** اللي اتفق عليه المندوب مع العميل في المكالمة (طلبات «كلّمني»). */
+export function validateAgreedItems(input: unknown): string {
+  const text = typeof input === "string" ? input.trim() : "";
+  if (text.length < 3 || text.length > QUICK_LIMITS.maxItemsText) {
+    fail(400, "agreed_items_required", "اكتب اللي اتفقت عليه مع العميل في المكالمة (من 3 لـ500 حرف).");
+  }
+  return text;
+}
+
+/** هل العميل كتب أو صوّر حاجة بالفعل (غير «كلّمني»)؟ */
+function storesHaveContent(stores: unknown): boolean {
+  return Array.isArray(stores) && stores.some((s) => {
+    const e = asMap(s);
+    return (typeof e.items === "string" && e.items.trim().length > 0) ||
+      (Array.isArray(e.pricedItems) && e.pricedItems.length > 0);
+  });
+}
+
 export function validateQuickNotes(input: unknown): string {
   const notes = typeof input === "string" ? input.trim() : "";
   if (notes.length > QUICK_LIMITS.maxNotes) fail(400, "invalid_notes", "الملاحظات طويلة.");
@@ -263,6 +286,8 @@ export function newQuickOrder(input: {
   customerVoiceUrl?: string;
   kind?: "quick" | "errand";
   errandType?: ErrandType;
+  /** «كلّمني»: العميل مش هيكتب حاجة، المندوب يتصل بيه وياخد الطلب. */
+  callMe?: boolean;
 }): JsonMap {
   return {
     userId: input.uid,
@@ -282,6 +307,7 @@ export function newQuickOrder(input: {
     ...(input.kind === "errand" ? { hasCustomerImages: (input.customerImages?.length ?? 0) > 0 } : {}),
     // الصوت في private/contact بس لحماية خصوصية محتواه قبل قبول المندوب.
     hasCustomerVoice: Boolean(input.customerVoiceUrl),
+    ...(input.callMe === true && input.kind !== "errand" ? { callMe: true } : {}),
     approxTotalPiastres: quickApproxTotal(input.stores),
     status: "open",
     courierId: "",
@@ -434,7 +460,7 @@ export function applyQuickAction(
       }
       const stores = validateQuickStores(body.stores,
         order.hasCustomerVoice === true || order.hasCustomerImages === true ||
-        quickCustomerImages(order).length > 0);
+        quickCustomerImages(order).length > 0 || isCallMeOrder(order));
       if (isErrand && (stores.length !== 1 || stores[0].name !== "" ||
           stores[0].pricedItems?.length || stores[0].items.length < 10)) {
         fail(400, "invalid_errand", "تفاصيل المشوار لازم تكون 10 أحرف على الأقل.");
@@ -455,7 +481,7 @@ export function applyQuickAction(
       const voice = body.customerVoiceUrl;
       // لازم يفضل فيه طلب مكتوب أو صورة أو تسجيل بعد الحذف.
       validateQuickStores(order.stores, quickCustomerImages(order).length > 0 ||
-        order.hasCustomerImages === true || voice.length > 0);
+        order.hasCustomerImages === true || voice.length > 0 || isCallMeOrder(order));
       return { hasCustomerVoice: voice.length > 0, rev };
     }
 
@@ -536,7 +562,21 @@ export function applyQuickAction(
         fail(400, "invalid_estimate", "تقدير المشتريات خارج سقف الطلبات السريعة.");
       }
       const mode = "cod"; // المندوب يمول المشتريات؛ المقدم اختياري مهما كان التقدير.
+      // «كلّمني»: المندوب يكتب اللي اتفقوا عليه في المكالمة، فيبقى ظاهر للعميل وللإدارة.
+      // لو العميل كان كتب حاجة بنفسه، الكتابة اختيارية وما بتمسحش اللي كتبه.
+      let agreed: JsonMap = {};
+      if (isCallMeOrder(order)) {
+        const hasOwn = storesHaveContent(order.stores) || order.hasCustomerVoice === true ||
+          quickCustomerImages(order).length > 0;
+        if (!hasOwn || (typeof body.agreedItems === "string" && body.agreedItems.trim() !== "")) {
+          const items = validateAgreedItems(body.agreedItems);
+          agreed = hasOwn
+            ? { agreedItems: items }
+            : { stores: [{ name: "", items }], agreedItems: items };
+        }
+      }
       return {
+        ...agreed,
         estimatedPurchasesPiastres: estimate,
         paymentMode: mode,
         status: "purchasing",

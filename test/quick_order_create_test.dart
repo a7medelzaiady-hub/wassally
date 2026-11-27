@@ -72,6 +72,22 @@ void main() {
     expect(find.text('تكتبه'), findsOneWidget, reason: 'القايمة اتفتحت تاني');
   });
 
+  testWidgets('«كلّمني»: اختيار من غير كتابة، والإرسال بيكمل لخطوة العنوان', (tester) async {
+    await _pump(tester);
+    expect(find.text('كلّمني'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('quick-method-callMe')));
+    await tester.pumpAndSettle();
+    expect(find.text('المندوب هيكلمك ياخد طلبك'), findsOneWidget);
+    expect(find.byKey(const Key('quick-call-me-section')), findsOneWidget);
+    expect(find.text('اكتب رقمك تحت عشان المندوب يكلمك'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('quick-submit')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('اختار تبعت طلبك إزاي'), findsNothing,
+        reason: '«كلّمني» كفاية كطلب');
+    expect(find.textContaining('اكتب الحي'), findsOneWidget);
+  });
+
   test('إحداثيات الموقع في العنوان بتفتح النقطة بالظبط على الخريطة', () {
     expect(mapCoordinatesIn('شارع اليرموك، بيلا — الموقع: 31.17234, 31.21987'), '31.17234,31.21987');
     expect(mapCoordinatesIn('بيلا حي المحطة بجوار مسجد الرحمة'), isNull);

@@ -69,8 +69,11 @@ class QuickOrderApi {
   }
 
   static Future<Map<String, dynamic>> accept(String id) => action(id, 'accept');
-  static Future<Map<String, dynamic>> startPurchase(String id, int estimate) =>
-      action(id, 'start-purchase', {'estimatedPurchasesPiastres': estimate});
+  static Future<Map<String, dynamic>> startPurchase(String id, int estimate, {String agreedItems = ''}) =>
+      action(id, 'start-purchase', {
+        'estimatedPurchasesPiastres': estimate,
+        if (agreedItems.trim().isNotEmpty) 'agreedItems': agreedItems.trim(),
+      });
   static Future<Map<String, dynamic>> advanceSent(String id, int amount, String reference) =>
       action(id, 'advance-sent', {'amountPiastres': amount, 'reference': reference});
   static Future<Map<String, dynamic>> advanceReceived(String id, int amount) =>

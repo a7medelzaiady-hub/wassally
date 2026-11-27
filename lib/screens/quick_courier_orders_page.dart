@@ -265,7 +265,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                 radius: 26,
                 backgroundColor: Brand.green.withValues(alpha: 0.12),
                 child: Text(
-                  order.isErrand ? '🛵' : '${order.stores.length}',
+                  order.isErrand ? '🛵' : order.needsAgreedItems ? '📞' : '${order.stores.length}',
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Brand.green),
                 ),
               ),
@@ -276,6 +276,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                   children: [
                     Text(
                       order.isErrand ? 'مشوارك علينا • ${order.errandTypeLabel}'
+                         : order.needsAgreedItems ? 'كلّمني • العميل مستني مكالمتك'
                          : order.stores.length == 1 ? 'محل واحد' : '${order.stores.length} محلات',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                     ),
@@ -283,7 +284,11 @@ class QuickOrderSummaryCard extends StatelessWidget {
                       Text(named.join(' • '), maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 6),
                     Text(
-                      requested.isEmpty ? 'تفاصيل المشتريات غير متاحة حتى الآن' : requested.join(' • '),
+                      requested.isEmpty
+                          ? (order.callMe
+                              ? 'العميل مش كاتب حاجة: هتتصل بيه وتاخد الطلب منه'
+                              : 'تفاصيل المشتريات غير متاحة حتى الآن')
+                          : requested.join(' • '),
                       key: const Key('quick-order-request-preview'),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,

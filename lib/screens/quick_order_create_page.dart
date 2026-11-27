@@ -23,7 +23,8 @@ import 'package:image_picker/image_picker.dart' show ImageSource;
 import '../widgets/app_snack.dart';
 
 /// طريقة إرسال الطلب السريع.
-enum QuickOrderMethod { voice, write, camera, gallery }
+/// [callMe] = «كلّمني»: العميل مش هيكتب حاجة، المندوب يتصل بيه وياخد الطلب.
+enum QuickOrderMethod { voice, write, camera, gallery, callMe }
 
 enum _AddressMode { mine, other }
 
@@ -282,7 +283,9 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   }
 
   bool get _hasWritten => _stores.any((store) => store.hasItems);
-  bool get _hasContent => _photos.isNotEmpty || _voicePath != null || _hasWritten;
+  bool get _callMe => _method == QuickOrderMethod.callMe;
+  bool get _hasContent =>
+      _callMe || _photos.isNotEmpty || _voicePath != null || _hasWritten;
 
   Future<void> _submit() async {
     if (_submitting) return;
@@ -296,10 +299,10 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     }
     if (!_hasContent) {
       setState(() => _methodsOpen = true);
-      _say('اختار تبعت طلبك إزاي: بصوتك أو مكتوب أو بالصور');
+      _say('اختار تبعت طلبك إزاي: بصوتك أو مكتوب أو بالصور، أو «كلّمني» وإحنا نتصل بيك');
       return;
     }
-    final media = _photos.isNotEmpty || _voicePath != null;
+    final media = _photos.isNotEmpty || _voicePath != null || _callMe;
     final stores = _stores.where((s) => s.hasItems || s.name.isNotEmpty).toList();
     if (!media && stores.any((s) => !s.hasItems)) {
       _say('اكتب الطلبات لكل محل، أو امسح المحل الفاضي');
@@ -346,6 +349,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             : [for (final store in stores) store.toWorkerMap()],
         if (_photos.isNotEmpty) 'customerImages': List<String>.of(_photos),
         if (_uploadedVoiceUrl != null) 'customerVoiceUrl': _uploadedVoiceUrl,
+        if (_callMe) 'callMe': true,
         'contact': {
           'userName': _name.text.trim(),
           'phone': phone,
@@ -357,7 +361,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         await prefs.setString(_lastAreaKey, _area.text.trim());
       } catch (_) {}
       if (!mounted) return;
-      _say('تم إرسال طلبك السريع');
+      _say(_callMe ? 'تم إرسال طلبك. المندوب هيكلمك على رقمك قريب' : 'تم إرسال طلبك السريع');
       Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
       ));
@@ -481,6 +485,8 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     QuickOrderMethod.write: (Icons.edit_note_rounded, 'تكتبه', 'اكتب الأصناف والكميات'),
     QuickOrderMethod.camera: (Icons.photo_camera_rounded, 'تصوّره', 'صوّر ورقة الطلبات بالكاميرا'),
     QuickOrderMethod.gallery: (Icons.photo_library_rounded, 'تبعت صورة', 'اختار صورة من المعرض'),
+    QuickOrderMethod.callMe: (Icons.phone_callback_rounded, 'كلّمني',
+        'مش فاضي تكتب؟ دوس هنا والمندوب يتصل بيك ياخد طلبك'),
   };
 
   static const _methodHeader = {
@@ -488,12 +494,14 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
     QuickOrderMethod.write: 'هتكتبه',
     QuickOrderMethod.camera: 'هتصوّره بالكاميرا',
     QuickOrderMethod.gallery: 'هتبعت صورة من المعرض',
+    QuickOrderMethod.callMe: 'المندوب هيكلمك ياخد طلبك',
   };
 
   List<QuickOrderMethod> get _methods => [
         QuickOrderMethod.voice,
         QuickOrderMethod.write,
         if (kQuickPhotoOrdersEnabled) ...[QuickOrderMethod.camera, QuickOrderMethod.gallery],
+        QuickOrderMethod.callMe,
       ];
 
   /// ملخص اللي اتضاف بالطريقة دي (عشان لو غيّر الطريقة يعرف إن طلبه محفوظ).
@@ -502,6 +510,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         QuickOrderMethod.write => _hasWritten ? 'مكتوب' : null,
         QuickOrderMethod.camera || QuickOrderMethod.gallery =>
           _photos.isEmpty ? null : '${_photos.length} ${_photos.length == 1 ? 'صورة' : 'صور'}',
+        QuickOrderMethod.callMe => _callMe ? 'هنكلمك' : null,
       };
 
   Widget _methodIcon(IconData icon, {bool strong = false}) => Container(
@@ -562,7 +571,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
                         ),
                       ),
                       Text(
-                        info == null ? 'بصوتك، مكتوب، أو بالصور' : 'دوس هنا لو عايز تغيّر الطريقة',
+                        info == null ? 'بصوتك، مكتوب، بالصور، أو نكلمك إحنا' : 'دوس هنا لو عايز تغيّر الطريقة',
                         style: AppTypography.secondary.copyWith(fontSize: AppTypography.label),
                       ),
                     ],
@@ -649,9 +658,67 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           panel(QuickOrderMethod.camera, _photoPanel(ImageSource.camera)),
           panel(QuickOrderMethod.gallery, _photoPanel(ImageSource.gallery)),
         ],
+        panel(QuickOrderMethod.callMe, _callMePanel()),
       ],
     );
   }
+
+  /// «كلّمني»: مفيش حاجة يكتبها العميل؛ بس يتأكد إن رقمه صح.
+  Widget _callMePanel() => AppCard(
+        key: const Key('quick-call-me-section'),
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(gradient: AppColors.actionGradient, shape: BoxShape.circle),
+                child: const Icon(Icons.phone_in_talk_rounded, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              const Expanded(
+                child: Text(
+                  'سيبها علينا، إحنا هنكلمك',
+                  style: TextStyle(
+                      fontSize: AppTypography.titleSmall, fontWeight: FontWeight.w800, color: AppColors.ink),
+                ),
+              ),
+            ]),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'مش محتاج تكتب ولا تسجّل ولا تصوّر. حدد عنوانك ودوس «اطلب دلوقتي»، '
+              'وأول مندوب يقبل طلبك هيتصل بيك، تقوله محتاج إيه، يشتريه ويوصّله لحد بابك.',
+              style: AppTypography.secondary.copyWith(height: 1.5),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _phone,
+              builder: (context, value, _) {
+                final phone = value.text.trim();
+                return Row(children: [
+                  const Icon(Icons.call_outlined, size: 18, color: AppColors.purple),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      phone.isEmpty ? 'اكتب رقمك تحت عشان المندوب يكلمك' : 'هنكلمك على: $phone',
+                      key: const Key('quick-call-me-phone'),
+                      textDirection: TextDirection.rtl,
+                      style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink),
+                    ),
+                  ),
+                  TextButton(
+                    key: const Key('quick-call-me-edit-phone'),
+                    onPressed: _submitting ? null : () => setState(() => _contactCollapsed = false),
+                    child: Text(phone.isEmpty ? 'اكتب الرقم' : 'تغيير'),
+                  ),
+                ]);
+              },
+            ),
+          ],
+        ),
+      );
 
   Widget _storeNameField() => TextField(
         controller: _stores.first.nameCtrl,

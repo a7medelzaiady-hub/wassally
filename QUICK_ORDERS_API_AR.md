@@ -91,7 +91,7 @@ rev                                   // يزيد مع كل كتابة
 | `POST /v1/quick/{id}/cancel` | العميل (قبل الشراء) أو الإدارة | `reason?` | `open`/`accepted` ← `cancelled` (الإدارة: أي حالة قبل التسليم) |
 | `POST /v1/quick/{id}/accept` | مندوب معتمد | — | `open` ← `accepted` |
 | `POST /v1/quick/{id}/release` | المندوب المعيّن | — | `accepted` (قبل أي تحويل من العميل) ← `open` |
-| `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres` | `accepted` ← `purchasing` مهما كان التقدير |
+| `POST /v1/quick/{id}/start-purchase` | المندوب المعيّن | `estimatedPurchasesPiastres`، و`agreedItems` (مطلوب في «كلّمني» لو العميل ما كتبش حاجة) | `accepted` ← `purchasing` مهما كان التقدير |
 | `POST /v1/quick/{id}/advance-sent` | العميل | `amountPiastres, reference?` | `accepted` أو `purchasing` |
 | `POST /v1/quick/{id}/advance-received` | المندوب المعيّن | `amountPiastres` (اللي وصله فعلًا) | `purchasing` ← `purchasing` |
 | `POST /v1/uploads` (multipart) | المندوب المعيّن | `folder=quick_receipts, orderId, file` | `purchasing` — يرجّع `{ url }` |
@@ -173,3 +173,9 @@ rev                                   // يزيد مع كل كتابة
 - يجب نجاح اختبارات Flutter وWorker وFirestore ذات الصلة ومراجعة الشاشة على الهاتف.
 - **دمج PR لا ينشر Cloudflare Worker تلقائيًا**؛ بعد نجاح CI والدمج يُنشر Worker من `Deploy Order Gateway Worker (manual)` على `main` بإدخال `DEPLOY`، ثم فحص `/health`، وبعدها تثبيت APK مبني من `main`.
 - لا حاجة لتغيير Firestore rules الحالية ما دامت private/contact تمنح القراءة فقط للعميل والمندوب المعيّن والإدارة، وتظل جميع الكتابات من Worker.
+
+
+## «كلّمني» (العميل مش هيكتب، إحنا بنكلمه)
+- `POST /v1/quick` يقبل `callMe: true` (للطلب السريع بس، مش المشاوير). وقتها الأصناف اختيارية زي الصوت والصور، ومستند الطلب بيشيل `callMe: true`.
+- رقم العميل بيظهر للمندوب المعيّن بعد القبول بس (نفس قاعدة `private/contact`، مفيش تغيير في القواعد).
+- قبل `start-purchase` المندوب لازم يبعت `agreedItems` (من 3 لـ500 حرف) = اللي اتفقوا عليه في المكالمة. لو العميل ما كتبش حاجة، النص ده بيتحط في `stores[0].items` عشان يظهر للعميل وللإدارة، وبيتحفظ كمان في `agreedItems`. لو العميل كان كتب أو صوّر حاجة بنفسه، `agreedItems` اختياري وما بيمسحش طلبه.
