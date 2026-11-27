@@ -60,7 +60,8 @@ class StoreLinkPage extends StatefulWidget {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StoreLinkPage(storeId: id)));
   }
 
-  static Future<Store?> _defaultLoader(String storeId) async {
+  /// المحل النشط برقمه (من كاش الكتالوج، زي روابط المشاركة).
+  static Future<Store?> loadActiveStore(String storeId) async {
     if (storeId.isEmpty) return null;
     final docs = await CatalogReader.activeStores(
       () => CatalogService.get(
@@ -91,7 +92,7 @@ class _StoreLinkPageState extends State<StoreLinkPage> {
     if (!_signedIn) {
       StoreLinkPage.pendingStoreId = widget.storeId;
     } else {
-      _future = (widget.loader ?? StoreLinkPage._defaultLoader)(widget.storeId);
+      _future = (widget.loader ?? StoreLinkPage.loadActiveStore)(widget.storeId);
       _future!.then((store) {
         if (!mounted || store == null) return;
         Navigator.of(context).pushReplacement(
@@ -102,7 +103,7 @@ class _StoreLinkPageState extends State<StoreLinkPage> {
   }
 
   void _retry() => setState(() {
-        _future = (widget.loader ?? StoreLinkPage._defaultLoader)(widget.storeId)
+        _future = (widget.loader ?? StoreLinkPage.loadActiveStore)(widget.storeId)
           ..then((store) {
             if (!mounted || store == null) return;
             Navigator.of(context).pushReplacement(
