@@ -834,6 +834,7 @@ async function deleteAccountData(env: Env, token: string, uid: string): Promise<
   // Remove user-authored support, complaints, applications, and notifications.
   for (const [collection, field] of [
     ["complaints", "userId"],
+    ["order_issues", "customerId"],
     ["role_requests", "userId"],
     ["notifications", "userId"],
   ]) {
