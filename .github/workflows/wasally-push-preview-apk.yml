@@ -1,0 +1,91 @@
+name: Wasally push notifications APK preview
+
+on:
+  pull_request:
+    branches:
+      - fix/push-05-courier-battery-guide-20261127
+    paths:
+      - ".github/workflows/wasally-push-preview-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Restore same signing key as existing test APK
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: wasally-android-debug-keystore-v1
+
+      - name: Require established debug signing key
+        run: test -s "$HOME/.android/debug.keystore"
+
+      - name: Clear unused runner tools
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
+          sudo rm -rf /usr/local/lib/android/sdk/system-images
+          sudo apt-get clean
+
+      - name: Build installable Android APK with notifications
+        run: |
+          flutter build apk --debug \
+            --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
+            --dart-define=WASALLY_SERVER_ORDERS=true \
+            --dart-define=WASALLY_REFERRAL_REGISTRATION=true
+
+      - name: Check signing and configured Google-login SHA-1
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-debug.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify "$APK"
+          APK_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          python3 - "$APK_SHA1" <<'PY'
+          import json, sys
+          sha1 = sys.argv[1].lower()
+          with open("android/app/google-services.json", encoding="utf-8") as f:
+              config = json.load(f)
+          allowed = {
+              oauth.get("android_info", {}).get("certificate_hash", "").lower()
+              for client in config.get("client", [])
+              if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+              for oauth in client.get("oauth_client", [])
+              if oauth.get("client_type") == 1
+          }
+          if sha1 not in allowed:
+              raise SystemExit("APK signing certificate is not registered for Google Sign-In")
+          print("Google Sign-In certificate OK")
+          PY
+          sha256sum "$APK"
+
+      - name: Upload APK for phone testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasally-push-notifications-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
