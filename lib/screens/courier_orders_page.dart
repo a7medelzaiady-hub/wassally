@@ -281,8 +281,6 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
             ),
           ),
           const StaffNotificationPermissionBanner(),
-          // Inline tip only: never block the courier's order acceptance controls.
-          CourierBatteryGuideEntry(uid: _uid),
           // «الطلبات السريعة»: بيظهر للمناديب المعتمدين (quickEnabled) بس.
           const QuickCourierEntry(),
           Expanded(
@@ -376,6 +374,8 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                     _Tab.current => 'الطلبات اللي تستلمها هتظهر هنا.',
                                     _Tab.history => 'الطلبات المكتملة هتظهر هنا، وتقدر تقيّم تعامل العميل بعد التسليم.',
                                   },
+                                  actionLabel: 'إعدادات استقبال الطلبات',
+                                  onAction: () => CourierBatteryGuide.show(context),
                                 )
                               : ListView.separated(
                                   padding: const EdgeInsets.fromLTRB(
@@ -384,11 +384,13 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                     16,
                                     90,
                                   ),
-                                  itemCount: shown.length,
+                                  itemCount: shown.length + 1,
                                   separatorBuilder: (_, _) =>
                                       const SizedBox(height: 12),
                                   itemBuilder: (context, i) =>
-                                      _tab == _Tab.available
+                                      i == shown.length
+                                          ? CourierBatteryGuideEntry(uid: _uid)
+                                          : _tab == _Tab.available
                                       ? _AvailableOrderCard(order: shown[i])
                                       : _CourierOrderCard(
                                           key: ValueKey(shown[i].id),
