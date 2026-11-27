@@ -84,8 +84,13 @@ describe("مشوارك علينا: source privacy, fare agreement, PIN delivery"
     expect(error(() => apply(working, "cancel", customer))).toBe("409:not_cancellable");
     expect(error(() => apply(working, "receipt", courier, { amountPiastres: 1000 }))).toBe("409:invalid_state");
     expect(error(() => apply(working, "advance-sent", customer, { amountPiastres: 1000 }))).toBe("409:invalid_state");
-    expect(error(() => apply(working, "submit-summary", courier, { deliveryPiastres: 3000 }))).toBe("409:quote_required");
-    const ready = apply(working, "submit-summary", courier, { deliveryPiastres: 2500 });
+    expect(error(() => apply(working, "submit-summary", courier, { deliveryPiastres: 3000 }))).toBe("409:pickup_required");
+    expect(error(() => apply(working, "confirm-errand-pickup", stranger))).toBe("403:forbidden");
+    const collected = apply(working, "confirm-errand-pickup", courier);
+    expect(collected.errandPickupConfirmedAt).toEqual(now);
+    expect(error(() => apply(collected, "confirm-errand-pickup", courier))).toBe("409:invalid_state");
+    expect(error(() => apply(collected, "submit-summary", courier, { deliveryPiastres: 3000 }))).toBe("409:quote_required");
+    const ready = apply(collected, "submit-summary", courier, { deliveryPiastres: 2500 });
     expect(ready.status).toBe("summary_approved");
     expect(ready.totals).toEqual({ purchases: 0, serviceFee: 0, delivery: 2500, prepaid: 0, due: 2500 });
     expect(quickDeliveryBlocker(ready, "cour1")).toBe(null);
@@ -105,6 +110,21 @@ describe("مشوارك علينا: source privacy, fare agreement, PIN delivery"
     expect(released.errandQuoteStatus).toBe("");
     const next = apply(released, "accept", stranger);
     expect(error(() => apply(next, "start-purchase", stranger))).toBe("409:quote_required");
+  });
+
+  it("unstructured errands without a physical pickup can finish without a pickup event", () => {
+    let order = newQuickOrder({
+      uid: "cust1", customerFirstName: "Ali", area: "وسط البلد", notes: "",
+      stores: [{ name: "", items: "راجع المكتب في مشوار بسيط بدون استلام غرض" }],
+      kind: "errand", errandType: "other",
+      settings: resolveQuickSettings({}),
+    });
+    order = apply(order, "accept", courier);
+    order = apply(order, "quote-errand", courier, { deliveryPiastres: 2000 });
+    order = apply(order, "approve-errand-quote", customer, { expectedQuotePiastres: 2000 });
+    order = apply(order, "start-purchase", courier);
+    expect(error(() => apply(order, "confirm-errand-pickup", courier))).toBe("409:invalid_state");
+    expect(apply(order, "submit-summary", courier, { deliveryPiastres: 2000 }).status).toBe("summary_approved");
   });
 
   it("regular quick orders keep receipts and do not accept errand quoting", () => {
