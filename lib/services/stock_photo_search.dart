@@ -40,7 +40,7 @@ class StockPhotoSearch {
   static String suggestedQuery(String productName) {
     final name = productName.toLowerCase()
         .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
-        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا')
+        .replaceAll('أ', 'ا').replaceAll('إ', 'ا').replaceAll('آ', 'ا').replaceAll('ة', 'ه')
         .replaceAll(RegExp(r'[^a-z0-9\u0621-\u064A]+'), ' ').trim();
     const terms = <String, String>{
       'زيت موتور': 'motor engine oil bottle',
@@ -82,7 +82,9 @@ class StockPhotoSearch {
     };
     final padded = ' $name ';
     for (final term in terms.entries) {
-      if (padded.contains(' ${term.key} ')) return term.value;
+      if (padded.contains(' ${term.key} ')) {
+        return term.value;
+      }
     }
     return productName.trim();
   }
@@ -116,24 +118,35 @@ class StockPhotoSearch {
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     final results = parseResults(decoded);
     // حد أقصى 40 مدخلاً في كاش ذاكرة الموبايل. بدون Firebase أو تخزين نتائج كبير.
-    if (_cache.length >= 40) _cache.remove(_cache.keys.first);
+    if (_cache.length >= 40) {
+      _cache.remove(_cache.keys.first);
+    }
     _cache[key] = _CachedSearch(DateTime.now(), results);
     return results;
   }
 
   static List<StockPhotoCandidate> parseResults(Object? data) {
-    if (data is! Map || data['results'] is! List) return const [];
+    if (data is! Map || data['results'] is! List) {
+      return const [];
+    }
     final list = <StockPhotoCandidate>[];
     final seen = <String>{};
     for (final raw in data['results'] as List) {
-      if (raw is! Map) continue;
+      if (raw is! Map) {
+        continue;
+      }
       if ((raw['license'] ?? '').toString().toLowerCase() != 'cc0' ||
-          raw['mature'] == true) continue;
+          raw['mature'] == true) {
+        continue;
+      }
       final id = (raw['id'] ?? '').toString();
       final preview = (raw['thumbnail'] ?? '').toString();
       final page = (raw['foreign_landing_url'] ?? '').toString();
-      if (id.isEmpty || !seen.add(id) ||
-          !isPublicHttpsPhotoUrl(preview) || !isPublicHttpsPhotoUrl(page)) continue;
+      if (id.isEmpty || seen.contains(id) ||
+          !isPublicHttpsPhotoUrl(preview) || !isPublicHttpsPhotoUrl(page)) {
+        continue;
+      }
+      seen.add(id);
       list.add(StockPhotoCandidate(
         id: id,
         previewUrl: preview,
@@ -141,7 +154,9 @@ class StockPhotoSearch {
         title: (raw['title'] ?? '').toString(),
         creator: (raw['creator'] ?? '').toString(),
       ));
-      if (list.length >= maxResults) break;
+      if (list.length >= maxResults) {
+        break;
+      }
     }
     return List.unmodifiable(list);
   }
@@ -150,12 +165,16 @@ class StockPhotoSearch {
   static bool isPublicHttpsPhotoUrl(String value) {
     final uri = Uri.tryParse(value);
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty ||
-        uri.userInfo.isNotEmpty || uri.hasPort || uri.host.length > 253) return false;
+        uri.userInfo.isNotEmpty || uri.hasPort || uri.host.length > 253) {
+      return false;
+    }
     final host = uri.host.toLowerCase();
     if (!host.contains('.') || host == 'localhost' ||
         host.endsWith('.localhost') || host.endsWith('.local') ||
         RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host) ||
-        host.contains(':')) return false;
+        host.contains(':')) {
+      return false;
+    }
     return true;
   }
 
