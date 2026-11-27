@@ -25,6 +25,7 @@ import 'store_directory_page.dart';
 const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
 const kEntryOffersAsset = 'assets/images/entry_offers.jpg';
 const kEntryStoresAsset = 'assets/images/entry_stores.jpg';
+const kEntryErrandAsset = 'assets/images/entry_errand.jpg';
 const kWasallyLogoLightAsset = 'assets/images/wasally_logo_light.png';
 
 /// واجهة اختيار الخدمات بعد تسجيل الدخول (لكل الأدوار).
@@ -446,7 +447,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
           title: 'مشاويرك علينا',
           subtitle: 'مندوب لأي مشوار داخل مدينتك',
           action: 'اطلب مشوار',
-          icon: Icons.delivery_dining_rounded,
+          asset: kEntryErrandAsset,
           height: height,
           onTap: () => _enter(const ErrandCreatePage()),
         ),
