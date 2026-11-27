@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 
 import '../services/image_service.dart';
 import '../services/photo_library.dart';
+import '../services/stock_photo_search.dart';
 import '../theme/app_theme.dart';
 import '../utils/img.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/cached_net_image.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/stock_photo_picker.dart';
 
 /// «مكتبة صور وصّلي» للإدارة: صورة حقيقية لكل اسم صنف شائع، بتظهر في كل المحلات
 /// للأصناف اللي من غير صورة. قراءة واحدة لما الصفحة تفتح.
@@ -26,37 +28,61 @@ class _AdminPhotoLibraryPageState extends State<AdminPhotoLibraryPage> {
 
   Future<void> _add() async {
     final name = TextEditingController();
-    final ok = await showDialog<bool>(
+    final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('صورة جديدة للمكتبة'),
         content: TextField(
           controller: name,
           autofocus: true,
+          maxLength: 90,
           decoration: const InputDecoration(
             labelText: 'اسم الصنف',
             hintText: 'مثلًا: طماطم، زيت موبيل، فراخ بيضا',
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('اختار الصورة')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'gallery'),
+            child: const Text('من الجهاز'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, 'search'),
+            icon: const Icon(Icons.search),
+            label: const Text('بحث عن صورة'),
+          ),
         ],
       ),
     );
     final text = name.text.trim();
     name.dispose();
-    if (ok != true || text.isEmpty || !mounted) return;
+    if (choice == null || text.isEmpty || !mounted) return;
+
+    StockPhotoCandidate? suggested;
+    if (choice == 'search') {
+      suggested = await showStockPhotoPicker(context, name: text);
+      if (suggested == null || !mounted) return;
+    }
+
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final url = await ImageService.pickAndUpload('banners');
+      final url = suggested == null
+          ? await ImageService.pickAndUpload('banners')
+          : await ImageService.uploadSuggestedStockPhoto(
+              suggested, folder: 'banners');
       if (url == null) return;
-      await PhotoLibrary.put(text, url);
-      messenger.showSnackBar(appSnack('اتضافت صورة «$text». هتظهر في كل المحلات للأصناف اللي بالاسم ده.'));
+      await PhotoLibrary.put(
+        text, url,
+        sourcePageUrl: suggested?.sourcePageUrl,
+        creator: suggested?.creator,
+      );
+      messenger.showSnackBar(appSnack(
+        'اتضافت صورة «$text». هتظهر للأصناف المطابقة في كل المحلات.'));
       _reload();
     } catch (e) {
-      messenger.showSnackBar(appSnack('تعذر رفع الصورة: $e'));
+      messenger.showSnackBar(appSnack('تعذر إضافة الصورة: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -132,6 +158,7 @@ class _AdminPhotoLibraryPageState extends State<AdminPhotoLibraryPage> {
                 ),
                 child: Text(
                   'ارفع صورة حقيقية لكل صنف شائع مرة واحدة (طماطم، بطاطس، فراخ، زيت موبيل...). '
+                  'أو ابحث عن صورة CC0 مناسبة واختارها بنفسك، من غير مفاتيح Pexels أو Pixabay. '
                   'أي محل عنده صنف بالاسم ده ومن غير صورة، هيظهر بالصورة دي بدل الصورة التوضيحية. '
                   'صورة المحل نفسه لو رفعها بتفضل هي الأساس.',
                   style: TextStyle(fontSize: 12.5, height: 1.5, color: kMuted),
