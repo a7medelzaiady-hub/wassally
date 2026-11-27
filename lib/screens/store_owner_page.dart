@@ -24,6 +24,7 @@ import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../models/product.dart';
 import '../services/image_service.dart';
+import '../widgets/stock_photo_picker.dart';
 import '../services/navigation.dart' show roleInfoOverride;
 import '../services/role_service.dart';
 import '../services/staff_order_service.dart';
@@ -2504,6 +2505,38 @@ class _ProductDialogState extends State<_ProductDialog> {
     }
   }
 
+  Future<void> _pickSuggestedPhoto() async {
+    if (_uploading) return;
+    final title = _name.text.trim();
+    if (title.length < 2) {
+      setState(() => _error = 'اكتب اسم الصنف الأول علشان نبحث عن صورته.');
+      return;
+    }
+    final suggested = await showStockPhotoPicker(context, name: title);
+    if (suggested == null || !mounted) return;
+    setState(() {
+      _uploading = true;
+      _error = null;
+    });
+    try {
+      final url = await ImageService.uploadSuggestedStockPhoto(
+        suggested,
+        folder: 'products',
+        storeId: widget.storeId,
+      );
+      if (!mounted) return;
+      setState(() => _image = url);
+      _draftChanged();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'تعذر اعتماد الصورة. جرّب صورة أخرى أو ارفع من جهازك.');
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+
   Future<void> _save() async {
     final name = _name.text.trim();
     final price = double.tryParse(_price.text.trim().replaceAll(',', '.'));
@@ -2686,6 +2719,12 @@ class _ProductDialogState extends State<_ProductDialog> {
                     )
                   : const Icon(Icons.image_outlined),
               label: Text(_image.isEmpty ? 'اختيار صورة' : 'تغيير الصورة'),
+            ),
+            TextButton.icon(
+              key: const Key('owner-search-stock-photo'),
+              onPressed: _uploading ? null : _pickSuggestedPhoto,
+              icon: const Icon(Icons.search_rounded),
+              label: const Text('ابحث عن صورة جاهزة للصنف (CC0)'),
             ),
             if (_error != null)
               Padding(

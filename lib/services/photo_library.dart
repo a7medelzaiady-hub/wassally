@@ -77,11 +77,29 @@ class PhotoLibrary {
   static void _apply(Map<String, String> map) => setProductPhotoLibrary(map);
 
   /// إضافة/تحديث صورة في المكتبة (الإدارة).
-  static Future<void> put(String name, String url) async {
+  static Future<void> put(
+    String name,
+    String url, {
+    String? sourcePageUrl,
+    String? creator,
+  }) async {
     final key = normalizeProductPhotoKey(name);
     if (key.isEmpty) throw ArgumentError('اكتب اسم الصنف');
+    final photo = <String, String>{
+      'name': name.trim(), 'url': url,
+      'source': '', 'license': '', 'creator': '',
+    };
+    // نخزن المصدر للمراجعة؛ صور Openverse المعتمدة CC0 فقط بعد اختيار الإدارة.
+    if (sourcePageUrl != null && sourcePageUrl.startsWith('https://')) {
+      photo['source'] = sourcePageUrl;
+      photo['license'] = 'cc0';
+      if (creator != null && creator.trim().isNotEmpty) {
+        photo['creator'] = creator.trim().substring(
+          0, creator.trim().length > 120 ? 120 : creator.trim().length);
+      }
+    }
     await doc.set({
-      'photos': {key: {'name': name.trim(), 'url': url}},
+      'photos': {key: photo},
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
     await load(force: true);
