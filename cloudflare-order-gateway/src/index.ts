@@ -1179,6 +1179,13 @@ function validateContact(contact: any): JsonMap {
   return { userName, phone, address, ...(courierNotes ? { courierNotes } : {}) };
 }
 
+/** هوية سطر الطلب: الصنف + اختياراته (مرتبة)، عشان نفس الصنف باختيار مختلف يبقى سطر مستقل. */
+export function orderLineIdentity(productId: string, name: string, options: unknown[] = []) {
+  const base = productId ? `id:${productId}` : `legacy:${name.toLowerCase()}`;
+  const opts = options.map((o) => String(o).trim()).filter(Boolean).sort();
+  return opts.length ? `${base}|${opts.join("\u0001")}` : base;
+}
+
 async function resolveItems(
   env: Env,
   token: string,
@@ -1262,13 +1269,14 @@ async function resolveItems(
     }
     const name = String(product.name ?? "").trim();
     if (!name || name.length > 120) throw new HttpError(409, "بيانات صنف غير صالحة في الكتالوج.");
-    const identity = resolvedId ? `id:${resolvedId}` : `legacy:${name.toLowerCase()}`;
+    const resolvedOptions = resolveCatalogOptions(product, line as JsonMap);
+    // نفس الصنف باختيارات مختلفة (فلفل بلدي / صوب) سطرين مختلفين، مش تكرار.
+    const identity = orderLineIdentity(resolvedId, name, resolvedOptions.options);
     if (seen.has(identity)) throw new HttpError(400, "الصنف مكرر في الطلب.");
     seen.add(identity);
     const basePrice = effectiveCatalogPrice(
       isLegacy ? { ...product, oldPrice: 0, offerEndsAt: null } : product,
     );
-    const resolvedOptions = resolveCatalogOptions(product, line as JsonMap);
     const price = money(basePrice + resolvedOptions.optionsTotal);
     const expectedPrice = line.expectedPrice;
     if (typeof expectedPrice !== "number" || !Number.isFinite(expectedPrice)) {

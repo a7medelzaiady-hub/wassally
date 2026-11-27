@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import worker from "../src/index";
-import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, deleteCloudinarySpecialRequestAssets, isCloudinaryImageUrl, resolveCatalogOptions } from "../src/index";
+import { anonymizeDeliveryIssue, calculateDiscount, catalogPriceMatches, cloudinarySignature, detectImageContent, effectiveCatalogPrice, isUploadSizeAllowed, isUploadRequestLengthAllowed, firstName, isRecentAuthTime, isGoogleSignIn, isCustomerRestricted, sanitizePublicOrder, isUploadRateLimited, CUSTOMER_ORDER_DELETE_FIELD_PATHS, PRIVATE_ORDER_FIELDS, shouldRequeueCourierOrder, courierAvailableFeedData, sanitizeCourierFeed, isAuthTimeAfterValidSince, canUploadSpecialRequestImage, cloudinarySpecialRequestFolder, deleteCloudinarySpecialRequestAssets, isCloudinaryImageUrl, resolveCatalogOptions, orderLineIdentity } from "../src/index";
 
 describe("customer restriction fail-closed behavior", () => {
   const now = Date.UTC(2026, 10, 17);
@@ -652,5 +652,19 @@ describe("order replay store isolation", () => {
   });
   it("rejects malformed or missing persisted store identity", () => {
     expect(isSameStoreOrderReplay("customer-1", undefined, "customer-1", "store-a")).toBe(false);
+  });
+});
+
+describe("order line identity", () => {
+  it("treats the same product with different options as separate lines", () => {
+    const a = orderLineIdentity("pepper", "فلفل اخضر", ["بلدى"]);
+    const b = orderLineIdentity("pepper", "فلفل اخضر", ["صوب"]);
+    expect(a).not.toBe(b);
+  });
+
+  it("still flags the exact same product and options as a duplicate", () => {
+    expect(orderLineIdentity("p1", "x", ["كبير", "سكر زيادة"]))
+      .toBe(orderLineIdentity("p1", "x", ["سكر زيادة", "كبير"]));
+    expect(orderLineIdentity("p1", "x")).toBe(orderLineIdentity("p1", "x", []));
   });
 });
