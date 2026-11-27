@@ -85,7 +85,10 @@ class PhotoLibrary {
   }) async {
     final key = normalizeProductPhotoKey(name);
     if (key.isEmpty) throw ArgumentError('اكتب اسم الصنف');
-    final photo = <String, String>{'name': name.trim(), 'url': url};
+    final photo = <String, String>{
+      'name': name.trim(), 'url': url,
+      'source': '', 'license': '', 'creator': '',
+    };
     // نخزن المصدر للمراجعة؛ صور Openverse المعتمدة CC0 فقط بعد اختيار الإدارة.
     if (sourcePageUrl != null && sourcePageUrl.startsWith('https://')) {
       photo['source'] = sourcePageUrl;
