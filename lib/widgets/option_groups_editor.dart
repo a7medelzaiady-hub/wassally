@@ -123,10 +123,24 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
 
   @override
   void dispose() {
-    for (final draft in _drafts) {
-      draft.dispose();
-    }
+    // نحرر المتحكمات بعد الإطار الجاي: حقول الكتابة (والكيبورد) بتكون لسه بتتشال
+    // من الشجرة مع أنيميشن قفل النافذة، والتحرير الفوري كان بيوقع التطبيق
+    // ('_dependents.isEmpty').
+    final drafts = List<_Draft>.of(_drafts);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final draft in drafts) {
+        draft.dispose();
+      }
+    });
     super.dispose();
+  }
+
+  /// قفل النافذة بعد ما الكيبورد يقفل ويتبني إطار، مش في نفس الإطار.
+  Future<void> _close([List<OptionGroup>? result]) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(result);
   }
 
   void _removeDraft(int index) {
@@ -149,7 +163,7 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
       for (final draft in _drafts)
         if (draft.build() case final group?) group,
     ];
-    Navigator.of(context, rootNavigator: true).pop(built);
+    _close(built);
   }
 
   @override
@@ -190,10 +204,7 @@ class _OptionGroupsEditorDialogState extends State<_OptionGroupsEditorDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () {
-            FocusManager.instance.primaryFocus?.unfocus();
-            Navigator.of(context, rootNavigator: true).pop();
-          },
+          onPressed: () => _close(),
           child: const Text('إلغاء'),
         ),
         ElevatedButton(
@@ -274,9 +285,12 @@ Widget _groupEditor(
         if (d.multi)
           Row(
             children: [
-              const Text('أقصى عدد اختيارات'),
-              const Spacer(),
+              // Expanded بدل Spacer: النص كان بيعدّي العرض على الشاشات الصغيرة.
+              const Expanded(
+                child: Text('أقصى عدد اختيارات', maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
               IconButton(
+                visualDensity: VisualDensity.compact,
                 onPressed: d.max > 2
                     ? () {
                         d.max--;
@@ -287,6 +301,7 @@ Widget _groupEditor(
               ),
               Text('${d.max}', style: const TextStyle(fontWeight: FontWeight.w800)),
               IconButton(
+                visualDensity: VisualDensity.compact,
                 onPressed: d.max < kMaxOptionsPerGroup
                     ? () {
                         d.max++;
