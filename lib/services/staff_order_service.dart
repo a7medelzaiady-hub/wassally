@@ -703,6 +703,8 @@ class StaffOrderService {
       throw StateError('تعذر تحديث الطلب (${e.code}).');
     }
     if (clean.isEmpty) return;
+    // Request a verified push after the Firestore write succeeds.
+    unawaited(OrderGateway.notifyEvent(order.id, 'unavailable'));
     await _notify(
       order.userId,
       'صنف غير متاح في طلبك',
