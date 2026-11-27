@@ -3402,7 +3402,7 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
   await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
   const { orderId, event, status } = await readJsonBody(request);
   if (typeof orderId !== "string" || !/^[A-Za-z0-9_-]{1,180}$/.test(orderId) ||
-    typeof event !== "string" || !["created", "assigned", "ready", "status"].includes(event)) {
+    typeof event !== "string" || !["created", "assigned", "ready", "status", "unavailable"].includes(event)) {
     throw new HttpError(400, "بيانات إشعار الطلب غير صالحة.");
   }
 
@@ -3423,6 +3423,17 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
     if (order.userId !== uid) throw new HttpError(403, "الطلب لا يخص حسابك.");
     if (order.status !== "new" || !recentOrderEvent(order.createdAt)) return { orderId, processed: false };
     storeTitle = "طلب جديد للمحل";
+  } else if (event === "unavailable") {
+    const ownerDoc = await getDocument(env, `storeOwners/${encodeURIComponent(uid)}`, token);
+    const owner = ownerDoc ? decodeFields(ownerDoc.fields ?? {}) : {};
+    if (!storeId || owner.storeId !== storeId || owner.active === false) {
+      throw new HttpError(403, "الطلب لا يخص حسابك.");
+    }
+    const missing = Array.isArray(order.unavailableItems) ? order.unavailableItems : [];
+    if (order.status !== "new" || missing.length === 0 ||
+        !recentOrderEvent(new Date(orderDoc.updateTime ?? ""))) return { orderId, processed: false };
+    key = `unavailable_${Date.parse(orderDoc.updateTime ?? "")}`;
+    customerTitle = "تنبيه مهم: المحل محتاج ردّك على الطلب";
   } else if (event === "status") {
     if (typeof status !== "string" || !Object.hasOwn(orderPushTitles, status)) {
       throw new HttpError(400, "حالة الطلب غير صالحة.");
