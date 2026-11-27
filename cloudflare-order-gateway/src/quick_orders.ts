@@ -28,8 +28,26 @@ export const QUICK_ACTIONS = [
   "edit", "edit-voice", "cancel", "accept", "release", "start-purchase",
   "advance-sent", "advance-received", "receipt", "receipt-remove",
   "submit-summary", "approve-summary", "reject-summary",
+  "quote-errand", "approve-errand-quote", "reject-errand-quote",
 ] as const;
 export type QuickAction = typeof QUICK_ACTIONS[number];
+
+export const ERRAND_TYPES = ["parcel", "documents", "ready_order", "other"] as const;
+export type ErrandType = typeof ERRAND_TYPES[number];
+
+export function validateErrandType(input: unknown): ErrandType {
+  if (typeof input !== "string" || !(ERRAND_TYPES as readonly string[]).includes(input)) {
+    fail(400, "invalid_errand_type", "اختار نوع مشوار صحيح.");
+  }
+  return input as ErrandType;
+}
+
+export function validateErrandPickup(input: unknown): string {
+  if (typeof input !== "string" || input.trim().length < 5 || input.trim().length > 300) {
+    fail(400, "invalid_pickup", "اكتب عنوان استلام واضح (5 إلى 300 حرف).");
+  }
+  return input.trim();
+}
 
 export type QuickRole = "customer" | "courier" | "admin";
 
@@ -242,6 +260,8 @@ export function newQuickOrder(input: {
   settings: QuickSettings;
   customerImages?: string[];
   customerVoiceUrl?: string;
+  kind?: "quick" | "errand";
+  errandType?: ErrandType;
 }): JsonMap {
   return {
     userId: input.uid,
@@ -249,6 +269,12 @@ export function newQuickOrder(input: {
     area: input.area,
     notes: input.notes,
     stores: input.stores,
+    ...(input.kind === "errand" ? {
+      kind: "errand",
+      errandType: input.errandType,
+      errandQuotePiastres: null,
+      errandQuoteStatus: "",
+    } : {}),
     // صور «صوّر طلبك» (Cloudinary). بتتمسح مراجعها وملفاتها عند التسليم.
     customerImages: input.customerImages ?? [],
     // الصوت في private/contact بس لحماية خصوصية محتواه قبل قبول المندوب.
@@ -357,6 +383,7 @@ export function applyQuickAction(
   const maxDelivery = numOrNull(policy.maximumDeliveryPiastres) ?? QUICK_DEFAULTS.maximumDeliveryPiastres;
   const forbidden = (): never => fail(403, "forbidden", "مش مسموح لك بالعملية دي على الطلب ده.");
   const wrongState = (): never => fail(409, "invalid_state", "حالة الطلب اتغيرت. حدّث الصفحة وحاول تاني.");
+  const isErrand = order.kind === "errand";
   const reasonOf = (value: unknown): string => {
     const reason = typeof value === "string" ? value.trim() : "";
     if (reason.length > QUICK_LIMITS.maxReason) fail(400, "invalid_reason", "السبب طويل.");
@@ -364,6 +391,29 @@ export function applyQuickAction(
   };
 
   switch (action as QuickAction) {
+    case "quote-errand": {
+      if (!isAssigned) forbidden();
+      if (!isErrand || status !== "accepted" || order.errandQuoteStatus === "accepted") wrongState();
+      const price = intIn(body.deliveryPiastres, 100, maxDelivery);
+      if (price === null) fail(400, "invalid_delivery", "الأجرة خارج الحد المسموح.");
+      return { errandQuotePiastres: price, errandQuoteStatus: "pending", rev };
+    }
+
+    case "approve-errand-quote": {
+      if (!isCustomer) forbidden();
+      if (!isErrand || status !== "accepted" || order.errandQuoteStatus !== "pending") wrongState();
+      if (body.expectedQuotePiastres !== order.errandQuotePiastres) {
+        fail(409, "stale_quote", "عرض الأجرة اتغير. حدّث الصفحة.");
+      }
+      return { errandQuoteStatus: "accepted", rev };
+    }
+
+    case "reject-errand-quote": {
+      if (!isCustomer) forbidden();
+      if (!isErrand || status !== "accepted" || order.errandQuoteStatus !== "pending") wrongState();
+      return { errandQuoteStatus: "rejected", rev };
+    }
+
     case "edit": {
       // قبل القبول بس. بعد القبول أي تغيير بيتم بالتليفون مع المندوب.
       if (!isCustomer) forbidden();
@@ -442,6 +492,7 @@ export function applyQuickAction(
         estimatedPurchasesPiastres: null,
         paymentMode: "",
         advance: { ...EMPTY_ADVANCE },
+        ...(isErrand ? { errandQuoteStatus: "", errandQuotePiastres: null } : {}),
         rev,
       };
     }
@@ -450,6 +501,18 @@ export function applyQuickAction(
       // بعد المكالمة: المندوب يكتب رقم واحد = تقدير المشتريات (للعرض والإدارة). الشراء يبدأ على طول.
       if (!isAssigned) forbidden();
       if (status !== "accepted") wrongState();
+      if (isErrand) {
+        if (order.errandQuoteStatus !== "accepted" ||
+            intIn(order.errandQuotePiastres, 100, maxDelivery) === null) {
+          fail(409, "quote_required", "العميل لازم يوافق على الأجرة قبل تنفيذ المشوار.");
+        }
+        return {
+          estimatedPurchasesPiastres: 0,
+          paymentMode: "cod",
+          status: "purchasing",
+          rev,
+        };
+      }
       const estimate = intIn(body.estimatedPurchasesPiastres, 100, maxAdvance);
       if (estimate === null) {
         fail(400, "invalid_estimate", "تقدير المشتريات خارج سقف الطلبات السريعة.");
@@ -465,6 +528,7 @@ export function applyQuickAction(
 
     case "advance-sent": {
       if (!isCustomer) forbidden();
+      if (isErrand) wrongState();
       if (!["accepted", "purchasing"].includes(status) || advance.sentAt instanceof Date) wrongState();
       const amount = intIn(body.amountPiastres, 100, maxAdvance);
       if (amount === null) fail(400, "invalid_advance", "مبلغ التحويل خارج السقف المسموح.");
@@ -477,6 +541,7 @@ export function applyQuickAction(
     }
 
     case "advance-received": {
+      if (isErrand) wrongState();
       // مقدم اختياري: بيتخصم من الكشف بس بعد ما المندوب يأكد إن المبلغ وصله.
       if (!isAssigned) forbidden();
       if (status !== "purchasing" || !(advance.sentAt instanceof Date) || advance.confirmedAt instanceof Date) wrongState();
@@ -489,6 +554,7 @@ export function applyQuickAction(
     }
 
     case "receipt": {
+      if (isErrand) wrongState();
       // صورة الفاتورة + مبلغها رقم. اسم المحل اختياري (المندوب مش لازم يكتب).
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
@@ -509,6 +575,7 @@ export function applyQuickAction(
     }
 
     case "receipt-remove": {
+      if (isErrand) wrongState();
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
       const index = intIn(body.index, 0, receipts.length - 1);
@@ -520,9 +587,13 @@ export function applyQuickAction(
       // المندوب يكتب الأجرة رقم واحد، والبرنامج يحسب الكشف من الفواتير.
       if (!isAssigned) forbidden();
       if (status !== "purchasing") wrongState();
-      if (receipts.length < 1) fail(409, "no_receipts", "صوّر فاتورة واحدة على الأقل.");
-      const delivery = intIn(body.deliveryPiastres, 0, maxDelivery);
+      if (!isErrand && receipts.length < 1) fail(409, "no_receipts", "صوّر فاتورة واحدة على الأقل.");
+      const delivery = intIn(body.deliveryPiastres, isErrand ? 100 : 0, maxDelivery);
       if (delivery === null) fail(400, "invalid_delivery", "أجرة التوصيل خارج الحد المسموح.");
+      if (isErrand && (order.errandQuoteStatus !== "accepted" ||
+          order.errandQuotePiastres !== delivery || receipts.length > 0)) {
+        fail(409, "quote_required", "أجرة المشوار لازم تطابق السعر اللي العميل وافق عليه.");
+      }
       const totals = quickTotals(receipts, delivery, advance);
       return {
         // الكشف للعرض فقط؛ لا ننتظر موافقة العميل على الفاتورة.
@@ -586,7 +657,10 @@ export function quickDeliveredPatch(order: JsonMap, uid: string, now: Date): Jso
     status: "delivered",
     deliveredAt: now,
     deliveredBy: uid,
-    courierOwedPiastres: numOrNull(totals.serviceFee) ?? 0,
+    // مشوار بلا مشتريات: عمولة وصّلي على المندوب من أجرته، لا زيادة على فاتورة العميل.
+    courierOwedPiastres: order.kind === "errand"
+      ? quickServiceFee(numOrNull(totals.delivery) ?? 0)
+      : (numOrNull(totals.serviceFee) ?? 0),
     collectedPiastres: numOrNull(totals.due) ?? 0,
     // صور العميل بتتشال من الطلب لحظة تأكيد الاستلام (والملفات بتتمسح من Cloudinary).
     customerImages: [],
