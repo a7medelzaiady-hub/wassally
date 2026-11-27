@@ -1318,7 +1318,7 @@ export function courierTopicMessage(storeName: string) {
       },
       android: {
         priority: "HIGH",
-        ttl: "300s",
+        ttl: "1800s",
         notification: { sound: "default" },
       },
     },
@@ -1329,7 +1329,7 @@ async function notifyCouriersOfNewOrder(
   env: Env,
   accessToken: string,
   storeName: string,
-): Promise<void> {
+): Promise<boolean> {
   const sent = await fetch(
     `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
     {
@@ -1339,12 +1339,14 @@ async function notifyCouriersOfNewOrder(
         "content-type": "application/json",
       },
       body: JSON.stringify(courierTopicMessage(storeName)),
+      signal: AbortSignal.timeout(5_000),
     },
   );
   if (!sent.ok) {
     const detail = (await sent.text()).slice(0, 500);
     throw new Error(`FCM send failed (${sent.status}): ${detail}`);
   }
+  return true;
 }
 
 /**
@@ -3313,6 +3315,70 @@ function recentOrderEvent(date: unknown): date is Date {
     date.getTime() >= Date.now() - 10 * 60_000 && date.getTime() <= Date.now() + 60_000;
 }
 
+/**
+ * Reserve a unique event while sending, then mark it sent only after at least one
+ * FCM acceptance. An all-failed dispatch releases the reservation for a retry.
+ * Pending reservations prevent concurrent duplicate sends without a Firestore read.
+ */
+export async function deliverClaimedOrderPush(
+  env: Env,
+  accessToken: string,
+  path: string,
+  event: string,
+  sends: Array<() => Promise<boolean>>,
+): Promise<boolean> {
+  const name = firestoreDocumentName(env, path);
+  const url = `${firestoreDocumentsUrl(env)}:commit`;
+  const headers = { Authorization: `Bearer ${accessToken}`, "content-type": "application/json" };
+  const claim = await fetch(url, {
+    method: "POST", headers,
+    body: JSON.stringify({ writes: [{
+      update: { name, fields: encodeFields({ event, state: "pending" }) },
+      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
+      currentDocument: { exists: false },
+    }] }),
+  });
+  if (!claim.ok) {
+    const error = await claim.json().catch(() => null) as { error?: { status?: string } } | null;
+    if (["ALREADY_EXISTS", "FAILED_PRECONDITION"].includes(error?.error?.status ?? "")) return false;
+    throw new HttpError(503, "تعذر تجهيز إشعار الطلب.");
+  }
+
+  let accepted = false;
+  try {
+    const results = await Promise.allSettled(sends.map((send) => send()));
+    accepted = results.some((result) => result.status === "fulfilled" && result.value === true);
+    if (!accepted) throw new HttpError(503, "تعذر إرسال إشعار الطلب.");
+    const confirmed = await fetch(url, {
+      method: "POST", headers,
+      body: JSON.stringify({ writes: [{
+        update: { name, fields: encodeFields({ state: "sent" }) },
+        updateMask: { fieldPaths: ["state"] },
+        currentDocument: { exists: true },
+      }] }),
+    });
+    if (!confirmed.ok) {
+      // Keep the claim after FCM accepted a message. Releasing would duplicate it.
+      console.error("Order push accepted but final marker update failed", confirmed.status);
+      throw new HttpError(503, "تعذر تأكيد إرسال الإشعار.");
+    }
+    return true;
+  } catch (error) {
+    if (!accepted) {
+      try {
+        const release = await fetch(url, {
+          method: "POST", headers,
+          body: JSON.stringify({ writes: [{ delete: name, currentDocument: { exists: true } }] }),
+        });
+        if (!release.ok) console.error("Failed to release unsuccessful order push", release.status);
+      } catch {
+        console.error("Failed to release unsuccessful order push");
+      }
+    }
+    throw error;
+  }
+}
+
 async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionContext): Promise<JsonMap> {
   const uid = await verifyCustomer(request, env);
   await assertOrderRateLimit(env.ORDER_RATE_LIMITER, `notify:${uid}`);
@@ -3400,49 +3466,35 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
     }
   }
 
-  const claim = await fetch(`${firestoreDocumentsUrl(env)}:commit`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ writes: [{
-      update: {
-        name: firestoreDocumentName(env, `${path}/pushEvents/${key}`),
-        fields: encodeFields({ event }),
-      },
-      updateTransforms: [{ fieldPath: "at", setToServerValue: "REQUEST_TIME" }],
-      currentDocument: { exists: false },
-    }] }),
-  });
-  if (!claim.ok) {
-    const error = await claim.json().catch(() => null) as { error?: { status?: string } } | null;
-    if (["ALREADY_EXISTS", "FAILED_PRECONDITION"].includes(error?.error?.status ?? "")) {
-      return { orderId, processed: false };
-    }
-    throw new HttpError(503, "تعذر تجهيز إشعار الطلب.");
+  const recipients: Array<() => Promise<boolean>> = [];
+  if (customerTitle && order.userId !== uid) {
+    recipients.push(() => notifyOrderParticipant(env, token, order.userId, orderId, "order_update", customerTitle));
   }
-
-  await Promise.allSettled([
-    customerTitle && order.userId !== uid && notifyOrderParticipant(
-      env, token, order.userId, orderId, "order_update", customerTitle,
-    ),
-    courierTitle && courierId !== uid && notifyOrderParticipant(
-      env, token, courierId, orderId, "courier_order_update", courierTitle,
-    ),
-    storeTitle && storeId && notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid),
-    notifyAvailableCouriers && notifyCouriersOfNewOrder(env, token, String(order.storeName)),
-  ]);
-  return { orderId, processed: true };
+  if (courierTitle && courierId !== uid) {
+    recipients.push(() => notifyOrderParticipant(env, token, courierId, orderId, "courier_order_update", courierTitle));
+  }
+  if (storeTitle && storeId) {
+    recipients.push(() => notifyStoreOwners(env, token, storeId, orderId, storeTitle, uid));
+  }
+  if (notifyAvailableCouriers) {
+    recipients.push(() => notifyCouriersOfNewOrder(env, token, String(order.storeName)));
+  }
+  const processed = await deliverClaimedOrderPush(env, token, `${path}/pushEvents/${key}`, event, recipients);
+  return { orderId, processed };
 }
 
 async function notifyStoreOwners(
   env: Env, token: string, storeId: string, orderId: string, title: string, actorUid: string,
-): Promise<void> {
+): Promise<boolean> {
   const owners = await queryAccountDocuments(env, token, "storeOwners", "storeId", storeId);
-  await Promise.all(owners.map((doc) => {
+  const results = await Promise.allSettled(owners.map((doc) => {
     const recipient = doc.name.split("/").pop();
     if (recipient !== actorUid && decodeFields(doc.fields ?? {}).active !== false) {
       return notifyOrderParticipant(env, token, recipient, orderId, "store_order_update", title);
     }
+    return Promise.resolve(false);
   }));
+  return results.some((result) => result.status === "fulfilled" && result.value);
 }
 
 export function isSameStoreOrderReplay(existingUserId: unknown, existingStoreId: unknown, userId: string, storeId: string): boolean {
@@ -3517,7 +3569,7 @@ async function readJsonBody(request: Request): Promise<JsonMap> {
   return body as JsonMap;
 }
 
-function quickTopicMessage(isErrand = false) {
+export function quickTopicMessage(isErrand = false) {
   return {
     message: {
       topic: "quick_couriers",
@@ -3526,32 +3578,33 @@ function quickTopicMessage(isErrand = false) {
         body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
       },
       data: { type: "quick_order" },
-      android: { priority: "HIGH", ttl: "300s", notification: { sound: "default" } },
+      android: { priority: "HIGH", ttl: "1800s", notification: { sound: "default" } },
     },
   };
 }
 
-async function notifyOrderParticipant(
+/** Returns true only when FCM accepted a message for at least one device. No extra Firestore reads. */
+export async function notifyOrderParticipant(
   env: Env,
   token: string,
   recipient: unknown,
   orderId: string,
   type: "quick_customer_update" | "quick_courier_update" | "order_update" | "store_order_update" | "courier_order_update",
   title: string,
-): Promise<void> {
-  if (typeof recipient !== "string" || !recipient) return;
+): Promise<boolean> {
+  if (typeof recipient !== "string" || !recipient) return false;
   try {
-    const signal = AbortSignal.timeout(4_000);
-    const user = await getDocument(env, `users/${encodeURIComponent(recipient)}`, token, signal);
+    // A recipient lookup must not eat the timeout budget of every FCM request.
+    const user = await getDocument(env, `users/${encodeURIComponent(recipient)}`, token, AbortSignal.timeout(5_000));
     const tokens = user ? decodeFields(user.fields ?? {}).fcmTokens : null;
-    if (!Array.isArray(tokens)) return;
+    if (!Array.isArray(tokens)) return false;
     const devices = [...new Set(tokens.filter(
       (value): value is string => typeof value === "string" && value.length > 0 && value.length <= 4096,
     ))].slice(-10);
-    const sent = await Promise.allSettled(devices.map((device) =>
-      fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
+    const sent = await Promise.allSettled(devices.map(async (device) => {
+      const result = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
         method: "POST",
-        signal,
+        signal: AbortSignal.timeout(5_000),
         headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({
           message: {
@@ -3561,13 +3614,40 @@ async function notifyOrderParticipant(
             android: { priority: "HIGH", notification: { sound: "default" } },
           },
         }),
-      }),
-    ));
-    if (sent.some((result) => result.status === "rejected" || !result.value.ok)) {
+      });
+      if (result.ok) return { accepted: true, invalid: false, device };
+      // FCM HTTP v1 can return UNREGISTERED in error details (or as HTTP 404).
+      const errorBody = await result.text().catch(() => "");
+      const invalid = result.status === 404 || /UNREGISTERED/.test(errorBody);
+      return { accepted: false, invalid, device };
+    }));
+    const outcomes = sent.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+    const invalidDevices = outcomes.filter((entry) => entry.invalid).map((entry) => entry.device);
+    if (invalidDevices.length) {
+      // Firestore arrayRemove via REST transform: a write, never a read.
+      try {
+        await commitFirestoreWrites(env, token, [{
+          transform: {
+            document: firestoreDocumentName(env, `users/${encodeURIComponent(recipient)}`),
+            fieldTransforms: [{
+              fieldPath: "fcmTokens",
+              removeAllFromArray: { values: invalidDevices.map((device) => ({ stringValue: device })) },
+            }],
+          },
+        }]);
+      } catch {
+        console.error("Stale FCM token cleanup failed");
+      }
+    }
+    const success = outcomes.some((entry) => entry.accepted);
+    if (sent.some((result) => result.status === "rejected") ||
+        outcomes.some((entry) => !entry.accepted && !entry.invalid)) {
       console.error("Order participant push failed");
     }
+    return success;
   } catch {
     console.error("Order participant push failed");
+    return false;
   }
 }
 

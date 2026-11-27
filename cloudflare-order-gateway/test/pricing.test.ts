@@ -181,7 +181,7 @@ describe("courier notification payload", () => {
     });
     expect(payload.message.notification.title).toBe("طلب توصيل جديد متاح");
     expect(payload.message.notification.body).toContain("متجر تجريبي");
-    expect(payload.message.android.ttl).toBe("300s");
+    expect(payload.message.android.ttl).toBe("1800s");
     expect(JSON.stringify(payload)).not.toContain("phone");
     expect(JSON.stringify(payload)).not.toContain("address");
   });
