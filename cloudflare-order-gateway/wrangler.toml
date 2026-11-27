@@ -57,6 +57,7 @@ FIREBASE_PROJECT_NUMBER = "244081237486"
 # معرّف مشروع Firebase مش سر، فبيتكتب هنا. لازم يفضل هنا: `wrangler deploy` بيمسح أي
 # متغير عادي (Plaintext) متسجّل من لوحة Cloudflare ومش موجود في الملف ده.
 FIREBASE_PROJECT_ID = "wasally-12259"
+ANDROID_SHA256_CERT_FINGERPRINTS = "69:6C:06:AD:2E:99:E9:2F:D2:94:3E:D2:C6:C4:BB:00:90:3C:E4:AD:73:5D:EA:53:1C:A7:C5:3F:4D:35:94:8C"
 
 # Configure secrets with: wrangler secret put FIREBASE_SERVICE_ACCOUNT_EMAIL
 # FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY
