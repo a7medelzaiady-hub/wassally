@@ -1,6 +1,11 @@
 name: Wasally push notifications APK preview - verified courier layout
 
 on:
+  push:
+    branches:
+      - ci/push-notification-apk-preview-20261127
+    paths:
+      - ".github/workflows/wasally-push-preview-apk.yml"
   pull_request:
     branches:
       - fix/push-05-courier-battery-guide-20261127
