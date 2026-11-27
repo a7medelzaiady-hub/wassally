@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/order.dart';
 import '../theme/brand.dart';
+import '../utils/format.dart';
 import '../utils/order_receipt.dart';
 import 'app_snack.dart';
 
