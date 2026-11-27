@@ -54,6 +54,8 @@ Future<void> _bootstrap() async {
       bootstrap: bootstrap,
       firstFrame: startup.elapsed,
     ));
+    // إنشاء قناة أندرويد قبل وصول FCM في الخلفية، حتى قبل إعطاء إذن الإشعارات.
+    if (isAndroid) unawaited(NotificationService.initializeOrdersChannel());
     // تذكير السلة المنسية (إشعار محلي على أندرويد بس؛ أي فشل بيتجاهل).
     if (isAndroid && !E2eSupport.enabled) unawaited(CartReminder.instance.start());
     // استعادة إشعارات أحداث الطلبات المؤجلة من الموبايل فقط (بدون قراءات Firestore).

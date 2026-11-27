@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +38,77 @@ class NotificationService {
   static StreamSubscription<String>? _tokenRefresh;
   static String? _fcmToken;
   static bool? _verifiedCourierRole;
+  static const String ordersChannelId = 'wasally_orders';
+  static const AndroidNotificationChannel ordersChannel = AndroidNotificationChannel(
+    ordersChannelId,
+    'طلبات وصّلي',
+    description: 'تنبيهات الطلبات الجديدة وتغييرات حالة الطلبات',
+    importance: Importance.high,
+    playSound: true,
+  );
+
+  static const AndroidNotificationDetails ordersAndroidDetails =
+      AndroidNotificationDetails(
+        ordersChannelId,
+        'طلبات وصّلي',
+        channelDescription: 'تنبيهات الطلبات الجديدة وتغييرات حالة الطلبات',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+      );
+
+  static final FlutterLocalNotificationsPlugin _ordersLocal =
+      FlutterLocalNotificationsPlugin();
+  static bool _ordersChannelReady = false;
+
+  /// Android channel must exist before a background FCM notification arrives.
+  /// Local setup only; no Firestore operation or additional network call.
+  static Future<void> initializeOrdersChannel() async {
+    if (!_supported || _ordersChannelReady) return;
+    try {
+      await _ordersLocal.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        ),
+        onDidReceiveNotificationResponse: (details) {
+          final payload = details.payload;
+          if (payload == null || payload.isEmpty) return;
+          try {
+            final decoded = jsonDecode(payload);
+            if (decoded is Map) {
+              _openMessage(RemoteMessage(data: Map<String, dynamic>.from(decoded)));
+            }
+          } catch (_) {}
+        },
+      );
+      final android = _ordersLocal.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(ordersChannel);
+      _ordersChannelReady = true;
+    } catch (e) {
+      debugPrint('تعذر إنشاء قناة إشعارات الطلبات: $e');
+    }
+  }
+
+  static Future<void> _showForegroundOrder(RemoteMessage message) async {
+    final notice = message.notification;
+    if (notice == null || !_supported) return;
+    await initializeOrdersChannel();
+    if (!_ordersChannelReady) return;
+    try {
+      await _ordersLocal.show(
+        DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+        notice.title,
+        notice.body,
+        const NotificationDetails(android: ordersAndroidDetails),
+        payload: jsonEncode(message.data),
+      );
+    } catch (e) {
+      debugPrint('تعذر عرض إشعار الطلب في المقدمة: $e');
+    }
+  }
+
+
 
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -425,6 +498,8 @@ class NotificationService {
   }
 
   static void _showInApp(RemoteMessage message) {
+    // Same high-importance sound channel as background FCM messages.
+    unawaited(_showForegroundOrder(message));
     final n = message.notification;
     if (n == null) return;
     final parts = [
