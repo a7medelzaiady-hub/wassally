@@ -38,6 +38,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/option_groups_editor.dart';
 import '../widgets/staff_header.dart';
+import '../widgets/staff_notification_permission_banner.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/unanswered_orders_alert.dart';
@@ -118,6 +119,7 @@ class StoreOwnerPage extends StatelessWidget {
                             ? 'حساب صاحب المحل'
                             : 'أهلاً $name',
                       ),
+                      const StaffNotificationPermissionBanner(),
                       _ShopStatusBar(storeId: storeId),
                       if (OrderGateway.referralCampaignEnabled)
                         const ReferralCampaignLink(storeOwner: true),

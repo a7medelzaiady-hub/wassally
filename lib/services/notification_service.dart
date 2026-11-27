@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -147,6 +148,47 @@ class NotificationService {
       return true;
     } catch (e) {
       debugPrint('تعذر طلب إذن الإشعارات: $e');
+      return false;
+    }
+  }
+
+  static const MethodChannel _deviceSettings =
+      MethodChannel('com.wassally.app/device_settings');
+
+  /// Explicit action on a staff-only banner, bypassing the one-time
+  /// customer welcome prompt. A denied Android request falls back to settings.
+  /// Reuses RoleGate's verified role flags; no Firestore read or new listener.
+  static Future<bool> enableForVerifiedStaff() async {
+    if (!_supported) return false;
+    try {
+      if (!await hasPermission()) {
+        final settings = await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        if (!_isGranted(settings.authorizationStatus)) {
+          try {
+            await _deviceSettings.invokeMethod<void>('notificationSettings');
+          } catch (e) {
+            debugPrint('تعذر فتح إعدادات الإشعارات: $e');
+          }
+          return false;
+        }
+      }
+      await init();
+      if (_verifiedCourierRole != null) {
+        await syncCourierTopic(
+          isCourier: _verifiedCourierRole!,
+          isQuickCourier: _verifiedQuickCourier,
+        );
+      }
+      if (_verifiedAdminRole != null) {
+        await syncAdminTopic(isAdmin: _verifiedAdminRole!);
+      }
+      return await hasPermission();
+    } catch (e) {
+      debugPrint('تعذر تفعيل إشعارات حساب المحل/المندوب: $e');
       return false;
     }
   }

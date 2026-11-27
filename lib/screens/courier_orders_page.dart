@@ -21,6 +21,7 @@ import '../widgets/dialogs.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
+import '../widgets/staff_notification_permission_banner.dart';
 import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
 import 'quick_courier_orders_page.dart';
@@ -278,6 +279,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
               ].join(' · '),
             ),
           ),
+          const StaffNotificationPermissionBanner(),
           // «الطلبات السريعة»: بيظهر للمناديب المعتمدين (quickEnabled) بس.
           const QuickCourierEntry(),
           Expanded(
