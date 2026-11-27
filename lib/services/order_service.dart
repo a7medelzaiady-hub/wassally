@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import '../models/user_profile.dart';
+import '../utils/address_district.dart';
 import 'cart_book.dart';
 import 'cart_model.dart';
 import 'catalog_sync.dart';
@@ -331,6 +332,11 @@ class OrderService {
       }
     }
 
+    // المنطقة: من قائمة مناطق التوصيل لو العميل اختار، وإلا أول العنوان (الحي بس)
+    // عشان الأدمن والمناديب يشوفوا الوجهة في القايمة. باقي العنوان في المستند الخاص.
+    final orderArea =
+        cart.area.isNotEmpty ? cart.area : districtFromAddress(address);
+
     final data = <String, dynamic>{
       'userId': user.uid,
       // الاسم الأول بس في مستند الطلب العام (بيشوفه صاحب المحل). الاسم الكامل والموبايل
@@ -358,7 +364,7 @@ class OrderService {
       if (cart.specialRequest != null) 'specialRequest': cart.specialRequest,
       'subtotal': cart.subtotal,
       'deliveryFee': cart.effectiveFee,
-      if (cart.area.isNotEmpty) 'area': cart.area,
+      if (orderArea.isNotEmpty) 'area': orderArea,
       if (cart.discount > 0) 'promoCode': cart.promoCode.trim().toUpperCase(),
       if (cart.discount > 0) 'discount': cart.discount,
       'total': cart.total,
@@ -411,7 +417,7 @@ class OrderService {
             'storeId': storeId,
             'customerName': _firstName(name),
             'notes': notes,
-            'area': cart.area,
+            'area': orderArea,
             'expectedDeliveryFee': cart.effectiveFee,
             'expectedTotal': cart.total - referralDiscountMinor / 100,
             if (referralPoints > 0) 'referralPoints': referralPoints,
