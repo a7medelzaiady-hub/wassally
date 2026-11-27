@@ -6,6 +6,7 @@ import '../widgets/app_header.dart';
 
 import '../models/store.dart';
 import '../models/home_category.dart';
+import 'quick_order_create_page.dart';
 import '../services/catalog_service.dart';
 import '../services/catalog_sync.dart';
 import '../services/store_shortcuts.dart';
@@ -82,6 +83,13 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
         },
       ),
     );
+  }
+
+  /// اسم القسم المختار للعرض («لحوم ودواجن» بدل «meat»).
+  String? _categoryTitle() {
+    final c = _category;
+    if (c == null) return null;
+    return homeCategoryForId(c)?.title ?? c;
   }
 
   Widget _shortcutRow(String title, List<Store> stores) {
@@ -163,14 +171,19 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
               return categoryOk &&
                   (q.isEmpty || item.store.name.toLowerCase().contains(q));
             }).toList();
+            // المفضلة و«زرتها مؤخرًا» بيتفلتروا بنفس القسم المختار، عشان ما يبانش
+            // «فواكه وخضروات» تحت قسم «لحوم ودواجن».
+            bool inCategory(Store store) => _category == null ||
+                matchesDirectoryCategory(_category!, store.category);
             final favorites = [
               for (final item in stores)
-                if (storeShortcuts.isFavorite(item.store.id)) item.store,
+                if (storeShortcuts.isFavorite(item.store.id) && inCategory(item.store))
+                  item.store,
             ];
             final recentlyVisited = [
               for (final id in storeShortcuts.recent)
                 for (final item in stores)
-                  if (item.store.id == id) item.store,
+                  if (item.store.id == id && inCategory(item.store)) item.store,
             ];
             final categories = stores
                 .map((e) => e.store.isPharmacy ? 'صيدليات' : e.store.category)
@@ -323,10 +336,15 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
                     ),
                   )
                 else if (visible.isEmpty)
-                  const SliverFillRemaining(
+                  SliverFillRemaining(
                     hasScrollBody: false,
-                    child: Center(
-                      child: Text('لا توجد محلات مطابقة حاليًا', style: AppTypography.secondary),
+                    child: _EmptyDirectory(
+                      categoryTitle: _categoryTitle(),
+                      searching: q.isNotEmpty,
+                      onShowAll: () => setState(() {
+                        _category = null;
+                        _search.clear();
+                      }),
                     ),
                   )
                 else
@@ -690,4 +708,57 @@ class _FilterChip extends StatelessWidget {
           shape: const StadiumBorder(),
         ),
       );
+}
+
+/// مفيش محلات في القسم أو البحث: رسالة واضحة + «عرض كل المحلات» + «وصّلي ع السريع».
+class _EmptyDirectory extends StatelessWidget {
+  final String? categoryTitle;
+  final bool searching;
+  final VoidCallback onShowAll;
+  const _EmptyDirectory({
+    required this.categoryTitle,
+    required this.searching,
+    required this.onShowAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = searching
+        ? 'مفيش محل بالاسم ده'
+        : categoryTitle == null
+            ? 'مفيش محلات لسه'
+            : 'لسه مفيش محلات $categoryTitle';
+    return Padding(
+      key: const Key('directory-empty'),
+      padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.lg, AppSpacing.page, AppSpacing.xxl),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.storefront_outlined, size: 44, color: AppColors.purple.withValues(alpha: 0.5)),
+          const SizedBox(height: AppSpacing.sm),
+          Text(title, textAlign: TextAlign.center, style: AppTypography.sectionTitle),
+          const SizedBox(height: AppSpacing.xs),
+          const Text(
+            'تقدر تطلب أي حاجة من أي محل حتى لو مش على التطبيق، من «وصّلي ع السريع».',
+            textAlign: TextAlign.center,
+            style: AppTypography.secondary,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          FilledButton.icon(
+            key: const Key('directory-empty-quick'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const QuickOrderCreatePage()),
+            ),
+            icon: const Icon(Icons.bolt_rounded),
+            label: const Text('اطلب من وصّلي ع السريع'),
+          ),
+          TextButton(
+            key: const Key('directory-empty-all'),
+            onPressed: onShowAll,
+            child: const Text('عرض كل المحلات'),
+          ),
+        ],
+      ),
+    );
+  }
 }
