@@ -78,12 +78,20 @@ function simulate(order: Record<string, unknown> = {}, history?: Record<string, 
       return Response.json([{ document: doc("storeOwners/owner", { active: true }) }]);
     }
     if (url.endsWith(":commit")) {
-      const [{ update: { name }, currentDocument }] = JSON.parse(String(init?.body)).writes;
-      expect(currentDocument).toEqual({ exists: false });
-      if (claims.has(name)) {
-        return Response.json({ error: { status: "FAILED_PRECONDITION" } }, { status: 400 });
+      const [write] = JSON.parse(String(init?.body)).writes;
+      const name = write.update?.name ?? write.delete;
+      if (write.currentDocument?.exists === false) {
+        if (claims.has(name)) {
+          return Response.json({ error: { status: "FAILED_PRECONDITION" } }, { status: 400 });
+        }
+        claims.add(name);
+      } else if (write.delete) {
+        claims.delete(name);
+      } else {
+        expect(write.currentDocument).toEqual({ exists: true });
+        expect(write.updateMask.fieldPaths).toEqual(["state"]);
+        expect(claims.has(name)).toBe(true);
       }
-      claims.add(name);
       return Response.json({ writeResults: [] });
     }
     const path = url.split("/documents/")[1];
