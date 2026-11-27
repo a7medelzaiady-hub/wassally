@@ -105,6 +105,26 @@ class PhotoLibrary {
     await load(force: true);
   }
 
+  /// إضافة كذا صورة مرة واحدة: كتابة واحدة للمستند وتحديث واحد للكاش،
+  /// بدل كتابة وقراءة لكل صورة (توفير على حصة Spark).
+  static Future<void> putMany(List<({String name, String url})> photos) async {
+    final map = <String, Map<String, String>>{};
+    for (final p in photos) {
+      final key = normalizeProductPhotoKey(p.name);
+      if (key.isEmpty || !p.url.startsWith('https://')) continue;
+      map[key] = {
+        'name': p.name.trim(), 'url': p.url,
+        'source': '', 'license': '', 'creator': '',
+      };
+    }
+    if (map.isEmpty) return;
+    await doc.set({
+      'photos': map,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    await load(force: true);
+  }
+
   /// حذف صورة من المكتبة (الإدارة).
   static Future<void> remove(String key) async {
     await doc.update({
@@ -113,4 +133,28 @@ class PhotoLibrary {
     });
     await load(force: true);
   }
+}
+
+/// اسم الصنف المقترح من اسم الملف في الرفع المتعدد: «طماطم_بلدي.jpg» → «طماطم بلدي».
+/// أسماء الكاميرا والواتساب والأرقام (IMG_2024...) بترجع فاضية عشان الإدارة تكتب الاسم بنفسها.
+String libraryNameFromFilename(String filename) {
+  var name = filename.split(RegExp(r'[\\/]')).last;
+  final dot = name.lastIndexOf('.');
+  if (dot > 0) name = name.substring(0, dot);
+  name = name
+      .replaceFirst(RegExp(r'^(scaled_|image_picker_?)', caseSensitive: false), '')
+      .replaceAll(RegExp(r'[_\-+.]+'), ' ')
+      .replaceAll(RegExp(r'\(\d+\)'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final lower = name.toLowerCase();
+  const generic = [
+    'img', 'image', 'images', 'photo', 'pic', 'dsc', 'pxl', 'screenshot',
+    'whatsapp image', 'download', 'downloads', 'file', 'untitled', 'صورة',
+  ];
+  final startsGeneric = generic.any((g) =>
+      lower == g || lower.startsWith('$g ') || RegExp('^$g\\d').hasMatch(lower));
+  final hasLetters = RegExp(r'[A-Za-zء-ي]').hasMatch(name);
+  if (startsGeneric || !hasLetters) return '';
+  return name.length > 90 ? name.substring(0, 90).trim() : name;
 }
