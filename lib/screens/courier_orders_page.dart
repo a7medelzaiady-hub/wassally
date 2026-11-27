@@ -573,11 +573,11 @@ class _CourierOrderCardState extends State<_CourierOrderCard> {
 
   AppOrder get _o => widget.order.withContact(_contact);
 
+  // العنوان بالتفصيل والتليفون بعد الاستلام من المحل بس (زي القواعد).
   bool get _canSeeContact =>
       widget.order.customerConfirmedAt == null &&
       widget.order.courierId == FirebaseAuth.instance.currentUser?.uid &&
-      (widget.order.status == OrderStatus.preparing ||
-          widget.order.status == OrderStatus.onTheWay);
+      widget.order.status == OrderStatus.onTheWay;
 
   int _contactRequest = 0;
 

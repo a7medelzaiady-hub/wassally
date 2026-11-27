@@ -1008,8 +1008,10 @@ service cloud.firestore {
         let order = get(/databases/$(database)/documents/orders/$(orderId)).data;
         return order.get('userId', '') == request.auth.uid ||
           isAdmin() ||
+          // المندوب يشوف العنوان بالتفصيل والتليفون بعد ما يستلم من المحل بس
+          // (on_the_way). قبل كده بيشوف منطقة التوصيل من الطلب نفسه.
           (order.get('courierId', '') == request.auth.uid &&
-            order.get('status', '') in ['preparing', 'on_the_way'] &&
+            order.get('status', '') == 'on_the_way' &&
             order.get('customerConfirmedAt', null) == null && isCourier());
       }
 

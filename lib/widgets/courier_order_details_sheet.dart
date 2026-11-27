@@ -88,10 +88,14 @@ class CourierOrderDetailsSheet extends StatelessWidget {
                 valueListenable: canSeePrivateContact,
                 builder: (context, allowed, _) {
                   if (!allowed) {
-                    return const Text(
-                      'بيانات العميل الخاصة غير متاحة بعد انتهاء التعيين أو التسليم.',
-                      key: Key('courier-private-hidden'),
-                      style: TextStyle(color: Colors.black54),
+                    final beforePickup = order.status == OrderStatus.preparing;
+                    return Text(
+                      beforePickup
+                          ? 'العنوان بالتفصيل وتليفون العميل بيظهروا بعد ما تستلم الطلب من المحل. '
+                              'لو محتاج حاجة قبل كده كلّم المحل أو الإدارة.'
+                          : 'بيانات العميل الخاصة غير متاحة بعد انتهاء التعيين أو التسليم.',
+                      key: const Key('courier-private-hidden'),
+                      style: const TextStyle(color: Colors.black54),
                     );
                   }
                   final c = contactProvider != null
