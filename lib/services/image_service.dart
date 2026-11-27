@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'navigation.dart';
 import 'order_gateway.dart';
+import 'stock_photo_search.dart';
 
 /// رفع الصور عبر Order Gateway؛ الخادم يتحقق من المستخدم والصلاحية والحجم وبصمة الملف قبل Cloudinary.
 ///
@@ -56,6 +57,69 @@ class ImageService {
       folder: folder,
       storeId: storeId,
     );
+  }
+
+  /// استيراد صورة CC0 اختارها صاحب المحل أو الإدارة، عبر مسار رفع Cloudinary
+  /// الموثوق نفسه. التحميل محدود بـ5MB، والروابط الخارجية لا تُحفظ داخل الكتالوج.
+  /// لا تُستخدم هذه الدالة تلقائيًا أثناء تصفح العملاء.
+  static Future<String> uploadSuggestedStockPhoto(
+    StockPhotoCandidate photo, {
+    required String folder,
+    String? storeId,
+  }) async {
+    if (folder != 'banners' && folder != 'products') {
+      throw ArgumentError('مجلد غير مسموح لاستيراد الصور');
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    final client = http.Client();
+    try {
+      var uri = Uri.parse(photo.previewUrl);
+      for (var redirects = 0; redirects < 4; redirects++) {
+        if (!StockPhotoSearch.isPublicHttpsPhotoUrl(uri.toString())) {
+          throw StateError('مصدر الصورة غير آمن.');
+        }
+        final request = http.Request('GET', uri)
+          ..followRedirects = false
+          ..headers['Accept'] = 'image/jpeg,image/png,image/webp';
+        final res = await client.send(request).timeout(const Duration(seconds: 20));
+        if ([301, 302, 303, 307, 308].contains(res.statusCode)) {
+          final location = res.headers['location'];
+          await res.stream.drain<void>();
+          if (location == null) throw StateError('رابط الصورة غير صالح.');
+          uri = uri.resolve(location);
+          continue;
+        }
+        if (res.statusCode != 200) {
+          await res.stream.drain<void>();
+          throw StateError('تعذر تنزيل الصورة (${res.statusCode}).');
+        }
+        final size = int.tryParse(res.headers['content-length'] ?? '');
+        if (size != null && size > maxBytes) {
+          await res.stream.drain<void>();
+          throw StateError('الصورة أكبر من 5 ميجابايت.');
+        }
+        final bytes = <int>[];
+        await for (final chunk in res.stream.timeout(const Duration(seconds: 25))) {
+          if (bytes.length + chunk.length > maxBytes) {
+            throw StateError('الصورة أكبر من 5 ميجابايت.');
+          }
+          bytes.addAll(chunk);
+        }
+        final extension = suggestedPhotoExtension(bytes);
+        if (extension == null) {
+          throw StateError('صيغة الصورة غير مدعومة. جرّب صورة تانية.');
+        }
+        return _upload(
+          bytes: bytes,
+          filename: 'stock_photo.$extension',
+          folder: folder,
+          storeId: storeId,
+        );
+      }
+      throw StateError('عدد تحويلات رابط الصورة أكبر من المسموح.');
+    } finally {
+      client.close();
+    }
   }
 
   /// رفع رسالة صوتية للطلب الخاص (m4a) على Cloudinary عن طريق الـWorker.
@@ -284,4 +348,21 @@ class _ImageUrlDialogState extends State<_ImageUrlDialog> {
       ],
     );
   }
+}
+/// فحص سريع لبصمة الصورة قبل تمريرها للخادم؛ Worker يعيد التحقق كذلك.
+String? suggestedPhotoExtension(List<int> b) {
+  if (b.length >= 3 && b[0] == 0xff && b[1] == 0xd8 && b[2] == 0xff) {
+    return 'jpg';
+  }
+  if (b.length >= 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4e &&
+      b[3] == 0x47 && b[4] == 0x0d && b[5] == 0x0a && b[6] == 0x1a &&
+      b[7] == 0x0a) {
+    return 'png';
+  }
+  if (b.length >= 12 && b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 &&
+      b[3] == 0x46 && b[8] == 0x57 && b[9] == 0x45 &&
+      b[10] == 0x42 && b[11] == 0x50) {
+    return 'webp';
+  }
+  return null;
 }
