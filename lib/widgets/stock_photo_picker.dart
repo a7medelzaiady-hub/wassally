@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/stock_photo_search.dart';
 import 'cached_net_image.dart';
@@ -165,11 +166,28 @@ class _StockPhotoPickerState extends State<_StockPhotoPicker> {
                                             ),
                                           ),
                                           const SizedBox(height: 3),
-                                          Text(
-                                            photo.title.isEmpty ? 'صورة CC0' : photo.title,
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                            style: const TextStyle(fontSize: 10.5),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  photo.title.isEmpty ? 'صورة CC0' : photo.title,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                  style: const TextStyle(fontSize: 10.5),
+                                                ),
+                                              ),
+                                              InkWell(
+                                                key: Key('stock-photo-source-${i + 1}'),
+                                                onTap: () => launchUrl(
+                                                  Uri.parse(photo.sourcePageUrl),
+                                                  mode: LaunchMode.externalApplication,
+                                                ),
+                                                child: const Padding(
+                                                  padding: EdgeInsets.all(3),
+                                                  child: Icon(Icons.open_in_new, size: 14),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
