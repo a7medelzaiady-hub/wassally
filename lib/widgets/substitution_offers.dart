@@ -34,13 +34,16 @@ class _SubstitutionOffersState extends State<SubstitutionOffers> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final e in offers.entries)
-          Container(
+          Padding(
             key: Key('substitute-${e.key}'),
-            margin: const EdgeInsets.only(top: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
+            padding: const EdgeInsets.only(top: 8),
+            // Material (مش Container بلون) عشان تأثير الضغط بتاع الـListTile يظهر.
+            child: Material(
+            color: Colors.white,
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
+              side: BorderSide(
                 color: _accepted.contains(e.key) ? AppColors.success : kLine,
               ),
             ),
@@ -63,6 +66,7 @@ class _SubstitutionOffersState extends State<SubstitutionOffers> {
                 '${formatPrice(e.value.price)} للواحدة × ${qtyOf[e.key] ?? 1}',
                 style: const TextStyle(fontSize: 12),
               ),
+            ),
             ),
           ),
         const SizedBox(height: 8),
