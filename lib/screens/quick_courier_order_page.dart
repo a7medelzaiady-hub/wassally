@@ -318,6 +318,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   );
 
   Widget _requestCard(QuickCourierOrder o) {
+    final photos = o.isErrand ? (_contact?.images ?? const <String>[]) : o.customerImages;
     return _card(receipt: true, children: [
       Row(
         children: [
@@ -389,7 +390,7 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
         ),
       ],
       // صور «صوّر طلبك»: في أول المحتوى وبتتكبّر بالضغط.
-      if (o.customerImages.isNotEmpty) ...[
+      if (photos.isNotEmpty) ...[
         _requestDivider(),
         const Text('صور طلب العميل',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
@@ -399,10 +400,10 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
           child: ListView.separated(
             key: const Key('quick-courier-customer-images'),
             scrollDirection: Axis.horizontal,
-            itemCount: o.customerImages.length,
+            itemCount: photos.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, i) {
-              final url = o.customerImages[i];
+              final url = photos[i];
               return InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => showDialog<void>(
