@@ -42,6 +42,14 @@ void main() {
     expect(result.first.sourcePageUrl, contains('wikimedia'));
   });
 
+  test('Egyptian item names get useful non-branded search terms', () {
+    expect(StockPhotoSearch.suggestedQuery('طماطم بلدي'), 'tomatoes');
+    expect(StockPhotoSearch.suggestedQuery('بيبسي 2 لتر'), 'soda drink bottle');
+    expect(StockPhotoSearch.suggestedQuery('زيت موتور 4 لتر'),
+        'motor engine oil bottle');
+    expect(StockPhotoSearch.suggestedQuery('milk chocolate'), 'milk chocolate');
+  });
+
   test('rejects unsafe or local image URLs', () {
     for (final url in [
       'http://image.example.com/photo.jpg',
