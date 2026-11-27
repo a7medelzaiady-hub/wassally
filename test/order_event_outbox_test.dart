@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:city_store/services/order_event_outbox.dart';
+import 'package:city_store/services/order_gateway.dart';
 
 void main() {
   setUp(() {
@@ -14,6 +15,15 @@ void main() {
         status: 'preparing',
         occurredAtMs: now,
       );
+
+  test('only retry network-transient gateway statuses including Worker throttle', () {
+    for (final status in [429, 500, 502, 503, 504]) {
+      expect(OrderGateway.shouldRetryOrderPushStatus(status), isTrue);
+    }
+    for (final status in [200, 400, 401, 403, 404, 409]) {
+      expect(OrderGateway.shouldRetryOrderPushStatus(status), isFalse);
+    }
+  });
 
   test('successful send drops the persisted event immediately', () async {
     var requests = 0;
