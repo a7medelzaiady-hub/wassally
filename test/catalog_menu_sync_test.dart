@@ -20,6 +20,7 @@ class FakeBackend implements CatalogBackend {
 
   int transactions = 0;
   int commits = 0;
+  int fullScans = 0;
 
   void put(String path, Map<String, dynamic> data) {
     docs[path] = _copy(data);
@@ -45,11 +46,14 @@ class FakeBackend implements CatalogBackend {
   }
 
   @override
-  Future<Map<String, Map<String, dynamic>>> allProducts(String storeId) async => {
-        for (final e in docs.entries)
-          if (e.key.startsWith('stores/$storeId/products/'))
-            e.key.split('/').last: _copy(e.value),
-      };
+  Future<Map<String, Map<String, dynamic>>> allProducts(String storeId) async {
+    fullScans++;
+    return {
+      for (final e in docs.entries)
+        if (e.key.startsWith('stores/$storeId/products/'))
+          e.key.split('/').last: _copy(e.value),
+    };
+  }
 
   @override
   Future<void> set(String path, Map<String, Object?> data, {bool merge = false}) async {
@@ -261,6 +265,59 @@ void main() {
       expect(r.status, MenuSyncStatus.updated);
       expect(menuItems(b).keys.toSet(), {'a', 'b'});
       expect(version(b), 2);
+    });
+  });
+
+  group('صاحب المحل: لصق قايمة / تعديل أسعار جماعي (قراءات)', () {
+    Future<FakeBackend> bigStore() async {
+      final b = FakeBackend();
+      for (var i = 0; i < 300; i++) {
+        b.put(p('old$i'), {'name': 'صنف $i', 'price': 10});
+      }
+      await MenuSync(b).sync(sid);
+      b.fullScans = 0;
+      return b;
+    }
+
+    test('لصق 10 أصناف بأرقامها: من غير قراية الـ300 صنف القديمة', () async {
+      final b = await bigStore();
+      final ids = [for (var i = 0; i < 10; i++) 'new$i'];
+      for (final id in ids) {
+        b.put(p(id), {'name': id, 'price': 5});
+      }
+      final r = await MenuSync(b).sync(sid, productIds: ids);
+      expect(r.status, MenuSyncStatus.updated);
+      expect(b.fullScans, 0);
+      expect(menuItems(b).length, 310);
+    });
+
+    test('من غير أرقام (السلوك القديم): إعادة بناء بتقرا كل الأصناف', () async {
+      final b = await bigStore();
+      b.put(p('new0'), {'name': 'new0', 'price': 5});
+      await MenuSync(b).sync(sid);
+      expect(b.fullScans, 1);
+      expect(menuItems(b).length, 301);
+    });
+
+    test('رقم اتعلّم ودفعته فشلت: ما يتضافش والباقي سليم', () async {
+      final b = await bigStore();
+      b.put(p('new0'), {'name': 'new0', 'price': 5});
+      final r = await MenuSync(b).sync(sid, productIds: ['new0', 'never-written']);
+      expect(r.status, MenuSyncStatus.updated);
+      expect(b.fullScans, 0);
+      expect(menuItems(b).containsKey('never-written'), isFalse);
+      expect(menuItems(b).length, 301);
+    });
+
+    test('تعديل أسعار 5 أصناف بأرقامها: تحديث موجّه بالسعر الجديد', () async {
+      final b = await bigStore();
+      final ids = [for (var i = 0; i < 5; i++) 'old$i'];
+      for (final id in ids) {
+        b.put(p(id), {'name': id, 'price': 11});
+      }
+      await MenuSync(b).sync(sid, productIds: ids);
+      expect(b.fullScans, 0);
+      expect((menuItems(b)['old0'] as Map)['price'], 11);
     });
   });
 
