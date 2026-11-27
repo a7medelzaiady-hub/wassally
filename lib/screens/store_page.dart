@@ -1563,12 +1563,36 @@ class _StorePageState extends State<StorePage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    key: const Key('product-upload-photo-button'),
+                    onPressed: uploading ? null : pickImage,
+                    icon: uploading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            image.isEmpty
+                                ? Icons.photo_camera_outlined
+                                : Icons.sync_rounded,
+                          ),
+                    label: Text(
+                      uploading
+                          ? 'جاري رفع الصورة...'
+                          : image.isEmpty
+                              ? 'ارفع صورة الصنف'
+                              : 'تغيير الصورة',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     image.isEmpty
-                        ? 'صورة توضيحية حسب الاسم — اضغط لرفع الصورة الحقيقية'
-                        : 'الصورة الأصلية من المحل — اضغط لتغييرها',
-                    style: TextStyle(fontSize: 12, color: kMuted),
+                        ? 'لو مرفعتش صورة، هتظهر صورة توضيحية حسب الاسم'
+                        : 'دي صورة الصنف اللي هتظهر للعميل',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5, color: kMuted),
                   ),
                   const SizedBox(height: 14),
                   TextField(

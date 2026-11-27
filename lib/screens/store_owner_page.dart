@@ -2709,7 +2709,9 @@ class _ProductDialogState extends State<_ProductDialog> {
                   ),
                 ],
               ),
-            TextButton.icon(
+            const SizedBox(height: 6),
+            FilledButton.tonalIcon(
+              key: const Key('owner-upload-photo-button'),
               onPressed: _uploading ? null : _pickImage,
               icon: _uploading
                   ? const SizedBox(
@@ -2717,8 +2719,18 @@ class _ProductDialogState extends State<_ProductDialog> {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.image_outlined),
-              label: Text(_image.isEmpty ? 'اختيار صورة' : 'تغيير الصورة'),
+                  : Icon(
+                      _image.isEmpty
+                          ? Icons.photo_camera_outlined
+                          : Icons.sync_rounded,
+                    ),
+              label: Text(
+                _uploading
+                    ? 'جاري رفع الصورة...'
+                    : _image.isEmpty
+                        ? 'ارفع صورة الصنف'
+                        : 'تغيير الصورة',
+              ),
             ),
             TextButton.icon(
               key: const Key('owner-search-stock-photo'),
