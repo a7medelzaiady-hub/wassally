@@ -19,6 +19,7 @@ import '../models/product_offer.dart';
 import '../models/store.dart';
 import '../services/cart_book.dart';
 import '../services/cart_model.dart';
+import '../services/store_eta.dart';
 import '../services/catalog_service.dart';
 import '../services/store_highlights.dart';
 import '../services/catalog_sync.dart';
@@ -138,6 +139,8 @@ class _StorePageState extends State<StorePage> {
   @override
   void initState() {
     super.initState();
+    // وقت توصيل المحل لصفحة الدفع وتفاصيل الطلب (من غير قراءات).
+    StoreEta.remember(widget.store.id, widget.store.time);
     _voicePreviewCompleteSub = _voicePreviewPlayer.onPlayerComplete.listen((_) {
       if (mounted) setState(() => _playingVoicePreview = false);
     });

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../models/store.dart';
 import 'cart_model.dart';
+import 'store_eta.dart';
 
 /// مكان حفظ السلات على الموبايل (قابل للاستبدال في الاختبارات).
 abstract class CartStorage {
@@ -141,7 +142,10 @@ class CartBook extends ChangeNotifier {
   CartSnapshot? parkedFor(String storeId) => _parked[storeId];
 
   /// بيافتكر بيانات المحل عشان زرار «إضافة منتجات من نفس المحل» يفتح صفحته.
-  void rememberStore(Store store) => _stores[store.id] = store;
+  void rememberStore(Store store) {
+    _stores[store.id] = store;
+    StoreEta.remember(store.id, store.time);
+  }
 
   Store? storeFor(String? storeId) => storeId == null ? null : _stores[storeId];
 
