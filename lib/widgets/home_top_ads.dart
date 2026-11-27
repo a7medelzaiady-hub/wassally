@@ -100,9 +100,12 @@ class _HomeTopAdsState extends State<HomeTopAds> {
         return PromoCarousel(
           aspectRatio: kTopAdAspectRatio,
           slides: urls.isEmpty
+              // «وصّلي ع السريع» بقى كارت ثابت فوق البوسترات في الرئيسية، فما نكررهوش هنا.
               ? [
-                  QuickOrderPromo(onTap: widget.onTap),
-                  if (kQuickPhotoOrdersEnabled) PhotoOrderPromo(onTap: widget.onTap),
+                  if (kQuickPhotoOrdersEnabled)
+                    PhotoOrderPromo(onTap: widget.onTap)
+                  else
+                    QuickOrderPromo(onTap: widget.onTap),
                 ]
               : [for (final url in urls) _poster(url)],
         );

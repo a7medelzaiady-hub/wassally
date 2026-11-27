@@ -30,6 +30,15 @@ final ValueNotifier<bool> customerShellAvailable = ValueNotifier<bool>(false);
 /// طلب من صفحة الترحيب إنها تفتح الواجهة الأساسية (الرئيسية/السلة/طلباتي/حسابي).
 final ValueNotifier<int> enterShellRequest = ValueNotifier<int>(0);
 
+/// طلب الرجوع لصفحة الخدمات (صفحة ما بعد تسجيل الدخول).
+final ValueNotifier<int> servicesPageRequest = ValueNotifier<int>(0);
+
+/// يرجّع لصفحة الخدمات من أي مكان: بيقفل الصفحات المفتوحة، وصفحة الترحيب بتسيب الواجهة.
+void openServicesPage(BuildContext context) {
+  Navigator.of(context).popUntil((route) => route.isFirst);
+  servicesPageRequest.value++;
+}
+
 /// يفتح تبويب العميل من أي صفحة داخلية: يرجع لجذر التطبيق بدل تكديس الصفحات.
 void openCustomerTab(BuildContext context, int tab) {
   final navigator = Navigator.of(context);

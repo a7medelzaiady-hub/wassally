@@ -22,6 +22,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/img.dart';
 import '../theme/brand.dart';
+import '../widgets/service_entry_card.dart';
 import '../widgets/promo_banners.dart';
 import '../widgets/home_category_grid.dart';
 import '../widgets/curved_nav_bar.dart';
@@ -355,6 +356,28 @@ class _HomePageState extends State<HomePage>
   }
 
 
+  /// رجوع لصفحة الخدمات (صفحة ما بعد تسجيل الدخول).
+  Widget _servicesButton() {
+    return Tooltip(
+      message: 'الخدمات',
+      child: Material(
+        key: const Key('home-open-services'),
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => openServicesPage(context),
+          child: const SizedBox(
+            width: _bellSize,
+            height: _bellSize,
+            child: Icon(Icons.grid_view_rounded, color: AppColors.purpleDeep, size: 24),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ───────────────────────── الهيدر ─────────────────────────
 
   /// الهيدر زي طلبات: لون واحد، "التوصيل إلى" فوق على جنب والسلة على الجنب التاني،
@@ -411,6 +434,8 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
               const SizedBox(width: 10),
+              _servicesButton(),
+              const SizedBox(width: 8),
               _bell(),
             ],
           ),
@@ -1065,7 +1090,6 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها.
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -1080,7 +1104,26 @@ class _HomePageState extends State<HomePage>
                   ),
                 ),
               ),
-              if (!loading && !hasError)
+              // «وصّلي ع السريع» تحت البوسترات على طول، بنفس كارت صفحة ما بعد الدخول
+              // (ثابت، مش جوه البوسترات المتحركة).
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: ServiceEntryCard(
+                    key: const Key('home-quick-order'),
+                    title: 'خدمة وصّلي ع السريع',
+                    subtitle: 'اطلب احتياجاتك من أي مكان',
+                    action: 'اطلب الآن',
+                    asset: 'assets/images/entry_quick.jpg',
+                    height: 118,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),

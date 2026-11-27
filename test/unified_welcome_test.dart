@@ -139,6 +139,24 @@ void main() {
     }
   });
 
+  testWidgets('زرار «الخدمات» بيرجّع لصفحة ما بعد الدخول', (tester) async {
+    await _pumpEntry(
+      tester,
+      entry: const CustomerEntry(
+        dashboard: Text('لوحة المحل'),
+        dashboardLabel: 'لوحة المحل',
+      ),
+    );
+    await tester.tap(find.text('لوحتي'));
+    await tester.pump();
+    expect(find.text('لوحة المحل'), findsOneWidget);
+    servicesPageRequest.value++;
+    await tester.pump();
+    expect(find.text('لوحة المحل'), findsNothing);
+    expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('صاحب المحل يحصل على نفس الصفحة ولوحته من «لوحتي»',
       (tester) async {
     await _pumpEntry(

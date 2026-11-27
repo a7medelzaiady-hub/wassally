@@ -16,6 +16,7 @@ import 'package:city_store/widgets/curved_nav_bar.dart';
 import 'package:city_store/widgets/home_category_grid.dart';
 import 'package:city_store/widgets/offer_carousel.dart';
 import 'package:city_store/widgets/quick_order_promo.dart';
+import 'package:city_store/widgets/service_entry_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -190,6 +191,27 @@ void main() {
 
   testWidgets('admin tools', (tester) async {
     await shoot(tester, 'admin_tools_390x844', const AdminNavigationPage());
+  });
+
+  testWidgets('home quick order card', (tester) async {
+    await shoot(
+      tester,
+      'home_quick_card_390',
+      Scaffold(
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          ServiceEntryCard(
+            title: 'خدمة وصّلي ع السريع',
+            subtitle: 'اطلب احتياجاتك من أي مكان',
+            action: 'اطلب الآن',
+            asset: 'assets/images/entry_quick.jpg',
+            height: 118,
+            onTap: () {},
+          ),
+          const SizedBox(height: 12),
+          PromoCarousel(autoPlay: false, slides: [PhotoOrderPromo(onTap: () {})]),
+        ]),
+      ),
+    );
   });
 
   testWidgets('home promo and offer carousel', (tester) async {
