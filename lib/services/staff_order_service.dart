@@ -90,12 +90,32 @@ class StaffOrderService {
   }
 
   /// للمدير: آخر [limit] طلب (الأحدث الأول). بنحدّ العدد عشان القراءات ما تكبرش
-  /// مع الوقت. الطلبات الأقدم بتتحمّل بزيادة [limit] ("عرض المزيد").
+  /// مع الوقت. الطلبات الأقدم بتتحمّل بـ [fetchOlderThan] صفحة صفحة ("عرض المزيد").
   static Stream<List<AppOrder>> watchAll({int limit = 50}) => _orders
       .orderBy('createdAt', descending: true)
       .limit(limit)
       .snapshots().metered('orders:admin')
       .map(_toList);
+
+  /// للمدير: صفحة طلبات أقدم من [last] (مرة واحدة، من غير مستمع).
+  /// بتقرا [limit] طلب بس بعد المؤشر، بدل ما تعيد قراية الصفحات اللي اتحمّلت.
+  /// الترتيب (createdAt ثم رقم المستند) نفس الترتيب الافتراضي لـ Firestore،
+  /// فمفيش طلب بيتكرر أو بيتنط لو طلبين ليهم نفس الوقت.
+  static Future<List<AppOrder>> fetchOlderThan(
+    AppOrder last, {
+    int limit = 100,
+  }) async {
+    final created = last.createdAt;
+    if (created == null) return const [];
+    final snap = await _orders
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true)
+        .startAfter([Timestamp.fromDate(created), last.id])
+        .limit(limit)
+        .get();
+    ReadMeter.query('orders:admin:older', snap);
+    return _toList(snap);
+  }
 
   /// لصاحب المحل: آخر [limit] طلب على محله هو بس (الأحدث الأول).
   /// محتاج فهرس (storeId + createdAt) في firestore.indexes.json.

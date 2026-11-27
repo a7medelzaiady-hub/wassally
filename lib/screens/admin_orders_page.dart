@@ -15,6 +15,7 @@ import '../services/staff_order_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
+import '../utils/order_pages.dart';
 import '../widgets/order_timer.dart';
 import '../widgets/admin_stats_card.dart';
 import '../widgets/dialogs.dart';
@@ -38,10 +39,19 @@ class AdminOrdersPage extends StatefulWidget {
 
 class _AdminOrdersPageState extends State<AdminOrdersPage> {
   static const _pageSize = 100;
-  int _limit = _pageSize;
-  late Stream<List<AppOrder>> _orders = StaffOrderService.watchAll(
-    limit: _limit,
-  );
+
+  /// أحدث [_pageSize] طلب لحظيًا (مستمع واحد بحد ثابت).
+  StreamSubscription<List<AppOrder>>? _liveSub;
+  List<AppOrder>? _live;
+  Object? _liveError;
+
+  /// طلبات خرجت من الصفحة اللحظية لما طلبات أحدث وصلت (ما تختفيش من القايمة).
+  final Map<String, AppOrder> _spill = {};
+
+  /// الصفحات الأقدم: بتتحمّل مرة واحدة بمؤشر بعد آخر طلب ظاهر.
+  final List<AppOrder> _older = [];
+  bool _loadingOlder = false;
+  bool _olderExhausted = false;
   OrderStatus? _filter;
 
   /// تنبيه مرة واحدة في الجلسة لما المدير يفتح التطبيق وفيه حاجات محتاجة مراجعة.
@@ -53,8 +63,31 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
   @override
   void initState() {
     super.initState();
+    _liveSub = StaffOrderService.watchAll(limit: _pageSize).listen(
+      (next) {
+        if (!mounted) return;
+        setState(() {
+          spillDroppedOrders(
+            previousLive: _live ?? const [],
+            nextLive: next,
+            spill: _spill,
+          );
+          _live = next;
+          _liveError = null;
+        });
+      },
+      onError: (Object e) {
+        if (mounted) setState(() => _liveError = e);
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _alertInbox());
     _loadStoreAddresses();
+  }
+
+  @override
+  void dispose() {
+    _liveSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadStoreAddresses() async {
@@ -88,11 +121,37 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
     ));
   }
 
-  void _loadMore() {
-    setState(() {
-      _limit += _pageSize;
-      _orders = StaffOrderService.watchAll(limit: _limit);
-    });
+  List<AppOrder> get _all =>
+      mergeOrderPages(_live ?? const [], [..._spill.values, ..._older]);
+
+  /// في طلبات أقدم لسه ما اتحمّلتش؟ قبل أول صفحة أقدم: لو الصفحة اللحظية مليانة.
+  bool get _canLoadMore {
+    if (_olderExhausted) return false;
+    if (_older.isEmpty) return (_live?.length ?? 0) >= _pageSize;
+    return true;
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingOlder) return;
+    final last = oldestTimedOrder(_all);
+    if (last == null) return;
+    setState(() => _loadingOlder = true);
+    try {
+      final page = await StaffOrderService.fetchOlderThan(last, limit: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _older.addAll(page);
+        _olderExhausted = page.length < _pageSize;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          appSnack('تعذر تحميل الطلبات الأقدم. حاول تاني.'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingOlder = false);
+    }
   }
 
   /// تايل إحصائية: عدد الطلبات بالحالة، وبيشتغل كفلتر لما تضغط عليه.
@@ -220,9 +279,8 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       // كل الصفحة (الهيدر + الإحصائيات + الطلبات) بتتحرك مع بعض في سكرول واحد.
-      body: StreamBuilder<List<AppOrder>>(
-        stream: _orders,
-        builder: (context, snapshot) {
+      body: Builder(
+        builder: (context) {
           final slivers = <Widget>[
             SliverToBoxAdapter(
               child: StaffHeader(
@@ -237,7 +295,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             const SliverToBoxAdapter(child: AdminStatsCard()),
           ];
 
-          if (snapshot.hasError) {
+          if (_liveError != null && _live == null) {
             slivers.add(
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -248,7 +306,7 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                 ),
               ),
             );
-          } else if (!snapshot.hasData) {
+          } else if (_live == null) {
             slivers.add(
               SliverFillRemaining(
                 hasScrollBody: false,
@@ -258,10 +316,10 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
               ),
             );
           } else {
-            final all = snapshot.data!;
-            slivers.add(SliverToBoxAdapter(child: UnansweredOrdersAlert(orders: all)));
-            // لو عدد الطلبات وصل للحد، غالبًا فيه طلبات أقدم لسه ما اتحمّلتش.
-            final canLoadMore = all.length >= _limit;
+            final all = _all;
+            // التنبيه على الطلبات اللحظية بس (الأقدم مش بتتحدّث، فحالتها ممكن تكون قديمة).
+            slivers.add(SliverToBoxAdapter(child: UnansweredOrdersAlert(orders: _live!)));
+            final canLoadMore = _canLoadMore;
             final shown = _filter == null
                 ? all
                 : all.where((o) => o.status == _filter).toList();
@@ -289,8 +347,9 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
                           padding: const EdgeInsets.only(top: 4),
                           child: Center(
                             child: OutlinedButton(
-                              onPressed: _loadMore,
-                              child: const Text('عرض طلبات أقدم'),
+                              key: const Key('admin-orders-load-older'),
+                              onPressed: _loadingOlder ? null : _loadMore,
+                              child: Text(_loadingOlder ? 'بيحمّل...' : 'عرض طلبات أقدم'),
                             ),
                           ),
                         );
