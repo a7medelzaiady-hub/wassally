@@ -52,6 +52,7 @@ void main() {
       await _pumpEntry(tester, size: const Size(320, 640), textScale: scale);
       for (final label in [
         'خدمة وصّلي ع السريع',
+        'مشاويرك علينا',
         'تصفح العروض',
         'تصفح المحلات',
       ]) {
@@ -103,7 +104,7 @@ void main() {
       await _pumpEntry(tester, size: size);
       final navTop = tester.getTopLeft(find.text('الرئيسية')).dy - 20;
       expect(find.byKey(const Key('entry-banner')), findsNothing);
-      for (final label in ['خدمة وصّلي ع السريع', 'تصفح العروض', 'تصفح المحلات']) {
+      for (final label in ['خدمة وصّلي ع السريع', 'مشاويرك علينا', 'تصفح العروض', 'تصفح المحلات']) {
         final cardFinder = find.byKey(ValueKey<String>('entry-card-$label'));
         await tester.scrollUntilVisible(cardFinder, 100,
             scrollable: find.descendant(
@@ -113,6 +114,26 @@ void main() {
         await tester.pump();
         final card = tester.getRect(cardFinder);
         expect(card.top, lessThan(navTop), reason: '$label on $size');
+      }
+      expect(tester.takeException(), isNull, reason: '$size');
+    }
+  });
+
+  testWidgets('الخدمات الأربعة بنفس الشكل وفي شاشة واحدة من غير تمرير',
+      (tester) async {
+    for (final size in const [Size(390, 844), Size(412, 915)]) {
+      await _pumpEntry(tester, size: size);
+      final navTop = tester.getTopLeft(find.text('الرئيسية')).dy - 20;
+      final list = tester.widget<ListView>(find.byKey(const Key('entry-list')));
+      expect(list.physics, isA<NeverScrollableScrollPhysics>(), reason: '$size');
+      double? height;
+      for (final label in ['خدمة وصّلي ع السريع', 'مشاويرك علينا', 'تصفح العروض', 'تصفح المحلات']) {
+        final card = tester.getRect(find.byKey(ValueKey<String>('entry-card-$label')));
+        expect(card.bottom, lessThan(navTop), reason: '$label on $size');
+        height ??= card.height;
+        expect(card.height, closeTo(height, 0.5), reason: '$label on $size');
+        // كل كارت ليه صورة/لوحة على اليسار وزرار برتقالي بنفس التصميم.
+        expect(find.byKey(ValueKey<String>('entry-art-$label')), findsOneWidget);
       }
       expect(tester.takeException(), isNull, reason: '$size');
     }

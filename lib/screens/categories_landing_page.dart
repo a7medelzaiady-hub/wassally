@@ -265,13 +265,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   // ───────────────────────── كروت الخدمات ─────────────────────────
 
-  /// كارت زي التصميم المرجعي: الصورة الواقعية على اليسار وبتتلاشى في
-  /// الأبيض تحت النص، والأيقونة والعنوان والوصف والزر على اليمين.
+  /// كارت زي التصميم المرجعي: الصورة على اليسار بألوانها كاملة، وحرفها بس
+  /// بيسيح تدريجي في الأبيض ناحية النص (من غير فاصل)، والعنوان والوصف والزر على اليمين.
+  /// [asset] فاضي = لوحة بنفسجي بأيقونة [icon] لحد ما تتحط صورة حقيقية للخدمة.
   Widget _serviceCard({
     required String title,
     required String subtitle,
     required String action,
-    required String asset,
+    String? asset,
+    IconData icon = Icons.delivery_dining_rounded,
     required VoidCallback onTap,
     required double height,
   }) {
@@ -292,11 +294,11 @@ class _CustomerEntryState extends State<CustomerEntry> {
           splashColor: AppColors.purple.withValues(alpha: 0.08),
           highlightColor: AppColors.purple.withValues(alpha: 0.04),
           child: LayoutBuilder(builder: (context, box) {
-            final artWidth = box.maxWidth * 0.74;
+            final artWidth = box.maxWidth * 0.66;
             return Stack(
               children: [
-                // الصورة نفسها بتذوب في الأبيض تدريجيًا (شفافية مش طبقة بيضا)،
-                // فمفيش حد/هامش ظاهر بين الصورة والكارت.
+                // الصورة واضحة لحد ~نص الكارت، وبعدها بس بتذوب في الأبيض
+                // (شفافية مش طبقة بيضا فوقها)، فمفيش حد ظاهر ولا صورة باهتة.
                 Positioned(
                   left: 0,
                   top: 0,
@@ -307,16 +309,36 @@ class _CustomerEntryState extends State<CustomerEntry> {
                     shaderCallback: (rect) => const LinearGradient(
                       begin: Alignment.centerLeft,
                       end: Alignment.centerRight,
-                      stops: [0.0, 0.42, 0.68, 0.92],
-                      colors: [Colors.black, Colors.black, Color(0x66000000), Color(0x00000000)],
+                      stops: [0.0, 0.72, 0.86, 1.0],
+                      colors: [Colors.black, Colors.black, Color(0x80000000), Color(0x00000000)],
                     ).createShader(rect),
-                    child: Image.asset(
-                      asset,
-                      key: ValueKey<String>('entry-art-$title'),
-                      fit: BoxFit.cover,
-                      alignment: Alignment.centerLeft,
-                      excludeFromSemantics: true,
-                    ),
+                    child: asset != null
+                        ? Image.asset(
+                            asset,
+                            key: ValueKey<String>('entry-art-$title'),
+                            fit: BoxFit.cover,
+                            alignment: Alignment.centerLeft,
+                            excludeFromSemantics: true,
+                          )
+                        : DecoratedBox(
+                            key: ValueKey<String>('entry-art-$title'),
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [AppColors.purpleDarker, AppColors.purple],
+                              ),
+                            ),
+                            child: Align(
+                              alignment: const Alignment(-0.45, 0),
+                              child: FractionallySizedBox(
+                                heightFactor: 0.6,
+                                child: FittedBox(
+                                  child: Icon(icon, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
                   ),
                 ),
                 PositionedDirectional(
@@ -408,17 +430,25 @@ class _CustomerEntryState extends State<CustomerEntry> {
         scale.scale(AppTypography.caption - 1) * 1.25 +
         34 +
         AppSpacing.sm * 2 +
-        AppSpacing.md * 2;
+        AppSpacing.xs * 2;
   }
 
   List<Widget> _cards(double height) => [
         _serviceCard(
           title: 'خدمة وصّلي ع السريع',
-          subtitle: 'اقضى طلباتك من اى مكان  ومن كذا مكان بسرعه    ',
+          subtitle: 'اطلب احتياجاتك من أي مكان',
           action: 'اطلب الآن',
           asset: kEntryQuickAsset,
           height: height,
           onTap: () => _enter(const QuickOrderCreatePage()),
+        ),
+        _serviceCard(
+          title: 'مشاويرك علينا',
+          subtitle: 'مندوب لأي مشوار داخل مدينتك',
+          action: 'اطلب مشوار',
+          icon: Icons.delivery_dining_rounded,
+          height: height,
+          onTap: () => _enter(const ErrandCreatePage()),
         ),
         _serviceCard(
           title: 'تصفح العروض',
@@ -438,109 +468,26 @@ class _CustomerEntryState extends State<CustomerEntry> {
         ),
       ];
 
-  /// الكروت الثلاثة تملأ المساحة المتاحة أسفل الهيدر المموج.
-  /// الشاشات الصغيرة تسمح بالتمرير بدل ضغط النص أو إخفاء الأزرار.
+  /// الخدمات الأربعة بنفس شكل الكارت، وبتملأ المساحة تحت الهيدر المموج في
+  /// شاشة واحدة على الموبايلات العادية. الشاشات الصغيرة جدًا أو الخط المكبّر
+  /// بتسمح بالتمرير بدل ضغط النص أو إخفاء الأزرار.
   Widget _body(BuildContext context) {
     const gap = AppSpacing.md;
     final minCard = _minCardHeight(context);
     return LayoutBuilder(builder: (context, box) {
-      // أربع خدمات بكروت متساوية؛ نسمح بالتمرير عند ضيق الشاشة.
-      final available = box.maxHeight - gap * 5;
-      var card = available / 4;
-      final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
+      const count = 4; // عدد كروت _cards
+      final available = box.maxHeight - gap * (count + 1);
+      var card = available / count;
+      final maxCard = (box.maxWidth * 0.40).clamp(110.0, 170.0).toDouble();
       if (card > maxCard) card = maxCard;
-      final fits = card >= minCard && card >= 150;
+      final fits = card >= minCard;
       if (!fits) card = minCard;
-      // مساحة كافية لكارت المشاوير حتى عند تكبير خط النظام.
-      if (card < 150) card = 150;
       return ListView(
         key: const Key('entry-list'),
         physics: fits ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.only(bottom: gap),
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
-            child: _serviceCard(
-              title: 'خدمة وصّلي ع السريع',
-              subtitle: 'اطلب احتياجاتك من أي مكان',
-              action: 'اطلب الآن',
-              asset: kEntryQuickAsset,
-              height: card,
-              onTap: () => _enter(const QuickOrderCreatePage()),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
-            child: SizedBox(
-              height: card,
-              child: Material(
-                elevation: 3,
-                color: AppColors.purpleSoft,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.xl),
-                  side: const BorderSide(color: AppColors.line),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: const Key('entry-errand'),
-                  onTap: () => _enter(const ErrandCreatePage()),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.delivery_dining_rounded,
-                            color: AppColors.purple, size: 52),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text('مشاويرك علينا',
-                                    maxLines: 1,
-                                    style: TextStyle(fontSize: 19,
-                                        fontWeight: FontWeight.w900,
-                                        color: AppColors.ink)),
-                              ),
-                              const SizedBox(height: 5),
-                              const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text('مندوب لأي مشوار داخل مدينتك',
-                                    maxLines: 1,
-                                    style: TextStyle(color: AppColors.muted)),
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: AlignmentDirectional.centerStart,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.purple,
-                                    borderRadius: BorderRadius.circular(22),
-                                  ),
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(
-                                        horizontal: 18, vertical: 7),
-                                    child: Text('اطلب مشوار',
-                                        style: TextStyle(color: Colors.white,
-                                            fontWeight: FontWeight.w800)),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          for (final service in _cards(card).skip(1))
+          for (final service in _cards(card))
             Padding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
               child: service,
