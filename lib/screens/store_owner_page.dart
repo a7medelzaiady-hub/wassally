@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/owner_products_freshness.dart';
 
 import '../utils/bulk_products.dart';
 import '../widgets/share_actions.dart';
@@ -1655,36 +1656,91 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         .showSnackBar(appSnack(message));
   }
 
-  DateTime? _lastServerLoad;
+  String get _tokenKey => 'owner_products_token_${widget.storeId}';
+  String get _fullLoadKey => 'owner_products_full_${widget.storeId}';
+
+  /// بصمة القائمة المجمّعة من الخادم (قراءة واحدة). بترجع (البصمة، فشل؟).
+  Future<(String?, bool)> _readMenuToken() async {
+    try {
+      final m = await _storeRef
+          .collection('menu')
+          .doc('current')
+          .get(const GetOptions(source: Source.server));
+      ReadMeter.document('owner:menu-token', m);
+      final data = m.data();
+      final at = data?['updatedAt'];
+      return (
+        menuFreshnessToken(
+          exists: m.exists,
+          updatedAtMs: at is Timestamp ? at.millisecondsSinceEpoch : null,
+          count: (data?['count'] as num?)?.toInt(),
+        ),
+        false,
+      );
+    } catch (_) {
+      return (null, true);
+    }
+  }
+
+  Future<void> _saveToken(SharedPreferences prefs, String? token) async {
+    if (token == null) {
+      await prefs.remove(_tokenKey);
+    } else {
+      await prefs.setString(_tokenKey, token);
+    }
+  }
 
   /// [fromCache]: بعد تعديل من الجهاز ده، Firestore بيطبّق التعديل على الكاش المحلي فورًا،
-  /// فبنقرا من الكاش (صفر قراءات) بدل ما نعيد تحميل كل الأصناف من الخادم (لحد 200 قراءة).
-  /// تعديلات جهاز تاني بتظهر مع أول تحميل من الخادم (فتح الصفحة أو السحب للتحديث).
-  Future<void> _load({bool fromCache = false}) async {
-    // بعد 10 دقايق من آخر تحميل من الخادم نرجع للخادم، عشان تعديلات/حذف جهاز تاني
-    // ما تفضلش مستخبية في الكاش. (ملخص العروض نفسه بيتحسب من الخادم مش من القائمة دي.)
-    final last = _lastServerLoad;
-    if (fromCache &&
-        (last == null ||
-            DateTime.now().difference(last) > const Duration(minutes: 10))) {
-      fromCache = false;
-    }
+  /// فبنقرا من الكاش (صفر قراءات للأصناف) ونحدّث بصمة القائمة بس (قراءة واحدة).
+  /// [force]: «إعادة المحاولة» = تحميل كامل من الخادم.
+  /// غير كده: بنقارن بصمة القائمة المجمّعة (قراءة واحدة) بآخر تحميل كامل، ونقرا
+  /// الأصناف من الخادم (لحد 200 قراءة) بس لو حاجة اتغيرت من جهاز تاني.
+  Future<void> _load({bool fromCache = false, bool force = false}) async {
     setState(() {
       _loading = true;
       _error = false;
     });
     try {
+      final prefs = await SharedPreferences.getInstance();
       final query = _col.orderBy('name').limit(_limit);
       QuerySnapshot<_Json>? cached;
-      if (fromCache) {
+      if (!force) {
         try {
           final c = await query.get(const GetOptions(source: Source.cache));
           if (c.docs.isNotEmpty) cached = c;
         } catch (_) {}
       }
-      final snap =
-          cached ?? await query.get(const GetOptions(source: Source.server));
-      if (cached == null) _lastServerLoad = DateTime.now();
+
+      // البصمة بتتقري قبل الأصناف: لو حصل تعديل في النص، البصمة المتسجلة هتبقى
+      // أقدم، فأول فتح جاي يعيد التحميل (آمن، مش العكس).
+      final (serverToken, tokenFailed) = await _readMenuToken();
+
+      final OwnerProductsSource source;
+      if (fromCache && cached != null) {
+        // تعديل من الجهاز ده: الكاش فيه التعديل، والبصمة الجديدة بتاعته.
+        source = OwnerProductsSource.cache;
+        if (!tokenFailed) await _saveToken(prefs, serverToken);
+      } else {
+        final fullMs = prefs.getInt(_fullLoadKey);
+        source = ownerProductsSource(
+          force: force,
+          hasCache: cached != null,
+          tokenReadFailed: tokenFailed,
+          serverToken: serverToken,
+          savedToken: prefs.getString(_tokenKey),
+          lastFullLoad: fullMs == null ? null : DateTime.fromMillisecondsSinceEpoch(fullMs),
+          now: DateTime.now(),
+        );
+      }
+
+      final QuerySnapshot<_Json> snap;
+      if (source == OwnerProductsSource.cache) {
+        snap = cached!;
+      } else {
+        snap = await query.get(const GetOptions(source: Source.server));
+        await prefs.setInt(_fullLoadKey, DateTime.now().millisecondsSinceEpoch);
+        if (!tokenFailed) await _saveToken(prefs, serverToken);
+      }
       ReadMeter.query('owner:products', snap);
       if (!mounted) return;
       setState(() {
@@ -2168,7 +2224,7 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
         title: 'تعذر تحميل الأصناف',
         message: 'تأكد من الاتصال وحاول تاني.',
         actionLabel: 'إعادة المحاولة',
-        onAction: _load,
+        onAction: () => _load(force: true),
       );
     } else if (shown.isEmpty) {
       body = EmptyState(
