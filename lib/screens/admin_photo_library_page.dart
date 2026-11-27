@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -86,6 +87,8 @@ class _AdminPhotoLibraryPageState extends State<AdminPhotoLibraryPage> {
       messenger.showSnackBar(appSnack(
         'اتضافت صورة «$text». هتظهر للأصناف المطابقة في كل المحلات.'));
       _reload();
+      // جهاز الإدارة يشوف الصورة فورًا؛ باقي الموبايلات في خلال يوم.
+      unawaited(PhotoLibrary.load(force: true));
     } catch (e) {
       messenger.showSnackBar(appSnack('تعذر إضافة الصورة: $e'));
     } finally {
@@ -242,6 +245,7 @@ class _AdminPhotoLibraryPageState extends State<AdminPhotoLibraryPage> {
     }
     if (!mounted) return;
     _reload();
+    unawaited(PhotoLibrary.load(force: true));
     if (failed.isEmpty) {
       messenger.showSnackBar(appSnack(
           'اتضافت ${done.length} صورة للمكتبة، وهتظهر للأصناف المطابقة في كل المحلات.'));
@@ -281,6 +285,7 @@ class _AdminPhotoLibraryPageState extends State<AdminPhotoLibraryPage> {
     try {
       await PhotoLibrary.remove(key);
       _reload();
+      unawaited(PhotoLibrary.load(force: true));
     } catch (e) {
       messenger.showSnackBar(appSnack('تعذر الحذف: $e'));
     }

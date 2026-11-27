@@ -22,7 +22,7 @@ class PhotoLibrary {
   static DocumentReference<Map<String, dynamic>> get doc =>
       FirebaseFirestore.instance.collection('app_info').doc('photo_library');
 
-  /// بيحمّل من الموبايل فورًا، وبيحدّث من Firestore لو آخر تحديث أقدم من 6 ساعات.
+  /// بيحمّل من الموبايل فورًا، وبيحدّث من Firestore لو آخر تحديث أقدم من يوم.
   static Future<void>? _inflight;
 
   static Future<void> load({bool force = false}) {
