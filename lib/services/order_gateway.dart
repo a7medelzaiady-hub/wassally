@@ -79,6 +79,10 @@ class OrderGateway {
     }
   }
 
+  @visibleForTesting
+  static bool shouldRetryOrderPushStatus(int status) =>
+      status == 429 || status >= 500;
+
   /// Only used for order-event pushes; unrelated order and payment APIs are unchanged.
   static Future<void> _sendOrderPushOnce(PendingOrderPush item) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -113,7 +117,12 @@ class OrderGateway {
     } finally {
       client.close();
     }
-    if (response.statusCode >= 500) throw const RetryableOrderPushException();
+    // The Worker can enforce a 20-second notification rate limit. A retry
+    // attempted after 2 or 5 seconds may receive 429; keep it in the same
+    // bounded backoff/outbox instead of dropping an unsent notification.
+    if (shouldRetryOrderPushStatus(response.statusCode)) {
+      throw const RetryableOrderPushException();
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const PermanentOrderPushException();
     }
