@@ -66,6 +66,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
     super.initState();
     customerShellAvailable.value = _isCustomer;
     enterShellRequest.addListener(_onEnterShellRequest);
+    servicesPageRequest.addListener(_onServicesRequest);
     shellTab.addListener(_saveLocation);
     SavedAddress.load();
     _restoreAfterResume();
@@ -148,8 +149,17 @@ class _CustomerEntryState extends State<CustomerEntry> {
   @override
   void dispose() {
     enterShellRequest.removeListener(_onEnterShellRequest);
+    servicesPageRequest.removeListener(_onServicesRequest);
     shellTab.removeListener(_saveLocation);
     super.dispose();
+  }
+
+  /// زرار «الخدمات» في الرئيسية: نرجع لكروت الخدمات.
+  void _onServicesRequest() {
+    if (!mounted || !_entered) return;
+    setState(() => _entered = false);
+    shellTab.value = 0;
+    ResumeSession.setLocation(_uid, null);
   }
 
   /// صفحة داخلية (مثل صفحة التسوق) طلبت تبويبًا من الشريط السفلي.

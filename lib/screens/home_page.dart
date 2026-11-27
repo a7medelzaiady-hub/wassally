@@ -356,6 +356,28 @@ class _HomePageState extends State<HomePage>
   }
 
 
+  /// رجوع لصفحة الخدمات (صفحة ما بعد تسجيل الدخول).
+  Widget _servicesButton() {
+    return Tooltip(
+      message: 'الخدمات',
+      child: Material(
+        key: const Key('home-open-services'),
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 2,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => openServicesPage(context),
+          child: const SizedBox(
+            width: _bellSize,
+            height: _bellSize,
+            child: Icon(Icons.grid_view_rounded, color: AppColors.purpleDeep, size: 24),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ───────────────────────── الهيدر ─────────────────────────
 
   /// الهيدر زي طلبات: لون واحد، "التوصيل إلى" فوق على جنب والسلة على الجنب التاني،
@@ -412,6 +434,8 @@ class _HomePageState extends State<HomePage>
                 ),
               ),
               const SizedBox(width: 10),
+              _servicesButton(),
+              const SizedBox(width: 8),
               _bell(),
             ],
           ),
@@ -1066,11 +1090,25 @@ class _HomePageState extends State<HomePage>
             slivers: [
               SliverToBoxAdapter(child: _header()),
 
-              // «وصّلي ع السريع»: الميزة الرابحة، أول حاجة العميل يشوفها، بنفس كارت
-              // صفحة ما بعد الدخول (ثابت، مش جوه البوسترات المتحركة).
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  // بوسترات الإدارة (مكان «إعلان أعلى الرئيسية») متحركة،
+                  // وإعلان «وصّلي ع السريع» المدمج لو مفيش بوسترات.
+                  child: HomeTopAds(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const QuickOrderCreatePage(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // «وصّلي ع السريع» تحت البوسترات على طول، بنفس كارت صفحة ما بعد الدخول
+              // (ثابت، مش جوه البوسترات المتحركة).
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                   child: ServiceEntryCard(
                     key: const Key('home-quick-order'),
                     title: 'خدمة وصّلي ع السريع',
@@ -1086,22 +1124,6 @@ class _HomePageState extends State<HomePage>
                   ),
                 ),
               ),
-
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  // بوسترات الإدارة (مكان «إعلان أعلى الرئيسية») متحركة،
-                  // وإعلان «وصّلي ع السريع» المدمج لو مفيش بوسترات.
-                  child: HomeTopAds(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const QuickOrderCreatePage(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              if (!loading && !hasError)
 
               if (!loading && !hasError)
                 SliverToBoxAdapter(child: _storeShortcuts(all)),
