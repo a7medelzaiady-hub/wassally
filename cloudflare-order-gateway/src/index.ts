@@ -1,4 +1,5 @@
 import { quoteReferralPoints } from "./referral_points";
+import { districtFromAddress } from "./address_district";
 import { commissionAmounts } from "./referral_commission";
 import { buildAdminReferralSettingsWrite } from "./referral_admin_settings";
 import { parseReferralSettings } from "./referral_settings";
@@ -1565,8 +1566,11 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     }
     deliveryFee = selected.fee;
     orderArea = area;
-  } else if (area) {
-    throw new HttpError(400, "قائمة مناطق التوصيل غير مفعّلة؛ أعد تحميل صفحة الدفع.");
+  } else {
+    // مفيش قائمة مناطق: التطبيق بيبعت أول العنوان (الحي) عشان يظهر للأدمن والمناديب.
+    // بنعيد تنضيفه هنا (اسم المنطقة بس) لأن المستند العام بيشوفه صاحب المحل.
+    // لو العميل كان مختار منطقة من قائمة اتشالت، فرق رسوم التوصيل تحت بيرفض الطلب.
+    orderArea = districtFromAddress(area);
   }
   if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 500) {
     throw new HttpError(409, "رسوم التوصيل غير مضبوطة في إعدادات الإدارة.");
