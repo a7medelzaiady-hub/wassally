@@ -30,7 +30,7 @@ Future<void> _pumpEntry(
 }
 
 void main() {
-  testWidgets('صفحة ما بعد الدخول: هيدر مموج وثلاثة كروت بدون overflow',
+  testWidgets('صفحة ما بعد الدخول: هيدر مموج وأربع خدمات بدون overflow',
       (tester) async {
     await _pumpEntry(tester);
 
@@ -39,6 +39,7 @@ void main() {
     expect(find.byKey(const Key('entry-banner')), findsNothing);
     expect(find.byKey(const Key('entry-header-wave')), findsOneWidget);
     expect(find.text('خدمة وصّلي ع السريع'), findsOneWidget);
+    expect(find.text('مشاويرك علينا'), findsOneWidget);
     expect(find.text('تصفح العروض'), findsOneWidget);
     expect(find.text('تصفح المحلات'), findsOneWidget);
     expect(customerShellAvailable.value, isTrue);
@@ -55,12 +56,14 @@ void main() {
         'تصفح المحلات',
       ]) {
         final art = find.byKey(ValueKey<String>('entry-art-$label'));
-        await tester.scrollUntilVisible(art, 120,
-            scrollable: find.descendant(
-              of: find.byKey(const Key('entry-list')),
-              matching: find.byType(Scrollable),
-            ));
-        await tester.pump();
+        // ListView builds off-screen children lazily: scroll by pixels until
+        // the image exists, rather than requiring an unbuilt element.
+        for (var attempt = 0; attempt < 12 && art.evaluate().isEmpty; attempt++) {
+          await tester.drag(find.byKey(const Key('entry-list')),
+              const Offset(0, -100));
+          await tester.pump();
+        }
+        expect(art, findsOneWidget);
         expect(tester.getSize(art).width, greaterThan(120));
       }
       expect(tester.takeException(), isNull, reason: 'textScale $scale');
@@ -94,15 +97,22 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('على موبايل عادي الكروت الثلاثة ظاهرة بدون تمرير',
+  testWidgets('على موبايل عادي الكروت متاحة بالتمرير بدون overflow',
       (tester) async {
     for (final size in const [Size(390, 844), Size(412, 915), Size(360, 780)]) {
       await _pumpEntry(tester, size: size);
       final navTop = tester.getTopLeft(find.text('الرئيسية')).dy - 20;
       expect(find.byKey(const Key('entry-banner')), findsNothing);
       for (final label in ['خدمة وصّلي ع السريع', 'تصفح العروض', 'تصفح المحلات']) {
-        final card = tester.getRect(find.byKey(ValueKey<String>('entry-card-$label')));
-        expect(card.bottom, lessThanOrEqualTo(navTop), reason: '$label on $size');
+        final cardFinder = find.byKey(ValueKey<String>('entry-card-$label'));
+        await tester.scrollUntilVisible(cardFinder, 100,
+            scrollable: find.descendant(
+              of: find.byKey(const Key('entry-list')),
+              matching: find.byType(Scrollable),
+            ));
+        await tester.pump();
+        final card = tester.getRect(cardFinder);
+        expect(card.top, lessThan(navTop), reason: '$label on $size');
       }
       expect(tester.takeException(), isNull, reason: '$size');
     }

@@ -420,6 +420,49 @@ class _Details extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 5, 12, 14),
             children: [
+        if (order.hasUnavailableItems &&
+            order.status == OrderStatus.newOrder) ...[
+          Container(
+            key: const Key('unavailable-items-urgent-alert'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFE6E6),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFD32F2F), width: 2),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(children: [
+                  Icon(Icons.notifications_active_rounded,
+                      color: Color(0xFFB71C1C), size: 30),
+                  SizedBox(width: 10),
+                  Expanded(child: Text('تنبيه مهم: المحل محتاج ردّك',
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900,
+                        color: Color(0xFFB71C1C)))),
+                ]),
+                const SizedBox(height: 8),
+                Text('الأصناف غير المتاحة: ${order.unavailableItems.join('، ')}',
+                    style: const TextStyle(fontWeight: FontWeight.w800,
+                        fontSize: 15)),
+                const SizedBox(height: 6),
+                const Text('اختار بديل أو كمّل من غير الأصناف دي. '
+                    'المحل مش هيبدأ تجهيز طلبك قبل اختيارك.',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: onEdit,
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFB71C1C)),
+                  icon: const Icon(Icons.edit_note_rounded),
+                  label: const Text('راجع التعديلات دلوقتي'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         Container(
           padding: const EdgeInsets.all(10),
           decoration: _card,
