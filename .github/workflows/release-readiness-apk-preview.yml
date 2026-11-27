@@ -1,0 +1,110 @@
+name: Release Readiness APK Preview (PR only)
+
+# Temporary, unmerged workflow: build the exact approved main commit.
+# Never deploy, release or change Firebase/Cloudflare.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-readiness-apk-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: aeedc419f6df6533462a95f214a7828bfc0cd1fd
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+          pub-cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Restore tested debug signing key (required for Google Sign-In)
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: wasally-android-debug-keystore-v1
+
+      - name: Require stable cached signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$HOME/.android/debug.keystore" || {
+            echo "::error::Stable debug keystore unavailable, refusing to build an incompatible APK."
+            exit 1
+          }
+
+      - name: Free disk space for Android build
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache/CodeQL /usr/local/share/powershell
+          sudo rm -rf /usr/local/lib/android/sdk/system-images
+          sudo apt-get clean
+
+      - name: Build preview from exact main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if flutter build apk --debug \
+              --dart-define=WASALLY_ORDER_GATEWAY_URL=https://throbbing-water-4ef7.a7medelzaiady.workers.dev \
+              --dart-define=WASALLY_SERVER_ORDERS=true \
+              --dart-define=WASALLY_REFERRAL_REGISTRATION=true; then
+              break
+            fi
+            if [[ "$attempt" = 3 ]]; then exit 1; fi
+            sleep "$((attempt * 20))"
+          done
+
+      - name: Verify APK signer is registered for Google Sign-In
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-debug.apk
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify "$APK"
+          APK_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^.*certificate SHA-1 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          python3 - "$APK_SHA1" <<'PY'
+          import json, sys
+          sha1 = sys.argv[1].lower()
+          with open("android/app/google-services.json", encoding="utf-8") as f:
+              config = json.load(f)
+          registered = {
+              oauth.get("android_info", {}).get("certificate_hash", "").lower()
+              for client in config.get("client", [])
+              if client.get("client_info", {}).get("android_client_info", {}).get("package_name") == "com.wassally.app"
+              for oauth in client.get("oauth_client", [])
+              if oauth.get("client_type") == 1
+          }
+          if sha1 not in registered:
+              print("ERROR: APK debug signer is not registered for Google Sign-In.")
+              raise SystemExit(1)
+          print("Google Sign-In SHA-1 matches the Firebase config.")
+          PY
+          sha256sum "$APK"
+
+      - name: Upload APK (short-lived preview, no Play upload)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasally-release-readiness-aeedc41-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
