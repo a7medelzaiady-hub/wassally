@@ -23,6 +23,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/star_picker.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/order_receipt_sheet.dart';
+import '../widgets/store_wait_banner.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -451,8 +452,11 @@ class _Details extends StatelessWidget {
                     },
                     child: const Text('استرجاع نقاط الطلب'),
                   ),
-              ] else
+              ] else ...[
                 _Timeline(current: order.status),
+                // «مستني المحل يأكد» من حالة الطلب ووقته بس، من غير قراءات.
+                StoreWaitBanner(order: order),
+              ],
             ],
           ),
         ),
@@ -845,12 +849,12 @@ class _CancelledBanner extends StatelessWidget {
   }
 }
 
-/// مراحل الطلب: المحل استلم ← تحضير ← في الطريق ← تم التوصيل.
+/// مراحل الطلب: اتبعت للمحل ← تحضير ← في الطريق ← تم التوصيل.
 class _Timeline extends StatelessWidget {
   final OrderStatus current;
   const _Timeline({required this.current});
 
-  static const _shortLabels = ['المحل استلم', 'تجهيز', 'في الطريق', 'توصيل'];
+  static const _shortLabels = ['اتبعت للمحل', 'تجهيز', 'في الطريق', 'توصيل'];
 
   @override
   Widget build(BuildContext context) {

@@ -6,6 +6,7 @@ import '../services/order_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import '../utils/format.dart';
+import '../utils/store_wait.dart';
 import '../widgets/app_header.dart';
 import '../widgets/empty_state.dart';
 import 'order_details_page.dart';
@@ -188,6 +189,11 @@ class _OrderCardState extends State<_OrderCard> {
   Widget build(BuildContext context) {
     final order = widget.order;
     final status = order.status;
+    // الطلب الجديد ما يتكتبش «المحل استلم الطلب» قبل ما المحل يأكد فعلًا.
+    final now = DateTime.now();
+    final waitLate = storeWaitStageOf(order, now) == StoreWaitStage.late;
+    final statusColor = waitLate ? kDanger : status.color;
+    final statusText = customerStatusLabel(order, now);
     final created = order.createdAt;
     final name = orderStoreTitle(order.storeName);
 
@@ -286,15 +292,15 @@ class _OrderCardState extends State<_OrderCard> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: status.color.withValues(alpha: 0.12),
+                        color: statusColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        status.label,
+                        statusText,
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w800,
-                          color: status.color,
+                          color: statusColor,
                         ),
                       ),
                     ),
