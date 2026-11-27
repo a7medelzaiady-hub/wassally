@@ -2685,7 +2685,12 @@ test('groups: استلام طلب من المجموعة ما بيستلمش با
   assert.equal(second.groupCode, 'OPQR12');
   const secondOrder = (await getDoc(doc(as('admin1'), 'orders/g2'))).data();
   assert.equal(secondOrder.courierId ?? '', '');
-  // بعد التعيين: المندوب يشوف بيانات تواصل طلبه هو بس.
+  // بعد التعيين وقبل الاستلام من المحل: لسه مفيش بيانات تواصل.
+  await assertFails(getDoc(doc(courierDb, 'orders/g1/private/contact')));
+  // بعد الاستلام: المندوب يشوف بيانات تواصل طلبه هو بس.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'orders/g1'), { status: 'on_the_way', pickedUpAt: new Date() });
+  });
   await assertSucceeds(getDoc(doc(courierDb, 'orders/g1/private/contact')));
   await assertFails(getDoc(doc(courierDb, 'orders/g2/private/contact')));
 });
