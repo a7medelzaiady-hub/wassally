@@ -43,6 +43,8 @@ import {
   resolveQuickSettings,
   validateQuickNotes,
   validateQuickStores,
+  validateErrandType,
+  validateErrandPickup,
   type QuickActor,
 } from "./quick_orders";
 
@@ -3515,12 +3517,12 @@ async function readJsonBody(request: Request): Promise<JsonMap> {
   return body as JsonMap;
 }
 
-function quickTopicMessage() {
+function quickTopicMessage(isErrand = false) {
   return {
     message: {
       topic: "quick_couriers",
       notification: {
-        title: "طلب سريع جديد",
+        title: isErrand ? "مشوار جديد على وصّلي" : "طلب سريع جديد",
         body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
       },
       data: { type: "quick_order" },
@@ -3570,6 +3572,7 @@ async function notifyOrderParticipant(
 }
 
 const quickCustomerUpdates: Readonly<Record<string, string>> = {
+  "quote-errand": "المندوب عرض أجرة المشوار — راجع السعر ووافق عليه",
   accept: "مندوب قبل طلبك السريع",
   release: "طلبك السريع بيدوّر على مندوب تاني",
   "advance-received": "المندوب أكّد استلام المقدم",
@@ -3577,6 +3580,8 @@ const quickCustomerUpdates: Readonly<Record<string, string>> = {
 };
 
 const quickCourierUpdates: Readonly<Record<string, string>> = {
+  "approve-errand-quote": "العميل وافق على أجرة المشوار — تقدر تبدأ",
+  "reject-errand-quote": "العميل رفض أجرة المشوار — قدّم سعر تاني",
   "advance-sent": "العميل سجّل تحويل المقدم",
   "approve-summary": "العميل وافق على كشف الحساب",
   "reject-summary": "العميل طلب مراجعة كشف الحساب",
@@ -3596,19 +3601,39 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
   if (!orderId.startsWith(`${uid}_`) || !/^[A-Za-z0-9_-]{16,180}$/.test(orderId.slice(uid.length + 1))) {
     throw new HttpError(400, "معرّف الطلب غير صالح.");
   }
+  const kind = input.kind === undefined ? "quick" : input.kind;
+  if (kind !== "quick" && kind !== "errand") {
+    throw new HttpError(400, "نوع الخدمة غير معروف.", "invalid_kind");
+  }
   const customerFirstName = firstName(input.customerName);
   const area = typeof input.area === "string" ? input.area.trim() : "";
   if (customerFirstName.length < 1 || customerFirstName.length > 30 || area.length > 60) {
     throw new HttpError(400, "راجع الاسم والمنطقة.");
   }
   let stores, notes, customerImages: string[] = [], customerVoiceUrl = "";
+  let errandType: ReturnType<typeof validateErrandType> | undefined;
+  let pickupAddress = "";
   try {
+    if (kind === "errand") {
+      errandType = validateErrandType(input.errandType);
+      const rawContact = input.contact && typeof input.contact === "object" &&
+        !Array.isArray(input.contact) ? input.contact as JsonMap : {};
+      pickupAddress = validateErrandPickup(rawContact.pickupAddress);
+    }
     const folder = await quickRequestFolder(uid);
     customerImages = validateQuickImages(input.customerImages,
       (url) => isOwnQuickImage(url, folder, env.CLOUDINARY_CLOUD_NAME));
     customerVoiceUrl = validateQuickVoice(input.customerVoiceUrl,
       (url) => isOwnQuickVoice(url, folder + "/voice", env.CLOUDINARY_CLOUD_NAME));
     stores = validateQuickStores(input.stores, customerImages.length > 0 || !!customerVoiceUrl);
+    if (kind === "errand" && (
+      stores.length !== 1 ||
+      stores[0].name !== "" ||
+      stores[0].pricedItems?.length ||
+      stores[0].items.length < 10
+    )) {
+      throw new QuickRuleError(400, "اكتب تفاصيل المشوار (10 أحرف على الأقل) من غير أصناف مسعّرة.", "invalid_errand");
+    }
     notes = validateQuickNotes(input.notes);
   } catch (error) {
     quickError(error);
@@ -3650,6 +3675,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
 
   const order = newQuickOrder({
     uid, customerFirstName, area, notes: notes!, stores: stores!, settings, customerImages, customerVoiceUrl,
+    kind, errandType,
   });
   await commitOrConflict(env, token, [
     {
@@ -3658,7 +3684,9 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
       currentDocument: { exists: false },
     },
     {
-      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields({ ...contact, customerVoiceUrl }) },
+      update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields({
+         ...contact, ...(kind === "errand" ? { pickupAddress, customerImages } : {}), customerVoiceUrl,
+       }) },
       currentDocument: { exists: false },
     },
     {
@@ -3674,7 +3702,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
     const sent = await fetch(`https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify(quickTopicMessage()),
+      body: JSON.stringify(quickTopicMessage(kind === "errand")),
     });
     if (!sent.ok) console.error("Quick courier push failed", sent.status);
   } catch (error) {
@@ -3891,11 +3919,11 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   }
 
   const patch = quickDeliveredPatch(order, uid, new Date());
-  // الصور في الطلب العام؛ الصوت في private/contact فقط. حذف المراجع يتم مع التسليم.
-  const images = quickCustomerImages(order);
+  // المشاوير: صور الطرد والعناوين في private/contact فقط.
   const voicePath = `${orderPath}/private/contact`;
   const voiceDoc = await getDocument(env, voicePath, token);
   const contact = voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {};
+  const images = order.kind === "errand" ? quickCustomerImages(contact) : quickCustomerImages(order);
   const voice = quickCustomerVoice(contact);
   const pendingVoices = [
     ...new Set([
@@ -3915,8 +3943,8 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   for (const url of pendingVoices) {
     if (!await destroyQuickVoice(env, url, voiceFolder)) failedVoices.push(url);
   }
-  if (undeleted.length) {
-    // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
+  if (undeleted.length && order.kind !== "errand") {
+    // طلبات المشتريات تستخدم حقل التنظيف القديم.
     patch.customerImagesPendingCleanup = undeleted;
   }
   const writes: unknown[] = [{
@@ -3929,6 +3957,10 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
       customerVoiceUrl: "",
       customerVoicePendingCleanup: "",
       customerVoicesPendingCleanup: failedVoices,
+      ...(order.kind === "errand" ? {
+        customerImages: [],
+        customerImagesPendingCleanup: undeleted,
+      } : {}),
     };
     writes.push({
       update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },

@@ -13,6 +13,7 @@ import '../theme/app_tokens.dart';
 import '../services/user_service.dart';
 import '../services/location_picker.dart';
 import 'quick_order_customer_detail_page.dart';
+import 'errand_create_page.dart';
 import '../services/quick_order_api.dart';
 import '../widgets/quick_price_picker.dart';
 import '../widgets/app_ui.dart';
@@ -397,7 +398,18 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
           AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.xxl),
       children: [
         const _QuickIntro(),
-        const SizedBox(height: AppSpacing.lg),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            key: const Key('quick-to-errand'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ErrandCreatePage()),
+            ),
+            icon: const Icon(Icons.delivery_dining_outlined),
+            label: const Text('عايز مشوار من غير مشتريات؟ مشوارك علينا'),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         const _StepTitle(number: 1, title: 'تحب تبعت طلبك إزاي؟'),
         _methodPicker(),
         _methodPanels(),

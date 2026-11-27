@@ -11,9 +11,15 @@ class QuickContact {
   final String name;
   final String phone;
   final String address;
+  final String pickupAddress;
   final String notes;
   final String voiceUrl;
-  const QuickContact({this.name = '', this.phone = '', this.address = '', this.notes = '', this.voiceUrl = ''});
+  final List<String> images;
+  const QuickContact({
+    this.name = '', this.phone = '', this.address = '',
+    this.pickupAddress = '', this.notes = '', this.voiceUrl = '',
+    this.images = const [],
+  });
 }
 
 /// كل اللي شاشات المندوب محتاجاه. الكتابة كلها عن طريق الـWorker؛ القراءة get بس (مفيش مستمعات).
@@ -101,8 +107,13 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
       name: s(d['userName']),
       phone: s(d['phone']),
       address: s(d['address']),
+      pickupAddress: s(d['pickupAddress']),
       notes: s(d['courierNotes']),
       voiceUrl: s(d['customerVoiceUrl']),
+      images: d['customerImages'] is List
+          ? [for (final url in d['customerImages'] as List)
+              if (url is String && url.startsWith('https://')) url]
+          : const [],
     );
   }
 

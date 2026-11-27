@@ -18,6 +18,7 @@ import 'main_shell.dart';
 import 'notifications_page.dart';
 import 'onboarding_page.dart';
 import 'quick_order_create_page.dart';
+import 'errand_create_page.dart';
 import 'store_directory_page.dart';
 
 /// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
@@ -443,7 +444,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
     const gap = AppSpacing.md;
     final minCard = _minCardHeight(context);
     return LayoutBuilder(builder: (context, box) {
-      final available = box.maxHeight - gap * 4;
+      // مكان خدمة المشاوير المختصرة، مع الحفاظ على الكروت الثلاثة المعتمدة.
+      final available = box.maxHeight - gap * 4 - 62;
       var card = available / 3;
       final maxCard = (box.maxWidth * 0.40).clamp(140.0, 180.0).toDouble();
       if (card > maxCard) card = maxCard;
@@ -454,11 +456,30 @@ class _CustomerEntryState extends State<CustomerEntry> {
         physics: fits ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.only(bottom: gap),
         children: [
-          for (final service in _cards(card))
+          for (final (index, service) in _cards(card).indexed) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.md, gap, AppSpacing.md, 0),
               child: service,
             ),
+            if (index == 0)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.md, 6, AppSpacing.md, 0),
+                child: OutlinedButton.icon(
+                  key: const Key('entry-errand'),
+                  onPressed: () => _enter(const ErrandCreatePage()),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: AppColors.purpleSoft,
+                    foregroundColor: AppColors.purple,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delivery_dining_outlined),
+                  label: const Text('مشوارك علينا • اطلب مندوب لأي مشوار'),
+                ),
+              ),
+          ],
         ],
       );
     });

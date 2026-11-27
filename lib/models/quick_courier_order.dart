@@ -104,6 +104,11 @@ class QuickTotalsView {
 class QuickCourierOrder {
   final String id;
   final String status;
+  final String kind;
+  final String errandType;
+  final int? errandQuotePiastres;
+  final String errandQuoteStatus;
+  final DateTime? errandPickupConfirmedAt;
   final String courierId;
   final String customerFirstName;
   final String area;
@@ -133,6 +138,11 @@ class QuickCourierOrder {
   const QuickCourierOrder({
     required this.id,
     required this.status,
+    this.kind = 'quick',
+    this.errandType = '',
+    this.errandQuotePiastres,
+    this.errandQuoteStatus = '',
+    this.errandPickupConfirmedAt,
     this.courierId = '',
     this.customerFirstName = '',
     this.area = '',
@@ -168,6 +178,11 @@ class QuickCourierOrder {
     return QuickCourierOrder(
       id: id,
       status: _str(m['status']),
+      kind: _str(m['kind']),
+      errandType: _str(m['errandType']),
+      errandQuotePiastres: _int(m['errandQuotePiastres']),
+      errandQuoteStatus: _str(m['errandQuoteStatus']),
+      errandPickupConfirmedAt: _date(m['errandPickupConfirmedAt']),
       courierId: _str(m['courierId']),
       customerFirstName: _str(m['customerFirstName']),
       area: _str(m['area']),
@@ -219,6 +234,16 @@ class QuickCourierOrder {
     );
   }
 
+  bool get isErrand => kind == 'errand';
+  bool get quoteApproved => isErrand && errandQuoteStatus == 'accepted';
+
+  String get errandTypeLabel => switch (errandType) {
+    'parcel' => 'توصيل غرض',
+    'documents' => 'استلام أوراق',
+    'ready_order' => 'استلام طلب جاهز',
+    _ => 'مشوار آخر',
+  };
+
   QuickCourierStep get step => switch (status) {
         'open' => QuickCourierStep.available,
         'accepted' => QuickCourierStep.estimate,
@@ -260,7 +285,9 @@ class QuickCourierOrder {
   /// معاينة الكشف قبل الإرسال (للعرض بس؛ الـWorker بيحسب الرسمي بنفس المعادلة).
   QuickTotalsView previewTotals(int deliveryPiastres) {
     final purchases = receiptsTotalPiastres;
-    final fee = WasallyServiceFee.calculate(itemsAfterDiscountPiastres: purchases);
+    final fee = isErrand
+        ? 0
+        : WasallyServiceFee.calculate(itemsAfterDiscountPiastres: purchases);
     final prepaid = advanceConfirmedAt != null ? (advanceAmountPiastres ?? 0) : 0;
     return QuickTotalsView(
       purchases: purchases,

@@ -29,6 +29,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   final _voicePlayer = audio.AudioPlayer();
   bool _playingVoice = false;
   String _customerVoiceUrl = '';
+  String _pickupAddress = '';
+  String _destinationAddress = '';
+  List<String> _privateImages = const [];
 
   @override
   void initState() {
@@ -71,13 +74,31 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         throw StateError('الطلب غير متاح');
       }
       String voiceUrl = '';
-      if (doc.data()?['hasCustomerVoice'] == true) {
+      String pickup = '';
+      String destination = '';
+      List<String> privateImages = const [];
+      final isErrand = doc.data()?['kind'] == 'errand';
+      // قراءة واحدة إضافية فقط للمشاوير: العناوين خاصة وليست في المستند العام.
+      if (doc.data()?['hasCustomerVoice'] == true || isErrand) {
         final contact = await FirebaseFirestore.instance.collection('quick_orders')
             .doc(widget.orderId).collection('private').doc('contact').get();
         voiceUrl = (contact.data()?['customerVoiceUrl'] ?? '').toString();
+        if (isErrand) {
+          pickup = (contact.data()?['pickupAddress'] ?? '').toString();
+          destination = (contact.data()?['address'] ?? '').toString();
+          final raw = contact.data()?['customerImages'];
+          privateImages = raw is List
+              ? [for (final image in raw)
+                  if (image is String && image.startsWith('https://')) image]
+              : const [];
+        }
       }
       if (!mounted) return;
-      setState(() { _order = doc.data(); _customerVoiceUrl = voiceUrl; _pin = null; });
+      setState(() {
+        _order = doc.data(); _customerVoiceUrl = voiceUrl;
+        _pickupAddress = pickup; _destinationAddress = destination;
+        _privateImages = privateImages; _pin = null;
+      });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -131,23 +152,27 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         TextEditingController(text: (store['items'] ?? '').toString()),
     ];
     final notes = TextEditingController(text: (order['notes'] ?? '').toString());
+    final isErrand = order['kind'] == 'errand';
     final updated = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialog) => AlertDialog(
-        title: const Text('تعديل الطلب السريع'),
+        title: Text(isErrand ? 'تعديل تفاصيل المشوار' : 'تعديل الطلب السريع'),
         scrollable: true,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             for (var i = 0; i < stores.length; i++) ...[
-              TextField(
-                controller: names[i],
-                decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)'),
-              ),
+              if (!isErrand)
+                TextField(
+                  controller: names[i],
+                  decoration: const InputDecoration(labelText: 'اسم المحل (اختياري)'),
+                ),
               TextField(
                 controller: items[i],
                 maxLines: 3,
-                decoration: const InputDecoration(labelText: 'الأصناف المكتوبة'),
+                decoration: InputDecoration(
+                  labelText: isErrand ? 'تفاصيل المشوار' : 'الأصناف المكتوبة',
+                ),
               ),
             ],
             TextField(
@@ -345,6 +370,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   Widget build(BuildContext context) {
     final order = _order;
     final status = (order?['status'] ?? '').toString();
+    final isErrand = order?['kind'] == 'errand';
+    final quote = (order?['errandQuotePiastres'] as num?)?.toInt();
+    final quoteStatus = (order?['errandQuoteStatus'] ?? '').toString();
     final totals = order?['totals'] is Map
         ? Map<String, dynamic>.from(order!['totals'] as Map)
         : <String, dynamic>{};
@@ -356,13 +384,20 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
         delivered || status == 'summary_pending' || status == 'summary_approved';
     final due = (totals['due'] as num?) ?? 0;
     final area = (order?['area'] ?? '').toString().trim();
+    final customerImages = isErrand
+        ? _privateImages
+        : [
+            if (order?['customerImages'] is List)
+              for (final image in order!['customerImages'] as List)
+                if (image is String) image,
+          ];
     final receiptImages = [
       for (final raw in receipts)
         if (raw is Map && raw['imageUrl'] is String) raw,
     ];
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: AppBar(title: const Text('تفاصيل الطلب السريع'),
+      appBar: AppBar(title: Text(isErrand ? 'تفاصيل المشوار' : 'تفاصيل الطلب السريع'),
         actions: [IconButton(onPressed: _busy ? null : _refresh,
           icon: const Icon(Icons.refresh_rounded), tooltip: 'تحديث')]),
       body: RefreshIndicator(
@@ -389,29 +424,30 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                 ),
               )
             else ...[
-              _StatusHeader(status: status, area: area),
+              _StatusHeader(status: status, area: area, isErrand: isErrand),
               const SizedBox(height: AppSpacing.md),
               if ((status == 'summary_pending' || status == 'summary_approved') && (_pin == null || _pin!.isEmpty))
                 const AppNotice(type: AppNoticeType.action, 'اضغط «إظهار رمز التسليم» وادّي الرمز للمندوب لما يسلمك الطلب.'),
               _card(
-                title: 'محتويات الطلب',
-                icon: Icons.shopping_basket_outlined,
+                title: isErrand ? 'المشوار المطلوب' : 'محتويات الطلب',
+                icon: isErrand ? Icons.delivery_dining_outlined : Icons.shopping_basket_outlined,
                 children: [
                   if (stores.isEmpty)
                     const Text('لم تُحدد محلات أو أصناف في الطلب.', style: AppTypography.secondary),
                   for (final raw in stores)
                     if (raw is Map) ...[
                       const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        (raw['name'] ?? '').toString().trim().isEmpty
-                            ? 'محل يختاره المندوب'
-                            : (raw['name'] ?? '').toString(),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: AppTypography.body,
-                          color: AppColors.purple,
+                      if (!isErrand)
+                        Text(
+                          (raw['name'] ?? '').toString().trim().isEmpty
+                              ? 'محل يختاره المندوب'
+                              : (raw['name'] ?? '').toString(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: AppTypography.body,
+                            color: AppColors.purple,
+                          ),
                         ),
-                      ),
                       for (final line in _itemLines((raw['items'] ?? '').toString()))
                         _itemRow(line),
                       if (raw['pricedItems'] is List)
@@ -427,11 +463,70 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                     _receiptDivider(),
                     if (((order['approxTotalPiastres'] as num?) ?? 0) > 0)
                       _amount('التقدير', order['approxTotalPiastres']),
-                    const Text('الحساب بيتحدد بعد الشراء، وبيتفق عليه المندوب معاك في التليفون.',
-                        style: AppTypography.secondary),
+                    Text(
+                      isErrand
+                          ? 'المندوب يعرض الأجرة، وإنت توافق عليها قبل بداية المشوار.'
+                          : 'الحساب بيتحدد بعد الشراء، وبيتفق عليه المندوب معاك في التليفون.',
+                      style: AppTypography.secondary,
+                    ),
                   ],
                 ],
               ),
+              if (isErrand && status == 'purchasing' &&
+                  order['errandPickupConfirmedAt'] != null)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('✅ المندوب أكّد استلام الغرض من نقطة البداية.',
+                      key: Key('errand-picked-up-customer'),
+                      style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
+                ),
+              if (isErrand)
+                _card(
+                  key: const Key('errand-customer-addresses'),
+                  title: 'عنوان الاستلام والتسليم',
+                  icon: Icons.route_outlined,
+                  children: [
+                    const Text('الاستلام من:', style: AppTypography.sectionTitle),
+                    Text(_pickupAddress.isEmpty ? 'العنوان غير متاح حاليًا' : _pickupAddress),
+                    const SizedBox(height: 8),
+                    const Text('التسليم إلى:', style: AppTypography.sectionTitle),
+                    Text(_destinationAddress.isEmpty ? 'العنوان غير متاح حاليًا' : _destinationAddress),
+                  ],
+                ),
+              if (isErrand && status == 'accepted')
+                _card(
+                  key: const Key('errand-quote-card'),
+                  title: 'الاتفاق على أجرة المشوار',
+                  icon: Icons.price_check_outlined,
+                  children: [
+                    if (quote == null)
+                      const Text('مستني المندوب يعرض الأجرة. التنفيذ مش هيبدأ من غير موافقتك.')
+                    else ...[
+                      _amount('أجرة المندوب', quote, emphasis: true),
+                      if (quoteStatus == 'pending') ...[
+                        const Text('المندوب مستني موافقتك على السعر قبل بداية المشوار.'),
+                        const SizedBox(height: 8),
+                        Row(children: [
+                          Expanded(child: FilledButton(
+                            key: const Key('errand-approve-quote'),
+                            onPressed: _busy ? null : () => _act(
+                              'approve-errand-quote', {'expectedQuotePiastres': quote}),
+                            child: const Text('أوافق على الأجرة'),
+                          )),
+                          const SizedBox(width: 8),
+                          Expanded(child: OutlinedButton(
+                            key: const Key('errand-reject-quote'),
+                            onPressed: _busy ? null : () => _act('reject-errand-quote'),
+                            child: const Text('اطلب سعر تاني'),
+                          )),
+                        ]),
+                      ] else
+                        Text(quoteStatus == 'accepted'
+                          ? 'تمت الموافقة. المندوب يقدر يبدأ المشوار.'
+                          : 'طلبت سعر تاني من المندوب.'),
+                    ],
+                  ],
+                ),
               if (_customerVoiceUrl.isNotEmpty)
                 _card(
                   key: const Key('quick-customer-voice'),
@@ -447,15 +542,14 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                         style: AppTypography.secondary),
                   ],
                 ),
-              if (order['customerImages'] is List &&
-                  (order['customerImages'] as List).isNotEmpty)
+              if (customerImages.isNotEmpty)
                 _card(
                   key: const Key('quick-customer-images'),
                   title: 'صور طلبك',
                   icon: Icons.photo_camera_outlined,
                   children: [
                     Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
-                      for (final url in (order['customerImages'] as List).whereType<String>())
+                      for (final url in customerImages)
                         InkWell(
                           borderRadius: BorderRadius.circular(AppRadius.md),
                           onTap: () => _openReceipt(url),
@@ -479,9 +573,9 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
                   title: 'الحساب النهائي',
                   icon: Icons.receipt_long_outlined,
                   children: [
-                    _amount('الفواتير', totals['purchases']),
+                    if (!isErrand) _amount('الفواتير', totals['purchases']),
                     _amount('أجرة التوصيل', totals['delivery']),
-                    _amount('رسوم وصّلي', totals['serviceFee']),
+                    if (!isErrand) _amount('رسوم وصّلي', totals['serviceFee']),
                     if (((totals['prepaid'] as num?) ?? 0) > 0)
                       _amount('المقدم', totals['prepaid']),
                     _receiptDivider(),
@@ -597,10 +691,11 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
 /// رأس الحالة بأسلوب تطبيقات التوصيل: الحالة بخط واضح، سطر يشرح المطلوب،
 /// وشريط تقدم مقسّم لمراحل الطلب.
 class _StatusHeader extends StatelessWidget {
-  const _StatusHeader({required this.status, required this.area});
+  const _StatusHeader({required this.status, required this.area, this.isErrand = false});
 
   final String status;
   final String area;
+  final bool isErrand;
 
   static const _steps = <String>[
     'بانتظار مندوب',
@@ -608,6 +703,10 @@ class _StatusHeader extends StatelessWidget {
     'بيشتري طلبك',
     'الحساب',
     'تم التسليم',
+  ];
+  static const _errandSteps = <String>[
+    'بانتظار مندوب', 'اتفاق الأجرة', 'تنفيذ المشوار',
+    'جاهز للتسليم', 'تم التسليم',
   ];
 
   /// رقم الخطوة الحالية (0..4)، أو -1 لو الطلب ملغي.
@@ -636,8 +735,9 @@ class _StatusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = stepOf(status);
+    final steps = isErrand ? _errandSteps : _steps;
     final cancelled = current < 0;
-    final done = current == _steps.length - 1;
+    final done = current == steps.length - 1;
     final accent = cancelled
         ? AppColors.danger
         : done
@@ -682,7 +782,11 @@ class _StatusHeader extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(hintOf(status), style: AppTypography.secondary),
+                    Text(isErrand && status == 'accepted'
+                        ? 'راجع أجرة المشوار ووافق قبل ما المندوب يبدأ.'
+                        : isErrand && status == 'purchasing'
+                        ? 'المندوب بينفّذ مشوارك دلوقتي.'
+                        : hintOf(status), style: AppTypography.secondary),
                   ],
                 ),
               ),
@@ -692,7 +796,7 @@ class _StatusHeader extends StatelessWidget {
             const SizedBox(height: AppSpacing.lg),
             Row(
               children: [
-                for (var i = 0; i < _steps.length; i++) ...[
+                for (var i = 0; i < steps.length; i++) ...[
                   if (i > 0) const SizedBox(width: 4),
                   Expanded(
                     child: AnimatedContainer(
@@ -711,7 +815,7 @@ class _StatusHeader extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  _steps[current],
+                  steps[current],
                   style: TextStyle(
                     color: accent,
                     fontSize: AppTypography.caption,

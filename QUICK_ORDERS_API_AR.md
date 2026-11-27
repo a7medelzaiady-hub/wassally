@@ -141,3 +141,35 @@ rev                                   // يزيد مع كل كتابة
 - يمكن تعديل التسجيل أو إعادة تسجيله أو حذفه قبل الإرسال، وبعد الإرسال ما دام الطلب `open` ولم يقبله المندوب، عبر `POST /v1/quick/{id}/edit-voice` مع `customerVoiceUrl` (رابط جديد أو سلسلة فارغة للحذف). الـWorker يحفظ الرابط الخاص والعلم العام معًا بكتابة ذرية، ويمسح التسجيل القديم بعد نجاح الحفظ. ما يفشل حذفه يُسجّل في `customerVoicesPendingCleanup` داخل `private/contact` لمحاولة حذفه وقت التسليم.
 - عند تأكيد التسليم بالرمز، يُحذف ملف الصوت من Cloudinary ويُمسح `customerVoiceUrl` من المستند الخاص في نفس عملية تسليم الطلب. لو فشل حذف الملف، يُحفظ `customerVoicePendingCleanup` في `private/contact` لتكرار التنظيف لاحقًا؛ لا تُخزّن ملفات صوتية داخل Firestore.
 - عند `submit-summary` لا تحتاج الفاتورة موافقة العميل؛ الاستلام بالرمز فقط. تُعرض الفاتورة للعلم قبل التسليم.
+
+
+## خدمة «مشوارك علينا» — امتداد منفصل لطلباتك على السريع
+
+تستخدم نفس `quick_orders` ونفس `POST /v1/quick` وخطة Firebase Spark بلا Collection جديدة. **تدفق المشتريات أعلاه لا يتغير**؛ حقول المشاوير تظهر فقط مع `kind = "errand"`.
+
+### إنشاء المشوار
+- `kind: "errand"`، و`errandType` أحد `parcel / documents / ready_order / other`.
+- `stores: [{ name:"", items:"تفاصيل المشوار من 10 إلى 500 حرف" }]`، بدون `pricedItems` أو بيانات مالية.
+- `contact` يحتوي `pickupAddress` (من أين يستلم المندوب، 5–300 حرف)، و`address` (أين يسلّم، 5–300 حرف)، و`phone` و`userName`.
+- `pickupAddress`، و`address`، و`phone`، و`customerImages` (روابط Cloudinary)، و`customerVoiceUrl` **تُحفظ في private/contact فقط**؛ قبل قبول الطلب لا تظهر للمندوب. الطلب العام يحفظ فقط `hasCustomerImages`، `hasCustomerVoice`، النوع والملخص الذي كتبه العميل.
+- نص المهمة العام قد يراه المندوب المعتمد قبل القبول، لذلك لا تكتب فيه رقم الهاتف أو العنوان التفصيلي؛ خصص لهما الخانات الخاصة.
+- نفس حد الطلبات السريعة في `quickLimits` ونفس تأهيل `couriers/{uid}.quickEnabled`.
+
+### الأجرة ودورة التنفيذ
+1. مندوب معتمد يقبل `accept`، وتظهر له بيانات التواصل/الاستلام من المستند الخاص.
+2. المندوب يرسل `quote-errand` مع `deliveryPiastres` (سقف الإدارة `maximumDeliveryPiastres`).
+3. العميل فقط يوافق عبر `approve-errand-quote` مع `expectedQuotePiastres` المطابق بالضبط، أو يرفض عبر `reject-errand-quote`. قبل الموافقة `start-purchase` مرفوض من Worker.
+4. بعد الموافقة يضغط المندوب «ابدأ المشوار»؛ يستعمل نفس الحالة `purchasing` داخليًا من غير مشتريات أو فواتير.
+5. مشاوير `parcel / documents / ready_order`: المندوب يؤكد استلام الغرض من نقطة البداية عبر `confirm-errand-pickup`، ويُحفظ `errandPickupConfirmedAt`. يمنع Worker التجهيز للتسليم قبل التأكيد. نوع `other` لا يحتاج استلام غرض.
+6. `submit-summary` يرسل **الأجرة الموافق عليها فقط**، ويتحقق الـWorker من مطابقتها، وتصبح الحالة `summary_approved` من غير طلب صور فواتير أو موافقة جديدة.
+7. عند الوصول يتم التسليم برمز PIN نفسه عبر `deliver`، مع منع تكرار التسليم وإزالة روابط الصور والصوت وحذف ملفات Cloudinary. يُحفظ ما تعذر تنظيفه في المستند الخاص للتنظيف اللاحق.
+
+### المبالغ
+- العميل يدفع **الأجرة المتفق عليها فقط** `totals = {purchases: 0, serviceFee: 0, delivery: fare, prepaid: 0, due: fare}`.
+- مقابل الخدمة المستحق على المندوب يُقيد في `courierOwedPiastres` عند التسليم (2% من أجرته بحد أدنى 5 جنيه وحد أقصى 15 جنيه)، بدون زيادة على العميل. لا توجد تحويلات مقدم أو فواتير مشتريات في المشاوير.
+- لا يوجد تأجير بالساعة أو تتبع مباشر، ولا يتم تشغيل أي listener مستمر لهذا الغرض.
+
+### النشر
+- يجب نجاح اختبارات Flutter وWorker وFirestore ذات الصلة ومراجعة الشاشة على الهاتف.
+- **دمج PR لا ينشر Cloudflare Worker تلقائيًا**؛ بعد نجاح CI والدمج يُنشر Worker من `Deploy Order Gateway Worker (manual)` على `main` بإدخال `DEPLOY`، ثم فحص `/health`، وبعدها تثبيت APK مبني من `main`.
+- لا حاجة لتغيير Firestore rules الحالية ما دامت private/contact تمنح القراءة فقط للعميل والمندوب المعيّن والإدارة، وتظل جميع الكتابات من Worker.

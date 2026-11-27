@@ -265,7 +265,7 @@ class QuickOrderSummaryCard extends StatelessWidget {
                 radius: 26,
                 backgroundColor: Brand.green.withValues(alpha: 0.12),
                 child: Text(
-                  '${order.stores.length}',
+                  order.isErrand ? '🛵' : '${order.stores.length}',
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Brand.green),
                 ),
               ),
@@ -275,7 +275,8 @@ class QuickOrderSummaryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      order.stores.length == 1 ? 'محل واحد' : '${order.stores.length} محلات',
+                      order.isErrand ? 'مشوارك علينا • ${order.errandTypeLabel}'
+                         : order.stores.length == 1 ? 'محل واحد' : '${order.stores.length} محلات',
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                     ),
                     if (named.isNotEmpty)
@@ -302,7 +303,8 @@ class QuickOrderSummaryCard extends StatelessWidget {
                       Text('تقريبًا ${formatPiastres(approx)}', style: TextStyle(color: kMuted)),
                     const SizedBox(height: 4),
                     Text(
-                      quickStepLabel(order.step),
+                      order.isErrand && order.step == QuickCourierStep.estimate
+                          ? 'اتفاق على الأجرة' : quickStepLabel(order.step),
                       style: TextStyle(color: Brand.green, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
