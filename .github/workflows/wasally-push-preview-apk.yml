@@ -1,4 +1,4 @@
-name: Wasally push notifications APK preview
+name: Wasally push notifications APK preview - verified courier layout
 
 on:
   pull_request:
