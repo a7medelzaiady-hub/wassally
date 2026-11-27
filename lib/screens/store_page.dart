@@ -97,6 +97,9 @@ class _StorePageState extends State<StorePage> {
   int _gen = 0;
 
   bool _collapsed = false; // الغلاف اتطوى: نظهر اسم المحل في الشريط العلوي
+  /// عرض الأصناف: شبكة (اتنين جنب بعض) أو قايمة. اختيار محلي متخزن على الموبايل.
+  bool _grid = false;
+  static const _gridPrefsKey = 'store_products_grid_v1';
   bool _canEditStore = false; // المدير (كل المحلات) وصاحب المحل (محله) يشوفوا أزرار الإضافة والرفع
 
   final _specialRequestCtrl = TextEditingController();
@@ -140,6 +143,10 @@ class _StorePageState extends State<StorePage> {
     });
     _checkAdmin();
     _recordVisit();
+    SharedPreferences.getInstance().then((p) {
+      final g = p.getBool(_gridPrefsKey) ?? false;
+      if (mounted && g != _grid) setState(() => _grid = g);
+    }).catchError((_) {});
 
     _scroll.addListener(() {
       final collapsed = _scroll.hasClients && _scroll.offset > 120;
@@ -786,14 +793,10 @@ class _StorePageState extends State<StorePage> {
       seen[url] = n;
       if (n > 2) repeated.add(i);
     }
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      sliver: SliverList.separated(
-        itemCount: products.length,
-        separatorBuilder: (_, _) => Divider(height: 1, color: kLine),
-        itemBuilder: (context, i) {
-          final p = products[i];
-          return _ProductRow(
+    Widget tile(BuildContext context, int i) {
+      final p = products[i];
+      return _ProductRow(
+            grid: _grid,
             product: p,
             store: store,
             repeatedIllustration: repeated.contains(i),
@@ -805,7 +808,31 @@ class _StorePageState extends State<StorePage> {
             onTap: () => _openSheet(context, p),
             onEdit: () => _showProductDialog(context, product: p),
           );
-        },
+    }
+
+    if (_grid) {
+      return SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        sliver: SliverGrid.builder(
+          key: const Key('store-products-grid'),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 12,
+            // الارتفاع بيكبر مع العرض (صورة مربعة تقريبًا + اسم وسعر) على كل المقاسات.
+            childAspectRatio: 0.63,
+          ),
+          itemCount: products.length,
+          itemBuilder: tile,
+        ),
+      );
+    }
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      sliver: SliverList.separated(
+        itemCount: products.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
+        itemBuilder: tile,
       ),
     );
   }
@@ -844,16 +871,7 @@ class _StorePageState extends State<StorePage> {
         () => Navigator.of(context).maybePop(),
         'رجوع',
       ),
-      actions: [
-        circleBtn(
-          Icons.share_rounded,
-          () => shareText(
-            context,
-            ShareLinks.storeMessage(storeName: store.name, storeId: store.id),
-          ),
-          'مشاركة المحل',
-        ),
-      ],
+
       title: AnimatedOpacity(
         duration: const Duration(milliseconds: 150),
         opacity: _collapsed ? 1 : 0,
@@ -935,13 +953,36 @@ class _StorePageState extends State<StorePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            store.name,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Brand.ink,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  store.name,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Brand.ink,
+                  ),
+                ),
+              ),
+              // مشاركة المحل جنب اسمه (كانت على صورة الغلاف ومش باينة).
+              OutlinedButton.icon(
+                key: const Key('store-share'),
+                onPressed: () => shareText(
+                  context,
+                  ShareLinks.storeMessage(storeName: store.name, storeId: store.id),
+                ),
+                icon: const Icon(Icons.share_rounded, size: 17),
+                label: const Text('مشاركة'),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: kAccent,
+                  side: BorderSide(color: kAccent.withValues(alpha: 0.35)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -1046,6 +1087,17 @@ class _StorePageState extends State<StorePage> {
                     PopupMenuItem(value: _ProductSort.lowToHigh, child: Text('الأرخص أولًا')),
                     PopupMenuItem(value: _ProductSort.highToLow, child: Text('الأغلى أولًا')),
                   ],
+                ),
+                IconButton(
+                  key: const Key('store-grid-toggle'),
+                  tooltip: _grid ? 'عرض قايمة' : 'عرض شبكة',
+                  icon: Icon(_grid ? Icons.view_agenda_outlined : Icons.grid_view_rounded),
+                  onPressed: () {
+                    setState(() => _grid = !_grid);
+                    SharedPreferences.getInstance()
+                        .then((p) => p.setBool(_gridPrefsKey, _grid))
+                        .catchError((_) => false);
+                  },
                 ),
                 if (_canEditStore) ...[
                   const SizedBox(width: 8),
@@ -1914,6 +1966,9 @@ class _ProductRow extends StatelessWidget {
 
   /// الصورة التوضيحية دي اتكررت في المحل؛ نعرض بلاطة بالاسم بدلها.
   final bool repeatedIllustration;
+
+  /// كارت شبكة (الصورة فوق والاسم تحت) بدل صف القايمة.
+  final bool grid;
   final VoidCallback onAdd;
   final VoidCallback? onTap;
   final VoidCallback onEdit;
@@ -1922,6 +1977,7 @@ class _ProductRow extends StatelessWidget {
     required this.store,
     required this.canEdit,
     this.repeatedIllustration = false,
+    this.grid = false,
     required this.onAdd,
     required this.onEdit,
     this.onTap,
@@ -2026,158 +2082,242 @@ class _ProductRow extends StatelessWidget {
     );
   }
 
+  /// كارت ثلاثي الأبعاد بلمسة ناعمة: أبيض، حواف دايرية، وظلين خفاف (قريب وبعيد)
+  /// مع حد علوي فاتح بيدّي إحساس إن الكارت طالع لبرة. مريح للعين.
+  static BoxDecoration get _softCard => BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF0EEF5)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2A1B4A).withValues(alpha: 0.06),
+            blurRadius: 18,
+            spreadRadius: -2,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: const Color(0xFF2A1B4A).withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      );
+
+  int get _discount => product.hasOffer
+      ? ((1 - product.price / product.oldPrice) * 100).round()
+      : 0;
+
+  /// الصورة + «توضيحية» + زرار التعديل + زرار الإضافة.
+  Widget _photo({required double radius, double addInset = -6}) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceAlt,
+              borderRadius: BorderRadius.circular(radius),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: _image(),
+            ),
+          ),
+        ),
+        // «توضيحية» في الركن التاني عشان ما تتغطاش بزرار التعديل.
+        if (product.imageUrl.trim().isEmpty && !repeatedIllustration)
+          PositionedDirectional(
+            top: 6,
+            end: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'توضيحية',
+                style: TextStyle(fontSize: 9, color: Colors.white),
+              ),
+            ),
+          ),
+        PositionedDirectional(
+          bottom: addInset,
+          end: addInset,
+          child: _addControl(),
+        ),
+        if (canEdit)
+          PositionedDirectional(
+            top: 5,
+            start: 5,
+            child: CircleAvatar(
+              radius: 14,
+              backgroundColor: Colors.black54,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.edit, size: 14, color: Colors.white),
+                onPressed: onEdit,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _priceRow({double size = 15.5}) => Row(
+        children: [
+          Flexible(
+            child: Text(
+              formatPrice(product.price),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: size,
+                fontWeight: FontWeight.w900,
+                color: AppColors.orangeDeep,
+              ),
+            ),
+          ),
+          if (product.hasOffer) ...[
+            const SizedBox(width: 6),
+            Text(
+              formatPrice(product.oldPrice),
+              style: TextStyle(
+                fontSize: 12,
+                color: kMuted,
+                decoration: TextDecoration.lineThrough,
+              ),
+            ),
+          ],
+        ],
+      );
+
+  List<Widget> _badges() => [
+        if (_discount > 0) _badge('خصم $_discount%', kDanger),
+        if (product.offerText.isNotEmpty) _badge(product.offerText, Brand.goldDeep),
+      ];
+
   @override
   Widget build(BuildContext context) {
-    final discount = product.hasOffer
-        ? ((1 - product.price / product.oldPrice) * 100).round()
-        : 0;
     return Opacity(
       opacity: product.available ? 1 : 0.5,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Row(
-            // الاسم والسعر في نص ارتفاع الصورة: تناغم بين الكلام والصورة.
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+      child: grid ? _gridCard() : _listCard(),
+    );
+  }
+
+  Widget _gridCard() {
+    final badges = _badges();
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: _softCard,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AspectRatio(
+                  aspectRatio: 1.08,
+                  child: _photo(radius: 15, addInset: 6),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
                     product.name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 13.5,
                       fontWeight: FontWeight.w800,
-                      height: 1.35,
+                      height: 1.3,
                       color: Brand.ink,
                     ),
                   ),
-                  if (product.description.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      product.description.trim(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12.5, height: 1.4, color: kMuted),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Row(
+                ),
+                const Spacer(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _priceRow(size: 14.5),
+                ),
+                if (badges.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 5, 4, 0),
+                    child: badges.first,
+                  )
+                else if (!product.available)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+                    child: Text('غير متاح حاليًا', style: TextStyle(fontSize: 11.5, color: kMuted)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _listCard() {
+    final badges = _badges();
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: _softCard,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(14, 10, 10, 10),
+            child: Row(
+              // الاسم والسعر في نص ارتفاع الصورة: تناغم بين الكلام والصورة.
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        formatPrice(product.price),
-                        style: const TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.orangeDeep,
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          height: 1.35,
+                          color: Brand.ink,
                         ),
                       ),
-                      if (product.hasOffer) ...[
-                        const SizedBox(width: 8),
+                      if (product.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
                         Text(
-                          formatPrice(product.oldPrice),
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: kMuted,
-                            decoration: TextDecoration.lineThrough,
-                          ),
+                          product.description.trim(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12.5, height: 1.4, color: kMuted),
                         ),
+                      ],
+                      const SizedBox(height: 8),
+                      _priceRow(),
+                      if (badges.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 6, runSpacing: 4, children: badges),
+                      ],
+                      if (!product.available) ...[
+                        const SizedBox(height: 6),
+                        Text('غير متاح حاليًا', style: TextStyle(fontSize: 12, color: kMuted)),
                       ],
                     ],
                   ),
-                  if (discount > 0 || product.offerText.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        if (discount > 0) _badge('خصم $discount%', kDanger),
-                        if (product.offerText.isNotEmpty)
-                          _badge(product.offerText, Brand.goldDeep),
-                      ],
-                    ),
-                  ],
-                  if (!product.available) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'غير متاح حاليًا',
-                      style: TextStyle(fontSize: 12, color: kMuted),
-                    ),
-                  ],
-                ],
-              ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(width: 100, height: 100, child: _photo(radius: 16)),
+              ],
             ),
-            const SizedBox(width: 10),
-            SizedBox(
-              width: 100,
-              height: 100,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceAlt,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: AppColors.line),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(17),
-                        child: _image(),
-                      ),
-                    ),
-                  ),
-                  // «توضيحية» في الركن التاني عشان ما تتغطاش بزرار التعديل.
-                  if (product.imageUrl.trim().isEmpty && !repeatedIllustration)
-                    PositionedDirectional(
-                      top: 5,
-                      end: 5,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'توضيحية',
-                          style: TextStyle(fontSize: 9, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  PositionedDirectional(
-                    bottom: -6,
-                    end: -6,
-                    child: _addControl(),
-                  ),
-                  if (canEdit)
-                    PositionedDirectional(
-                      top: 4,
-                      start: 4,
-                      child: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Colors.black54,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: const Icon(
-                            Icons.edit,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          onPressed: onEdit,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
         ),
       ),
     );
