@@ -139,6 +139,16 @@ describe("admin notice helpers", () => {
   it("message text by kind", () => {
     expect(adminNoticeMessage("join_request", "store_owner").message.notification.body).toContain("صاحب محل");
     expect(adminNoticeMessage("delivery_issue", "").message.data.type).toBe("admin_inbox");
+    const issue = adminNoticeMessage("order_issue", "").message;
+    expect(issue.notification.title).toContain("مشكلة في طلب");
+    expect(issue.data).toEqual({ type: "admin_inbox", kind: "order_issue" });
+  });
+  it("order issue: only its fresh creator can trigger the notice", () => {
+    const now = Date.now();
+    const doc = { createdBy: "u1", createdAt: new Date(now) };
+    expect(adminNoticeBlocker("order_issue", "o1", doc, "u1", now)).toBeNull();
+    expect(adminNoticeBlocker("order_issue", "o1", doc, "u2", now)).toBe("forbidden");
+    expect(adminNoticeBlocker("order_issue", "o1", { createdBy: "u1", createdAt: new Date(now - 11 * 60_000) }, "u1", now)).toBe("stale");
   });
   it("blocker rejects not-pending join requests and missing docs", () => {
     expect(adminNoticeBlocker("join_request", "u1_courier", null, "u1")).toBe("not_found");

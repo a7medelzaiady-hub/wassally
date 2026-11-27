@@ -2707,3 +2707,44 @@ test('groups: العميل ما يقدرش يربط أو يغيّر مجموعة
   await assertFails(updateDoc(doc(db, 'orders/g1'), { groupCode: 'OTHER1' }));
   await assertFails(updateDoc(doc(as('owner1'), 'orders/g1'), { groupId: 'grp_ZZZZZZZZZZZZZZZZZZZZ' }));
 });
+
+// «عندي مشكلة في الطلب»
+const orderIssue = (over = {}) => ({
+  orderId: 'o1', customerId: 'cust1', storeId: store, storeName: 'S',
+  type: 'missing_item', note: 'ناقص كيس لبن', status: 'open',
+  createdBy: 'cust1', createdAt: serverTimestamp(), ...over,
+});
+
+test('order issues: صاحب الطلب بس يبلّغ مرة واحدة، والإدارة تقفل البلاغ', async () => {
+  // عميل تاني ما يقدرش يبلّغ عن طلب مش بتاعه، ولا ينتحل صاحب الطلب.
+  await assertFails(setDoc(doc(as('cust2'), 'order_issues/o1'), orderIssue({ customerId: 'cust2', createdBy: 'cust2' })));
+  await assertFails(setDoc(doc(as('cust2'), 'order_issues/o1'), orderIssue()));
+  // نوع غير معروف / ملاحظة طويلة / حالة غير open / محل مختلف / رقم مستند غير رقم الطلب.
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ type: 'refund_now' })));
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ note: 'x'.repeat(301) })));
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ status: 'resolved' })));
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ storeId: 'shop2' })));
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/other'), orderIssue({ orderId: 'other' })));
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ extra: true })));
+
+  await assertSucceeds(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue()));
+  // مرة واحدة: العميل ما يعدّلش ولا يكتب فوقه ولا يحذفه.
+  await assertFails(setDoc(doc(as('cust1'), 'order_issues/o1'), orderIssue({ note: 'تاني' })));
+  await assertFails(updateDoc(doc(as('cust1'), 'order_issues/o1'), { status: 'resolved' }));
+  await assertFails(deleteDoc(doc(as('cust1'), 'order_issues/o1')));
+
+  // القراية: صاحب البلاغ والإدارة بس.
+  await assertSucceeds(getDoc(doc(as('cust1'), 'order_issues/o1')));
+  await assertSucceeds(getDoc(doc(as('admin1'), 'order_issues/o1')));
+  await assertFails(getDoc(doc(as('cust2'), 'order_issues/o1')));
+  await assertFails(getDoc(doc(as('owner1'), 'order_issues/o1')));
+
+  // الإدارة تقفل البلاغ بقرار، ومن غير ما تغيّر بيانات العميل.
+  await assertFails(updateDoc(doc(as('admin1'), 'order_issues/o1'), {
+    status: 'resolved', adminDecision: 'x', updatedAt: serverTimestamp(), updatedBy: 'admin1', note: 'متغير',
+  }));
+  await assertSucceeds(updateDoc(doc(as('admin1'), 'order_issues/o1'), {
+    status: 'resolved', adminDecision: 'رجّعنا للعميل قيمة الصنف', updatedAt: serverTimestamp(), updatedBy: 'admin1',
+  }));
+  await assertFails(deleteDoc(doc(as('admin1'), 'order_issues/o1')));
+});

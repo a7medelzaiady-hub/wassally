@@ -17,6 +17,9 @@ class AdminNotify {
 
   static void deliveryIssue(String issueId) => unawaited(_send('delivery_issue', issueId));
 
+  /// العميل بلّغ «عندي مشكلة في الطلب» (رقم البلاغ = رقم الطلب).
+  static void orderIssue(String orderId) => unawaited(_send('order_issue', orderId));
+
   static Future<void> _send(String kind, String id) async {
     try {
       final user = FirebaseAuth.instance.currentUser;

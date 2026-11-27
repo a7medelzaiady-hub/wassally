@@ -8,9 +8,12 @@ class AdminInboxCounts {
   final int joinRequests;
   final int deliveryIssues;
 
-  const AdminInboxCounts({this.joinRequests = 0, this.deliveryIssues = 0});
+  /// بلاغات «عندي مشكلة في الطلب» المفتوحة.
+  final int orderIssues;
 
-  int get total => joinRequests + deliveryIssues;
+  const AdminInboxCounts({this.joinRequests = 0, this.deliveryIssues = 0, this.orderIssues = 0});
+
+  int get total => joinRequests + deliveryIssues + orderIssues;
 
   /// نص الشارة: لحد 9 بالرقم، وبعد كده 9+.
   static String badgeText(int n) => n > 9 ? '9+' : '$n';
@@ -21,6 +24,7 @@ class AdminInboxCounts {
     final parts = <String>[
       if (c.joinRequests > 0) '${c.joinRequests} طلب انضمام',
       if (c.deliveryIssues > 0) '${c.deliveryIssues} بلاغ تعذر تسليم',
+      if (c.orderIssues > 0) '${c.orderIssues} مشكلة في طلب',
     ];
     return 'محتاج مراجعتك: ${parts.join(' و')}.';
   }
@@ -54,10 +58,12 @@ class AdminInboxCounts {
       final r = await Future.wait([
         db.collection('role_requests').where('status', isEqualTo: 'pending').count().get(),
         db.collection('delivery_issues').where('status', whereIn: openIssueStatuses).count().get(),
+        db.collection('order_issues').where('status', isEqualTo: 'open').count().get(),
       ]);
       return AdminInboxCounts(
         joinRequests: r[0].count ?? 0,
         deliveryIssues: r[1].count ?? 0,
+        orderIssues: r[2].count ?? 0,
       );
     } catch (e) {
       // الأعداد مساعدة بس؛ فشلها ما يوقفش الشاشة. نسمح بإعادة المحاولة بعد كده.

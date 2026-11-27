@@ -24,6 +24,7 @@ import '../widgets/star_picker.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/order_receipt_sheet.dart';
 import '../widgets/store_wait_banner.dart';
+import '../widgets/order_issue_sheet.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -612,6 +613,8 @@ class _Details extends StatelessWidget {
             ],
           ),
         ),
+        // «عندي مشكلة في الطلب»: بلاغ واحد مسجل لصندوق الإدارة (من غير قراءات للعميل).
+        OrderIssueButton(order: order),
         if (order.customerConfirmedAt != null &&
             order.deliveryMode == 'external' &&
             order.status == OrderStatus.onTheWay) ...[

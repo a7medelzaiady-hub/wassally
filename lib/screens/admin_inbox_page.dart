@@ -9,6 +9,7 @@ import '../services/customer_rating_service.dart';
 import '../services/driver_service.dart';
 import '../services/role_request_service.dart';
 import '../services/staff_order_service.dart';
+import '../services/order_issue_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/dialogs.dart';
@@ -54,7 +55,7 @@ class AdminInboxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('الطلبات والرسائل'),
@@ -63,7 +64,7 @@ class AdminInboxPage extends StatelessWidget {
             isScrollable: false,
             labelPadding: const EdgeInsets.symmetric(horizontal: 2),
             labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-            // Show all four tabs without off-screen navigation.
+            // Show all five tabs without off-screen navigation.
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: AppColors.orange,
@@ -73,6 +74,7 @@ class AdminInboxPage extends StatelessWidget {
               const Tab(text: 'مناديب'),
               const Tab(text: 'تقييمات'),
               Tab(child: _CountLabel('التسليم', (c) => c.deliveryIssues)),
+              Tab(child: _CountLabel('مشاكل', (c) => c.orderIssues)),
             ],
           ),
         ),
@@ -82,6 +84,7 @@ class AdminInboxPage extends StatelessWidget {
             _ApplicantsTab(),
             _CustomerRatingsTab(),
             _DeliveryIssuesTab(),
+            _OrderIssuesTab(),
           ],
         ),
       ),
@@ -1384,6 +1387,213 @@ class _DeliveryIssueCardState extends State<_DeliveryIssueCard> {
             padding: EdgeInsets.only(top: 8),
             child: LinearProgressIndicator(),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// بلاغات «عندي مشكلة في الطلب» من العملاء. تحميل مرة واحدة (من غير مستمع)
+/// والسحب لتحت بيحدّث: آخر 50 بلاغ.
+class _OrderIssuesTab extends StatefulWidget {
+  const _OrderIssuesTab();
+
+  @override
+  State<_OrderIssuesTab> createState() => _OrderIssuesTabState();
+}
+
+class _OrderIssuesTabState extends State<_OrderIssuesTab> {
+  late Future<QuerySnapshot<Map<String, dynamic>>> _future = _fetch();
+
+  Future<QuerySnapshot<Map<String, dynamic>>> _fetch() => FirebaseFirestore.instance
+      .collection('order_issues')
+      .orderBy('createdAt', descending: true)
+      .limit(50)
+      .get();
+
+  Future<void> _refresh() async {
+    final next = _fetch();
+    setState(() => _future = next);
+    await next;
+    AdminInboxCounts.load(force: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return EmptyState(
+            icon: Icons.lock_outline,
+            title: 'تعذر تحميل مشاكل الطلبات',
+            message: _errText(snap.error),
+            actionLabel: 'إعادة المحاولة',
+            onAction: _refresh,
+          );
+        }
+        if (!snap.hasData) {
+          return Center(child: CircularProgressIndicator(color: kPrimary));
+        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(children: const [
+              SizedBox(height: 80),
+              EmptyState(
+                icon: Icons.sentiment_satisfied_alt_outlined,
+                title: 'مفيش مشاكل في الطلبات',
+                message: 'لما عميل يدوس «عندي مشكلة في الطلب» البلاغ هيظهر هنا.',
+              ),
+            ]),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: docs.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _OrderIssueCard(
+              key: ValueKey(docs[i].id),
+              doc: docs[i],
+              onChanged: _refresh,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OrderIssueCard extends StatefulWidget {
+  final _Doc doc;
+  final Future<void> Function() onChanged;
+  const _OrderIssueCard({super.key, required this.doc, required this.onChanged});
+
+  @override
+  State<_OrderIssueCard> createState() => _OrderIssueCardState();
+}
+
+class _OrderIssueCardState extends State<_OrderIssueCard> {
+  bool _busy = false;
+  bool _expanded = false;
+  Future<DocumentSnapshot<Map<String, dynamic>>>? _orderInfo;
+
+  void _expand(bool expanded) {
+    setState(() {
+      _expanded = expanded;
+      if (expanded && _orderInfo == null) {
+        // قراءة واحدة لما المدير يفتح البلاغ بس.
+        _orderInfo = FirebaseFirestore.instance.collection('orders').doc(widget.doc.id).get();
+      }
+    });
+  }
+
+  Future<void> _resolve() async {
+    final controller = TextEditingController();
+    final decision = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('قفل البلاغ'),
+        content: TextField(
+          controller: controller,
+          maxLength: OrderIssueService.maxNote,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'اتعمل إيه؟ مثلًا: كلمنا العميل ورجّعنا قيمة الصنف',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('اتحلت'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (decision == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await OrderIssueService.resolve(widget.doc.id, decision);
+      await widget.onChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(appSnack('تعذر قفل البلاغ: $e'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.doc.data();
+    final open = (data['status'] ?? 'open') == 'open';
+    final type = OrderIssueType.parse(data['type'])?.label ?? 'مشكلة';
+    final store = (data['storeName'] ?? '').toString();
+    final note = (data['note'] ?? '').toString();
+    final decision = (data['adminDecision'] ?? '').toString();
+    final date = _date(data['createdAt']);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: open ? AppColors.danger.withValues(alpha: 0.35) : kLine),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        childrenPadding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+        onExpansionChanged: _expand,
+        leading: Icon(
+          open ? Icons.report_gmailerrorred_outlined : Icons.check_circle_outline,
+          color: open ? AppColors.danger : AppColors.success,
+        ),
+        title: Text(
+          '$type${store.isEmpty ? '' : ' • $store'}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${open ? 'مفتوح' : 'اتحل'}${date.isEmpty ? '' : ' • $date'}',
+          style: TextStyle(color: kMuted, fontSize: 12),
+        ),
+        children: [
+          if (_expanded)
+            _OrderParticipants(
+              order: _orderInfo,
+              orderId: widget.doc.id,
+              customerId: (data['customerId'] ?? '').toString(),
+            ),
+          if (note.isNotEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text('كلام العميل: $note'),
+            ),
+          if (!open && decision.isNotEmpty)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text('اللي اتعمل: $decision',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          if (open)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FilledButton.tonal(
+                onPressed: _busy ? null : _resolve,
+                child: const Text('اتحلت'),
+              ),
+            ),
+          if (_busy) const LinearProgressIndicator(),
         ],
       ),
     );
