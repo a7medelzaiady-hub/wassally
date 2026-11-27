@@ -14,9 +14,11 @@ class QuickContact {
   final String pickupAddress;
   final String notes;
   final String voiceUrl;
+  final List<String> images;
   const QuickContact({
     this.name = '', this.phone = '', this.address = '',
     this.pickupAddress = '', this.notes = '', this.voiceUrl = '',
+    this.images = const [],
   });
 }
 
@@ -108,6 +110,10 @@ class FirebaseQuickCourierBackend implements QuickCourierBackend {
       pickupAddress: s(d['pickupAddress']),
       notes: s(d['courierNotes']),
       voiceUrl: s(d['customerVoiceUrl']),
+      images: d['customerImages'] is List
+          ? [for (final url in d['customerImages'] as List)
+              if (url is String && url.startsWith('https://')) url]
+          : const [],
     );
   }
 
