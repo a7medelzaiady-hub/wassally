@@ -13,7 +13,11 @@ import '../widgets/app_snack.dart';
 /// القواعد (firestore.rules) هي اللي بتمنع التعديل لو الحالة اتغيّرت.
 class EditOrderPage extends StatefulWidget {
   final AppOrder order;
-  const EditOrderPage({super.key, required this.order});
+
+  /// البدائل اللي العميل وافق عليها: {اسم الصنف الناقص: البديل}.
+  final Map<String, OrderSubstitute> acceptedSubstitutes;
+
+  const EditOrderPage({super.key, required this.order, this.acceptedSubstitutes = const {}});
 
   @override
   State<EditOrderPage> createState() => _EditOrderPageState();
@@ -39,10 +43,11 @@ class _EditOrderPageState extends State<EditOrderPage> {
     text: widget.order.courierNotes,
   );
   // الأصناف اللي المحل علّمها «غير متاحة» بتبدأ بكمية صفر (العميل يقدر يرجّعها لو حب).
-  late final List<OrderLine> _lines = [
-    for (final l in widget.order.items)
-      widget.order.unavailableItems.contains(l.name) ? l.withQty(0) : l,
-  ];
+  // والبدائل اللي العميل وافق عليها بتتضاف بنفس كمية الصنف الناقص.
+  late final List<OrderLine> _lines = linesWithSubstitutes(
+    widget.order,
+    widget.acceptedSubstitutes,
+  );
   bool _saving = false;
 
   @override
@@ -298,4 +303,35 @@ class _EditOrderPageState extends State<EditOrderPage> {
       ),
     );
   }
+}
+
+/// أصناف الطلب بعد رد العميل على الأصناف الناقصة:
+/// - الصنف الناقص كميته صفر (العميل يقدر يرجّعه لو حب).
+/// - البديل المقبول بيتضاف بنفس الكمية، ولو هو أصلًا في الطلب (نفس الصنف من غير
+///   إضافات) الكمية بتزيد على نفس السطر (الـWorker بيرفض تكرار نفس الصنف).
+/// السعر هنا للعرض؛ الـWorker بيحسبه من الكتالوج وبيرفض لو اتغير.
+List<OrderLine> linesWithSubstitutes(
+  AppOrder order,
+  Map<String, OrderSubstitute> accepted,
+) {
+  final lines = <OrderLine>[
+    for (final l in order.items)
+      order.unavailableItems.contains(l.name) ? l.withQty(0) : l,
+  ];
+  for (final missing in order.items) {
+    if (!order.unavailableItems.contains(missing.name)) continue;
+    final sub = accepted[missing.name];
+    if (sub == null) continue;
+    final existing = lines.indexWhere(
+      (l) => l.productId == sub.productId && l.options.isEmpty,
+    );
+    if (existing >= 0) {
+      final l = lines[existing];
+      final qty = (l.qty + missing.qty).clamp(1, kMaxLineQty).toInt();
+      lines[existing] = l.withQty(qty);
+    } else {
+      lines.add(OrderLine(sub.name, sub.price, missing.qty, sub.productId));
+    }
+  }
+  return lines;
 }

@@ -1836,6 +1836,7 @@ async function updateOrder(request: Request, env: Env, orderId: string): Promise
     customerName,
   });
   delete updatedOrder.unavailableItems;
+  delete updatedOrder.substitutions;
   // An approval applies to the previous cart and must be renewed after editing.
   delete updatedOrder.verifiedTotal;
   delete updatedOrder.verifiedAt;

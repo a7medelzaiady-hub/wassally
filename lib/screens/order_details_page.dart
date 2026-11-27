@@ -26,6 +26,7 @@ import '../widgets/order_receipt_sheet.dart';
 import '../widgets/store_wait_banner.dart';
 import '../widgets/order_issue_sheet.dart';
 import '../widgets/delivery_eta_line.dart';
+import '../widgets/substitution_offers.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -665,6 +666,19 @@ class _Details extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 8),
+          if (order.hasUnavailableItems &&
+              order.status == OrderStatus.newOrder &&
+              SubstitutionOffers.offersFor(order).isNotEmpty)
+            // المحل اقترح بدائل: العميل يختار يوافق على أنهي واحد وبعدين يكمّل.
+            SubstitutionOffers(
+              order: order,
+              onContinue: (accepted) => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => EditOrderPage(order: order, acceptedSubstitutes: accepted),
+                ),
+              ),
+            )
+          else
           FilledButton.icon(
             style: FilledButton.styleFrom(minimumSize: const Size(0, 46)),
             onPressed: onEdit,

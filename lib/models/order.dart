@@ -110,6 +110,35 @@ class OrderLine {
   double get total => price * qty;
 }
 
+/// بديل لصنف ناقص اقترحه المحل.
+class OrderSubstitute {
+  final String productId;
+  final String name;
+  final double price;
+  const OrderSubstitute({required this.productId, required this.name, required this.price});
+
+  Map<String, dynamic> toMap() => {'productId': productId, 'name': name, 'price': price};
+
+  static OrderSubstitute? parse(Object? v) {
+    if (v is! Map) return null;
+    final id = (v['productId'] ?? '').toString().trim();
+    final name = (v['name'] ?? '').toString().trim();
+    final price = v['price'];
+    if (id.isEmpty || name.isEmpty || price is! num || price <= 0) return null;
+    return OrderSubstitute(productId: id, name: name, price: price.toDouble());
+  }
+
+  static Map<String, OrderSubstitute> parseAll(Object? v) {
+    if (v is! Map) return const {};
+    final out = <String, OrderSubstitute>{};
+    v.forEach((key, value) {
+      final s = parse(value);
+      if (s != null && key.toString().isNotEmpty) out[key.toString()] = s;
+    });
+    return out;
+  }
+}
+
 class AppOrder {
   final String id;
   final String storeName;
@@ -189,6 +218,10 @@ class AppOrder {
   /// (يكمّل من غيرها أو يلغي) قبل ما المحل يبدأ التجهيز.
   final List<String> unavailableItems;
 
+  /// بدائل اقترحها المحل للأصناف الناقصة: {اسم الصنف الناقص: البديل}.
+  /// السعر للعرض بس؛ السعر الحقيقي بيتحسب من الكتالوج لما العميل يوافق ويعدّل الطلب.
+  final Map<String, OrderSubstitute> substitutions;
+
   /// طلب العميل الخاص ومرفقاته داخل نفس مستند الطلب.
   final Map<String, dynamic>? specialRequest;
 
@@ -239,6 +272,7 @@ class AppOrder {
     this.ready = false,
     this.readyAt,
     this.unavailableItems = const [],
+    this.substitutions = const {},
     this.specialRequest,
   });
 
@@ -300,6 +334,7 @@ class AppOrder {
       ready: ready,
       readyAt: readyAt,
       unavailableItems: unavailableItems,
+      substitutions: substitutions,
       specialRequest: specialRequest,
     );
   }
@@ -403,6 +438,7 @@ class AppOrder {
         for (final n in (m['unavailableItems'] as List?) ?? const [])
           if (n != null && n.toString().isNotEmpty) n.toString(),
       ],
+      substitutions: OrderSubstitute.parseAll(m['substitutions']),
       specialRequest: m['specialRequest'] is Map
           ? Map<String, dynamic>.from(m['specialRequest'] as Map)
           : null,
