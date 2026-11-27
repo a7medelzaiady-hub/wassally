@@ -7,6 +7,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('battery guide appears only once per courier account, without Firestore', () async {
+    expect(await CourierBatteryGuidePolicy.shouldShowOnce(''), isFalse);
     expect(await CourierBatteryGuidePolicy.shouldShowOnce('courier_a'), isTrue);
     expect(await CourierBatteryGuidePolicy.shouldShowOnce('courier_a'), isFalse);
     expect(await CourierBatteryGuidePolicy.shouldShowOnce('courier_b'), isTrue);
