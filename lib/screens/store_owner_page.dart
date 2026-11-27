@@ -2417,22 +2417,43 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(children: [
-                Expanded(child: OutlinedButton.icon(
-                  key: const Key('owner-product-templates'),
-                  onPressed: _addFromTemplates,
-                  icon: const Icon(Icons.auto_awesome_outlined),
-                  label: const Text('أصناف جاهزة'),
-                )),
-                const SizedBox(width: 8),
-                Expanded(child: OutlinedButton.icon(
-                  key: const Key('owner-bulk-prices'),
-                  onPressed: _changePricesTogether,
-                  icon: const Icon(Icons.price_change_outlined),
-                  label: const Text('تعديل أسعار مجموعة'),
-                )),
-              ]),
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _OwnerCatalogAction(
+                      key: const Key('owner-product-add'),
+                      label: 'إضافة صنف',
+                      icon: Icons.add_circle_outline_rounded,
+                      background: const Color(0xFFF57900),
+                      foreground: Colors.white,
+                      onTap: () => _edit(null),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _OwnerCatalogAction(
+                      key: const Key('owner-product-templates'),
+                      label: 'أصناف جاهزة',
+                      icon: Icons.auto_awesome_rounded,
+                      background: const Color(0xFFF0E4FA),
+                      foreground: const Color(0xFF64149E),
+                      onTap: _addFromTemplates,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _OwnerCatalogAction(
+                      key: const Key('owner-bulk-prices'),
+                      label: 'تعديل أسعار مجموعة',
+                      icon: Icons.price_change_outlined,
+                      background: const Color(0xFF6E18B4),
+                      foreground: Colors.white,
+                      onTap: _changePricesTogether,
+                    ),
+                  ),
+                ],
+              ),
             ),
             Expanded(child: body),
           ],
@@ -2447,6 +2468,61 @@ class _OwnerProductsTabState extends State<_OwnerProductsTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Compact catalog actions; all callbacks reuse the existing workflows.
+class _OwnerCatalogAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  final VoidCallback onTap;
+
+  const _OwnerCatalogAction({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.background,
+    required this.foreground,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 84),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: foreground, size: 25),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                    height: 1.15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
