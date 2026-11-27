@@ -156,7 +156,8 @@ class _QuickOrderTile extends StatelessWidget {
                   color: AppColors.orangeSoft,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: const Icon(Icons.bolt_rounded, color: AppColors.orange),
+                child: Icon(data['kind'] == 'errand' ? Icons.delivery_dining_outlined
+                     : Icons.bolt_rounded, color: AppColors.orange),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -164,8 +165,9 @@ class _QuickOrderTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Expanded(
-                        child: Text('طلب سريع', style: TextStyle(
+                      Expanded(
+                        child: Text(data['kind'] == 'errand' ? 'مشوارك علينا' : 'طلب سريع',
+                          style: const TextStyle(
                           fontSize: AppTypography.body,
                           fontWeight: FontWeight.w800,
                           color: AppColors.ink,
