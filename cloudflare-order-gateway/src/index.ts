@@ -3431,7 +3431,7 @@ async function notifyOrderEvent(request: Request, env: Env, ctx?: ExecutionConte
     }
     const missing = Array.isArray(order.unavailableItems) ? order.unavailableItems : [];
     if (order.status !== "new" || missing.length === 0 ||
-        !recentOrderEvent(orderDoc.updateTime)) return { orderId, processed: false };
+        !recentOrderEvent(new Date(orderDoc.updateTime ?? ""))) return { orderId, processed: false };
     key = `unavailable_${Date.parse(orderDoc.updateTime ?? "")}`;
     customerTitle = "تنبيه مهم: المحل محتاج ردّك على الطلب";
   } else if (event === "status") {
