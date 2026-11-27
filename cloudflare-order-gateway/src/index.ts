@@ -3685,7 +3685,7 @@ async function createQuickOrder(request: Request, env: Env): Promise<Response> {
     },
     {
       update: { name: docName(env, `${orderPath}/private/contact`), fields: encodeFields({
-         ...contact, ...(kind === "errand" ? { pickupAddress } : {}), customerVoiceUrl,
+         ...contact, ...(kind === "errand" ? { pickupAddress, customerImages } : {}), customerVoiceUrl,
        }) },
       currentDocument: { exists: false },
     },
@@ -3919,11 +3919,11 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   }
 
   const patch = quickDeliveredPatch(order, uid, new Date());
-  // الصور في الطلب العام؛ الصوت في private/contact فقط. حذف المراجع يتم مع التسليم.
-  const images = quickCustomerImages(order);
+  // المشاوير: صور الطرد والعناوين في private/contact فقط.
   const voicePath = `${orderPath}/private/contact`;
   const voiceDoc = await getDocument(env, voicePath, token);
   const contact = voiceDoc ? decodeFields(voiceDoc.fields ?? {}) : {};
+  const images = order.kind === "errand" ? quickCustomerImages(contact) : quickCustomerImages(order);
   const voice = quickCustomerVoice(contact);
   const pendingVoices = [
     ...new Set([
@@ -3943,8 +3943,8 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
   for (const url of pendingVoices) {
     if (!await destroyQuickVoice(env, url, voiceFolder)) failedVoices.push(url);
   }
-  if (undeleted.length) {
-    // تفضل محفوظة للتنظيف لاحقًا (وحذف الحساب بيمسح المجلد كله).
+  if (undeleted.length && order.kind !== "errand") {
+    // طلبات المشتريات تستخدم حقل التنظيف القديم.
     patch.customerImagesPendingCleanup = undeleted;
   }
   const writes: unknown[] = [{
@@ -3957,6 +3957,10 @@ async function deliverQuickWithPin(request: Request, env: Env, orderId: string, 
       customerVoiceUrl: "",
       customerVoicePendingCleanup: "",
       customerVoicesPendingCleanup: failedVoices,
+      ...(order.kind === "errand" ? {
+        customerImages: [],
+        customerImagesPendingCleanup: undeleted,
+      } : {}),
     };
     writes.push({
       update: { name: voiceDoc.name, fields: encodeFields(voicePatch) },
