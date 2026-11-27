@@ -109,7 +109,7 @@ class ImageService {
         if (extension == null) {
           throw StateError('صيغة الصورة غير مدعومة. جرّب صورة تانية.');
         }
-        return _upload(
+        return await _upload(
           bytes: bytes,
           filename: 'stock_photo.$extension',
           folder: folder,
