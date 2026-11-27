@@ -16,6 +16,7 @@ import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/checkout_invoice.dart';
 import '../widgets/delivery_eta_line.dart';
 
 /// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
@@ -439,25 +440,25 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 14),
                   Text(
                     'طريقة الدفع',
                     style: text.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: kPrimarySoft,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: kPrimary, width: 1.5),
                     ),
                     child: Row(
                       children: [
                         Icon(Icons.payments_outlined, color: kPrimary),
-                        SizedBox(width: 12),
+                        SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             'الدفع عند الاستلام',
@@ -468,47 +469,49 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
+                  // تنبيه مختصر في سطر واحد بدل الفقرة الطويلة.
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    key: const Key('checkout-edit-notice'),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
                       color: kPrimarySoft,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: kPrimary.withValues(alpha: 0.35)),
                     ),
                     child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.info_outline, size: 20),
-                        SizedBox(width: 8),
+                        Icon(Icons.info_outline, size: 18),
+                        SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'معلومة مهمة: تقدر تعدّل المنتجات أو الكميات أو بيانات التوصيل بعد إرسال الطلب، من صفحة «طلباتي»، طالما المندوب لسه ما استلمش الطلب. بمجرد استلامه، مش هتقدر تعدّله.',
-                            style: TextStyle(height: 1.45, fontSize: 13),
+                            'تقدر تعدّل طلبك من «طلباتي» لحد ما المندوب يستلمه.',
+                            style: TextStyle(height: 1.35, fontSize: 12.5),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
                   Text(
                     'ملخص الطلب',
                     style: text.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  // ملخص الطلب كفاتورة بنفس أسلوب الإيصال الحراري.
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
+                      color: const Color(0xFFFFFEFA),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: kLine),
                     ),
                     child: ListenableBuilder(
                       listenable: cart,
                       builder: (context, _) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
                             cart.storeName ?? '',
@@ -517,52 +520,52 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             ),
                           ),
                           if ((cart.storeId ?? '').isNotEmpty) ...[
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             CheckoutEtaLine(storeId: cart.storeId!),
                           ],
-                          const SizedBox(height: 10),
-                          for (final e in cart.items.entries)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text('${e.value} × ${e.key.name}'),
-                                  ),
-                                  Text(formatPrice(e.key.price * e.value)),
-                                ],
-                              ),
-                            ),
-                          const Divider(height: 22),
-                          _line('المجموع', formatPrice(cart.subtotal)),
-                          const SizedBox(height: 4),
-                          _line(
-                            'رسوم التوصيل',
-                            formatPrice(cart.fee),
+                          const SizedBox(height: 8),
+                          CheckoutInvoiceTable(
+                            items: [
+                              for (final e in cart.items.entries)
+                                CheckoutInvoiceItem(
+                                  e.key.name,
+                                  e.value,
+                                  e.key.price * e.value,
+                                ),
+                            ],
                           ),
-                          if (cart.serviceFee > 0) ...[
-                            const SizedBox(height: 4),
+                          const CheckoutDashes(),
+                          _line('المجموع', formatPrice(cart.subtotal)),
+                          _line('رسوم التوصيل', formatPrice(cart.fee)),
+                          if (cart.serviceFee > 0)
                             _line('رسوم الخدمة', formatPrice(cart.serviceFee)),
-                          ],
-                          if (cart.discount > 0) ...[
-                            const SizedBox(height: 4),
+                          if (cart.discount > 0)
                             _line(
                               'خصم (${cart.promoCode})',
                               '- ${formatPrice(cart.discount)}',
                             ),
-                          ],
-                          const SizedBox(height: 8),
-                          if (OrderGateway.referralCampaignEnabled &&
-                              OrderGateway.serverOrdersEnabled)
-                            TextButton(
-                              onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
-                              child: Text(_referralPoints > 0
-                                  ? 'إلغاء استخدام النقاط'
-                                  : 'استخدم نقاط الدعوات'),
-                            ),
                           if (_referralPoints > 0)
                             _line('خصم $_referralPoints نقطة',
                                 '- ${formatPrice(_referralDiscountMinor / 100)}'),
+                          if (OrderGateway.referralCampaignEnabled &&
+                              OrderGateway.serverOrdersEnabled)
+                            Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  minimumSize: const Size(0, 30),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
+                                icon: const Icon(Icons.card_giftcard_outlined, size: 18),
+                                label: Text(_referralPoints > 0
+                                    ? 'إلغاء استخدام النقاط'
+                                    : 'استخدم نقاط الدعوات'),
+                              ),
+                            ),
+                          const CheckoutDashes(),
                           _line(
                             'الإجمالي',
                             formatPrice(cart.total - _referralDiscountMinor / 100),
@@ -605,14 +608,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Widget _line(String label, String value, {bool strong = false}) {
     final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
-        : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(value, style: style),
-      ],
+        ? const TextStyle(fontWeight: FontWeight.w900, fontSize: 16.5)
+        : TextStyle(color: kMuted, fontWeight: FontWeight.w600, fontSize: 13.5);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: style),
+          Text(value, style: style),
+        ],
+      ),
     );
   }
 }
