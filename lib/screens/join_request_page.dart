@@ -8,6 +8,7 @@ import '../services/role_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/app_notice.dart';
 
 /// نموذج الانضمام كصاحب محل أو مندوب.
 class JoinRequestPage extends StatefulWidget {
@@ -132,8 +133,9 @@ class _JoinRequestPageState extends State<JoinRequestPage> {
       roleInfoOverride.value = refreshedRole;
       if (!mounted) return;
       nav.pop();
-      messenger.showSnackBar(
-        appSnack('اتبعت طلبك. هنراجعه ونرد عليك.'),
+      showAppNotice(
+        title: 'اتبعت طلبك',
+        message: 'هنراجعه ونرد عليك في أقرب وقت.',
       );
     } catch (_) {
       if (!mounted) return;

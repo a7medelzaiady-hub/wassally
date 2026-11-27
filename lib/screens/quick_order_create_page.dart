@@ -21,6 +21,7 @@ import '../widgets/quick_order_promo.dart' show kQuickPhotoOrdersEnabled;
 import '../services/image_service.dart';
 import 'package:image_picker/image_picker.dart' show ImageSource;
 import '../widgets/app_snack.dart';
+import '../widgets/app_notice.dart';
 
 /// طريقة إرسال الطلب السريع.
 /// [callMe] = «كلّمني»: العميل مش هيكتب حاجة، المندوب يتصل بيه وياخد الطلب.
@@ -361,7 +362,12 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         await prefs.setString(_lastAreaKey, _area.text.trim());
       } catch (_) {}
       if (!mounted) return;
-      _say(_callMe ? 'تم إرسال طلبك. المندوب هيكلمك على رقمك قريب' : 'تم إرسال طلبك السريع');
+      showAppNotice(
+        title: _callMe ? 'تم إرسال طلبك' : 'تم إرسال طلبك السريع',
+        message: _callMe
+            ? 'المندوب هيكلمك على رقمك قريب عشان ياخد منك الطلب.'
+            : 'تقدر تتابع طلبك من هنا، والمندوب هيتواصل معاك أول ما يقبله.',
+      );
       Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
       ));

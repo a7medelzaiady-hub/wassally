@@ -5,9 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'notification_service.dart';
 import 'read_meter.dart';
-import '../widgets/app_snack.dart';
+import '../widgets/app_notice.dart';
 
 /// تنبيهات لحظية للمندوب من غير Cloud Functions (شغّالة على الخطة المجانية).
 ///
@@ -153,19 +152,14 @@ class LiveAlerts {
   // ───────────────────────── العرض ─────────────────────────
 
   static void _notify(String title, String body) {
-    final messenger = NotificationService.messengerKey.currentState;
-    if (messenger == null) return;
     final preview = body.length > 90 ? '${body.substring(0, 90)}…' : body;
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        appSnack(
-          preview.isEmpty ? title : preview,
-          title: preview.isEmpty ? null : title,
-          kind: AppSnackKind.info,
-          duration: const Duration(seconds: 8),
-        ),
-      );
+    // إشعار في نص الشاشة بيقفل لوحده بعد شوية، أو بلمسة برّه.
+    showAppNotice(
+      title: title,
+      message: preview,
+      kind: AppNoticeKind.info,
+      autoClose: const Duration(seconds: 7),
+    );
     _beep();
   }
 

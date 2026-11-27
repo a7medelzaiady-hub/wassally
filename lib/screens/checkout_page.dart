@@ -15,7 +15,9 @@ import '../theme/app_theme.dart';
 import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
+import '../widgets/app_notice.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/checkout_invoice.dart';
 import '../widgets/delivery_eta_line.dart';
 
 /// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
@@ -253,16 +255,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
       if (!mounted) return;
       openCustomerTab(context, 2); // طلباتي
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!messenger.mounted) return;
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          appSnack(
-            kDeliveryPinKeepNotice,
-            title: 'تم إرسال طلبك بنجاح',
-            kind: AppSnackKind.success,
-            duration: const Duration(seconds: 12),
-            showClose: true,
-          ),
+        if (messenger.mounted) messenger.hideCurrentSnackBar();
+        showAppNotice(
+          title: 'تم إرسال طلبك بنجاح',
+          message: kDeliveryPinKeepNotice,
         );
       });
     } on OrderLimitException catch (e) {
@@ -294,9 +290,35 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  /// حقول مضغوطة: نفس شكل التطبيق بس أقصر، والأيقونة أصغر.
+  InputDecoration _dense(String label, IconData icon, {String? hint}) => InputDecoration(
+        labelText: label,
+        hintText: hint,
+        hintStyle: TextStyle(color: kMuted, fontSize: 12),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
+        prefixIcon: Icon(icon, size: 20),
+        prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+      );
+
+  Widget _section(String title, {Widget? trailing}) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5),
+              ),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
+    const gap = SizedBox(height: 10);
 
     return Scaffold(
       body: Column(
@@ -306,67 +328,63 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: Form(
               key: _form,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
                 children: [
-                  Text(
-                    'بيانات التوصيل',
-                    style: text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                  _section('بيانات التوصيل'),
+                  // الاسم والموبايل جنب بعض بدل سطرين.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: TextFormField(
+                          controller: _name,
+                          inputFormatters: [LengthLimitingTextInputFormatter(80)],
+                          textInputAction: TextInputAction.next,
+                          decoration: _dense('الاسم', Icons.person_outline),
+                          validator: (v) =>
+                              (v == null || v.trim().length < 2) ? 'اكتب اسمك' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 6,
+                        child: TextFormField(
+                          controller: _phone,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          textDirection: TextDirection.ltr,
+                          decoration: _dense('رقم الموبايل', Icons.phone_outlined, hint: '01012345678'),
+                          validator: (v) => isValidEgyptianMobile(v ?? '')
+                              ? null
+                              : 'رقم مصري صحيح (11 رقم)',
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _name,
-                    inputFormatters: [LengthLimitingTextInputFormatter(80)],
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'الاسم',
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                    validator: (v) =>
-                        (v == null || v.trim().length < 2) ? 'اكتب اسمك' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _phone,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    textDirection: TextDirection.ltr,
-                    decoration: const InputDecoration(
-                      labelText: 'رقم الموبايل',
-                      hintText: '01012345678',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                    validator: (v) => isValidEgyptianMobile(v ?? '')
-                        ? null
-                        : 'اكتب رقم موبايل مصري صحيح (11 رقم)',
-                  ),
-                  const SizedBox(height: 12),
+                  gap,
                   TextFormField(
                     controller: _address,
                     focusNode: _addressFocus,
                     inputFormatters: [LengthLimitingTextInputFormatter(300)],
-                    minLines: 2,
+                    minLines: 1,
                     maxLines: 3,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'العنوان بالتفصيل',
-                      hintText: 'المنطقة، الشارع، رقم العمارة والدور',
-                      prefixIcon: Icon(Icons.location_on_outlined),
+                    decoration: _dense(
+                      'العنوان بالتفصيل',
+                      Icons.location_on_outlined,
+                      hint: 'المنطقة، الشارع، رقم العمارة والدور',
                     ),
                     validator: (v) => (v == null || v.trim().length < 8)
                         ? 'اكتب العنوان بالتفصيل عشان المندوب يوصلك'
                         : null,
                   ),
                   if (_areas.isNotEmpty) ...[
-                    const SizedBox(height: 12),
+                    gap,
                     DropdownButtonFormField<String>(
                       initialValue: cart.area.isEmpty ? null : cart.area,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'منطقة التوصيل',
-                        prefixIcon: Icon(Icons.map_outlined),
-                      ),
+                      decoration: _dense('منطقة التوصيل', Icons.map_outlined),
                       items: [
                         for (final a in _areas)
                           DropdownMenuItem(
@@ -382,33 +400,51 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           v == null ? 'اختار منطقة التوصيل' : null,
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _notes,
-                    inputFormatters: [LengthLimitingTextInputFormatter(500)],
-                    minLines: 1,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'ملاحظات للمحل (اختياري)',
-                      helperText: 'المحل بيشوفها، فمتكتبش رقمك أو عنوانك هنا',
-                      prefixIcon: Icon(Icons.edit_note),
+                  gap,
+                  // الملاحظتين جنب بعض، والتنبيه جوه الخانة بدل سطر تحتها.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          key: const Key('checkout-store-notes'),
+                          controller: _notes,
+                          inputFormatters: [LengthLimitingTextInputFormatter(500)],
+                          minLines: 1,
+                          maxLines: 3,
+                          decoration: _dense(
+                            'ملاحظة للمحل',
+                            Icons.edit_note,
+                            hint: 'من غير رقمك أو عنوانك',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextFormField(
+                          key: const Key('checkout-courier-notes'),
+                          controller: _courierNotes,
+                          inputFormatters: [LengthLimitingTextInputFormatter(300)],
+                          minLines: 1,
+                          maxLines: 3,
+                          decoration: _dense(
+                            'ملاحظة للمندوب',
+                            Icons.two_wheeler_outlined,
+                            hint: 'الدور، علامة مميزة',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, right: 4),
+                    child: Text(
+                      'الملاحظات اختيارية: المحل بيشوف ملاحظته بس، والمندوب ملاحظته بس.',
+                      style: TextStyle(color: kMuted, fontSize: 11.5),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _courierNotes,
-                    inputFormatters: [LengthLimitingTextInputFormatter(300)],
-                    minLines: 1,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'ملاحظات للمندوب (اختياري)',
-                      helperText:
-                          'الدور، علامة مميزة... المندوب بس هو اللي بيشوفها',
-                      prefixIcon: Icon(Icons.two_wheeler_outlined),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
                   if (kPromoCodesEnabled) ...[
+                    gap,
                     Row(
                       children: [
                         Expanded(
@@ -416,10 +452,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             controller: _promo,
                             textDirection: TextDirection.ltr,
                             textCapitalization: TextCapitalization.characters,
-                            decoration: const InputDecoration(
-                              labelText: 'كود خصم (اختياري)',
-                              prefixIcon: Icon(Icons.local_offer_outlined),
-                            ),
+                            decoration: _dense('كود خصم (اختياري)', Icons.local_offer_outlined),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -439,137 +472,74 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ],
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  Text(
+                  const SizedBox(height: 14),
+                  // طريقة الدفع في سطر واحد مع العنوان.
+                  _section(
                     'طريقة الدفع',
-                    style: text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: kPrimarySoft,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: kPrimary, width: 1.5),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.payments_outlined, color: kPrimary),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'الدفع عند الاستلام',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        Icon(Icons.check_circle, color: kPrimary),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: kPrimarySoft,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: kPrimary.withValues(alpha: 0.35)),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.info_outline, size: 20),
-                        SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'معلومة مهمة: تقدر تعدّل المنتجات أو الكميات أو بيانات التوصيل بعد إرسال الطلب، من صفحة «طلباتي»، طالما المندوب لسه ما استلمش الطلب. بمجرد استلامه، مش هتقدر تعدّله.',
-                            style: TextStyle(height: 1.45, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'ملخص الطلب',
-                    style: text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: kLine),
-                    ),
-                    child: ListenableBuilder(
-                      listenable: cart,
-                      builder: (context, _) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    trailing: Container(
+                      key: const Key('checkout-payment'),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: kPrimarySoft,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: kPrimary, width: 1.3),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            cart.storeName ?? '',
-                            style: text.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                          Icon(Icons.payments_outlined, color: kPrimary, size: 18),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'الدفع عند الاستلام',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                           ),
-                          if ((cart.storeId ?? '').isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            CheckoutEtaLine(storeId: cart.storeId!),
-                          ],
-                          const SizedBox(height: 10),
-                          for (final e in cart.items.entries)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text('${e.value} × ${e.key.name}'),
-                                  ),
-                                  Text(formatPrice(e.key.price * e.value)),
-                                ],
-                              ),
-                            ),
-                          const Divider(height: 22),
-                          _line('المجموع', formatPrice(cart.subtotal)),
-                          const SizedBox(height: 4),
-                          _line(
-                            'رسوم التوصيل',
-                            formatPrice(cart.fee),
-                          ),
-                          if (cart.serviceFee > 0) ...[
-                            const SizedBox(height: 4),
-                            _line('رسوم الخدمة', formatPrice(cart.serviceFee)),
-                          ],
-                          if (cart.discount > 0) ...[
-                            const SizedBox(height: 4),
-                            _line(
-                              'خصم (${cart.promoCode})',
-                              '- ${formatPrice(cart.discount)}',
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          if (OrderGateway.referralCampaignEnabled &&
-                              OrderGateway.serverOrdersEnabled)
-                            TextButton(
-                              onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
-                              child: Text(_referralPoints > 0
-                                  ? 'إلغاء استخدام النقاط'
-                                  : 'استخدم نقاط الدعوات'),
-                            ),
-                          if (_referralPoints > 0)
-                            _line('خصم $_referralPoints نقطة',
-                                '- ${formatPrice(_referralDiscountMinor / 100)}'),
-                          _line(
-                            'الإجمالي',
-                            formatPrice(cart.total - _referralDiscountMinor / 100),
-                            strong: true,
-                          ),
+                          const SizedBox(width: 6),
+                          Icon(Icons.check_circle, color: kPrimary, size: 18),
                         ],
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _section('ملخص الطلب'),
+                  ListenableBuilder(
+                    listenable: cart,
+                    builder: (context, _) => CheckoutInvoice(
+                      storeName: cart.storeName ?? '',
+                      eta: (cart.storeId ?? '').isNotEmpty
+                          ? CheckoutEtaLine(storeId: cart.storeId!)
+                          : null,
+                      items: [
+                        for (final e in cart.items.entries)
+                          InvoiceItem(e.key.name, e.value, e.key.price),
+                      ],
+                      totals: [
+                        InvoiceTotal('المجموع', formatPrice(cart.subtotal)),
+                        InvoiceTotal('رسوم التوصيل', formatPrice(cart.fee)),
+                        if (cart.serviceFee > 0)
+                          InvoiceTotal('رسوم الخدمة', formatPrice(cart.serviceFee)),
+                        if (cart.discount > 0)
+                          InvoiceTotal('خصم (${cart.promoCode})', '- ${formatPrice(cart.discount)}'),
+                        if (_referralPoints > 0)
+                          InvoiceTotal('خصم $_referralPoints نقطة',
+                              '- ${formatPrice(_referralDiscountMinor / 100)}'),
+                      ],
+                      beforeTotal: OrderGateway.referralCampaignEnabled &&
+                              OrderGateway.serverOrdersEnabled
+                          ? TextButton.icon(
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                              ),
+                              onPressed: _quotingPoints || _submitting ? null : _applyReferralPoints,
+                              icon: const Icon(Icons.card_giftcard_rounded, size: 18),
+                              label: Text(_referralPoints > 0
+                                  ? 'إلغاء استخدام النقاط'
+                                  : 'استخدم نقاط الدعوات'),
+                            )
+                          : null,
+                      grandTotal: formatPrice(cart.total - _referralDiscountMinor / 100),
+                      note: 'تقدر تعدّل المنتجات أو الكميات أو بيانات التوصيل من «طلباتي» '
+                          'طالما المندوب لسه ما استلمش الطلب.',
                     ),
                   ),
                 ],
@@ -600,19 +570,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _line(String label, String value, {bool strong = false}) {
-    final style = strong
-        ? const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)
-        : TextStyle(color: kMuted, fontWeight: FontWeight.w600);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: style),
-        Text(value, style: style),
-      ],
     );
   }
 }
