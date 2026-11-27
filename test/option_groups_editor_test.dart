@@ -139,4 +139,29 @@ void main() {
     expect(OptionGroup.tryParse({'title': 'x', 'options': 'bad'}), isNull);
     expect(parseOptionGroups([5, 'x', null]), isEmpty);
   });
+
+  testWidgets('اختيار متعدد + زيادة العدد والكتابة شغالة ثم «تم» من غير أخطاء على شاشة صغيرة', (tester) async {
+    tester.view.physicalSize = const Size(320 * 2, 640 * 2);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    List<OptionGroup>? result;
+    await _open(tester, const [], (r) => result = r);
+    await tester.tap(find.text('إضافة مجموعة خيارات'));
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'إضافات');
+    await tester.enterText(fields.at(1), 'جبنة = 5\nبيض = 5\nصوص');
+    await tester.tap(find.text('اختيار متعدد'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byIcon(Icons.add_circle_outline));
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // الكيبورد لسه مفتوح على الحقل وقت «تم».
+    await tester.showKeyboard(fields.at(1));
+    await tester.tap(find.text('تم'));
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(result!.single.max, 3);
+  });
 }
