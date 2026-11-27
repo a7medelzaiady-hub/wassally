@@ -21,7 +21,21 @@ void main() {
     final msg = ShareLinks.storeMessage(storeName: 'بقالة الحاج سيد', storeId: 's1');
     expect(msg, contains('محل بقالة الحاج سيد'));
     expect(msg, contains('وصّلي'));
-    expect(msg, contains('play.google.com'));
+    // رابط المحل نفسه: بيفتح التطبيق على المحل، أو جوجل بلاي لو مش متسطب.
+    expect(msg, contains('https://throbbing-water-4ef7.a7medelzaiady.workers.dev/s/s1'));
+  });
+
+  test('رابط المحل ومسار فتحه في التطبيق', () {
+    expect(ShareLinks.storeLink('s1'), 'https://throbbing-water-4ef7.a7medelzaiady.workers.dev/s/s1');
+    expect(ShareLinks.storeIdFromRoute('/s/s1'), 's1');
+    expect(ShareLinks.storeIdFromRoute('/s/s1/'), 's1');
+    expect(ShareLinks.storeIdFromRoute('/s/s1?x=1'), 's1');
+    expect(ShareLinks.storeIdFromRoute('https://throbbing-water-4ef7.a7medelzaiady.workers.dev/s/abc_9'), 'abc_9');
+    expect(ShareLinks.storeIdFromRoute('/s/'), isNull);
+    expect(ShareLinks.storeIdFromRoute('/s/a/b'), isNull);
+    expect(ShareLinks.storeIdFromRoute('/s/<x>'), isNull);
+    expect(ShareLinks.storeIdFromRoute('/'), isNull);
+    expect(ShareLinks.storeIdFromRoute(null), isNull);
   });
 
   test('رسالة مشاركة الصنف بالسعر والعرض', () {

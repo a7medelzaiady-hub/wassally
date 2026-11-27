@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
 import 'role_gate.dart';
+import 'store_link_page.dart';
+import '../services/navigation.dart' show rootNavigatorKey;
 
 /// بوابة الدخول: لو المستخدم مسجّل يفتح التطبيق، وإلا شاشة تسجيل الدخول.
 class AuthGate extends StatelessWidget {
@@ -20,7 +22,16 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator(color: kPrimary)),
           );
         }
-        if (snapshot.hasData) return const RoleGate();
+        if (snapshot.hasData) {
+          // رابط محل اتفتح قبل تسجيل الدخول: نفتحه بعد الدخول (مرة واحدة).
+          if (StoreLinkPage.pendingStoreId != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final ctx = rootNavigatorKey.currentContext;
+              if (ctx != null) StoreLinkPage.openPending(ctx);
+            });
+          }
+          return const RoleGate();
+        }
         return const LoginScreen();
       },
     );

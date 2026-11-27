@@ -31,7 +31,9 @@ OrderReceipt buildCartReceipt(CartModel cart, {DateTime? now}) {
   final store = (cart.storeName ?? '').trim();
   final when = now ?? DateTime.now();
   final note = (cart.specialRequest?['description'] ?? '').toString().trim();
-  final link = ShareLinks.playLink(storeId: cart.storeId);
+  final link = (cart.storeId ?? '').trim().isEmpty
+      ? ShareLinks.playLink()
+      : ShareLinks.storeLink(cart.storeId!);
   return OrderReceipt(
     title: 'سلتي',
     orderNumber: '',

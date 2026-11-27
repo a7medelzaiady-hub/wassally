@@ -1,3 +1,4 @@
+import { assetLinksResponse, storeIdFromPath, storeLinkResponse } from "./store_links";
 import { quoteReferralPoints } from "./referral_points";
 import { districtFromAddress } from "./address_district";
 import { commissionAmounts } from "./referral_commission";
@@ -76,6 +77,8 @@ interface Env {
   FIREBASE_PROJECT_NUMBER?: string;
   // سر اشتقاق رمز التسليم (secret في Cloudflare، مش في wrangler.toml). من غيره ميزة الرمز متوقفة.
   DELIVERY_PIN_SECRET?: string;
+  // بصمات SHA-256 لشهادات توقيع التطبيق (مفصولة بفاصلة) لـ App Links على روابط /s/.
+  ANDROID_SHA256_CERT_FINGERPRINTS?: string;
 }
 
 type JsonMap = Record<string, unknown>;
@@ -2418,6 +2421,15 @@ export default {
     }
   },
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+    // روابط مشاركة المحلات وملف التحقق بتاعها: صفحات عامة ثابتة (من غير CORS ولا قراءات).
+    if (request.method === "GET") {
+      const path = new URL(request.url).pathname;
+      if (path === "/.well-known/assetlinks.json") {
+        return assetLinksResponse(env.ANDROID_SHA256_CERT_FINGERPRINTS);
+      }
+      const linkedStore = storeIdFromPath(path);
+      if (linkedStore) return storeLinkResponse(linkedStore);
+    }
     let headers: Headers;
     try {
       headers = corsHeaders(request, env);

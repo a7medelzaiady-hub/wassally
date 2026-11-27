@@ -26,7 +26,7 @@ void main() {
     expect(r.items.map((l) => l.itemName), ['فالي توك توك', 'ليبي 1 لتر']);
     expect(r.items.map((l) => l.quantity), [1, 2]);
     expect(r.items.map((l) => l.unitPrice), [1300, 250]);
-    expect(r.qrLink, contains('com.wassally.app'));
+    expect(r.qrLink, contains('/s/s1')); // رابط المحل نفسه
     expect(r.shareText, contains('الزيادي لزيوت السيارات'));
     expect(r.fileName, endsWith('.png'));
   });
