@@ -92,27 +92,28 @@ class _StoreDirectoryPageState extends State<StoreDirectoryPage> {
     return homeCategoryForId(c)?.title ?? c;
   }
 
+  /// «محلاتي المفضلة» و«زرتها مؤخرًا»: صف أفقي بصورة المحل واسمه (زي القصص).
   Widget _shortcutRow(String title, List<Store> stores) {
     if (stores.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsetsDirectional.fromSTEB(16, 6, 16, 2),
+      padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 0, 2),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 4),
-        SizedBox(height: 36, child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: [
-            for (final store in stores)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 6),
-                child: ActionChip(
-                  label: Text(store.name, maxLines: 1),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => StorePage(store: store))),
-                ),
-              ),
-          ],
-        )),
+        Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 96,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsetsDirectional.only(end: 16),
+            itemCount: stores.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => _ShortcutStore(
+              store: stores[i],
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => StorePage(store: stores[i]))),
+            ),
+          ),
+        ),
       ]),
     );
   }
@@ -758,6 +759,72 @@ class _EmptyDirectory extends StatelessWidget {
             child: const Text('عرض كل المحلات'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// محل في صف «زرتها مؤخرًا»: صورة دايرية بإطار بنفسجي خفيف والاسم تحتها.
+class _ShortcutStore extends StatelessWidget {
+  final Store store;
+  final VoidCallback onTap;
+  const _ShortcutStore({required this.store, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = Container(
+      color: AppColors.purple.withValues(alpha: 0.08),
+      child: Icon(store.icon, color: AppColors.purple, size: 26),
+    );
+    return InkWell(
+      key: Key('shortcut-store-${store.id}'),
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: SizedBox(
+        width: 70,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [AppColors.purple, AppColors.purple.withValues(alpha: 0.45)],
+                  begin: Alignment.topRight,
+                  end: Alignment.bottomLeft,
+                ),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                child: ClipOval(
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: store.imageUrl.trim().isEmpty
+                        ? fallback
+                        : CachedNetImage(
+                            url: thumb(store.imageUrl, w: 160),
+                            width: 56,
+                            height: 56,
+                            memCacheWidth: 160,
+                            placeholder: fallback,
+                            errorWidget: fallback,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              store.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, height: 1.2),
+            ),
+          ],
+        ),
       ),
     );
   }
