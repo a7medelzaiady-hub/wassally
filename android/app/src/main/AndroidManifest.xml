@@ -60,6 +60,11 @@
             android:name="firebase_messaging_installation_id_enabled"
             android:value="true"/>
 
+        <!-- قناة موحدة لرسائل الطلبات ذات الأولوية العالية (حتى والتطبيق مقفول). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="wasally_orders"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

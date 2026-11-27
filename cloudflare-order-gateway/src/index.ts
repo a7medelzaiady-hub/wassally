@@ -1319,7 +1319,7 @@ export function courierTopicMessage(storeName: string) {
       android: {
         priority: "HIGH",
         ttl: "1800s",
-        notification: { sound: "default" },
+        notification: { sound: "default", channel_id: "wasally_orders" },
       },
     },
   };
@@ -3222,7 +3222,7 @@ export function adminNoticeMessage(kind: AdminNoticeKind, detail: string) {
       topic: "admins",
       notification: { title, body },
       data: { type: "admin_inbox", kind },
-      android: { priority: "HIGH", ttl: "3600s", notification: { sound: "default" } },
+      android: { priority: "HIGH", ttl: "3600s", notification: { sound: "default", channel_id: "wasally_orders" } },
     },
   };
 }
@@ -3578,7 +3578,7 @@ export function quickTopicMessage(isErrand = false) {
         body: "افتح التطبيق لمراجعة الطلبات المتاحة.",
       },
       data: { type: "quick_order" },
-      android: { priority: "HIGH", ttl: "1800s", notification: { sound: "default" } },
+      android: { priority: "HIGH", ttl: "1800s", notification: { sound: "default", channel_id: "wasally_orders" } },
     },
   };
 }
@@ -3611,7 +3611,7 @@ export async function notifyOrderParticipant(
             token: device,
             notification: { title, body: "افتح وصّلي لمراجعة تفاصيل الطلب." },
             data: { type, orderId },
-            android: { priority: "HIGH", notification: { sound: "default" } },
+            android: { priority: "HIGH", notification: { sound: "default", channel_id: "wasally_orders" } },
           },
         }),
       });
