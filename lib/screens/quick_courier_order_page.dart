@@ -649,18 +649,32 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
       case QuickCourierStep.purchasing:
         if (o.isErrand) {
           final fare = o.errandQuotePiastres;
+          final requiresPickup = o.errandType != 'other';
+          final pickedUp = o.errandPickupConfirmedAt != null;
           return [
             _card(children: [
-              const Text('نفّذ المشوار بالاتفاق مع العميل، وبعد ما تبقى جاهز للتسليم اضغط الزر.',
-                  style: TextStyle(fontWeight: FontWeight.w700, height: 1.5)),
+              Text(
+                requiresPickup && !pickedUp
+                  ? 'بعد ما تستلم الغرض من نقطة البداية، أكّد الاستلام هنا قبل التسليم.'
+                  : 'نفّذ المشوار بالاتفاق مع العميل، وبعد ما تبقى جاهز للتسليم اضغط الزر.',
+                style: const TextStyle(fontWeight: FontWeight.w700, height: 1.5),
+              ),
               if (fare != null) _row('الأجرة المتفق عليها', formatPiastres(fare), bold: true),
+              if (pickedUp)
+                const Text('✅ تم تسجيل استلام الغرض من نقطة البداية',
+                    key: Key('errand-picked-up')),
             ]),
-            _bigButton('المشوار جاهز للتسليم', Icons.check_circle_outline,
-              fare == null || !o.quoteApproved
-                ? null
-                : () => _act('submit-summary', {'deliveryPiastres': fare},
-                     'المشوار جاهز. استلم رمز التسليم من العميل.'),
-              key: const Key('errand-ready')),
+            if (requiresPickup && !pickedUp)
+              _bigButton('استلمت الغرض من نقطة البداية', Icons.inventory_2_outlined,
+                () => _act('confirm-errand-pickup', const {}, 'تم تأكيد الاستلام'),
+                key: const Key('errand-confirm-pickup'))
+            else
+              _bigButton('المشوار جاهز للتسليم', Icons.check_circle_outline,
+                fare == null || !o.quoteApproved
+                  ? null
+                  : () => _act('submit-summary', {'deliveryPiastres': fare},
+                       'المشوار جاهز. استلم رمز التسليم من العميل.'),
+                key: const Key('errand-ready')),
           ];
         }
         final delivery = parsePoundsToPiastres(_deliveryCtrl.text);
