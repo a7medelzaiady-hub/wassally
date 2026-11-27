@@ -196,6 +196,20 @@ class ImageService {
     );
   }
 
+  /// رفع صورة واحدة من الرفع المتعدد لـ«مكتبة صور وصّلي» (الإدارة بس، مجلد البانرات).
+  /// بيرمي [UploadRateLimitedError] لو الـWorker قال «استنى» (حد 10 صور في الدقيقة).
+  static Future<String> uploadLibraryPhoto(List<int> bytes, String filename) {
+    if (bytes.isEmpty) throw StateError('الملف فاضي.');
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw StateError('الصورة أكبر من 5MB');
+    }
+    return _upload(
+      bytes: bytes,
+      filename: filename.isEmpty ? 'library.jpg' : filename,
+      folder: 'banners',
+    );
+  }
+
   static Future<String> _upload({
     required List<int> bytes,
     required String filename,
@@ -244,6 +258,7 @@ class ImageService {
           message = data['error'] as String;
         }
       } catch (_) {}
+      if (uploadResponse.statusCode == 429) throw UploadRateLimitedError(message);
       throw StateError(message);
     }
 
@@ -265,6 +280,11 @@ class ImageService {
     }
     return url;
   }
+}
+
+/// الـWorker رفض الرفع مؤقتًا لأن صور كتير اترفعت في دقيقة واحدة.
+class UploadRateLimitedError extends StateError {
+  UploadRateLimitedError(super.message);
 }
 
 /// بيتأكد إن النص رابط صورة https صالح (وبحد أقصى 450 حرف عشان يدخل في حدود القواعد).
