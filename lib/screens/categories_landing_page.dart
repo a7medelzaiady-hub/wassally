@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
+import '../services/resume_session.dart';
 import '../services/saved_address.dart';
 import '../services/location_picker.dart';
 import '../theme/app_tokens.dart';
@@ -20,6 +22,7 @@ import 'onboarding_page.dart';
 import 'quick_order_create_page.dart';
 import 'errand_create_page.dart';
 import 'store_directory_page.dart';
+import 'store_link_page.dart';
 
 /// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
 const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
@@ -52,7 +55,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   /// الإعلانات تظهر الأول: صفحة ما بعد الدخول مستخبية لحد ما نعرف هل فيه جولة
   /// ولحد ما الجولة تتقفل (بدل ما الصفحة تبان لحظة وبعدين الإعلان يطلع فوقها).
-  bool _waitingForTour = OnboardingStore.hasAccount;
+  bool _waitingForTour = OnboardingStore.hasAccount && !ResumeSession.resumedRecently;
 
   bool get _isCustomer => widget.dashboard == null;
 
@@ -61,8 +64,51 @@ class _CustomerEntryState extends State<CustomerEntry> {
     super.initState();
     customerShellAvailable.value = _isCustomer;
     enterShellRequest.addListener(_onEnterShellRequest);
+    shellTab.addListener(_saveLocation);
     SavedAddress.load();
+    _restoreAfterResume();
     unawaited(_startWelcomeFlows());
+  }
+
+  static String get _uid {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid ?? '';
+    } catch (_) {
+      return ''; // widget tests من غير Firebase
+    }
+  }
+
+  /// #326: أندرويد قفل التطبيق في الخلفية والعميل رجع خلال دقايق:
+  /// نرجّعه لنفس التبويب/المحل بدل صفحة الخدمات (من غير قراءات Firestore زيادة).
+  void _restoreAfterResume() {
+    if (!_isCustomer || !ResumeSession.resumedRecently) return;
+    final uid = _uid;
+    final location = ResumeSession.takeLocation(uid);
+    if (location == null) return;
+    if (location.startsWith('shell:')) {
+      final tab = int.tryParse(location.substring(6)) ?? 0;
+      shellTab.value = tab.clamp(0, 3);
+      _entered = true;
+    } else if (location.startsWith('store:')) {
+      final id = location.substring(6);
+      if (id.isEmpty) return;
+      shellTab.value = 0;
+      _entered = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final nav = rootNavigatorKey.currentState;
+        if (!mounted || nav == null) return;
+        nav.push(MaterialPageRoute<void>(builder: (_) => StoreLinkPage(storeId: id)));
+      });
+    }
+    ResumeSession.setLocation(uid, location);
+  }
+
+  /// الشاشة الرئيسية الحالية للعميل (تبويب الشريط) عشان الرجوع بعد قفل التطبيق.
+  void _saveLocation() {
+    if (!_isCustomer || !_entered) return;
+    final current = ResumeSession.current;
+    if (current != null && current.startsWith('store:')) return; // جوه محل
+    ResumeSession.setLocation(_uid, 'shell:${shellTab.value}');
   }
 
   /// Ask for push after onboarding even if the user never opens Home.
@@ -80,6 +126,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
 
   /// الجولة الإعلانية لكل الحسابات، لحد مرتين في اليوم (محليًا).
   Future<void> _maybeShowTour() async {
+    // رجوع بعد ما أندرويد قفل التطبيق في الخلفية: مش فتح جديد، فمفيش إعلانات.
+    if (ResumeSession.resumedRecently) return;
     if (!await OnboardingStore.shouldShow() || !mounted) return;
     // صور الإدارة لو موجودة، وإلا الجولة المدمجة.
     final posters = await loadTourPosters();
@@ -98,6 +146,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   @override
   void dispose() {
     enterShellRequest.removeListener(_onEnterShellRequest);
+    shellTab.removeListener(_saveLocation);
     super.dispose();
   }
 
@@ -105,6 +154,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   void _onEnterShellRequest() {
     if (!mounted || !_isCustomer || _entered) return;
     setState(() => _entered = true);
+    _saveLocation();
   }
 
   void _enter([Widget? destination, int tab = 0]) {
@@ -118,6 +168,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
     }
     shellTab.value = tab;
     setState(() => _entered = true);
+    _saveLocation();
   }
 
   void _openNotifications() =>

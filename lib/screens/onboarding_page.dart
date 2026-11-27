@@ -14,6 +14,9 @@ class OnboardingStore {
   /// أقصى عدد مرات ظهور في اليوم.
   static const maxPerDay = 2;
 
+  /// أقل مدة بين مرتين ظهور في نفس اليوم (عشان المرة التانية ما تيجيش ورا الأولى).
+  static const minGap = Duration(hours: 3);
+
   static String _dayKey(DateTime now) =>
       '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
@@ -36,7 +39,12 @@ class OnboardingStore {
     if (id == null) return false;
     try {
       final prefs = await SharedPreferences.getInstance();
-      return (prefs.getInt(_key(id, now ?? DateTime.now())) ?? 0) < maxPerDay;
+      final t = now ?? DateTime.now();
+      if ((prefs.getInt(_key(id, t)) ?? 0) >= maxPerDay) return false;
+      final last = prefs.getInt('onboarding_last_$id');
+      if (last == null) return true;
+      final age = t.difference(DateTime.fromMillisecondsSinceEpoch(last));
+      return age.isNegative || age >= minGap;
     } catch (_) {
       return false;
     }
@@ -48,8 +56,10 @@ class OnboardingStore {
     if (id == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = _key(id, now ?? DateTime.now());
+      final t = now ?? DateTime.now();
+      final key = _key(id, t);
       await prefs.setInt(key, (prefs.getInt(key) ?? 0) + 1);
+      await prefs.setInt('onboarding_last_$id', t.millisecondsSinceEpoch);
     } catch (_) {}
   }
 }

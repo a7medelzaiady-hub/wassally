@@ -28,9 +28,13 @@ void main() {
     final day = DateTime(2026, 11, 25, 10);
     expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isTrue);
     await OnboardingStore.markDone(uid: 'u1', now: day);
-    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isTrue, reason: 'المرة التانية');
-    await OnboardingStore.markDone(uid: 'u1', now: day);
-    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day), isFalse, reason: 'خلاص النهارده');
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: day.add(const Duration(hours: 1))), isFalse,
+        reason: 'مش ورا بعض: لازم 3 ساعات بين المرتين');
+    final later = day.add(OnboardingStore.minGap);
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: later), isTrue, reason: 'المرة التانية');
+    await OnboardingStore.markDone(uid: 'u1', now: later);
+    expect(await OnboardingStore.shouldShow(uid: 'u1', now: later.add(const Duration(hours: 4))), isFalse,
+        reason: 'خلاص النهارده');
     expect(await OnboardingStore.shouldShow(uid: 'u1', now: day.add(const Duration(days: 1))), isTrue,
         reason: 'يوم جديد');
     expect(await OnboardingStore.shouldShow(uid: 'u2', now: day), isTrue, reason: 'كل حساب لوحده');
