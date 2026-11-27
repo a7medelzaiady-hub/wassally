@@ -25,6 +25,7 @@ import '../widgets/app_snack.dart';
 import '../widgets/order_receipt_sheet.dart';
 import '../widgets/store_wait_banner.dart';
 import '../widgets/order_issue_sheet.dart';
+import '../widgets/delivery_eta_line.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -457,6 +458,8 @@ class _Details extends StatelessWidget {
                 _Timeline(current: order.status),
                 // «مستني المحل يأكد» من حالة الطلب ووقته بس، من غير قراءات.
                 StoreWaitBanner(order: order),
+                // الوقت المتوقع للوصول من وقت المحل وحالة الطلب (من غير قراءات).
+                OrderEtaLine(order: order),
               ],
             ],
           ),

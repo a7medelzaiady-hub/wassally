@@ -16,6 +16,7 @@ import '../utils/delivery_pin_notice.dart';
 import '../utils/format.dart';
 import '../widgets/app_header.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/delivery_eta_line.dart';
 
 /// كود الخصم مخفي مؤقتًا من شاشة الطلب. لإرجاعه اجعل القيمة true.
 // ignore: prefer_const_declarations
@@ -515,6 +516,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
+                          if ((cart.storeId ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            CheckoutEtaLine(storeId: cart.storeId!),
+                          ],
                           const SizedBox(height: 10),
                           for (final e in cart.items.entries)
                             Padding(
