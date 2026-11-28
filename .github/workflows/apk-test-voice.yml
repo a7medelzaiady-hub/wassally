@@ -1,9 +1,9 @@
-name: Wasally Quick Voice APK Preview
+name: Wasally Navigation Restoration APK Preview
 
 on:
   push:
     branches:
-      - feat/quick-voice-pin-delivery-20261125
+      - apk/preview-339-7532f72
     paths:
       - .github/workflows/apk-test-voice.yml
 
@@ -103,7 +103,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: wasally-quick-voice-apk
+          name: wasally-navigation-restoration-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
