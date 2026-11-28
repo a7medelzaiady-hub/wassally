@@ -15,6 +15,7 @@ import '../theme/app_tokens.dart';
 import '../widgets/app_snack.dart';
 import 'quick_order_create_page.dart';
 import 'quick_order_customer_detail_page.dart';
+import '../services/route_key.dart';
 
 /// «مشوارك علينا» = نفس الطلب السريع/الـWorker، لكن بأجرة متفق عليها مسبقًا
 /// وعنواني استلام وتسليم خاصين. لا توجد قراءات Firestore إضافية للدليل.
@@ -261,6 +262,7 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
       } catch (_) {}
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        settings: RouteSettings(name: RouteKey.quickOrder(id)),
         builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
       ));
     } catch (e) {

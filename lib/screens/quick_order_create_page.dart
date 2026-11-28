@@ -22,6 +22,7 @@ import '../services/image_service.dart';
 import 'package:image_picker/image_picker.dart' show ImageSource;
 import '../widgets/app_snack.dart';
 import '../widgets/app_notice.dart';
+import '../services/route_key.dart';
 
 /// طريقة إرسال الطلب السريع.
 /// [callMe] = «كلّمني»: العميل مش هيكتب حاجة، المندوب يتصل بيه وياخد الطلب.
@@ -369,6 +370,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             : 'تقدر تتابع طلبك من هنا، والمندوب هيتواصل معاك أول ما يقبله.',
       );
       Navigator.of(context).pushReplacement(MaterialPageRoute(
+        settings: RouteSettings(name: RouteKey.quickOrder(id)),
         builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
       ));
     } catch (error) {

@@ -12,6 +12,8 @@ import '../utils/dialog_controllers.dart';
 import '../utils/maps.dart';
 import 'quick_courier_orders_page.dart' show quickStepLabel;
 import '../widgets/app_snack.dart';
+import '../services/resume_session.dart';
+import '../services/route_key.dart';
 
 /// رحلة المندوب في طلب سريع: زرار واحد كبير لكل خطوة، وأقل كتابة ممكنة (أرقام وصور بس).
 /// كل الكتابة عن طريق الـWorker، والطلب بيتحدث من رده. مفيش مستمعات؛ زرار «تحديث» بقراءة واحدة.
@@ -877,6 +879,11 @@ class _QuickCourierOrderPageState extends State<QuickCourierOrderPage> {
   @override
   Widget build(BuildContext context) {
     final o = _order;
+    // #339: طلب خلص ما يتستعادش بعد قفل التطبيق.
+    ResumeSession.closeIfFinished(
+      RouteKey.courierQuick(widget.orderId),
+      o != null && RouteKey.isFinalStatus(o.status),
+    );
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(

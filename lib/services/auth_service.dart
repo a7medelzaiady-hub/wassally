@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import 'cart_book.dart';
+import 'draft_store.dart';
+import 'resume_session.dart';
 import 'navigation.dart';
 import 'notification_service.dart';
 import 'order_gateway.dart';
@@ -131,6 +133,12 @@ class AuthService {
     }
   }
 
+  /// #339: آخر صفحة ومواضع التمرير والمسودات محلية ومرتبطة بالحساب، فبتتمسح مع الخروج.
+  static Future<void> _clearLocalNavigationState() async {
+    await ResumeSession.clearAll();
+    await DraftStore.clearAll();
+  }
+
   /// لو اتبعت context بنقفل أي شاشات مفتوحة فوق البوابة (زي "عرض كعميل")
   /// قبل الخروج، عشان متفضلش ظاهرة بعد تسجيل الخروج.
   static Future<void> signOut([BuildContext? context]) async {
@@ -140,6 +148,7 @@ class AuthService {
     }
     await carts.detachForSignOut(); // لا تمسح سلة الحساب، فقط افصلها من الذاكرة.
     shellTab.value = 0;
+    await _clearLocalNavigationState(); // #339: لا مسارات ولا مسودات لحساب سابق.
     await WasallyImageCache.clear();
     // لازم قبل الخروج، لأن مسح توكن الجهاز بيحتاج المستخدم لسه مسجّل.
     await NotificationService.dispose();
@@ -183,6 +192,7 @@ class AuthService {
     carts.clearAll(); // حذف الحساب: امسح سلات الحساب المحفوظة.
     await carts.flush();
     shellTab.value = 0;
+    await _clearLocalNavigationState();
     await WasallyImageCache.clear();
     await FirebaseAuth.instance.signOut();
     if (_googleInitialized) {

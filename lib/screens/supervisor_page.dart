@@ -8,6 +8,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/feedback_fab.dart';
 import '../widgets/staff_header.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/scroll_memory.dart';
 
 /// لوحة المشرف: المناديب المربوطين بيه (الأدمن هو اللي بيربطهم)، مع تقييم كل واحد،
 /// وزر اتصال، وتفعيل/إيقاف المندوب.
@@ -54,7 +55,10 @@ class SupervisorPage extends StatelessWidget {
                     message: 'الإدارة هي اللي بتربط المناديب بيك.',
                   );
                 }
-                return ListView.separated(
+                return RememberScroll(
+                  name: 'supervisor/couriers',
+                  builder: (context, scroll) => ListView.separated(
+                  controller: scroll,
                   padding: const EdgeInsets.all(16),
                   itemCount: docs.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -133,6 +137,7 @@ class SupervisorPage extends StatelessWidget {
                       ),
                     );
                   },
+                  ),
                 );
               },
             ),

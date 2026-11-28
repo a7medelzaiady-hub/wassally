@@ -11,6 +11,8 @@ import '../utils/dialog_controllers.dart';
 import '../widgets/app_ui.dart';
 import '../widgets/quick_voice_edit_sheet.dart';
 import '../widgets/app_snack.dart';
+import '../services/resume_session.dart';
+import '../services/route_key.dart';
 
 /// Customer-facing final bill. Uses explicit refresh, not a permanent listener.
 class QuickOrderCustomerDetailPage extends StatefulWidget {
@@ -370,6 +372,11 @@ class _QuickOrderCustomerDetailPageState extends State<QuickOrderCustomerDetailP
   Widget build(BuildContext context) {
     final order = _order;
     final status = (order?['status'] ?? '').toString();
+    // #339: طلب سريع/مشوار خلص ما يتستعادش بعد قفل التطبيق.
+    ResumeSession.closeIfFinished(
+      RouteKey.quickOrder(widget.orderId),
+      order != null && RouteKey.isFinalStatus(status),
+    );
     final isErrand = order?['kind'] == 'errand';
     final quote = (order?['errandQuotePiastres'] as num?)?.toInt();
     final quoteStatus = (order?['errandQuoteStatus'] ?? '').toString();

@@ -24,6 +24,9 @@ import 'quick_order_create_page.dart';
 import 'errand_create_page.dart';
 import 'store_directory_page.dart';
 import 'store_link_page.dart';
+import '../models/app_role.dart';
+import '../services/role_service.dart';
+import 'restorable_routes.dart';
 
 /// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
 const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
@@ -86,8 +89,27 @@ class _CustomerEntryState extends State<CustomerEntry> {
   void _restoreAfterResume() {
     if (!ResumeSession.resumedRecently) return;
     final uid = _uid;
+    final stack = ResumeSession.takeStack(uid);
     final location = ResumeSession.takeLocation(uid);
-    if (location == null) return;
+    if (location != null) _restoreBase(uid, location);
+    _restoreStack(uid, stack);
+  }
+
+  /// #339: الصفحات المفتوحة فوق الشاشة الرئيسية (طلب، إشعارات، ...) بنفس الترتيب.
+  /// بتتفتح بعد أول فريم وبعد الشاشة الرئيسية، ومن غير أي قراءات زيادة: كل صفحة
+  /// بتحمّل بياناتها بنفسها زي ما لو المستخدم فتحها. صفحات الموظفين بتتفتح بس
+  /// لو الحساب فعلًا عنده الدور.
+  void _restoreStack(String uid, List<String> stack) {
+    if (stack.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = rootNavigatorKey.currentState;
+      if (!mounted || nav == null || _uid != uid) return;
+      final held = RoleService.cachedFor(uid)?.held ?? const {AppRole.customer};
+      RestorableRoutes.restore(nav, stack, held: held);
+    });
+  }
+
+  void _restoreBase(String uid, String location) {
     if (location.startsWith('service:') && _isCustomer) {
       final page = switch (location.substring(8)) {
         'quick' => const QuickOrderCreatePage(),

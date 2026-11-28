@@ -21,6 +21,7 @@ import 'navigation.dart' show activePanel, rootNavigatorKey;
 import 'live_alerts_service.dart';
 import '../screens/admin_inbox_page.dart';
 import '../widgets/app_snack.dart';
+import 'route_key.dart';
 
 /// إشعارات الأجهزة (FCM). شغّالة على أندرويد بس حاليًا.
 ///
@@ -501,6 +502,7 @@ class NotificationService {
     if (type == 'support_chat') return;
     if (type == 'admin_inbox') {
       rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
+        settings: const RouteSettings(name: RouteKey.adminInbox),
         builder: (_) => const AdminInboxPage(),
       ));
       return;
@@ -518,6 +520,7 @@ class NotificationService {
     }
     if (type == 'quick_order') {
       rootNavigatorKey.currentState?.push(MaterialPageRoute<void>(
+        settings: const RouteSettings(name: RouteKey.courierQuickOrders),
         builder: (_) => const QuickCourierOrdersPage(),
       ));
       return;
@@ -531,6 +534,13 @@ class NotificationService {
     final navigator = rootNavigatorKey.currentState;
     if (navigator == null) return;
     navigator.push(MaterialPageRoute<void>(
+      settings: RouteSettings(
+        name: switch (message.data['type']) {
+          'quick_customer_update' => RouteKey.quickOrder(orderId),
+          'quick_courier_update' => RouteKey.courierQuick(orderId),
+          _ => RouteKey.order(orderId),
+        },
+      ),
       builder: (_) => switch (message.data['type']) {
         'quick_customer_update' => QuickOrderCustomerDetailPage(orderId: orderId),
         'quick_courier_update' => QuickCourierOrderPage(orderId: orderId),

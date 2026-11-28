@@ -12,6 +12,8 @@ import '../widgets/referral_registration_card.dart';
 import '../services/navigation.dart';
 import '../services/notification_service.dart';
 import '../services/role_service.dart';
+import '../services/draft_store.dart';
+import '../services/resume_session.dart';
 import '../services/update_service.dart';
 import 'admin_orders_page.dart';
 import 'courier_orders_page.dart';
@@ -135,6 +137,12 @@ class _RoleGateState extends State<RoleGate> {
   /// بنفتح بآخر دور محفوظ فورًا (من غير انتظار الشبكة)، وبعدها نتحقق من السيرفر
   /// ونبدّل الشاشة لو الدور اتغيّر. الصلاحيات الفعلية دايمًا بتتحمي بقواعد Firestore.
   void _start(String uid) {
+    // #339: تبديل الحساب من غير خروج صريح: مسارات ومسودات الحساب السابق تتمسح.
+    final previous = ResumeSession.uid;
+    if (previous.isNotEmpty && previous != uid) {
+      unawaited(ResumeSession.clearAll());
+      unawaited(DraftStore.clearAll());
+    }
     _uid = uid;
     activePanel.value = null;
     _info = RoleService.cachedFor(uid);

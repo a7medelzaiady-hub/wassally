@@ -27,6 +27,8 @@ import '../services/admin_inbox_counts.dart';
 import 'admin_inbox_page.dart';
 import '../utils/dialog_controllers.dart';
 import '../widgets/app_snack.dart';
+import '../services/route_key.dart';
+import '../widgets/scroll_memory.dart';
 
 /// شاشة المدير: كل الطلبات، فلترة بالحالة، تغيير الحالة، وتعيين مندوب.
 class AdminOrdersPage extends StatefulWidget {
@@ -116,7 +118,10 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
       action: SnackBarAction(
         label: 'افتح',
         onPressed: () => Navigator.of(context)
-            .push(MaterialPageRoute(builder: (_) => const AdminInboxPage())),
+            .push(MaterialPageRoute(
+              settings: const RouteSettings(name: RouteKey.adminInbox),
+              builder: (_) => const AdminInboxPage(),
+            )),
       ),
     ));
   }
@@ -371,11 +376,15 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
             }
           }
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
+          return RememberScroll(
+            name: 'admin/orders',
+            builder: (context, scroll) => CustomScrollView(
+              controller: scroll,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              slivers: slivers,
             ),
-            slivers: slivers,
           );
         },
       ),

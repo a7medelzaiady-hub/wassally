@@ -7,6 +7,7 @@ import '../theme/brand.dart';
 import '../widgets/empty_state.dart';
 import '../services/notifications_query.dart';
 import '../services/read_meter.dart';
+import '../widgets/scroll_memory.dart';
 
 // ───────────────────────── أنواع الإشعارات ─────────────────────────
 
@@ -238,7 +239,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           title: 'مفيش إشعارات لسه',
                           message: 'أي تحديث على طلباتك هيظهر هنا.',
                         )
-                      : ListView.builder(
+                      : RememberScroll(
+                          name: 'notifications/list',
+                          builder: (context, scroll) => ListView.builder(
+                          controller: scroll,
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
                           itemCount: entries.length + (docs.length == _limit ? 1 : 0),
@@ -267,6 +271,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                               index: i,
                             );
                           },
+                        ),
                         ),
                 );
               },
