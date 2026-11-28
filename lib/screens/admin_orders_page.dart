@@ -386,23 +386,24 @@ class _AdminOrdersPageState extends State<AdminOrdersPage> {
 /// شارة حالة نصية بس (من غير أيقونات).
 class _StatusChip extends StatelessWidget {
   final OrderStatus status;
-  const _StatusChip({required this.status});
+  final bool customerReceived;
+  const _StatusChip({required this.status, this.customerReceived = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
       decoration: BoxDecoration(
-        color: status.color.withValues(alpha: 0.14),
+        color: (customerReceived ? kSuccess : status.color).withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        status.label,
+        customerReceived ? 'استلم العميل الطلب' : status.label,
         maxLines: 1,
         style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w800,
-          color: status.color,
+          color: customerReceived ? kSuccess : status.color,
         ),
       ),
     );
@@ -461,12 +462,12 @@ class _AdminOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = order.status.color;
+    final color = order.customerConfirmedAt != null ? kSuccess : order.status.color;
     final unassigned = order.courierName.isEmpty;
     final timer = orderTotalTimer(
       createdAt: order.createdAt,
-      deliveredAt: order.deliveredAt,
-      delivered: order.status == OrderStatus.delivered,
+      deliveredAt: order.customerConfirmedAt ?? order.deliveredAt,
+      delivered: order.customerConfirmedAt != null || order.status == OrderStatus.delivered,
       cancelled: order.status == OrderStatus.cancelled,
     );
     // الوجهة: الحي بس في القايمة، والتفاصيل (الاسم/الموبايل/العنوان) جوه الطلب.
@@ -548,7 +549,7 @@ class _AdminOrderCard extends StatelessWidget {
                         runSpacing: AppSpacing.xs,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _StatusChip(status: order.status),
+                          _StatusChip(status: order.status, customerReceived: order.customerConfirmedAt != null),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
@@ -1453,9 +1454,14 @@ class _ManageSheetState extends State<_ManageSheet> {
                 ),
               ),
               const Spacer(),
-              _StatusChip(status: o.status),
+              _StatusChip(status: o.status, customerReceived: o.customerConfirmedAt != null),
             ],
           ),
+          if (o.customerConfirmedAt != null && o.status != OrderStatus.delivered)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('التسوية المالية مع المحل لم تكتمل بعد', style: TextStyle(color: kWarning, fontWeight: FontWeight.w700)),
+            ),
           _PhaseTimes(order: o),
           const SizedBox(height: AppSpacing.md),
           _routeCard(o),
@@ -1695,7 +1701,7 @@ class _PhaseTimesState extends State<_PhaseTimes> {
         final rows = <(String, Duration)>[];
         final prep = h['preparing'];
         final road = h['on_the_way'];
-        final done = h['delivered'] ?? o.deliveredAt;
+        final done = o.customerConfirmedAt ?? h['delivered'] ?? o.deliveredAt;
         if (prep != null) {
           rows.add(('لحد ما المحل بدأ التحضير', prep.difference(o.createdAt!)));
         }
