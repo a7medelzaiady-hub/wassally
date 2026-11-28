@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/app_role.dart';
+import '../services/cart_model.dart';
 import '../services/route_key.dart';
 import 'admin_inbox_page.dart';
 import 'admin_tools_page.dart';
@@ -35,7 +36,8 @@ class RestorableRoutes {
       case 'stores':
         return const StoreDirectoryPage();
       case 'checkout':
-        return const CheckoutPage();
+        // السلة فاضية (الطلب اتبعت أو اتمسحت): مفيش معنى لصفحة الدفع.
+        return cart.items.isEmpty ? null : const CheckoutPage();
       case 'courier-quick':
         return held.contains(AppRole.courier) ? QuickCourierOrderPage(orderId: id) : null;
       case 'courier-quick-orders':
