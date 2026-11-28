@@ -20,6 +20,7 @@ class ResumeSession {
   static String? _pending;
   static String? _current;
   static String _uid = '';
+  static Future<void> _pendingWrite = Future<void>.value();
 
   /// التشغيل ده رجوع لاستخدام قريب (التطبيق اتقفل في الخلفية من أقل من [window]).
   static bool get resumedRecently => _recent;
@@ -58,7 +59,10 @@ class ResumeSession {
   static void setLocation(String uid, String? location) {
     _uid = uid;
     _current = location;
-    unawaited(_write(location == null || uid.isEmpty ? null : '$uid|$location'));
+    // Serialize writes: a rapid push/pop must not leave an older route saved.
+    final value = location == null || uid.isEmpty ? null : '$uid|$location';
+    _pendingWrite = _pendingWrite.then((_) => _write(value));
+    unawaited(_pendingWrite);
   }
 
   static Future<void> _write(String? value) async {
@@ -72,7 +76,9 @@ class ResumeSession {
     } catch (_) {}
   }
 
+  /// Wait for queued route changes before persisting the background timestamp.
   static Future<void> markBackground({DateTime? now}) async {
+    await _pendingWrite;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(_pausedKey, (now ?? DateTime.now()).millisecondsSinceEpoch);
@@ -95,6 +101,7 @@ class ResumeSession {
     _pending = null;
     _current = null;
     _uid = '';
+    _pendingWrite = Future<void>.value();
   }
 
   static String get uid => _uid;
