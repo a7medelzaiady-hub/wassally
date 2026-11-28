@@ -937,7 +937,7 @@ class _Timeline extends StatelessWidget {
   final OrderStatus current;
   const _Timeline({required this.current});
 
-  static const _shortLabels = ['اتبعت للمحل', 'تجهيز', 'في الطريق', 'توصيل'];
+  static const _shortLabels = ['اتبعت للمحل', 'تجهيز', 'في الطريق', 'استلمت طلبك'];
 
   @override
   Widget build(BuildContext context) {
