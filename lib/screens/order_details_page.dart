@@ -501,6 +501,8 @@ class _Details extends StatelessWidget {
               ] else ...[
                 if (order.customerConfirmedAt != null ||
                     order.status == OrderStatus.delivered) ...[
+                  const _Timeline(current: OrderStatus.delivered),
+                  const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -614,7 +616,10 @@ class _Details extends StatelessWidget {
           ),
         ],
 
-        if (order.status == OrderStatus.delivered && order.storeId.isNotEmpty && order.courierName.isEmpty) ...[
+        if ((order.customerConfirmedAt != null ||
+                order.status == OrderStatus.delivered) &&
+            order.storeId.isNotEmpty &&
+            order.courierName.isEmpty) ...[
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(14),
@@ -852,7 +857,7 @@ class _DriverCardForCustomer extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                if (driverPhone.isNotEmpty)
+                if (!deliveryComplete && driverPhone.isNotEmpty)
                   Directionality(
                     textDirection: TextDirection.ltr,
                     child: Text(
@@ -875,7 +880,7 @@ class _DriverCardForCustomer extends StatelessWidget {
               ],
             ),
           ),
-          if (isDelivered)
+          if (deliveryComplete)
             ElevatedButton.icon(
               onPressed: onRateTap,
               icon: const Icon(Icons.star_rounded, size: 16),
