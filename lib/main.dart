@@ -118,6 +118,9 @@ class WasallyApp extends StatelessWidget {
       title: 'وصلي',
       debugShowCheckedModeBanner: false,
       navigatorKey: rootNavigatorKey,
+      // Android can restore the Navigator's restorable state after process death.
+      // Individual pushed routes must also opt into restorable navigation.
+      restorationScopeId: 'wasally_app',
       scaffoldMessengerKey: NotificationService.messengerKey,
       theme: buildAppTheme(),
       locale: const Locale('ar'),
