@@ -88,6 +88,20 @@ class _CustomerEntryState extends State<CustomerEntry> {
     final uid = _uid;
     final location = ResumeSession.takeLocation(uid);
     if (location == null) return;
+    if (location.startsWith('service:')) {
+      final page = switch (location.substring(8)) {
+        'quick' => const QuickOrderCreatePage(),
+        'errand' => const ErrandCreatePage(),
+        'offers' => const HomePage(offersOnly: true),
+        'stores' => const StoreDirectoryPage(),
+        _ => null,
+      };
+      if (page == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pushService(page, location);
+      });
+      return;
+    }
     if (location == 'dashboard' && !_isCustomer) {
       _entered = true;
     } else if (!_isCustomer) {
@@ -173,13 +187,42 @@ class _CustomerEntryState extends State<CustomerEntry> {
     _saveLocation();
   }
 
+  /// Restore service entry screens without any Firestore reads or listeners.
+  /// On a normal pop the previous location is restored, so a later restart
+  /// never reopens a page the user already closed.
+  Future<void> _pushService(Widget destination, String location) async {
+    final previous = ResumeSession.current;
+    ResumeSession.setLocation(_uid, location);
+    try {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        settings: RouteSettings(name: location),
+        builder: (_) => destination,
+      ));
+    } finally {
+      if (ResumeSession.current == location) {
+        ResumeSession.setLocation(_uid, previous);
+      }
+    }
+  }
+
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
     if (destination != null) {
       // Leaving a service must return to the entry cards, not skip them.
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => destination),
-      );
+      final location = switch (destination) {
+        QuickOrderCreatePage() => 'service:quick',
+        ErrandCreatePage() => 'service:errand',
+        HomePage() => 'service:offers',
+        StoreDirectoryPage() => 'service:stores',
+        _ => null,
+      };
+      if (location != null) {
+        unawaited(_pushService(destination, location));
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => destination),
+        );
+      }
       return;
     }
     shellTab.value = tab;
