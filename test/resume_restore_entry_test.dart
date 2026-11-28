@@ -103,22 +103,17 @@ void main() {
     expect(find.textContaining('restored'), findsNothing);
   });
 
-  testWidgets('a page the user closed is not restored on the next launch', (tester) async {
+  testWidgets('a page the user closed leaves the saved stack (so it is not restored next launch)', (tester) async {
     await _previousRun(tester, stack: ['order:o1', 'notifications']);
     await _launchStaff(tester);
+    expect(ResumeSession.stack, ['order:o1', 'notifications']);
+
     rootNavigatorKey.currentState!.pop(); // قفل الإشعارات
     await tester.pumpAndSettle();
 
-    // نفس الحالة الحية بعد التنقل هي اللي بتتحفظ للتشغيل الجاي.
+    // نفس الحالة الحية هي اللي بتتحفظ للتشغيل الجاي (الحفظ نفسه متغطي في resume_stack_test).
     expect(ResumeSession.stack, ['order:o1']);
-    await _previousRun(
-      tester,
-      location: ResumeSession.current,
-      stack: ResumeSession.stack,
-    );
-    await _launchStaff(tester);
-    expect(find.text('restored order:o1'), findsOneWidget);
-    expect(find.text('restored notifications'), findsNothing);
+    expect(ResumeSession.current, 'dashboard');
   });
 
   testWidgets('pages with an empty stack and no location leave the entry untouched', (tester) async {
