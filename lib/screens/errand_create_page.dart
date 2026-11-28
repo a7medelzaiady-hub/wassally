@@ -16,6 +16,7 @@ import '../widgets/app_snack.dart';
 import 'quick_order_create_page.dart';
 import 'quick_order_customer_detail_page.dart';
 import '../services/route_key.dart';
+import '../services/form_draft.dart';
 
 /// «مشوارك علينا» = نفس الطلب السريع/الـWorker، لكن بأجرة متفق عليها مسبقًا
 /// وعنواني استلام وتسليم خاصين. لا توجد قراءات Firestore إضافية للدليل.
@@ -62,6 +63,30 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
   bool _recording = false;
   String? _pendingOrderId;
 
+  /// #339: مسودة المشوار بعد ما أندرويد يقفل التطبيق.
+  late final FormDraft _draft = FormDraft('errand', () => {
+        'name': _name.text,
+        'phone': _phone.text,
+        'area': _area.text,
+        'pickup': _pickup.text,
+        'destination': _destination.text,
+        'mission': _mission.text,
+      });
+
+  Future<void> _restoreDraft() async {
+    final saved = await _draft.loadIfResumed();
+    if (!mounted || saved == null) return;
+    final byKey = {
+      'name': _name, 'phone': _phone, 'area': _area,
+      'pickup': _pickup, 'destination': _destination, 'mission': _mission,
+    };
+    setState(() {
+      saved.forEach((key, value) {
+        if (value.isNotEmpty) byKey[key]?.text = value;
+      });
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +95,11 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
       _name.text = FirebaseAuth.instance.currentUser?.displayName ?? '';
       _prefill();
     }
+    unawaited(_restoreDraft().whenComplete(() {
+      if (mounted) {
+        _draft.attach([_name, _phone, _area, _pickup, _destination, _mission]);
+      }
+    }));
   }
 
   Future<void> _loadLastArea() async {
@@ -95,6 +125,7 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
 
   @override
   void dispose() {
+    _draft.dispose();
     _voiceTimer?.cancel();
     _recorder?.dispose();
     if (_voicePath != null) File(_voicePath!).delete().catchError((_) => File(_voicePath!));
@@ -260,6 +291,7 @@ class _ErrandCreatePageState extends State<ErrandCreatePage> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('quick_last_area', area);
       } catch (_) {}
+      await _draft.clear(); // الإرسال نجح: مفيش مسودة تفضل.
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
         settings: RouteSettings(name: RouteKey.quickOrder(id)),

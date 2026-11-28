@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/form_draft.dart';
 
 import '../services/cart_model.dart';
 import '../services/delivery_service.dart';
@@ -86,7 +89,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
   void initState() {
     super.initState();
     _name.text = FirebaseAuth.instance.currentUser?.displayName ?? '';
-    _prefill();
+    // #339: المسودة بتتستعاد بعد بيانات الحساب عشان ما تتكتبش فوقها.
+    unawaited(_prefill().then((_) => _restoreDraft()));
     // أي منطقة/كوبون من محاولة قديمة بنبدأ منها من جديد.
     cart.fee = CartModel.deliveryFee;
     cart.area = '';
@@ -117,6 +121,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
+  /// مسودة بيانات الطلب بعد ما أندرويد يقفل التطبيق (محليًا، من غير Firestore).
+  late final FormDraft _draft = FormDraft('checkout', () => {
+        'name': _name.text,
+        'phone': _phone.text,
+        'address': _address.text,
+        'notes': _notes.text,
+        'courierNotes': _courierNotes.text,
+      });
+
+  Future<void> _restoreDraft() async {
+    final saved = await _draft.loadIfResumed();
+    if (!mounted) return;
+    if (saved != null) {
+      final byKey = {
+        'name': _name, 'phone': _phone, 'address': _address,
+        'notes': _notes, 'courierNotes': _courierNotes,
+      };
+      setState(() {
+        saved.forEach((key, value) {
+          if (value.isNotEmpty) byKey[key]?.text = value;
+        });
+      });
+    }
+    _draft.attach([_name, _phone, _address, _notes, _courierNotes]);
+  }
+
   Future<void> _prefill() async {
     final profile = await UserService.load();
     if (!mounted) return;
@@ -130,6 +160,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   @override
   void dispose() {
+    _draft.dispose();
     _name.dispose();
     _phone.dispose();
     _address.dispose();
@@ -249,6 +280,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         referralDiscountMinor: _referralDiscountMinor,
       );
 
+      await _draft.clear(); // الطلب اتأكد: مفيش مسودة تفضل.
       // Only navigate after the Worker/Firestore confirms successful creation.
       // The entry screen may still be the root (e.g. checkout via "Browse stores"),
       // so selecting shellTab alone would leave the customer on entry cards.
