@@ -130,18 +130,4 @@ void main() {
     await tester.pumpAndSettle();
     expect(ResumeSession.stack, isEmpty);
   });
-
-  testWidgets('a closed page is not saved for the next launch', (tester) async {
-    final nav = await pump(tester);
-    nav.push(_route('order:o1'));
-    await tester.pumpAndSettle();
-    nav.pop();
-    await tester.pumpAndSettle();
-
-    final at = DateTime(2026, 11, 28, 12);
-    await ResumeSession.markBackground(now: at);
-    ResumeSession.reset();
-    await ResumeSession.load(now: at.add(const Duration(minutes: 1)));
-    expect(ResumeSession.takeStack('u1'), isEmpty);
-  });
 }

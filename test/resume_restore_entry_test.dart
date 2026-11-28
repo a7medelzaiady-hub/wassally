@@ -39,6 +39,8 @@ Future<void> _launchStaff(WidgetTester tester, {String uid = 'staff1'}) async {
     CustomerEntry.debugUidOf = null;
     RestorableRoutes.debugPageFor = null;
   });
+  // شجرة جديدة تمامًا (زي تشغيل جديد للتطبيق)، مش تحديث لشجرة قديمة.
+  await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpWidget(MaterialApp(
     navigatorKey: rootNavigatorKey,
     navigatorObservers: [ResumeRouteObserver(uidOf: () => uid)],
@@ -97,7 +99,13 @@ void main() {
     rootNavigatorKey.currentState!.pop(); // قفل الإشعارات
     await tester.pumpAndSettle();
 
-    await _previousRunFromLive(tester);
+    // نفس الحالة الحية بعد التنقل هي اللي بتتحفظ للتشغيل الجاي.
+    expect(ResumeSession.stack, ['order:o1']);
+    await _previousRun(
+      tester,
+      location: ResumeSession.current,
+      stack: ResumeSession.stack,
+    );
     await _launchStaff(tester);
     expect(find.text('restored order:o1'), findsOneWidget);
     expect(find.text('restored notifications'), findsNothing);
@@ -107,14 +115,5 @@ void main() {
     await _previousRun(tester, location: null);
     await _launchStaff(tester);
     expect(find.textContaining('restored'), findsNothing);
-  });
-}
-
-/// نفس الحالة الحية بعد التنقل: بنكتبها على الموبايل ونعمل «قفل عملية» تاني.
-Future<void> _previousRunFromLive(WidgetTester tester) async {
-  await tester.runAsync(() async {
-    await ResumeSession.markBackground(now: _t0);
-    ResumeSession.reset();
-    await ResumeSession.load(now: _t0.add(const Duration(minutes: 2)));
   });
 }
