@@ -191,16 +191,24 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// On a normal pop the previous location is restored, so a later restart
   /// never reopens a page the user already closed.
   Future<void> _pushService(Widget destination, String location) async {
+    if (!mounted || !_isCustomer) return;
+    final accountUid = _uid;
+    if (accountUid.isEmpty) return;
     final previous = ResumeSession.current;
-    ResumeSession.setLocation(_uid, location);
+    ResumeSession.setLocation(accountUid, location);
     try {
       await Navigator.of(context).push(MaterialPageRoute<void>(
         settings: RouteSettings(name: location),
         builder: (_) => destination,
       ));
     } finally {
-      if (ResumeSession.current == location) {
-        ResumeSession.setLocation(_uid, previous);
+      // A route can complete after logout or an account switch. Never restore
+      // its old location into the new user's persisted navigation state.
+      if (mounted &&
+          _uid == accountUid &&
+          ResumeSession.uid == accountUid &&
+          ResumeSession.current == location) {
+        ResumeSession.setLocation(accountUid, previous);
       }
     }
   }
