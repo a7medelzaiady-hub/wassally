@@ -98,7 +98,11 @@ class _CustomerEntryState extends State<CustomerEntry> {
       };
       if (page == null) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _pushService(page, location);
+        // Do not navigate to a previous account's page if auth changes while
+        // the first frame is being built.
+        if (mounted && _uid == uid && _isCustomer) {
+          unawaited(_pushService(page, location));
+        }
       });
       return;
     }
