@@ -84,11 +84,15 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// #326: أندرويد قفل التطبيق في الخلفية والعميل رجع خلال دقايق:
   /// نرجّعه لنفس التبويب/المحل بدل صفحة الخدمات (من غير قراءات Firestore زيادة).
   void _restoreAfterResume() {
-    if (!_isCustomer || !ResumeSession.resumedRecently) return;
+    if (!ResumeSession.resumedRecently) return;
     final uid = _uid;
     final location = ResumeSession.takeLocation(uid);
     if (location == null) return;
-    if (location.startsWith('shell:')) {
+    if (location == 'dashboard' && !_isCustomer) {
+      _entered = true;
+    } else if (!_isCustomer) {
+      return;
+    } else if (location.startsWith('shell:')) {
       final tab = int.tryParse(location.substring(6)) ?? 0;
       shellTab.value = tab.clamp(0, 3);
       _entered = true;
@@ -180,7 +184,11 @@ class _CustomerEntryState extends State<CustomerEntry> {
     }
     shellTab.value = tab;
     setState(() => _entered = true);
-    _saveLocation();
+    if (_isCustomer) {
+      _saveLocation();
+    } else {
+      ResumeSession.setLocation(_uid, 'dashboard');
+    }
   }
 
   void _openNotifications() =>
