@@ -84,4 +84,25 @@ void main() {
     expect(ResumeSession.takeLocation('u1'), 'shell:3');
   });
 
+  test('closing a service clears the saved route before restart', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'service:quick');
+    ResumeSession.setLocation('u1', null);
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u1'), isNull);
+  });
+
+  test('service route is never restored for another signed-in account', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'service:errand');
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u2'), isNull);
+  });
+
 }
