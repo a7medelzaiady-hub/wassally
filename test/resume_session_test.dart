@@ -72,4 +72,16 @@ void main() {
     expect(ResumeSession.takeLocation('staff2'), isNull);
   });
 
+  test('rapid route changes persist the newest page before background', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'shell:0');
+    ResumeSession.setLocation('u1', 'service:quick');
+    ResumeSession.setLocation('u1', 'shell:3');
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u1'), 'shell:3');
+  });
+
 }
