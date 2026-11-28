@@ -192,8 +192,9 @@ class _OrderCardState extends State<_OrderCard> {
     // الطلب الجديد ما يتكتبش «المحل استلم الطلب» قبل ما المحل يأكد فعلًا.
     final now = DateTime.now();
     final waitLate = storeWaitStageOf(order, now) == StoreWaitStage.late;
-    final statusColor = waitLate ? kDanger : status.color;
-    final statusText = customerStatusLabel(order, now);
+    final customerReceived = order.customerConfirmedAt != null || status == OrderStatus.delivered;
+    final statusColor = customerReceived ? kSuccess : (waitLate ? kDanger : status.color);
+    final statusText = customerReceived ? 'استلمت طلبك' : customerStatusLabel(order, now);
     final created = order.createdAt;
     final name = orderStoreTitle(order.storeName);
 
