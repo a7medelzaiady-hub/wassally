@@ -499,11 +499,36 @@ class _Details extends StatelessWidget {
                     child: const Text('استرجاع نقاط الطلب'),
                   ),
               ] else ...[
-                _Timeline(current: order.status),
-                // «مستني المحل يأكد» من حالة الطلب ووقته بس، من غير قراءات.
-                StoreWaitBanner(order: order),
-                // الوقت المتوقع للوصول من وقت المحل وحالة الطلب (من غير قراءات).
-                OrderEtaLine(order: order),
+                if (order.customerConfirmedAt != null ||
+                    order.status == OrderStatus.delivered) ...[
+                  const _Timeline(current: OrderStatus.delivered),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF7EF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: kSuccess),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: kSuccess),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'تم تسليم طلبك بنجاح 🎉\nشكرًا لاستخدام وصّلي.',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  _Timeline(current: order.status),
+                  StoreWaitBanner(order: order),
+                  OrderEtaLine(order: order),
+                ],
               ],
             ],
           ),
@@ -591,7 +616,10 @@ class _Details extends StatelessWidget {
           ),
         ],
 
-        if (order.status == OrderStatus.delivered && order.storeId.isNotEmpty && order.courierName.isEmpty) ...[
+        if ((order.customerConfirmedAt != null ||
+                order.status == OrderStatus.delivered) &&
+            order.storeId.isNotEmpty &&
+            order.courierName.isEmpty) ...[
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(14),
@@ -662,15 +690,7 @@ class _Details extends StatelessWidget {
         ),
         // «عندي مشكلة في الطلب»: بلاغ واحد مسجل لصندوق الإدارة (من غير قراءات للعميل).
         OrderIssueButton(order: order),
-        if (order.customerConfirmedAt != null &&
-            order.deliveryMode == 'external' &&
-            order.status == OrderStatus.onTheWay) ...[
-          const SizedBox(height: 8),
-          const Text(
-            'تم تأكيد استلامك. الطلب في انتظار تأكيد المحل استلام النقدية من المندوب.',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-        ],
+
         if ([OrderStatus.newOrder, OrderStatus.preparing].contains(order.status) &&
             order.courierId.isEmpty) ...[
           if (order.status == OrderStatus.preparing)
@@ -837,7 +857,7 @@ class _DriverCardForCustomer extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                if (driverPhone.isNotEmpty)
+                if (!deliveryComplete && driverPhone.isNotEmpty)
                   Directionality(
                     textDirection: TextDirection.ltr,
                     child: Text(
@@ -860,7 +880,7 @@ class _DriverCardForCustomer extends StatelessWidget {
               ],
             ),
           ),
-          if (isDelivered)
+          if (deliveryComplete)
             ElevatedButton.icon(
               onPressed: onRateTap,
               icon: const Icon(Icons.star_rounded, size: 16),
@@ -917,7 +937,7 @@ class _Timeline extends StatelessWidget {
   final OrderStatus current;
   const _Timeline({required this.current});
 
-  static const _shortLabels = ['اتبعت للمحل', 'تجهيز', 'في الطريق', 'توصيل'];
+  static const _shortLabels = ['اتبعت للمحل', 'تجهيز', 'في الطريق', 'استلمت طلبك'];
 
   @override
   Widget build(BuildContext context) {
