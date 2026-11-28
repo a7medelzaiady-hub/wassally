@@ -49,4 +49,27 @@ void main() {
     await ResumeSession.load(now: t0);
     expect(ResumeSession.resumedRecently, isFalse);
   });
+  test('staff dashboard restores for the same account only', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('staff1', 'dashboard');
+    await ResumeSession.markBackground(now: t0);
+    await Future<void>.delayed(Duration.zero);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 2)));
+    expect(ResumeSession.takeLocation('staff1'), 'dashboard');
+    expect(ResumeSession.takeLocation('staff1'), isNull);
+  });
+
+  test('staff dashboard cannot be restored into another account', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('staff1', 'dashboard');
+    await ResumeSession.markBackground(now: t0);
+    await Future<void>.delayed(Duration.zero);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 2)));
+    expect(ResumeSession.takeLocation('staff2'), isNull);
+  });
+
 }
