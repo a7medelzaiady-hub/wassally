@@ -5,6 +5,7 @@ import 'package:city_store/screens/store_link_page.dart';
 import 'package:city_store/services/navigation.dart';
 import 'package:city_store/services/resume_route_observer.dart';
 import 'package:city_store/services/resume_session.dart';
+import 'package:city_store/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,13 +41,22 @@ Future<void> _launchStaff(WidgetTester tester, {String uid = 'staff1'}) async {
     RestorableRoutes.debugPageFor = null;
   });
   // شجرة جديدة تمامًا (زي تشغيل جديد للتطبيق)، مش تحديث لشجرة قديمة.
+  tester.view.physicalSize = const Size(390, 844);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpWidget(MaterialApp(
+    theme: buildAppTheme(),
     navigatorKey: rootNavigatorKey,
     navigatorObservers: [ResumeRouteObserver(uidOf: () => uid)],
+    builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child!),
     home: const CustomerEntry(dashboard: Text('dash'), dashboardLabel: 'لوحة'),
   ));
   await tester.pumpAndSettle();
+  expect(tester.takeException(), isNull);
 }
 
 void main() {
