@@ -22,6 +22,8 @@ import '../services/image_service.dart';
 import 'package:image_picker/image_picker.dart' show ImageSource;
 import '../widgets/app_snack.dart';
 import '../widgets/app_notice.dart';
+import '../services/route_key.dart';
+import '../services/form_draft.dart';
 
 /// طريقة إرسال الطلب السريع.
 /// [callMe] = «كلّمني»: العميل مش هيكتب حاجة، المندوب يتصل بيه وياخد الطلب.
@@ -99,9 +101,64 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   int _voiceLength = 0;
   String? _pendingOrderId;
 
+  /// #339: مسودة الطلب السريع بعد ما أندرويد يقفل التطبيق (محليًا، من غير Firestore).
+  late final FormDraft _draft = FormDraft('quick-order', () => {
+        'name': _name.text,
+        'area': _area.text,
+        'phone': _phone.text,
+        'address': _address.text,
+        'notes': _notes.text,
+        for (var i = 0; i < _stores.length; i++) ...{
+          's${i}n': _stores[i].nameCtrl.text,
+          's${i}i': _stores[i].itemsCtrl.text,
+        },
+      });
+
+  _QuickStoreDraft _newStore() {
+    final store = _QuickStoreDraft();
+    _draft.watch(store.nameCtrl);
+    _draft.watch(store.itemsCtrl);
+    return store;
+  }
+
+  Future<void> _restoreDraft() async {
+    final saved = await _draft.loadIfResumed();
+    if (!mounted || saved == null) return;
+    final storeKey = RegExp(r'^s(\d+)([ni])$');
+    var storeCount = 1;
+    for (final key in saved.keys) {
+      final match = storeKey.firstMatch(key);
+      final index = match == null ? null : int.tryParse(match.group(1)!);
+      if (index != null && index + 1 > storeCount) storeCount = index + 1;
+    }
+    setState(() {
+      while (_stores.length < storeCount && _stores.length < 10) {
+        _stores.add(_newStore());
+      }
+      final fields = {'name': _name, 'area': _area, 'phone': _phone, 'address': _address, 'notes': _notes};
+      saved.forEach((key, value) {
+        if (value.isEmpty) return;
+        final field = fields[key];
+        if (field != null) {
+          field.text = value;
+          return;
+        }
+        final match = storeKey.firstMatch(key);
+        final index = match == null ? null : int.tryParse(match.group(1)!);
+        if (match == null || index == null || index >= _stores.length) return;
+        (match.group(2) == 'n' ? _stores[index].nameCtrl : _stores[index].itemsCtrl).text = value;
+      });
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _draft.watch(_stores.first.nameCtrl);
+    _draft.watch(_stores.first.itemsCtrl);
+    unawaited(_restoreDraft().whenComplete(() {
+      if (mounted) _draft.attach([_name, _area, _phone, _address, _notes]);
+    }));
     _restoreArea();
     if (!widget.prefillFromAccount) return;
     _name.text = FirebaseAuth.instance.currentUser?.displayName ?? '';
@@ -139,6 +196,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
   @override
   void dispose() {
     _voiceTimer?.cancel();
+    _draft.dispose();
     _playerDone?.cancel();
     _recorderInstance?.dispose();
     _playerInstance?.dispose();
@@ -361,6 +419,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_lastAreaKey, _area.text.trim());
       } catch (_) {}
+      await _draft.clear(); // الإرسال نجح: مفيش مسودة تفضل.
       if (!mounted) return;
       showAppNotice(
         title: _callMe ? 'تم إرسال طلبك' : 'تم إرسال طلبك السريع',
@@ -369,6 +428,7 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
             : 'تقدر تتابع طلبك من هنا، والمندوب هيتواصل معاك أول ما يقبله.',
       );
       Navigator.of(context).pushReplacement(MaterialPageRoute(
+        settings: RouteSettings(name: RouteKey.quickOrder(id)),
         builder: (_) => QuickOrderCustomerDetailPage(orderId: id),
       ));
     } catch (error) {
@@ -868,7 +928,12 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
               alignment: AlignmentDirectional.centerStart,
               child: TextButton.icon(
                 key: const Key('quick-add-store'),
-                onPressed: _submitting ? null : () => setState(() => _stores.add(_QuickStoreDraft())),
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        setState(() => _stores.add(_newStore()));
+                        _draft.changed();
+                      },
                 icon: const Icon(Icons.add_circle_outline_rounded),
                 label: const Text('أضف محل تاني'),
               ),
@@ -904,10 +969,13 @@ class _QuickOrderCreatePageState extends State<QuickOrderCreatePage> {
                 color: AppColors.danger,
                 onPressed: _submitting
                     ? null
-                    : () => setState(() {
+                    : () {
+                        setState(() {
                           _stores.remove(store);
                           store.dispose();
-                        }),
+                        });
+                        _draft.changed();
+                      },
                 icon: const Icon(Icons.delete_outline_rounded),
               ),
           ]),

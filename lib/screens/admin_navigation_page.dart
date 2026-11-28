@@ -14,6 +14,7 @@ import 'admin_photo_library_page.dart';
 import 'admin_couriers_board_page.dart';
 import 'admin_operations_report_page.dart';
 import 'admin_inbox_page.dart';
+import '../services/route_key.dart';
 
 /// أدوات الإدارة في صفحة مستقلة، مع عناوين واضحة لكل وظيفة.
 class AdminNavigationPage extends StatelessWidget {
@@ -80,7 +81,16 @@ class AdminNavigationPage extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 child: InkWell(
                   onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(builder: (_) => item.page),
+                    MaterialPageRoute<void>(
+                      settings: RouteSettings(
+                        name: item.page is AdminToolsPage
+                            ? RouteKey.adminTools
+                            : item.page is AdminInboxPage
+                                ? RouteKey.adminInbox
+                                : null,
+                      ),
+                      builder: (_) => item.page,
+                    ),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(12),

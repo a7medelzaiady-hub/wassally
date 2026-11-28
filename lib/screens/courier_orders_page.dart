@@ -27,6 +27,7 @@ import '../widgets/order_timer.dart';
 import '../utils/dialog_controllers.dart';
 import 'quick_courier_orders_page.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/scroll_memory.dart';
 
 /// صورة المحل (من مستند stores لو فيه imageUrl) وإلا أيقونة. بتتخزّن عشان ما نكررش القراءة.
 class _StoreAvatar extends StatefulWidget {
@@ -377,7 +378,10 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                   actionLabel: 'إعدادات استقبال الطلبات',
                                   onAction: () => CourierBatteryGuide.show(context),
                                 )
-                              : ListView.separated(
+                              : RememberScroll(
+                                  name: 'courier/orders-${_tab.name}',
+                                  builder: (context, scroll) => ListView.separated(
+                                  controller: scroll,
                                   padding: const EdgeInsets.fromLTRB(
                                     16,
                                     4,
@@ -396,6 +400,7 @@ class _CourierOrdersPageState extends State<CourierOrdersPage> {
                                           key: ValueKey(shown[i].id),
                                           order: shown[i],
                                         ),
+                                  ),
                                 ),
                         ),
                       ],

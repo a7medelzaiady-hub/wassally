@@ -49,4 +49,60 @@ void main() {
     await ResumeSession.load(now: t0);
     expect(ResumeSession.resumedRecently, isFalse);
   });
+  test('staff dashboard restores for the same account only', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('staff1', 'dashboard');
+    await ResumeSession.markBackground(now: t0);
+    await Future<void>.delayed(Duration.zero);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 2)));
+    expect(ResumeSession.takeLocation('staff1'), 'dashboard');
+    expect(ResumeSession.takeLocation('staff1'), isNull);
+  });
+
+  test('staff dashboard cannot be restored into another account', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('staff1', 'dashboard');
+    await ResumeSession.markBackground(now: t0);
+    await Future<void>.delayed(Duration.zero);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 2)));
+    expect(ResumeSession.takeLocation('staff2'), isNull);
+  });
+
+  test('rapid route changes persist the newest page before background', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'shell:0');
+    ResumeSession.setLocation('u1', 'service:quick');
+    ResumeSession.setLocation('u1', 'shell:3');
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u1'), 'shell:3');
+  });
+
+  test('closing a service clears the saved route before restart', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'service:quick');
+    ResumeSession.setLocation('u1', null);
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u1'), isNull);
+  });
+
+  test('service route is never restored for another signed-in account', () async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.setLocation('u1', 'service:errand');
+    await ResumeSession.markBackground(now: t0);
+
+    ResumeSession.reset();
+    await ResumeSession.load(now: t0.add(const Duration(minutes: 1)));
+    expect(ResumeSession.takeLocation('u2'), isNull);
+  });
+
 }

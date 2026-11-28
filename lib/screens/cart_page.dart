@@ -16,6 +16,7 @@ import '../widgets/app_header.dart';
 import 'checkout_page.dart';
 import 'my_carts_page.dart';
 import 'store_directory_page.dart';
+import '../services/route_key.dart';
 
 /// السلة. بتتعرض كتبويب في الشاشة الرئيسية، أو كصفحة مستقلة (showBackButton).
 class CartPage extends StatelessWidget {
@@ -480,7 +481,10 @@ class _CartFooterState extends State<_CartFooter> {
                       onPressed: cart.items.isEmpty
                           ? null
                           : () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const CheckoutPage()),
+                              MaterialPageRoute(
+                                settings: const RouteSettings(name: RouteKey.checkout),
+                                builder: (_) => const CheckoutPage(),
+                              ),
                             ),
                       child: Text(cart.items.isEmpty ? 'ضيف منتجًا أولًا' : 'كمّل الطلب'),
                     ),

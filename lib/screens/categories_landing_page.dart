@@ -24,6 +24,9 @@ import 'quick_order_create_page.dart';
 import 'errand_create_page.dart';
 import 'store_directory_page.dart';
 import 'store_link_page.dart';
+import '../models/app_role.dart';
+import '../services/role_service.dart';
+import 'restorable_routes.dart';
 
 /// صور الواجهة مأخوذة من التصميم المرجعي المعتمد لصفحة ما بعد الدخول.
 const kEntryQuickAsset = 'assets/images/entry_quick.jpg';
@@ -47,6 +50,10 @@ class CustomerEntry extends StatefulWidget {
 
   /// خانة كود الدعوة بدل البحث (الافتراضي: لما حملة الدعوات مفعلة).
   final bool? showInviteCode;
+
+  /// للاختبارات بس: uid الحساب من غير Firebase.
+  @visibleForTesting
+  static String Function()? debugUidOf;
 
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
@@ -74,6 +81,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
   }
 
   static String get _uid {
+    final override = CustomerEntry.debugUidOf;
+    if (override != null) return override();
     try {
       return FirebaseAuth.instance.currentUser?.uid ?? '';
     } catch (_) {
@@ -84,11 +93,52 @@ class _CustomerEntryState extends State<CustomerEntry> {
   /// #326: أندرويد قفل التطبيق في الخلفية والعميل رجع خلال دقايق:
   /// نرجّعه لنفس التبويب/المحل بدل صفحة الخدمات (من غير قراءات Firestore زيادة).
   void _restoreAfterResume() {
-    if (!_isCustomer || !ResumeSession.resumedRecently) return;
+    if (!ResumeSession.resumedRecently) return;
     final uid = _uid;
+    final stack = ResumeSession.takeStack(uid);
     final location = ResumeSession.takeLocation(uid);
-    if (location == null) return;
-    if (location.startsWith('shell:')) {
+    if (location != null) _restoreBase(uid, location);
+    _restoreStack(uid, stack);
+  }
+
+  /// #339: الصفحات المفتوحة فوق الشاشة الرئيسية (طلب، إشعارات، ...) بنفس الترتيب.
+  /// بتتفتح بعد أول فريم وبعد الشاشة الرئيسية، ومن غير أي قراءات زيادة: كل صفحة
+  /// بتحمّل بياناتها بنفسها زي ما لو المستخدم فتحها. صفحات الموظفين بتتفتح بس
+  /// لو الحساب فعلًا عنده الدور.
+  void _restoreStack(String uid, List<String> stack) {
+    if (stack.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = rootNavigatorKey.currentState;
+      if (!mounted || nav == null || _uid != uid) return;
+      final held = RoleService.cachedFor(uid)?.held ?? const {AppRole.customer};
+      RestorableRoutes.restore(nav, stack, held: held);
+    });
+  }
+
+  void _restoreBase(String uid, String location) {
+    if (location.startsWith('service:') && _isCustomer) {
+      final page = switch (location.substring(8)) {
+        'quick' => const QuickOrderCreatePage(),
+        'errand' => const ErrandCreatePage(),
+        'offers' => const HomePage(offersOnly: true),
+        'stores' => const StoreDirectoryPage(),
+        _ => null,
+      };
+      if (page == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Do not navigate to a previous account's page if auth changes while
+        // the first frame is being built.
+        if (mounted && _uid == uid && _isCustomer) {
+          unawaited(_pushService(page, location));
+        }
+      });
+      return;
+    }
+    if (location == 'dashboard' && !_isCustomer) {
+      _entered = true;
+    } else if (!_isCustomer) {
+      return;
+    } else if (location.startsWith('shell:')) {
       final tab = int.tryParse(location.substring(6)) ?? 0;
       shellTab.value = tab.clamp(0, 3);
       _entered = true;
@@ -110,7 +160,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   void _saveLocation() {
     if (!_isCustomer || !_entered) return;
     final current = ResumeSession.current;
-    if (current != null && current.startsWith('store:')) return; // جوه محل
+    if (current != null && (current.startsWith('store:') || current.startsWith('service:'))) return; // جوه محل أو خدمة
     ResumeSession.setLocation(_uid, 'shell:${shellTab.value}');
   }
 
@@ -169,18 +219,59 @@ class _CustomerEntryState extends State<CustomerEntry> {
     _saveLocation();
   }
 
+  /// Restore service entry screens without any Firestore reads or listeners.
+  /// On a normal pop the previous location is restored, so a later restart
+  /// never reopens a page the user already closed.
+  Future<void> _pushService(Widget destination, String location) async {
+    if (!mounted || !_isCustomer) return;
+    final accountUid = _uid;
+    if (accountUid.isEmpty) return;
+    final previous = ResumeSession.current;
+    ResumeSession.setLocation(accountUid, location);
+    try {
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        settings: RouteSettings(name: location),
+        builder: (_) => destination,
+      ));
+    } finally {
+      // A route can complete after logout or an account switch. Never restore
+      // its old location into the new user's persisted navigation state.
+      if (mounted &&
+          _uid == accountUid &&
+          ResumeSession.uid == accountUid &&
+          ResumeSession.current == location) {
+        ResumeSession.setLocation(accountUid, previous);
+      }
+    }
+  }
+
   void _enter([Widget? destination, int tab = 0]) {
     if (_entered) return;
     if (destination != null) {
       // Leaving a service must return to the entry cards, not skip them.
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => destination),
-      );
+      final location = switch (destination) {
+        QuickOrderCreatePage() => 'service:quick',
+        ErrandCreatePage() => 'service:errand',
+        HomePage() => 'service:offers',
+        StoreDirectoryPage() => 'service:stores',
+        _ => null,
+      };
+      if (location != null) {
+        unawaited(_pushService(destination, location));
+      } else {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => destination),
+        );
+      }
       return;
     }
     shellTab.value = tab;
     setState(() => _entered = true);
-    _saveLocation();
+    if (_isCustomer) {
+      _saveLocation();
+    } else {
+      ResumeSession.setLocation(_uid, 'dashboard');
+    }
   }
 
   void _openNotifications() =>

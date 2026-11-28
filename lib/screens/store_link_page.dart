@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../utils/share_links.dart';
 import '../widgets/empty_state.dart';
 import 'store_page.dart';
+import '../services/resume_session.dart';
 
 /// رابط مشاركة المحل (https://<worker>/s/<id> أو wasally://open/s/<id>) بيوصل هنا.
 ///
@@ -29,6 +30,8 @@ class StoreLinkPage extends StatefulWidget {
     final name = settings.name ?? '';
     final path = Uri.tryParse(name)?.path ?? name;
     if (!path.startsWith('/s/')) return null;
+    // #339: الرابط اللي فتح التطبيق له الأولوية: ما نستعيدش صفحات قديمة فوقه.
+    ResumeSession.suppressRestore();
     // رابط /s/ برقم غلط: نفس الصفحة بتقول «المحل مش متاح» بدل خطأ.
     final id = ShareLinks.storeIdFromRoute(name) ?? '';
     return MaterialPageRoute<void>(
@@ -91,6 +94,7 @@ class _StoreLinkPageState extends State<StoreLinkPage> {
     super.initState();
     if (!_signedIn) {
       StoreLinkPage.pendingStoreId = widget.storeId;
+      ResumeSession.suppressRestore();
     } else {
       _future = (widget.loader ?? StoreLinkPage.loadActiveStore)(widget.storeId);
       _future!.then((store) {

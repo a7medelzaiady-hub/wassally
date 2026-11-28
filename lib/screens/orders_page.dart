@@ -12,6 +12,8 @@ import '../widgets/empty_state.dart';
 import 'order_details_page.dart';
 import 'quick_customer_orders_page.dart';
 import '../widgets/app_snack.dart';
+import '../services/route_key.dart';
+import '../widgets/scroll_memory.dart';
 
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -41,6 +43,7 @@ class _OrdersPageState extends State<OrdersPage> {
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
+                    settings: const RouteSettings(name: RouteKey.quickOrders),
                     builder: (_) => const QuickCustomerOrdersPage(),
                   ),
                 ),
@@ -117,11 +120,15 @@ class _OrdersPageState extends State<OrdersPage> {
                     onAction: () => shellTab.value = 0,
                   );
                 }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                  itemCount: orders.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) => _OrderCard(order: orders[i]),
+                return RememberScroll(
+                  name: 'shell/orders',
+                  builder: (context, scroll) => ListView.separated(
+                    controller: scroll,
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                    itemCount: orders.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) => _OrderCard(order: orders[i]),
+                  ),
                 );
               },
             ),
@@ -217,6 +224,7 @@ class _OrderCardState extends State<_OrderCard> {
         child: InkWell(
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
+              settings: RouteSettings(name: RouteKey.order(order.id)),
               builder: (_) => OrderDetailsPage(orderId: order.id),
             ),
           ),

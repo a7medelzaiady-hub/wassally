@@ -5,6 +5,7 @@ import '../services/quick_courier_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/brand.dart';
 import 'quick_courier_order_page.dart';
+import '../services/route_key.dart';
 
 /// زرار «الطلبات السريعة» في صفحة المندوب: بيظهر للمناديب المعتمدين (quickEnabled) بس.
 /// قراءة واحدة لمستند المندوب عند فتح الصفحة.
@@ -39,6 +40,7 @@ class _QuickCourierEntryState extends State<QuickCourierEntry> {
               label: const Text('الطلبات السريعة'),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
+                  settings: const RouteSettings(name: RouteKey.courierQuickOrders),
                   builder: (_) => QuickCourierOrdersPage(backend: widget.backend),
                 ),
               ),
@@ -107,6 +109,7 @@ class _QuickCourierOrdersPageState extends State<QuickCourierOrdersPage> {
   Future<void> _openOrder(QuickCourierOrder order) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: RouteSettings(name: RouteKey.courierQuick(order.id)),
         builder: (_) => QuickCourierOrderPage(orderId: order.id, initial: order, backend: widget.backend),
       ),
     );

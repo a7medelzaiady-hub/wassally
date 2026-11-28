@@ -27,6 +27,8 @@ import '../widgets/store_wait_banner.dart';
 import '../widgets/order_issue_sheet.dart';
 import '../widgets/delivery_eta_line.dart';
 import '../widgets/substitution_offers.dart';
+import '../services/resume_session.dart';
+import '../services/route_key.dart';
 
 class OrderDetailsPage extends StatelessWidget {
   final String orderId;
@@ -97,6 +99,13 @@ class OrderDetailsPage extends StatelessWidget {
                   );
                 }
                 final order = snapshot.data;
+                // #339: طلب خلص أو اتحذف ما يتستعادش بعد قفل التطبيق.
+                ResumeSession.closeIfFinished(
+                  RouteKey.order(orderId),
+                  order == null ||
+                      order.status == OrderStatus.delivered ||
+                      order.status == OrderStatus.cancelled,
+                );
                 if (order == null) {
                   return const EmptyState(
                     icon: Icons.search_off,

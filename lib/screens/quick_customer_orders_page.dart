@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_tokens.dart';
 import '../utils/quick_order_status.dart';
 import 'quick_order_customer_detail_page.dart';
+import '../services/route_key.dart';
 
 /// قائمة الطلبات السريعة: قراءة عند الفتح أو التحديث فقط، بدون listener جديد.
 class QuickCustomerOrdersPage extends StatefulWidget {
@@ -74,6 +75,7 @@ class _QuickCustomerOrdersPageState extends State<QuickCustomerOrdersPage> {
                 status: status,
                 onTap: () async {
                   await Navigator.of(context).push(MaterialPageRoute<void>(
+                    settings: RouteSettings(name: RouteKey.quickOrder(doc.id)),
                     builder: (_) => QuickOrderCustomerDetailPage(orderId: doc.id),
                   ));
                   if (mounted) _reload();

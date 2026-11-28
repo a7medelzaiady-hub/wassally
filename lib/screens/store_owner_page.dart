@@ -46,6 +46,7 @@ import '../widgets/status_pill.dart';
 import '../widgets/unanswered_orders_alert.dart';
 import '../services/store_fee_service.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/scroll_memory.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -108,7 +109,10 @@ class StoreOwnerPage extends StatelessWidget {
         final orders = snapshot.data ?? const <AppOrder>[];
         return DefaultTabController(
           length: 2,
-          child: Scaffold(
+          initialIndex: TabIndexMemory.initialIndex('owner/tab', 2),
+          child: TabIndexMemory(
+            name: 'owner/tab',
+            child: Scaffold(
             floatingActionButton: const FeedbackFab(),
             body: NestedScrollView(
               headerSliverBuilder: (context, _) => [
@@ -161,6 +165,7 @@ class StoreOwnerPage extends StatelessWidget {
                   _OwnerProductsTab(storeId: storeId),
                 ],
               ),
+            ),
             ),
           ),
         );

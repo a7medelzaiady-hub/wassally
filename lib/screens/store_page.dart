@@ -44,6 +44,7 @@ import 'cart_page.dart';
 import '../widgets/cached_net_image.dart';
 import '../widgets/app_snack.dart';
 import '../widgets/share_actions.dart';
+import '../widgets/scroll_memory.dart';
 
 typedef _Json = Map<String, dynamic>;
 
@@ -81,6 +82,8 @@ class _StorePageState extends State<StorePage> {
   Store get store => widget.store;
 
   final _scroll = ScrollController();
+  late final ScrollMemory _scrollMemory =
+      ScrollMemory('store:${widget.store.id}/products', controller: _scroll);
   final _searchCtrl = TextEditingController();
   final List<Product> _items = [];
 
@@ -162,6 +165,8 @@ class _StorePageState extends State<StorePage> {
       if (mounted && g != _grid) setState(() => _grid = g);
     }).catchError((_) {});
 
+    // #339: نفس موضع التمرير بعد ما أندرويد يقفل التطبيق (من غير قراءات زيادة).
+    if (widget.editSession == null) _scrollMemory.attach();
     _scroll.addListener(() {
       final collapsed = _scroll.hasClients && _scroll.offset > 120;
       if (collapsed != _collapsed) setState(() => _collapsed = collapsed);
@@ -189,6 +194,7 @@ class _StorePageState extends State<StorePage> {
       ResumeSession.setLocation(ResumeSession.uid, _resumePrevious);
     }
     _debounce?.cancel();
+    _scrollMemory.dispose();
     _scroll.dispose();
     _searchCtrl.dispose();
     _specialRequestCtrl.dispose();

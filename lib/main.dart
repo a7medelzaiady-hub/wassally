@@ -26,6 +26,7 @@ import 'services/cart_reminder.dart';
 import 'services/data_saver.dart';
 import 'services/photo_library.dart';
 import 'services/resume_session.dart';
+import 'services/resume_route_observer.dart';
 
 void main() => ErrorGuard.run(_bootstrap);
 
@@ -118,6 +119,10 @@ class WasallyApp extends StatelessWidget {
       title: 'وصلي',
       debugShowCheckedModeBanner: false,
       navigatorKey: rootNavigatorKey,
+      navigatorObservers: [ResumeRouteObserver()],
+      // Android can restore the Navigator's restorable state after process death.
+      // Individual pushed routes must also opt into restorable navigation.
+      restorationScopeId: 'wasally_app',
       scaffoldMessengerKey: NotificationService.messengerKey,
       theme: buildAppTheme(),
       locale: const Locale('ar'),
