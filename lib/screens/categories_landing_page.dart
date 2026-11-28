@@ -88,7 +88,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
     final uid = _uid;
     final location = ResumeSession.takeLocation(uid);
     if (location == null) return;
-    if (location.startsWith('service:')) {
+    if (location.startsWith('service:') && _isCustomer) {
       final page = switch (location.substring(8)) {
         'quick' => const QuickOrderCreatePage(),
         'errand' => const ErrandCreatePage(),
@@ -128,7 +128,7 @@ class _CustomerEntryState extends State<CustomerEntry> {
   void _saveLocation() {
     if (!_isCustomer || !_entered) return;
     final current = ResumeSession.current;
-    if (current != null && current.startsWith('store:')) return; // جوه محل
+    if (current != null && (current.startsWith('store:') || current.startsWith('service:'))) return; // جوه محل أو خدمة
     ResumeSession.setLocation(_uid, 'shell:${shellTab.value}');
   }
 
