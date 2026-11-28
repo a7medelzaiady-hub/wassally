@@ -23,6 +23,9 @@ class RouteKey {
 
   static final _idPattern = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 
+  /// أرقام فقط وطويلة (شكل رقم تليفون): مش معرّف مستند، ما نحطهاش في اسم مسار.
+  static final _phoneLike = RegExp(r'^\d{9,}$');
+
   static const notifications = 'notifications';
   static const stores = 'stores';
   static const checkout = 'checkout';
@@ -42,7 +45,7 @@ class RouteKey {
   /// بيبني الاسم، أو null لو النوع مش معروف أو المعرّف مش آمن.
   static String? make(String kind, [String? id]) {
     if (idKinds.contains(kind)) {
-      if (id == null || !_idPattern.hasMatch(id)) return null;
+      if (id == null || !_idPattern.hasMatch(id) || _phoneLike.hasMatch(id)) return null;
       return '$kind:$id';
     }
     if (plainKinds.contains(kind)) {

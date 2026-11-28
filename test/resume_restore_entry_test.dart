@@ -1,0 +1,120 @@
+// #339: CustomerEntry بيرجّع الصفحات المفتوحة بعد قفل أندرويد للتطبيق، وبأمان.
+import 'package:city_store/screens/categories_landing_page.dart';
+import 'package:city_store/screens/restorable_routes.dart';
+import 'package:city_store/screens/store_link_page.dart';
+import 'package:city_store/services/navigation.dart';
+import 'package:city_store/services/resume_route_observer.dart';
+import 'package:city_store/services/resume_session.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+final _t0 = DateTime(2026, 11, 28, 12);
+
+/// تجهيز حالة محفوظة من تشغيل سابق للحساب [savedUid]، ثم «قفل العملية» وفتح التطبيق بعد [after].
+Future<void> _previousRun(
+  WidgetTester tester, {
+  String savedUid = 'staff1',
+  String? location = 'dashboard',
+  List<String> stack = const [],
+  Duration after = const Duration(minutes: 2),
+}) async {
+  await tester.runAsync(() async {
+    SharedPreferences.setMockInitialValues({});
+    ResumeSession.reset();
+    if (location != null) ResumeSession.setLocation(savedUid, location);
+    for (final key in stack) {
+      ResumeSession.trackPush(savedUid, key);
+    }
+    await ResumeSession.markBackground(now: _t0);
+    ResumeSession.reset();
+    await ResumeSession.load(now: _t0.add(after));
+  });
+}
+
+Future<void> _launchStaff(WidgetTester tester, {String uid = 'staff1'}) async {
+  CustomerEntry.debugUidOf = () => uid;
+  RestorableRoutes.debugPageFor = (name, {required held}) => Scaffold(body: Text('restored $name'));
+  addTearDown(() {
+    CustomerEntry.debugUidOf = null;
+    RestorableRoutes.debugPageFor = null;
+  });
+  await tester.pumpWidget(MaterialApp(
+    navigatorKey: rootNavigatorKey,
+    navigatorObservers: [ResumeRouteObserver(uidOf: () => uid)],
+    home: const CustomerEntry(dashboard: Text('dash'), dashboardLabel: 'لوحة'),
+  ));
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  setUp(() {
+    ResumeSession.reset();
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('same account: dashboard comes back with its pages on top, in order', (tester) async {
+    await _previousRun(tester, stack: ['order:o1', 'notifications']);
+    await _launchStaff(tester);
+
+    expect(find.text('restored notifications'), findsOneWidget, reason: 'آخر صفحة كانت مفتوحة');
+    expect(ResumeSession.stack, ['order:o1', 'notifications']);
+
+    rootNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('restored order:o1'), findsOneWidget);
+
+    rootNavigatorKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('dash'), findsOneWidget);
+    expect(ResumeSession.stack, isEmpty);
+  });
+
+  testWidgets('another account gets nothing from the previous account', (tester) async {
+    await _previousRun(tester, savedUid: 'staff1', stack: ['order:o1']);
+    await _launchStaff(tester, uid: 'staff2');
+
+    expect(find.textContaining('restored'), findsNothing);
+    expect(find.text('dash'), findsNothing, reason: 'مفيش location لحساب staff2: صفحة الخدمات');
+  });
+
+  testWidgets('a launch after the 30 minute window is a fresh start', (tester) async {
+    await _previousRun(tester, stack: ['order:o1'], after: ResumeSession.window);
+    await _launchStaff(tester);
+    expect(find.textContaining('restored'), findsNothing);
+  });
+
+  testWidgets('a store deep link wins over the saved pages', (tester) async {
+    await _previousRun(tester, stack: ['order:o1']);
+    StoreLinkPage.routeFor(const RouteSettings(name: '/s/abc'));
+    await _launchStaff(tester);
+    expect(find.textContaining('restored'), findsNothing);
+  });
+
+  testWidgets('a page the user closed is not restored on the next launch', (tester) async {
+    await _previousRun(tester, stack: ['order:o1', 'notifications']);
+    await _launchStaff(tester);
+    rootNavigatorKey.currentState!.pop(); // قفل الإشعارات
+    await tester.pumpAndSettle();
+
+    await _previousRunFromLive(tester);
+    await _launchStaff(tester);
+    expect(find.text('restored order:o1'), findsOneWidget);
+    expect(find.text('restored notifications'), findsNothing);
+  });
+
+  testWidgets('pages with an empty stack and no location leave the entry untouched', (tester) async {
+    await _previousRun(tester, location: null);
+    await _launchStaff(tester);
+    expect(find.textContaining('restored'), findsNothing);
+  });
+}
+
+/// نفس الحالة الحية بعد التنقل: بنكتبها على الموبايل ونعمل «قفل عملية» تاني.
+Future<void> _previousRunFromLive(WidgetTester tester) async {
+  await tester.runAsync(() async {
+    await ResumeSession.markBackground(now: _t0);
+    ResumeSession.reset();
+    await ResumeSession.load(now: _t0.add(const Duration(minutes: 2)));
+  });
+}

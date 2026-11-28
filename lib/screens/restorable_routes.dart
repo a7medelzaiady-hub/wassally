@@ -20,7 +20,13 @@ import 'store_directory_page.dart';
 class RestorableRoutes {
   RestorableRoutes._();
 
+  /// للاختبارات بس: صفحات بديلة من غير Firebase.
+  @visibleForTesting
+  static Widget? Function(String name, {required Set<AppRole> held})? debugPageFor;
+
   static Widget? pageFor(String name, {required Set<AppRole> held}) {
+    final override = debugPageFor;
+    if (override != null) return override(name, held: held);
     final key = RouteKey.parse(name);
     if (key == null) return null;
     final id = key.id ?? '';

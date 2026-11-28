@@ -51,6 +51,10 @@ class CustomerEntry extends StatefulWidget {
   /// خانة كود الدعوة بدل البحث (الافتراضي: لما حملة الدعوات مفعلة).
   final bool? showInviteCode;
 
+  /// للاختبارات بس: uid الحساب من غير Firebase.
+  @visibleForTesting
+  static String Function()? debugUidOf;
+
   @override
   State<CustomerEntry> createState() => _CustomerEntryState();
 }
@@ -77,6 +81,8 @@ class _CustomerEntryState extends State<CustomerEntry> {
   }
 
   static String get _uid {
+    final override = CustomerEntry.debugUidOf;
+    if (override != null) return override();
     try {
       return FirebaseAuth.instance.currentUser?.uid ?? '';
     } catch (_) {
